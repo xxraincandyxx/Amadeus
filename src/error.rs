@@ -28,6 +28,12 @@ pub enum AgentError {
 
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
+
+    #[error("Invalid provider: {0}")]
+    InvalidProvider(String),
+
+    #[error("Stream error: {0}")]
+    StreamError(String),
 }
 
 pub type Result<T> = std::result::Result<T, AgentError>;

@@ -2,14 +2,15 @@ use std::sync::Arc;
 use std::io::{self, Write};
 use tokio::sync::RwLock;
 use crate::agent::loop_agent::Agent;
+use crate::client::LLMClient;
 use crate::ui::colors::Palette;
 
-pub struct Repl {
-    agent: Agent,
+pub struct Repl<C: LLMClient> {
+    agent: Agent<C>,
 }
 
-impl Repl {
-    pub fn new(agent: Agent) -> Self {
+impl<C: LLMClient> Repl<C> {
+    pub fn new(agent: Agent<C>) -> Self {
         Self { agent }
     }
 
