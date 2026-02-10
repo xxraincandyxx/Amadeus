@@ -1,78 +1,87 @@
-# Claude Agent (Rust v0)
+# Amadeus - AI Coding Agent
 
-Bash is all you need. A minimal AI coding agent implementation in Rust.
+**Bash is all you need.** A minimal AI coding agent implementation in Rust.
 
 ## Philosophy
 
-Like the Python reference implementation, this Rust version demonstrates that **one tool is enough**. Bash provides:
-- File reading: `cat`, `head`, `grep`
-- File writing: `echo '...' > file`, `sed`
-- Execution: `python`, `npm`, `make`, any command
-- **Subagents**: `cargo run -- "task description"`
+This project demonstrates that **one tool is sufficient** for a fully functional AI coding agent. With bash, the model can:
+- Read files: `cat`, `grep`, `head`, `tail`, `rg`, `ls`
+- Write files: `echo '...' > file`, `sed`, `cat << 'EOF' > file`
+- Execute any command: `python`, `npm`, `make`, `cargo`, etc.
+- Spawn subagents: `cargo run -- "task description"` for isolated context
 
 ## Features
 
-- **Multi-provider support** - Anthropic and OpenAI compatible
-- **Single bash tool** - All file operations and command execution
+- **Multi-provider support** - Anthropic and OpenAI APIs with unified interface
+- **Single bash tool** - Covers all file operations and command execution
 - **Recursive subagents** - Spawn isolated agents for complex tasks
-- **Process isolation** - Each subagent has fresh context
-- **Tokio async** - Efficient concurrent operations
-- **Streaming responses** - Optional streaming for faster output
-- **Dracula-themed UI** - Purple/pink color scheme
-- **Strongly-typed** - Full error handling with `Result<T>`
+- **Async architecture** - Based on Tokio for non-blocking I/O
+- **Streaming responses** - Optional real-time streaming for better UX
+- **Type-safe** - Strong error handling with `Result<T>` and `thiserror`
+- **Concurrent execution** - Parallel tool execution for independent tasks
+- **Dracula-themed UI** - Purple/pink terminal colors
 
 ## Quick Start
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 cargo install --locked
 
-# Configure API key
+# 2. Configure API key
 cp .env.example .env
-# Edit .env with your API key (ANTHROPIC_API_KEY or OPENAI_API_KEY)
+# Edit .env with your ANTHROPIC_API_KEY or OPENAI_API_KEY
 
-# Interactive mode (default: Anthropic)
+# 3. Interactive mode
 cargo run
 
-# Use OpenAI instead
+# 4. Use OpenAI instead
 PROVIDER=openai cargo run
 
-# Enable streaming
+# 5. Enable streaming
 USE_STREAMING=true cargo run
 
-# Subagent mode (for testing)
+# 6. Subagent mode (single task)
 cargo run -- "echo hello world and tell me the output"
 ```
 
 ## Configuration
 
-Environment variables (`.env` file):
+Environment variables in `.env` file:
 
 | Variable | Required | Default | Description |
 |----------|-----------|---------|-------------|
-| `PROVIDER` | No | anthropic | AI provider: `anthropic` or `openai` |
-| `ANTHROPIC_API_KEY` | Yes* | - | Your Anthropic API key (required for Anthropic) |
+| `PROVIDER` | No | `anthropic` | AI provider: `anthropic` or `openai` |
+| `ANTHROPIC_API_KEY` | Yes* | - | Anthropic API key |
 | `ANTHROPIC_BASE_URL` | No | https://api.anthropic.com | Anthropic API endpoint |
-| `OPENAI_API_KEY` | Yes* | - | Your OpenAI API key (required for OpenAI) |
+| `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
 | `OPENAI_BASE_URL` | No | https://api.openai.com | OpenAI API endpoint |
-| `MODEL_ID` | No | claude-sonnet-4-5-20250929 (Anthropic) / gpt-4 (OpenAI) | Model to use |
+| `MODEL_ID` | No | Provider default | Model to use |
 | `USE_STREAMING` | No | false | Enable streaming responses |
-| `TIMEOUT_SECONDS` | No | 30 | Command timeout in seconds |
+| `TIMEOUT_SECONDS` | No | 300 | Command timeout in seconds |
 
-*At least one provider API key is required based on the selected provider.
+*At least one provider API key required.
 
-## Running Tests
+## Testing
 
 ```bash
-# Run all unit tests
+# Run all tests
 cargo test
 
-# Run bash tool tests specifically
+# Run specific test file
 cargo test --test bash_test
 
 # Run with output
 cargo test -- --nocapture
+
+# Lint check
+cargo check
 ```
+
+## Documentation
+
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed technical documentation, design patterns
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development guide, working theory
+- **[AGENTS.md](AGENTS.md)** - Guide for AI agents working in this codebase
 
 ## Project Structure
 
@@ -80,41 +89,40 @@ cargo test -- --nocapture
 src/
 ├── main.rs              # CLI entry point
 ├── lib.rs               # Library exports
-├── error.rs             # Custom error types
+├── error.rs             # Custom error types (thiserror)
 ├── agent/
 │   ├── mod.rs
-│   ├── config.rs        # Configuration loading
-│   ├── messages.rs      # Message types
-│   └── loop_agent.rs   # Core agent loop
+│   ├── config.rs        # Environment-based configuration
+│   ├── messages.rs      # Message types with serde
+│   └── loop_agent.rs   # Core agent loop (streaming + non-streaming)
 ├── client/
-│   ├── mod.rs           # LLMClient trait
-│   ├── anthropic.rs     # Anthropic API client
-│   └── openai.rs        # OpenAI API client
+│   ├── mod.rs           # LLMClient trait (generic provider abstraction)
+│   ├── anthropic.rs     # Anthropic API implementation
+│   └── openai.rs        # OpenAI API implementation
 ├── tools/
 │   ├── mod.rs
-│   ├── bash.rs          # Bash executor
-│   └── schema.rs        # Tool schemas
+│   ├── bash.rs          # Async bash executor with timeout
+│   └── schema.rs        # Tool schemas (JSON)
 └── ui/
-    ├── mod.rs
-    ├── colors.rs        # Dracula theme
+    ├── colors.rs        # Dracula theme palette
     └── repl.rs          # Interactive REPL
 
-tests/
-├── mod.rs
-├── bash_test.rs         # Bash tool unit tests
-└── openai_test.rs       # OpenAI client unit tests
+tests/                    # Integration tests
+├── bash_test.rs
+├── agent_test.rs
+├── config_test.rs
+└── messages_test.rs
 ```
 
 ## Comparison with Python Reference
 
 | Feature | Python v0 | Rust v0 |
-|---------|------------|----------|
+|---------|-----------|----------|
 | Lines of code | ~50 | ~200 |
 | Async | No | Yes (Tokio) |
 | Type safety | Dynamic | Strong |
-| Error handling | String returns | Result<T> |
-| Colors | ANSI | colored crate |
-| Concurrent | No | Yes |
+| Error handling | String returns | `Result<T>` |
+| Concurrency | No | Yes |
 | Tool count | 1 (bash) | 1 (bash) |
 
 ## License
