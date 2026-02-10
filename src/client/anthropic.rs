@@ -129,12 +129,10 @@ impl AnthropicClient {
             match result {
                 Some(Ok(bytes)) => {
                     if let Some(event) = Self::parse_sse_line(bytes) {
-                        return Some((Ok(event), s));
+                        Some((Ok(event), s))
+                    } else {
+                        Some((Ok(StreamEvent::TextDelta(String::new())), s))
                     }
-                    return Some((
-                        Err(AgentError::StreamError("Invalid SSE format".to_string())),
-                        s,
-                    ))
                 }
                 Some(Err(e)) => Some((Err(AgentError::Api(e)), s)),
                 None => None,

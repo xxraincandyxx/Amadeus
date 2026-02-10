@@ -34,9 +34,9 @@ impl OpenAIClient {
                 serde_json::json!({
                     "type": "function",
                     "function": {
-                        "name": tool["name"],
-                        "description": tool["description"],
-                        "parameters": tool["input_schema"]
+                        "name": tool.get("name").and_then(|v| v.as_str()).unwrap_or(""),
+                        "description": tool.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                        "parameters": tool.get("input_schema").unwrap_or(&serde_json::json!({}))
                     }
                 })
             })
@@ -77,13 +77,17 @@ impl OpenAIClient {
     }
 
     fn parse_response(response: Value) -> Result<(String, Vec<ContentBlock>)> {
-        let choices = response["choices"]
-            .as_array()
+        let choices = response.get("choices")
+            .and_then(|v| v.as_array())
             .ok_or_else(|| AgentError::InvalidResponse("Missing choices".to_string()))?;
 
         let choice = &choices[0];
-        let finish_reason = choice["finish_reason"].as_str().unwrap_or("").to_string();
-        let message = &choice["message"];
+        let finish_reason = choice.get("finish_reason")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let message = choice.get("message")
+            .ok_or_else(|| AgentError::InvalidResponse("Missing message".to_string()))?;
 
         let stop_reason = match finish_reason.as_str() {
             "tool_calls" => "tool_use".to_string(),
@@ -92,38 +96,75 @@ impl OpenAIClient {
             _ => finish_reason,
         };
 
-        let content = if let Some(content_array) = message["content"].as_array() {
+        let content = if let Some(content_array) = message.get("content").and_then(|v| v.as_array()) {
             content_array
                 .iter()
-                .map(|block| match block["type"].as_str() {
-                    Some("text") => ContentBlock::Text {
-                        text: block["text"].as_str().unwrap_or("").to_string(),
-                    },
-                    Some("tool_use") => ContentBlock::ToolUse {
-                        id: block["id"].as_str().unwrap_or("").to_string(),
-                        name: block["name"].as_str().unwrap_or("").to_string(),
-                        input: crate::agent::messages::ToolInput {
-                            command: block["input"]["command"].as_str().unwrap_or("").to_string(),
+                .map(|block| {
+                    let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    match block_type {
+                        "text" => ContentBlock::Text {
+                            text: block.get("text")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string(),
                         },
-                    },
-                    Some("tool_result") => ContentBlock::ToolResult {
-                        tool_use_id: block["tool_use_id"].as_str().unwrap_or("").to_string(),
-                        content: block["content"].as_str().unwrap_or("").to_string(),
-                    },
-                    _ => ContentBlock::Text {
-                        text: String::new(),
-                    },
+                        "tool_use" => {
+                            let id = block.get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let name = block.get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let command = block.get("input")
+                                .and_then(|v| v.get("command"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            ContentBlock::ToolUse {
+                                id,
+                                name,
+                                input: crate::agent::messages::ToolInput { command },
+                            }
+                        },
+                        "tool_result" => {
+                            let tool_use_id = block.get("tool_use_id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let content = block.get("content")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            ContentBlock::ToolResult { tool_use_id, content }
+                        },
+                        _ => ContentBlock::Text { text: String::new() },
+                    }
                 })
                 .collect()
-        } else if let Some(tool_calls) = message["tool_calls"].as_array() {
+        } else if let Some(tool_calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
             tool_calls
                 .iter()
                 .map(|call| {
-                    let id = call["id"].as_str().unwrap_or("").to_string();
-                    let name = call["function"]["name"].as_str().unwrap_or("").to_string();
-                    let args_json = call["function"]["arguments"].as_str().unwrap_or("{}");
+                    let id = call.get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = call.get("function")
+                        .and_then(|v| v.get("name"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let args_json = call.get("function")
+                        .and_then(|v| v.get("arguments"))
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("{}");
                     let args: serde_json::Value = serde_json::from_str(args_json).unwrap_or(serde_json::json!({}));
-                    let command = args["command"].as_str().unwrap_or("").to_string();
+                    let command = args.get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
 
                     ContentBlock::ToolUse {
                         id,
@@ -237,12 +278,10 @@ impl OpenAIClient {
             match result {
                 Some(Ok(bytes)) => {
                     if let Some(event) = Self::parse_sse_line(bytes) {
-                        return Some((Ok(event), s));
+                        Some((Ok(event), s))
+                    } else {
+                        Some((Ok(StreamEvent::TextDelta(String::new())), s))
                     }
-                    return Some((
-                        Err(AgentError::StreamError("Invalid SSE format".to_string())),
-                        s,
-                    ))
                 }
                 Some(Err(e)) => Some((Err(AgentError::Api(e)), s)),
                 None => None,
@@ -252,6 +291,9 @@ impl OpenAIClient {
 
     fn parse_sse_line(bytes: Bytes) -> Option<StreamEvent> {
         let text = String::from_utf8_lossy(&bytes);
+        if text.is_empty() {
+            return None;
+        }
 
         for line in text.lines() {
             if line.starts_with("data: ") {
@@ -261,26 +303,26 @@ impl OpenAIClient {
                 }
 
                 if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                    if let Some(choices) = json["choices"].as_array() {
+                    if let Some(choices) = json.get("choices").and_then(|v| v.as_array()) {
                         if choices.is_empty() {
                             break;
                         }
                         let choice = &choices[0];
-                        
-                        if let Some(delta) = choice["delta"].as_object() {
-                            if let Some(content) = delta["content"].as_str() {
+
+                        if let Some(delta) = choice.get("delta").and_then(|v| v.as_object()) {
+                            if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
                                 return Some(StreamEvent::TextDelta(content.to_string()));
                             }
 
-                            if let Some(tool_calls) = delta["tool_calls"].as_array() {
+                            if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                 if tool_calls.is_empty() {
                                     continue;
                                 }
                                 let call = &tool_calls[0];
-                                
-                                if let Some(id) = call["id"].as_str() {
-                                    if let Some(func) = call["function"].as_object() {
-                                        if let Some(name) = func["name"].as_str() {
+
+                                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                                    if let Some(func) = call.get("function").and_then(|v| v.as_object()) {
+                                        if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
                                             return Some(StreamEvent::ToolCallStart {
                                                 id: id.to_string(),
                                                 name: name.to_string(),
@@ -290,14 +332,14 @@ impl OpenAIClient {
                                 }
                             }
 
-                            if let Some(tool_calls) = delta["tool_calls"].as_array() {
+                            if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                 if tool_calls.is_empty() {
                                     continue;
                                 }
                                 let call = &tool_calls[0];
-                                
-                                if let Some(func) = call["function"].as_object() {
-                                    if let Some(args) = func["arguments"].as_str() {
+
+                                if let Some(func) = call.get("function").and_then(|v| v.as_object()) {
+                                    if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
                                         return Some(StreamEvent::ToolCallDelta {
                                             arguments: args.to_string(),
                                         });
@@ -305,7 +347,7 @@ impl OpenAIClient {
                                 }
                             }
 
-                            if let Some(finish_reason) = choice["finish_reason"].as_str() {
+                            if let Some(finish_reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
                                 return Some(StreamEvent::StopReason(finish_reason.to_string()));
                             }
                         }
