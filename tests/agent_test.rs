@@ -1,17 +1,20 @@
 // Agent loop tests
 // Basic tests for agent creation and structure
 
-mod mock_llm;
-
 use claude_agent::agent::loop_agent::Agent;
-use mock_llm::MockLLMClient;
+use claude_agent::client::anthropic::AnthropicClient;
+use claude_agent::client::LLMClient;
 
 #[tokio::test]
 async fn test_agent_creation() {
-    let mock_client = MockLLMClient::new();
+    let client = AnthropicClient::new(
+        "test-key".to_string(),
+        None,
+        "test-model".to_string()
+    );
     
     let _agent = Agent::new(
-        mock_client,
+        client,
         "/tmp".to_string(),
         30,
         false,
@@ -22,10 +25,14 @@ async fn test_agent_creation() {
 
 #[tokio::test]
 async fn test_agent_with_streaming_enabled() {
-    let mock_client = MockLLMClient::new();
+    let client = AnthropicClient::new(
+        "test-key".to_string(),
+        None,
+        "test-model".to_string()
+    );
     
     let _agent = Agent::new(
-        mock_client,
+        client,
         "/tmp".to_string(),
         30,
         true, // streaming enabled
@@ -36,10 +43,14 @@ async fn test_agent_with_streaming_enabled() {
 
 #[tokio::test]
 async fn test_agent_different_workdir() {
-    let mock_client = MockLLMClient::new();
+    let client = AnthropicClient::new(
+        "test-key".to_string(),
+        None,
+        "test-model".to_string()
+    );
     
     let _agent = Agent::new(
-        mock_client,
+        client,
         "/home/user".to_string(),
         30,
         false,
@@ -50,10 +61,14 @@ async fn test_agent_different_workdir() {
 
 #[tokio::test]
 async fn test_agent_custom_timeout() {
-    let mock_client = MockLLMClient::new();
+    let client = AnthropicClient::new(
+        "test-key".to_string(),
+        None,
+        "test-model".to_string()
+    );
     
     let _agent = Agent::new(
-        mock_client,
+        client,
         "/tmp".to_string(),
         60, // custom timeout
         false,
