@@ -27,7 +27,7 @@ impl OpenAIClient {
         }
     }
 
-    fn transform_tools(tools: &[Value]) -> Vec<Value> {
+    pub fn transform_tools(tools: &[Value]) -> Vec<Value> {
         tools
             .iter()
             .map(|tool| {
@@ -43,7 +43,7 @@ impl OpenAIClient {
             .collect()
     }
 
-    fn prepare_messages(system: &str, messages: &[Message]) -> Vec<Value> {
+    pub fn prepare_messages(system: &str, messages: &[Message]) -> Vec<Value> {
         let mut result = vec![serde_json::json!({"role": "system", "content": system})];
 
         for msg in messages {

@@ -169,25 +169,26 @@ impl<C: LLMClient> Agent<C> {
                         current_tool = Some(ContentBlock::ToolUse {
                             id,
                             name,
-                            input: serde_json::json!({"command": ""}),
+                            input: crate::agent::messages::ToolInput { command: String::new() },
                         });
                     }
                     StreamEvent::ToolCallDelta { arguments } => {
                         if let Some(ref mut tool) = current_tool {
                             if let ContentBlock::ToolUse { ref mut input, .. } = tool {
-                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(arguments) {
-                                    *input = serde_json::from_value(json)
-                                        .unwrap_or_else(|_| serde_json::json!({"command": ""}));
+                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&arguments) {
+                                    if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
+                                        input.command = cmd.to_string();
+                                    }
                                 }
                             }
                         }
                     }
                     StreamEvent::ToolCallDone(id) => {
                         if let Some(tool) = current_tool.take() {
-                            if let ContentBlock::ToolUse { ref input, .. } = tool {
-                                print_command(&input["command"].as_str().unwrap_or(""));
+                            if let ContentBlock::ToolUse { input, .. } = tool {
+                                print_command(&input.command);
 
-                                let output = match self.bash_tool.execute(input).await {
+                                let output = match self.bash_tool.execute(&input).await {
                                     Ok(out) => out,
                                     Err(e) => format!("Error: {}", e),
                                 };

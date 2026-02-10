@@ -12,10 +12,12 @@ Like the Python reference implementation, this Rust version demonstrates that **
 
 ## Features
 
+- **Multi-provider support** - Anthropic and OpenAI compatible
 - **Single bash tool** - All file operations and command execution
 - **Recursive subagents** - Spawn isolated agents for complex tasks
 - **Process isolation** - Each subagent has fresh context
 - **Tokio async** - Efficient concurrent operations
+- **Streaming responses** - Optional streaming for faster output
 - **Dracula-themed UI** - Purple/pink color scheme
 - **Strongly-typed** - Full error handling with `Result<T>`
 
@@ -27,10 +29,16 @@ cargo install --locked
 
 # Configure API key
 cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY
+# Edit .env with your API key (ANTHROPIC_API_KEY or OPENAI_API_KEY)
 
-# Interactive mode
+# Interactive mode (default: Anthropic)
 cargo run
+
+# Use OpenAI instead
+PROVIDER=openai cargo run
+
+# Enable streaming
+USE_STREAMING=true cargo run
 
 # Subagent mode (for testing)
 cargo run -- "echo hello world and tell me the output"
@@ -42,9 +50,16 @@ Environment variables (`.env` file):
 
 | Variable | Required | Default | Description |
 |----------|-----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | Yes | - | Your Anthropic API key |
-| `ANTHROPIC_BASE_URL` | No | https://api.anthropic.com | API endpoint (for proxies) |
-| `MODEL_ID` | No | claude-sonnet-4-5-20250929 | Model to use |
+| `PROVIDER` | No | anthropic | AI provider: `anthropic` or `openai` |
+| `ANTHROPIC_API_KEY` | Yes* | - | Your Anthropic API key (required for Anthropic) |
+| `ANTHROPIC_BASE_URL` | No | https://api.anthropic.com | Anthropic API endpoint |
+| `OPENAI_API_KEY` | Yes* | - | Your OpenAI API key (required for OpenAI) |
+| `OPENAI_BASE_URL` | No | https://api.openai.com | OpenAI API endpoint |
+| `MODEL_ID` | No | claude-sonnet-4-5-20250929 (Anthropic) / gpt-4 (OpenAI) | Model to use |
+| `USE_STREAMING` | No | false | Enable streaming responses |
+| `TIMEOUT_SECONDS` | No | 30 | Command timeout in seconds |
+
+*At least one provider API key is required based on the selected provider.
 
 ## Running Tests
 
@@ -72,8 +87,9 @@ src/
 │   ├── messages.rs      # Message types
 │   └── loop_agent.rs   # Core agent loop
 ├── client/
-│   ├── mod.rs
-│   └── anthropic.rs     # API client
+│   ├── mod.rs           # LLMClient trait
+│   ├── anthropic.rs     # Anthropic API client
+│   └── openai.rs        # OpenAI API client
 ├── tools/
 │   ├── mod.rs
 │   ├── bash.rs          # Bash executor
@@ -85,7 +101,8 @@ src/
 
 tests/
 ├── mod.rs
-└── bash_test.rs         # Unit tests
+├── bash_test.rs         # Bash tool unit tests
+└── openai_test.rs       # OpenAI client unit tests
 ```
 
 ## Comparison with Python Reference

@@ -12,7 +12,273 @@ This agent demonstrates that **one tool is enough** for a fully functional AI co
 
 ## Features
 
-### 1. Core Agent Loop (src/agent/loop_agent.rs)
+### 1. Multi-Provider Support with Generic LLMClient Trait (src/client/mod.rs)
+
+The agent now supports multiple AI providers through a generic trait abstraction:
+
+```rust
+#[async_trait]
+pub trait LLMClient: Send + Sync {
+    async fn create_message(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+        max_tokens: u32,
+    ) -> Result<(String, Vec<ContentBlock>)>;
+
+    async fn create_message_stream(
+        &self,
+        system: &str,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+        max_tokens: u32,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
+}
+```
+
+**Key Design Decisions:**
+- **Generic over trait object**: `Agent<C: LLMClient>` uses zero-cost abstraction, resolved at compile time
+- **Single internal format**: Transformations happen only at provider boundaries
+- **Streaming optional**: Both sync and async methods available
+- **Unified streaming events**: `StreamEvent` enum abstracts provider differences
+
+**StreamEvent Enum:**
+```rust
+#[derive(Debug)]
+pub enum StreamEvent {
+    TextDelta(String),                        // Text content chunk
+    ToolCallStart { id: String, name: String },  // Tool call initiated
+    ToolCallDelta { arguments: String },      // Partial tool arguments (JSON string)
+    ToolCallDone(String),                     // Tool call complete (id)
+    StopReason(String),                       // Stream finished with reason
+}
+```
+
+### 2. Provider Configuration (src/agent/config.rs)
+
+Provider selection through environment variables:
+
+```rust
+pub enum Provider {
+    Anthropic,
+    OpenAI,
+}
+
+pub struct Config {
+    pub provider: Provider,
+    pub api_key: String,
+    pub base_url: Option<String>,
+    pub model: String,
+    pub workdir: PathBuf,
+    pub timeout_seconds: u64,
+    pub use_streaming: bool,
+}
+```
+
+**Environment Variables:**
+- `PROVIDER`: "anthropic" (default) or "openai"
+- Provider-specific keys: `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+- Provider-specific URLs: `ANTHROPIC_BASE_URL` or `OPENAI_BASE_URL`
+- `MODEL_ID`: Defaults to provider's recommended model
+- `USE_STREAMING`: Enable streaming responses (default: false)
+
+### 3. Anthropic Client Implementation (src/client/anthropic.rs)
+
+Implements LLMClient with Anthropic-specific transformations:
+
+```rust
+pub struct AnthropicClient {
+    client: Client,
+    api_key: String,
+    base_url: String,
+    model: String,
+}
+```
+
+**Key Features:**
+- Direct mapping of internal Message format to Anthropic's format
+- SSE streaming parser for Anthropic's event format
+- Stop reason mapping: "tool_use" → continue loop, else return
+
+**Streaming Parser:**
+- Handles `content_block_delta` events with `type: "text_delta"` or `type: "input_json_delta"`
+- Accumulates tool arguments across multiple delta events
+- Emits `StreamEvent::StopReason` on `message_stop`
+
+### 4. OpenAI Client Implementation (src/client/openai.rs)
+
+Implements LLMClient with OpenAI-specific transformations:
+
+```rust
+pub struct OpenAIClient {
+    client: Client,
+    api_key: String,
+    base_url: String,
+    model: String,
+}
+```
+
+**Tool Transformation (`transform_tools`):**
+
+Converts Anthropic format → OpenAI format:
+
+```rust
+// Anthropic (internal) format
+{
+    "name": "bash",
+    "description": "Execute shell command",
+    "input_schema": {
+        "type": "object",
+        "properties": {"command": {"type": "string"}},
+        "required": ["command"]
+    }
+}
+
+// OpenAI format (after transformation)
+{
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Execute shell command",
+        "parameters": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"]
+        }
+    }
+}
+```
+
+**Message Transformation (`prepare_messages`):**
+
+Converts internal Message format → OpenAI messages array:
+
+- System message prepended as `{"role": "system", "content": system}`
+- User/Assistant messages with content blocks converted
+- `ContentBlock::Text` → `{"type": "text", "text": "..."}`
+- `ContentBlock::ToolUse` → tool_call object
+- `ContentBlock::ToolResult` → tool message with role "tool"
+
+**Response Transformation (`parse_response`):**
+
+Converts OpenAI response → internal format:
+
+```rust
+// OpenAI response format
+{
+    "choices": [{
+        "message": {
+            "role": "assistant",
+            "content": [...]
+        }
+    }],
+    "finish_reason": "tool_calls"  // or "stop", "length", etc.
+}
+
+// Maps finish_reason:
+- "tool_calls" → "tool_use" (continue loop)
+- "stop" → "stop" (return)
+- "length" → "max_tokens" (return)
+```
+
+**Streaming Parser:**
+- Handles OpenAI's SSE format with `data:` prefix
+- Parses `choices[0].delta` events
+- `delta.content` → `StreamEvent::TextDelta`
+- `delta.tool_calls` → Accumulates tool across chunks
+- `finish_reason` → `StreamEvent::StopReason`
+
+### 5. Generic Agent Implementation (src/agent/loop_agent.rs)
+
+Agent is now generic over LLMClient:
+
+```rust
+pub struct Agent<C: LLMClient> {
+    client: C,
+    bash_tool: BashTool,
+    workdir: String,
+    use_streaming: bool,
+}
+```
+
+**Streaming Execution (`run_streaming`):**
+
+Handles tool execution during streaming:
+
+```rust
+async fn run_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
+    let mut stream = self.client.create_message_stream(...).await?;
+    let mut text_content = String::new();
+    let mut tool_calls: Vec<ContentBlock> = Vec::new();
+    let mut current_tool: Option<ContentBlock> = None;
+
+    while let Some(event) = stream.next().await {
+        match event? {
+            StreamEvent::TextDelta(text) => {
+                print!("{}", text);
+                text_content.push_str(&text);
+            }
+            StreamEvent::ToolCallStart { id, name } => {
+                current_tool = Some(ContentBlock::ToolUse {
+                    id, name,
+                    input: ToolInput { command: String::new() },
+                });
+            }
+            StreamEvent::ToolCallDelta { arguments } => {
+                // Parse JSON string arguments, extract command field
+                if let Some(ref mut tool) = current_tool {
+                    if let ContentBlock::ToolUse { ref mut input, .. } = tool {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&arguments) {
+                            if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
+                                input.command = cmd.to_string();
+                            }
+                        }
+                    }
+                }
+            }
+            StreamEvent::ToolCallDone(id) => {
+                // Execute tool immediately
+                if let Some(tool) = current_tool.take() {
+                    if let ContentBlock::ToolUse { input, .. } = tool {
+                        let output = self.bash_tool.execute(&input).await?;
+                        tool_calls.push(ContentBlock::ToolResult {
+                            tool_use_id: id,
+                            content: output,
+                        });
+                    }
+                }
+            }
+            StreamEvent::StopReason(reason) => {
+                if reason != "tool_use" && reason != "tool_calls" {
+                    break;
+                }
+            }
+        }
+    }
+    // Continue loop if tool calls exist
+}
+```
+
+**Key Streaming Behaviors:**
+- Text displayed as it arrives (immediate feedback)
+- Tools executed immediately on `ToolCallDone` (don't wait for stream end)
+- Tool calls accumulated and results appended to history
+- Loop continues until no tool calls
+
+### 6. Generic REPL Implementation (src/ui/repl.rs)
+
+REPL is now generic over LLMClient:
+
+```rust
+pub struct Repl<C: LLMClient> {
+    agent: Agent<C>,
+}
+```
+
+Enables seamless switching between providers without changing REPL code.
+
+### 7. Core Agent Loop (src/agent/loop_agent.rs)
 
 The heart of the agent - implements the pattern used by all coding agents:
 

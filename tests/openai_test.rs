@@ -19,6 +19,11 @@ fn test_tool_transformation() {
     assert_eq!(openai_tools.len(), 1);
     assert_eq!(openai_tools[0]["type"], "function");
     assert_eq!(openai_tools[0]["function"]["name"], "bash");
+    assert_eq!(
+        openai_tools[0]["function"]["description"],
+        "Execute shell command"
+    );
+    assert_eq!(openai_tools[0]["function"]["parameters"]["type"], "object");
 }
 
 #[test]
@@ -35,4 +40,7 @@ fn test_message_transformation() {
 
     assert_eq!(openai_messages.len(), 3);
     assert_eq!(openai_messages[0]["role"], "system");
+    assert_eq!(openai_messages[0]["content"], "You are a helpful assistant");
+    assert_eq!(openai_messages[1]["role"], "user");
+    assert_eq!(openai_messages[2]["role"], "assistant");
 }
