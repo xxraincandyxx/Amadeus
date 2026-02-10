@@ -2,12 +2,13 @@ use crate::error::{AgentError, Result};
 use std::env;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Provider {
     Anthropic,
     OpenAI,
 }
 
+#[derive(Debug)]
 pub struct Config {
     pub provider: Provider,
     pub api_key: String,

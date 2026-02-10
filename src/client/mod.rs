@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum StreamEvent {
     TextDelta(String),
     ToolCallStart { id: String, name: String },
