@@ -1,22 +1,96 @@
+//! # OpenAI API Client
+//!
+//! Client implementation for the OpenAI Chat Completions API.
+//!
+//! ## API Details
+//!
+//! - Endpoint: `POST /v1/chat/completions`
+//! - Auth: `Authorization: Bearer <api-key>` header
+//! - Streaming: Server-Sent Events (SSE) format
+//!
+//! ## Differences from Anthropic
+//!
+//! | Aspect | Anthropic | OpenAI |
+//! |--------|-----------|--------|
+//! | System prompt | Separate `system` field | First message with `role: "system"` |
+//! | Tool format | Direct schema | Wrapped in `function` object |
+//! | Tool calls | In content array | In `tool_calls` array |
+//! | Stop reason | `stop_reason` field | `finish_reason` field |
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! use crate::client::openai::OpenAIClient;
+//!
+//! let client = OpenAIClient::new(
+//!     "sk-proj-xxx".to_string(),    // API key
+//!     None,                          // Base URL (uses default)
+//!     "gpt-4".to_string(),           // Model
+//! );
+//!
+//! let (stop_reason, content) = client.create_message(
+//!     "You are a helpful assistant",
+//!     &messages,
+//!     &tools,
+//!     8000,
+//! ).await?;
+//! ```
+
+/*
+ * ============================================================================
+ * IMPORTS
+ * ============================================================================
+ */
+
 use reqwest::{Client, StatusCode};
 use serde_json::Value;
-use crate::agent::messages::{Message, ContentBlock};
-use crate::client::LLMClient;
-use crate::client::StreamEvent;
-use crate::error::{Result, AgentError};
+
+use crate::agent::messages::{ContentBlock, Message};
+use crate::client::{LLMClient, StreamEvent};
+use crate::error::{AgentError, Result};
+
 use async_trait::async_trait;
 use bytes::Bytes;
-use std::pin::Pin;
 use futures::{Stream, StreamExt};
+use std::pin::Pin;
 
+/*
+ * ============================================================================
+ * OPENAI CLIENT STRUCT
+ * ============================================================================
+ */
+
+/// Client for the OpenAI Chat Completions API.
 pub struct OpenAIClient {
+    /// HTTP client for making requests
     client: Client,
+    
+    /// OpenAI API key for authentication
+    /// 
+    /// Sent in Authorization: Bearer <api_key> header
+    /// API keys look like: sk-proj-xxx... or sk-xxx...
     api_key: String,
+    
+    /// Base URL for the API
+    /// 
+    /// Default: https://api.openai.com
+    /// Can be customized for Azure OpenAI, proxies, etc.
     base_url: String,
+    
+    /// Model identifier
+    /// 
+    /// Examples: gpt-4, gpt-4o, gpt-4-turbo, gpt-3.5-turbo
     model: String,
 }
 
+/*
+ * ============================================================================
+ * HELPER METHODS
+ * ============================================================================
+ */
+
 impl OpenAIClient {
+    /// Create a new OpenAI client.
     pub fn new(api_key: String, base_url: Option<String>, model: String) -> Self {
         let base_url = base_url.unwrap_or_else(|| "https://api.openai.com".to_string());
         Self {
@@ -27,46 +101,93 @@ impl OpenAIClient {
         }
     }
 
+    /// Transform Anthropic-style tools to OpenAI format.
+    ///
+    /// OpenAI wraps tool definitions differently:
+    ///
+    /// ```json
+    /// // Input (Anthropic style)
+    /// { "name": "bash", "description": "...", "input_schema": {...} }
+    ///
+    /// // Output (OpenAI style)
+    /// { "type": "function", "function": { "name": "bash", "description": "...", "parameters": {...} } }
+    /// ```
     pub fn transform_tools(tools: &[Value]) -> Vec<Value> {
+        // .iter() creates an iterator over references
+        // .map() transforms each item
+        // .collect() gathers results into a Vec
         tools
             .iter()
             .map(|tool| {
+                // Build the OpenAI tool format
                 serde_json::json!({
+                    // OpenAI requires "type": "function"
                     "type": "function",
+                    // The actual function details are nested
                     "function": {
+                        // Extract name from Anthropic format
+                        // .get() returns Option<&Value>
+                        // .and_then() chains Option operations
+                        // .as_str() converts Value to &str
+                        // .unwrap_or("") provides default if missing
                         "name": tool.get("name").and_then(|v| v.as_str()).unwrap_or(""),
                         "description": tool.get("description").and_then(|v| v.as_str()).unwrap_or(""),
+                        // OpenAI uses "parameters" instead of "input_schema"
+                        // .unwrap_or() provides default if missing
                         "parameters": tool.get("input_schema").unwrap_or(&serde_json::json!({}))
                     }
                 })
             })
+            // Collect into Vec<Value>
             .collect()
     }
 
+    /// Transform messages for OpenAI's message format.
+    ///
+    /// Key difference: OpenAI puts system prompt as first message with role "system"
     pub fn prepare_messages(system: &str, messages: &[Message]) -> Vec<Value> {
+        // Create the system message first
+        // In OpenAI format, system instructions are a message with role: "system"
         let mut result = vec![serde_json::json!({"role": "system", "content": system})];
 
+        // Process each message in the conversation
         for msg in messages {
+            // Transform each content block
             let content = msg
                 .content
                 .iter()
-                .map(|block| match block {
-                    ContentBlock::Text { text } => {
-                        serde_json::json!({"type": "text", "text": text})
-                    }
-                    ContentBlock::ToolUse { id, name, input } => {
-                        serde_json::json!({"type": "tool_use", "id": id, "name": name, "input": input})
-                    }
-                    ContentBlock::ToolResult { tool_use_id, content } => {
-                        serde_json::json!({
-                            "type": "tool_result",
-                            "tool_use_id": tool_use_id,
-                            "content": content
-                        })
+                .map(|block| {
+                    // Match on the content block type
+                    match block {
+                        // Text block - simple conversion
+                        ContentBlock::Text { text } => {
+                            serde_json::json!({"type": "text", "text": text})
+                        }
+                        
+                        // Tool use - preserve structure
+                        ContentBlock::ToolUse { id, name, input } => {
+                            serde_json::json!({
+                                "type": "tool_use",
+                                "id": id,
+                                "name": name,
+                                "input": input
+                            })
+                        }
+                        
+                        // Tool result - preserve structure
+                        ContentBlock::ToolResult { tool_use_id, content } => {
+                            serde_json::json!({
+                                "type": "tool_result",
+                                "tool_use_id": tool_use_id,
+                                "content": content
+                            })
+                        }
                     }
                 })
+                // Collect content blocks into a Vec
                 .collect::<Vec<_>>();
 
+            // Add the message to result
             result.push(serde_json::json!({
                 "role": msg.role,
                 "content": content
@@ -76,38 +197,73 @@ impl OpenAIClient {
         result
     }
 
+    /// Parse OpenAI response into standardized format.
+    ///
+    /// Handles both content array and tool_calls array formats.
     fn parse_response(response: Value) -> Result<(String, Vec<ContentBlock>)> {
+        // -----------------------------------------------------------------
+        // EXTRACT CHOICES ARRAY
+        // -----------------------------------------------------------------
+        
+        // OpenAI returns results in a "choices" array
+        // We take the first choice (for single-response requests)
         let choices = response.get("choices")
             .and_then(|v| v.as_array())
             .ok_or_else(|| AgentError::InvalidResponse("Missing choices".to_string()))?;
 
+        // Get the first choice
+        // &choices[0] borrows the first element
         let choice = &choices[0];
+        
+        // Extract finish_reason
         let finish_reason = choice.get("finish_reason")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+        
+        // Get the message object
         let message = choice.get("message")
             .ok_or_else(|| AgentError::InvalidResponse("Missing message".to_string()))?;
 
+        // -----------------------------------------------------------------
+        // MAP FINISH REASON TO STOP REASON
+        // -----------------------------------------------------------------
+        
+        // OpenAI uses different names than Anthropic
+        // All arms must return the same type (String)
         let stop_reason = match finish_reason.as_str() {
-            "tool_calls" => "tool_use".to_string(),
-            "stop" => "end_turn".to_string(),
-            "length" => "max_tokens".to_string(),
-            _ => finish_reason,
+            "tool_calls" => "tool_use".to_string(),     // Tool was called
+            "stop" => "end_turn".to_string(),           // Normal completion
+            "length" => "max_tokens".to_string(),       // Hit token limit
+            _ => finish_reason,                         // Already a String
         };
 
+        // -----------------------------------------------------------------
+        // PARSE CONTENT
+        // -----------------------------------------------------------------
+        
+        // OpenAI can return content in two formats:
+        // 1. content array (newer)
+        // 2. tool_calls array (older)
+        
+        // Try content array first
         let content = if let Some(content_array) = message.get("content").and_then(|v| v.as_array()) {
             content_array
                 .iter()
                 .map(|block| {
+                    // Get the block type
                     let block_type = block.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    
                     match block_type {
+                        // Text content
                         "text" => ContentBlock::Text {
                             text: block.get("text")
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string(),
                         },
+                        
+                        // Tool use
                         "tool_use" => {
                             let id = block.get("id")
                                 .and_then(|v| v.as_str())
@@ -127,7 +283,9 @@ impl OpenAIClient {
                                 name,
                                 input: crate::agent::messages::ToolInput { command },
                             }
-                        },
+                        }
+                        
+                        // Tool result
                         "tool_result" => {
                             let tool_use_id = block.get("tool_use_id")
                                 .and_then(|v| v.as_str())
@@ -138,29 +296,42 @@ impl OpenAIClient {
                                 .unwrap_or("")
                                 .to_string();
                             ContentBlock::ToolResult { tool_use_id, content }
-                        },
+                        }
+                        
+                        // Unknown type - return empty text
                         _ => ContentBlock::Text { text: String::new() },
                     }
                 })
                 .collect()
+        
+        // Try tool_calls array (older OpenAI format)
         } else if let Some(tool_calls) = message.get("tool_calls").and_then(|v| v.as_array()) {
             tool_calls
                 .iter()
                 .map(|call| {
+                    // Extract tool call details
                     let id = call.get("id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
+                    
+                    // Function details are nested in "function" object
                     let name = call.get("function")
                         .and_then(|v| v.get("name"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();
+                    
+                    // Arguments are a JSON string (need to parse)
                     let args_json = call.get("function")
                         .and_then(|v| v.get("arguments"))
                         .and_then(|v| v.as_str())
                         .unwrap_or("{}");
-                    let args: serde_json::Value = serde_json::from_str(args_json).unwrap_or(serde_json::json!({}));
+                    
+                    // Parse the arguments JSON
+                    let args: serde_json::Value = serde_json::from_str(args_json)
+                        .unwrap_or(serde_json::json!({}));
+                    
                     let command = args.get("command")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
@@ -173,18 +344,25 @@ impl OpenAIClient {
                     }
                 })
                 .collect()
+        
+        // Fallback: empty text
         } else {
-            vec![ContentBlock::Text {
-                text: String::new(),
-            }]
+            vec![ContentBlock::Text { text: String::new() }]
         };
 
         Ok((stop_reason, content))
     }
 }
 
+/*
+ * ============================================================================
+ * LLM CLIENT TRAIT IMPLEMENTATION
+ * ============================================================================
+ */
+
 #[async_trait]
 impl LLMClient for OpenAIClient {
+    /// Send a non-streaming request to the OpenAI API.
     async fn create_message(
         &self,
         system: &str,
@@ -192,11 +370,14 @@ impl LLMClient for OpenAIClient {
         tools: &[Value],
         max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)> {
+        // Build URL
         let url = format!("{}/v1/chat/completions", self.base_url);
 
+        // Transform inputs for OpenAI format
         let openai_messages = Self::prepare_messages(system, messages);
         let openai_tools = Self::transform_tools(tools);
 
+        // Build request body
         let body = serde_json::json!({
             "model": self.model,
             "messages": openai_messages,
@@ -204,15 +385,18 @@ impl LLMClient for OpenAIClient {
             "max_tokens": max_tokens,
         });
 
+        // Send request
         let response = self
             .client
             .post(&url)
+            // OpenAI uses Bearer token authentication
             .header("Authorization", format!("Bearer {}", self.api_key))
             .header("content-type", "application/json")
             .json(&body)
             .send()
             .await?;
 
+        // Check status
         if response.status() != StatusCode::OK {
             let status = response.status().as_u16();
             let error = response.text().await?;
@@ -222,10 +406,12 @@ impl LLMClient for OpenAIClient {
             )));
         }
 
+        // Parse response
         let json: Value = response.json().await?;
         Self::parse_response(json)
     }
 
+    /// Send a streaming request to the OpenAI API.
     async fn create_message_stream(
         &self,
         system: &str,
@@ -238,6 +424,7 @@ impl LLMClient for OpenAIClient {
         let openai_messages = Self::prepare_messages(system, messages);
         let openai_tools = Self::transform_tools(tools);
 
+        // Build request with stream: true
         let body = serde_json::json!({
             "model": self.model,
             "messages": openai_messages,
@@ -269,7 +456,14 @@ impl LLMClient for OpenAIClient {
     }
 }
 
+/*
+ * ============================================================================
+ * SSE STREAM PARSING
+ * ============================================================================
+ */
+
 impl OpenAIClient {
+    /// Parse the SSE byte stream into a stream of StreamEvents.
     fn parse_sse_stream(
         stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
     ) -> impl Stream<Item = Result<StreamEvent>> {
@@ -289,6 +483,9 @@ impl OpenAIClient {
         })
     }
 
+    /// Parse a single SSE line into a StreamEvent.
+    ///
+    /// OpenAI's SSE format differs from Anthropic's.
     fn parse_sse_line(bytes: Bytes) -> Option<StreamEvent> {
         let text = String::from_utf8_lossy(&bytes);
         if text.is_empty() {
@@ -303,23 +500,28 @@ impl OpenAIClient {
                 }
 
                 if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                    // OpenAI structure: choices[0].delta contains the updates
                     if let Some(choices) = json.get("choices").and_then(|v| v.as_array()) {
                         if choices.is_empty() {
                             break;
                         }
                         let choice = &choices[0];
 
+                        // Delta contains incremental updates
                         if let Some(delta) = choice.get("delta").and_then(|v| v.as_object()) {
+                            // Text content delta
                             if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
                                 return Some(StreamEvent::TextDelta(content.to_string()));
                             }
 
+                            // Tool call start (has ID and name)
                             if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                 if tool_calls.is_empty() {
                                     continue;
                                 }
                                 let call = &tool_calls[0];
 
+                                // New tool call (has ID)
                                 if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
                                     if let Some(func) = call.get("function").and_then(|v| v.as_object()) {
                                         if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
@@ -332,6 +534,7 @@ impl OpenAIClient {
                                 }
                             }
 
+                            // Tool call arguments delta
                             if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                 if tool_calls.is_empty() {
                                     continue;
@@ -347,6 +550,7 @@ impl OpenAIClient {
                                 }
                             }
 
+                            // Finish reason
                             if let Some(finish_reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
                                 return Some(StreamEvent::StopReason(finish_reason.to_string()));
                             }

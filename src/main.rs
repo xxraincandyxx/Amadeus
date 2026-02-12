@@ -1,16 +1,53 @@
+//! # Claude Agent CLI Entry Point
+//!
+//! Binary entry point for the Claude AI coding agent.
+//! Supports two modes: single-shot and interactive REPL.
+
+/*
+ * ============================================================================
+ * IMPORTS
+ * ============================================================================
+ */
+
+// Standard library imports
+// env: Access to environment variables and command-line arguments
 use std::env;
+
+// Arc: Atomic Reference Counting for shared ownership
+// Used to share history between the main function and agent
 use std::sync::Arc;
+
+// RwLock: Reader-Writer Lock for controlled access to shared data
+// The tokio version is async-safe (doesn't block the thread)
 use tokio::sync::RwLock;
+
+// anyhow::Result: A convenient Result type that can hold any error
+// We use this in main() because it's more flexible than our custom Result
 use anyhow::Result;
 
+// Imports from our crate (claude_agent)
+// These come from src/lib.rs exports
 use claude_agent::{
+    // Config: Loads configuration from environment
+    // Provider: Enum for Anthropic vs OpenAI
     agent::config::{Config, Provider},
+    // Anthropic-specific client implementation
     client::anthropic::AnthropicClient,
+    // OpenAI-specific client implementation
     client::openai::OpenAIClient,
+    // The generic agent type
     agent::loop_agent::Agent,
+    // Color palette for terminal output
     ui::colors::Palette,
+    // Interactive REPL
     ui::repl::Repl,
 };
+
+/*
+ * ============================================================================
+ * MAIN ENTRY POINT
+ * ============================================================================
+ */
 
 /// Main entry point for the Claude AI agent.
 ///
@@ -18,99 +55,260 @@ use claude_agent::{
 /// If the first command line argument is provided, it runs in single-shot mode,
 /// otherwise it runs in interactive mode.
 ///
-/// # Single-shot mode
+/// # Single-shot Mode
 ///
 /// In single-shot mode, the agent is provided with a single command to execute.
 /// It will execute the command and print the result to stdout.
 ///
-/// # Interactive mode
+/// ```bash
+/// cargo run -- "list all rust files in src/"
+/// ```
+///
+/// # Interactive Mode
 ///
 /// In interactive mode, the agent runs an interactive REPL. The user is
 /// presented with a prompt and can enter commands to execute.
 ///
-/// The agent will execute the commands and print the results to stdout.
+/// ```bash
+/// cargo run
+/// ```
 ///
-/// # Environment variables
+/// # Environment Variables
 ///
 /// The agent uses the following environment variables:
 ///
 /// - `PROVIDER`: The AI provider to use. Can be either "anthropic" or "openai".
 /// - `ANTHROPIC_API_KEY`: The API key for the Anthropic provider.
-/// - `ANTHROPIC_BASE_URL`: The base URL for the Anthropic provider.
+/// - `ANTHROPIC_BASE_URL`: The base URL for the Anthropic provider (optional).
 /// - `OPENAI_API_KEY`: The API key for the OpenAI provider.
-/// - `OPENAI_BASE_URL`: The base URL for the OpenAI provider.
+/// - `OPENAI_BASE_URL`: The base URL for the OpenAI provider (optional).
 /// - `MODEL_ID`: The model to use for the AI provider.
 /// - `USE_STREAMING`: Whether to use streaming responses.
-/// - `TIMEOUT_SECONDS`: The timeout for commands in seconds.
+// 
+// #[tokio::main] is an attribute macro from the tokio crate
+// It transforms async fn main() into a synchronous main() that:
+// 1. Creates a Tokio runtime
+// 2. Runs the async function inside that runtime
+// 
+// Without this macro, async fn main() wouldn't compile because
+// the entry point must be synchronous
 #[tokio::main]
 async fn main() -> Result<()> {
+    // -----------------------------------------------------------------
+    // PARSE COMMAND LINE ARGUMENTS
+    // -----------------------------------------------------------------
+    
+    // env::args() returns an iterator over command-line arguments
+    // .collect() gathers them into a Vec<String>
+    // 
+    // args will contain:
+    // - args[0]: The program name (e.g., "claude-agent" or "target/debug/claude-agent")
+    // - args[1..]: User-provided arguments
+    // 
+    // Example: cargo run -- "hello world"
+    //   args = ["target/debug/claude-agent", "hello world"]
     let args: Vec<String> = env::args().collect();
 
+    // Check if user provided an argument (single-shot mode)
+    // args.len() > 1 means there's at least one user argument
     if args.len() > 1 {
-        let config = Config::load()?;
-        let history = Arc::new(RwLock::new(Vec::new()));
-        let result = match config.provider {
-            Provider::Anthropic => {
-                let agent = Agent::new(
-                    AnthropicClient::new(
-                        config.api_key.clone(),
-                        config.base_url.clone(),
-                        config.model.clone(),
-                    ),
-                    config.workdir.to_string_lossy().to_string(),
-                    config.timeout_seconds,
-                    config.use_streaming,
-                );
-                agent.run(&args[1], Arc::clone(&history)).await?
-            }
-            Provider::OpenAI => {
-                let agent = Agent::new(
-                    OpenAIClient::new(
-                        config.api_key.clone(),
-                        config.base_url.clone(),
-                        config.model.clone(),
-                    ),
-                    config.workdir.to_string_lossy().to_string(),
-                    config.timeout_seconds,
-                    config.use_streaming,
-                );
-                agent.run(&args[1], Arc::clone(&history)).await?
-            }
-        };
-        println!("{}", result);
+        // Single-shot mode: run once with the provided prompt
+        run_single_shot(&args[1]).await
     } else {
-        println!("{}", Palette::header());
-
-        let config = Config::load()?;
-        match config.provider {
-            Provider::Anthropic => {
-                let agent = Agent::new(
-                    AnthropicClient::new(
-                        config.api_key.clone(),
-                        config.base_url.clone(),
-                        config.model.clone(),
-                    ),
-                    config.workdir.to_string_lossy().to_string(),
-                    config.timeout_seconds,
-                    config.use_streaming,
-                );
-                Repl::new(agent).run().await?;
-            }
-            Provider::OpenAI => {
-                let agent = Agent::new(
-                    OpenAIClient::new(
-                        config.api_key.clone(),
-                        config.base_url.clone(),
-                        config.model.clone(),
-                    ),
-                    config.workdir.to_string_lossy().to_string(),
-                    config.timeout_seconds,
-                    config.use_streaming,
-                );
-                Repl::new(agent).run().await?;
-            }
-        };
+        // Interactive mode: start the REPL
+        run_interactive().await
     }
+}
+
+/*
+ * ============================================================================
+ * SINGLE-SHOT MODE
+ * ============================================================================
+ */
+
+/// Run the agent in single-shot mode.
+///
+/// Takes a prompt string, creates the appropriate client based on config,
+/// runs the agent once, and prints the result.
+///
+/// # Arguments
+///
+/// * `prompt` - The user's prompt to send to the agent
+///
+/// # Returns
+///
+/// Returns `Ok(())` on success, or an error if configuration loading,
+/// agent creation, or execution fails.
+async fn run_single_shot(prompt: &str) -> Result<()> {
+    // -----------------------------------------------------------------
+    // LOAD CONFIGURATION
+    // -----------------------------------------------------------------
+    
+    // Config::load() reads environment variables and builds a Config
+    // The ? operator propagates errors up to the caller
+    // 
+    // This loads from .env file (if present) and environment variables
+    let config = Config::load()?;
+    
+    // -----------------------------------------------------------------
+    // CREATE SHARED HISTORY
+    // -----------------------------------------------------------------
+    
+    // Create empty history for this run
+    // In single-shot mode, there's no persistent history
+    // But we still need Arc<RwLock> because agent.run() expects it
+    // 
+    // Arc::new() creates a new Arc-wrapped value
+    // RwLock::new() creates a new RwLock-wrapped value
+    // Vec::new() creates an empty vector
+    let history = Arc::new(RwLock::new(Vec::new()));
+
+    // -----------------------------------------------------------------
+    // CREATE CLIENT AND RUN AGENT
+    // -----------------------------------------------------------------
+    
+    // Match on the provider to create the appropriate client
+    // config.provider is the Provider enum (Anthropic or OpenAI)
+    let result = match config.provider {
+        // -------------------------------------------------------------
+        // ANTHROPIC PROVIDER
+        // -------------------------------------------------------------
+        Provider::Anthropic => {
+            // Create an Anthropic client
+            let agent = Agent::new(
+                // Create the client
+                AnthropicClient::new(
+                    // Clone values because we need to use config multiple times
+                    // (though in this branch we only use it once, the pattern
+                    // is consistent with the OpenAI branch)
+                    config.api_key.clone(),
+                    config.base_url.clone(),
+                    config.model.clone(),
+                ),
+                // Working directory as string
+                // to_string_lossy() converts PathBuf to String
+                // It replaces invalid UTF-8 with replacement characters
+                config.workdir.to_string_lossy().to_string(),
+                // Timeout from config
+                config.timeout_seconds,
+                // Streaming flag from config
+                config.use_streaming,
+            );
+            
+            // Run the agent with the prompt
+            // Arc::clone() increments reference count (cheap)
+            // .await waits for the async operation
+            // ? propagates errors
+            agent.run(prompt, Arc::clone(&history)).await?
+        }
+        
+        // -------------------------------------------------------------
+        // OPENAI PROVIDER
+        // -------------------------------------------------------------
+        Provider::OpenAI => {
+            // Same pattern as Anthropic, but with OpenAIClient
+            let agent = Agent::new(
+                OpenAIClient::new(
+                    config.api_key.clone(),
+                    config.base_url.clone(),
+                    config.model.clone(),
+                ),
+                config.workdir.to_string_lossy().to_string(),
+                config.timeout_seconds,
+                config.use_streaming,
+            );
+            agent.run(prompt, Arc::clone(&history)).await?
+        }
+    };
+
+    // -----------------------------------------------------------------
+    // PRINT RESULT
+    // -----------------------------------------------------------------
+    
+    // Print the agent's response to stdout
+    println!("{}", result);
+    
+    Ok(())
+}
+
+/*
+ * ============================================================================
+ * INTERACTIVE MODE
+ * ============================================================================
+ */
+
+/// Run the agent in interactive REPL mode.
+///
+/// Displays a header, loads configuration, and starts the interactive
+/// read-eval-print loop where users can enter multiple prompts.
+///
+/// # Returns
+///
+/// Returns `Ok(())` when the user exits gracefully, or an error if
+/// configuration loading or REPL initialization fails.
+async fn run_interactive() -> Result<()> {
+    // -----------------------------------------------------------------
+    // PRINT HEADER
+    // -----------------------------------------------------------------
+    
+    // Print the fancy header (fishing pole emoji in purple)
+    println!("{}", Palette::header());
+
+    // -----------------------------------------------------------------
+    // LOAD CONFIGURATION
+    // -----------------------------------------------------------------
+    
+    // Load config same as single-shot mode
+    let config = Config::load()?;
+
+    // -----------------------------------------------------------------
+    // CREATE CLIENT AND START REPL
+    // -----------------------------------------------------------------
+    
+    // Match on provider to create appropriate client and REPL
+    match config.provider {
+        // -------------------------------------------------------------
+        // ANTHROPIC PROVIDER
+        // -------------------------------------------------------------
+        Provider::Anthropic => {
+            // Create the agent with Anthropic client
+            let agent = Agent::new(
+                AnthropicClient::new(
+                    config.api_key.clone(),
+                    config.base_url.clone(),
+                    config.model.clone(),
+                ),
+                config.workdir.to_string_lossy().to_string(),
+                config.timeout_seconds,
+                config.use_streaming,
+            );
+            
+            // Create and run the REPL
+            // Repl::new() wraps the agent
+            // .run() starts the interactive loop
+            // .await waits for the REPL to finish
+            // ? propagates errors
+            Repl::new(agent).run().await?;
+        }
+        
+        // -------------------------------------------------------------
+        // OPENAI PROVIDER
+        // -------------------------------------------------------------
+        Provider::OpenAI => {
+            // Same pattern with OpenAI client
+            let agent = Agent::new(
+                OpenAIClient::new(
+                    config.api_key.clone(),
+                    config.base_url.clone(),
+                    config.model.clone(),
+                ),
+                config.workdir.to_string_lossy().to_string(),
+                config.timeout_seconds,
+                config.use_streaming,
+            );
+            Repl::new(agent).run().await?;
+        }
+    };
 
     Ok(())
 }
