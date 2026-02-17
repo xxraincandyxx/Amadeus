@@ -76,7 +76,6 @@ tests/             # Integration tests (bash_test, messages_test, etc.)
 - Use `Result<T>` from `crate::error` (not `std::result::Result`)
 - Prefer `String` over `&str` for struct fields (owned data)
 - Use `Arc<T>` for shared ownership, `RwLock<T>` for shared mutable state
-- Use `Option<T>` for nullable values
 - Use `PathBuf` for file paths (not `String`)
 
 ### Error Handling
@@ -120,7 +119,7 @@ pub struct Agent<C: LLMClient> { client: C, ... }
 ### Serde Patterns
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]  // Adds "type" field for variant discrimination
+#[serde(tag = "type")]
 pub enum ContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
@@ -148,23 +147,13 @@ Use field init shorthand when variable name matches field name:
 let timeout_secs = 30;
 let workdir = "/tmp".to_string();
 Self {
-    timeout_secs,  // Same as: timeout_secs: timeout_secs
-    workdir,       // Same as: workdir: workdir
+    timeout_secs,
+    workdir,
 }
 ```
 
 ### Documentation
-Use `//!` for module-level docs and `///` for item-level docs:
-```rust
-//! # Module Title
-//! Module description here.
-
-/// Function description.
-///
-/// # Arguments
-/// * `param` - Description
-pub fn example() {}
-```
+Use `//!` for module-level docs and `///` for item-level docs.
 
 ### Concurrency
 - `Arc::clone(&shared)` increments reference count (cheap)
