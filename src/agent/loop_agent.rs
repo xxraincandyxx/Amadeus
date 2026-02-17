@@ -143,7 +143,8 @@ impl<C: LLMClient> Agent<C> {
             // .write() returns a RwLockWriteGuard
             // .await waits for exclusive access (no other readers or writers)
             //
-            // The ? propagates any poisoning error (if a panic occurred while locked)
+            // The ? propagates any poisoning error (if a panic occurred while
+            // locked)
             let mut history_guard = history.write().await;
 
             // Add the user's prompt as a Message

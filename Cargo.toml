@@ -17,6 +17,12 @@ futures = "0.3"
 async-trait = "0.1"
 bytes = "1.0"
 
+# HTTP server dependencies (for SDK API)
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
 [dev-dependencies]
 mockito = "1.4"
 wiremock = "0.6"

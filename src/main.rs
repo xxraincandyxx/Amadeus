@@ -1,7 +1,15 @@
 //! # Claude Agent CLI Entry Point
 //!
 //! Binary entry point for the Claude AI coding agent.
-//! Supports two modes: single-shot and interactive REPL.
+//! Supports three modes: HTTP server, single-shot, and interactive REPL.
+//!
+//! # Modes
+//!
+//! | Mode | Command | Description |
+//! |------|---------|-------------|
+//! | Server | `--server [port]` | Start HTTP REST API |
+//! | Single-shot | `"prompt"` | Run once with prompt |
+//! | Interactive | (no args) | Start interactive REPL |
 
 /*
  * ============================================================================
@@ -33,6 +41,8 @@ use claude_agent::{
     agent::config::{Config, Provider},
     // The generic agent type
     agent::loop_agent::Agent,
+    // HTTP server for REST API
+    api::http::run_server,
     // Anthropic-specific client implementation
     client::anthropic::AnthropicClient,
     // OpenAI-specific client implementation
@@ -52,8 +62,20 @@ use claude_agent::{
 /// Main entry point for the Claude AI agent.
 ///
 /// This function is responsible for setting up the agent and running it.
-/// If the first command line argument is provided, it runs in single-shot mode,
-/// otherwise it runs in interactive mode.
+/// The mode is determined by command-line arguments:
+///
+/// - `--server [port]`: Start HTTP server mode
+/// - `"prompt"`: Single-shot mode with the prompt
+/// - No args: Interactive REPL mode
+///
+/// # HTTP Server Mode
+///
+/// Starts an HTTP REST API server:
+///
+/// ```bash
+/// cargo run -- --server
+/// cargo run -- --server 8080
+/// ```
 ///
 /// # Single-shot Mode
 ///
@@ -109,14 +131,44 @@ async fn main() -> Result<()> {
     //   args = ["target/debug/claude-agent", "hello world"]
     let args: Vec<String> = env::args().collect();
 
-    // Check if user provided an argument (single-shot mode)
-    // args.len() > 1 means there's at least one user argument
+    // -----------------------------------------------------------------
+    // DETERMINE MODE FROM ARGUMENTS
+    // -----------------------------------------------------------------
+
+    // Check if user provided an argument
     if args.len() > 1 {
-        // Single-shot mode: run once with the provided prompt
-        // The trailing .await: means we wait for the async operation to complete
-        run_single_shot(&args[1]).await
+        match args[1].as_str() {
+            // ---------------------------------------------------------
+            // HTTP SERVER MODE
+            // ---------------------------------------------------------
+            "--server" => {
+                // Parse optional port number
+                // args.get(2) returns Option<&String>
+                // .and_then() chains Option operations
+                // .parse().ok() converts string to number, returns None on error
+                let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3000);
+
+                // Run the HTTP server
+                // This runs forever until Ctrl+C
+                run_server(port).await?;
+
+                Ok(())
+            }
+
+            // ---------------------------------------------------------
+            // SINGLE-SHOT MODE
+            // ---------------------------------------------------------
+            _ => {
+                // Treat first argument as a prompt
+                // The trailing .await: means we wait for the async operation to complete
+                run_single_shot(&args[1]).await
+            }
+        }
     } else {
-        // Interactive mode: start the REPL
+        // -------------------------------------------------------------
+        // INTERACTIVE MODE
+        // -------------------------------------------------------------
+        // No arguments: start the REPL
         run_interactive().await
     }
 }
