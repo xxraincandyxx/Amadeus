@@ -1,163 +1,181 @@
 # AGENTS.md
 
-This repository contains a Rust-based AI coding agent implementation supporting both Anthropic and OpenAI APIs. This document guides agentic coding agents working in this codebase.
+Rust-based AI coding agent supporting Anthropic and OpenAI APIs. This document guides agentic coding agents working in this codebase.
 
 ## Build / Lint / Test Commands
 
-### Install Dependencies
 ```bash
-cargo install --locked
+cargo build                          # Debug build
+cargo build --release                # Release build
+cargo check                          # Fast check without building
+cargo clippy                         # Lint with clippy
+
+cargo test                           # Run all tests
+cargo test -- --nocapture            # Show test output
+cargo test test_bash_echo            # Run specific test function
+cargo test --test bash_test          # Run specific test file
+cargo test test_bash                 # Run tests matching pattern
+
+cargo run                            # Interactive mode (Anthropic)
+cargo run -- "list files in src"     # Single-shot mode
+PROVIDER=openai cargo run            # Use OpenAI
+USE_STREAMING=true cargo run         # Enable streaming
 ```
 
-### Configuration
-```bash
-cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY or OPENAI_API_KEY
-```
+## Environment Variables
 
-### Build
-```bash
-cargo build
-```
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PROVIDER` | No | `anthropic` | LLM provider (`anthropic` or `openai`) |
+| `ANTHROPIC_API_KEY` | Yes* | - | Anthropic API key |
+| `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
+| `MODEL_ID` | No | Provider default | Model identifier |
+| `USE_STREAMING` | No | `false` | Enable streaming responses |
 
-### Run Tests
-```bash
-# Run all tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run a specific test file
-cargo test --test bash_test
-
-# Run a specific test function
-cargo test test_bash_basic
-
-# Run tests matching a pattern
-cargo test test_bash
-
-# Run integration tests specifically
-cargo test --test openai_test
-```
-
-### Lint
-```bash
-# Check code without building
-cargo check
-
-# Check with clippy (if available)
-cargo clippy
-```
-
-### Run the Agent
-```bash
-# Interactive mode (default: Anthropic)
-cargo run
-
-# One-shot mode with prompt
-cargo run -- "your prompt here"
-
-# Use OpenAI provider
-PROVIDER=openai cargo run
-
-# Enable streaming
-USE_STREAMING=true cargo run
-```
+*Required based on selected provider. Configure via `.env` (copy from `.env.example`).
 
 ## Code Style Guidelines
 
 ### Imports
-- Group imports: std library first, then third-party crates
-- Use `use crate::*` for internal modules
-- Keep imports at module level, not within functions
+Group imports in order: std → external crates → crate modules, separated by blank lines:
+```rust
+use std::sync::Arc;
+use std::path::PathBuf;
+
+use tokio::sync::RwLock;
+use anyhow::Result;
+use async_trait::async_trait;
+
+use crate::error::{AgentError, Result};
+use crate::agent::messages::{ContentBlock, Message};
+use crate::client::LLMClient;
+```
 
 ### Naming Conventions
-- **Functions/Variables**: `snake_case` (e.g., `execute_tool`, `workdir`, `api_key`)
-- **Types/Structs/Enums**: `PascalCase` (e.g., `AgentError`, `BashTool`, `Config`)
-- **Constants**: `SCREAMING_SNAKE_CASE` (rare, prefer struct fields)
-- **Modules**: `snake_case` (e.g., `mod agent`, `mod client`)
-- **Traits**: `PascalCase` (e.g., `LLMClient`)
+| Type | Convention | Example |
+|------|------------|---------|
+| Functions/Variables | `snake_case` | `execute_tool`, `api_key` |
+| Types/Structs/Enums | `PascalCase` | `AgentError`, `Config` |
+| Constants | `SCREAMING_SNAKE_CASE` | `API_VERSION` |
+| Test functions | `test_<subject>_<scenario>` | `test_bash_timeout` |
 
 ### File Organization
-- `src/lib.rs`: Public exports, module declarations
-- `src/main.rs`: CLI entry point only
-- `src/error.rs`: All custom error types
-- Module structure: `src/<domain>/mod.rs` with related files
-- `tests/`: Integration tests, organized by component
+```
+src/
+  lib.rs           # Public exports, module declarations
+  main.rs          # CLI entry point only
+  error.rs         # All custom error types
+  agent/           # Agent domain (config, messages, loop_agent)
+  client/          # LLM client domain (trait + anthropic/openai impls)
+  tools/           # Tool implementations (bash, schema)
+  ui/              # Terminal UI (colors, repl)
+tests/             # Integration tests (bash_test, messages_test, etc.)
+```
 
 ### Types
-- Use `Result<T>` from `crate::error` instead of `std::result::Result`
-- Prefer `String` over `&str` for struct fields
-- Use `Arc<T>` for shared ownership, `RwLock<T>` for concurrent state
+- Use `Result<T>` from `crate::error` (not `std::result::Result`)
+- Prefer `String` over `&str` for struct fields (owned data)
+- Use `Arc<T>` for shared ownership, `RwLock<T>` for shared mutable state
+- Use `Option<T>` for nullable values
+- Use `PathBuf` for file paths (not `String`)
 
 ### Error Handling
-- All errors use `AgentError` enum in `src/error.rs`
-- Wrap errors with `?` operator for propagation
-- Use `#[from]` attribute for automatic conversion from standard errors
-- Return descriptive error messages with context
-- Use `anyhow::Result<T>` in main.rs for top-level convenience
-
-### Async Patterns
-- All async functions use `tokio::runtime`
-- Use `.await` on async calls without blocking
-- Prefer `await` propagation over blocking waits
-- Use `tokio::process::Command` for subprocess execution
-- Handle timeouts with `tokio::time::timeout`
-- Use `futures::StreamExt` for streaming operations
-
-### Traits and Abstractions
-- `LLMClient` trait in `src/client/mod.rs` for provider abstraction
-- Implementations: `AnthropicClient`, `OpenAIClient`
-- Generic agent type: `Agent<C: LLMClient>`
-- Use `async-trait` for async trait methods
-
-### Tool Implementation
-- Tools are structs with `execute` methods taking `ToolInput`
-- Return `Result<String>` with output or error, use timeout wrapper
-- BashTool uses `sh -c` for command execution
-- Tool schemas defined in `tools/schema.rs`
-
-### Agent Loop Pattern
+Use `thiserror` with `#[from]` for automatic conversion:
 ```rust
-loop {
-    let response = client.create_message(&system, &history, &tools, max_tokens).await?;
-    if stop_reason != "tool_use" {
-        return Ok(text_content);
-    }
-    // Execute tools, collect results, append to history
-    history.push(Message::user(tool_results));
+#[derive(Debug, Error)]
+pub enum AgentError {
+    #[error("API request failed: {0}")]
+    Api(#[from] reqwest::Error),
+    #[error("Command timed out after {0}s")]
+    Timeout(u64),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
 }
 ```
 
-### Configuration
-- Load from environment variables via `dotenvy`
-- `Config::load()` returns error for missing required env vars
-- Supports Anthropic and OpenAI providers
-- Optional: ANTHROPIC_BASE_URL/OPENAI_BASE_URL, MODEL_ID, USE_STREAMING
-- Default timeout: 300 seconds
+### Async Patterns
+```rust
+// Timeout handling
+match timeout(duration, operation).await {
+    Ok(result) => result,
+    Err(_) => Err(AgentError::Timeout(secs)),
+}
 
-### System Prompts & Visibility
-- System prompts in `Config::system_prompt()` with workdir interpolation
-- Keep concise with rules and subagent guidance
-- Types explicitly marked `pub` for export at `lib.rs` level
+// RwLock: drop locks explicitly to avoid deadlocks
+let mut history = history.write().await;
+history.push(Message::user("prompt"));
+drop(history);
+```
+
+### Traits and Generics
+```rust
+#[async_trait]
+pub trait LLMClient: Send + Sync {
+    async fn create_message(...) -> Result<(String, Vec<ContentBlock>)>;
+}
+
+pub struct Agent<C: LLMClient> { client: C, ... }
+```
+
+### Serde Patterns
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]  // Adds "type" field for variant discrimination
+pub enum ContentBlock {
+    #[serde(rename = "text")]
+    Text { text: String },
+    #[serde(rename = "tool_use")]
+    ToolUse { id: String, name: String, input: ToolInput },
+}
+```
 
 ### Testing
-- Unit tests in `src/` alongside implementation, integration tests in `tests/`
-- Test functions named `test_<subject>_<scenario>`
-- Use `assert!`, `assert_eq!` for assertions
+```rust
+#[tokio::test]
+async fn test_bash_echo() {
+    let tool = BashTool::new(30, "/tmp".to_string());
+    let result = tool.execute(&ToolInput { command: "echo hello".into() }).await;
+    assert!(result.is_ok());
+}
+
+// Use matches! for enum variant checking
+assert!(matches!(result.unwrap_err(), AgentError::Timeout(_)));
+```
+
+### Struct Initialization
+Use field init shorthand when variable name matches field name:
+```rust
+let timeout_secs = 30;
+let workdir = "/tmp".to_string();
+Self {
+    timeout_secs,  // Same as: timeout_secs: timeout_secs
+    workdir,       // Same as: workdir: workdir
+}
+```
+
+### Documentation
+Use `//!` for module-level docs and `///` for item-level docs:
+```rust
+//! # Module Title
+//! Module description here.
+
+/// Function description.
+///
+/// # Arguments
+/// * `param` - Description
+pub fn example() {}
+```
 
 ### Concurrency
-- Use `tokio::sync::RwLock` for shared mutable state
-- Clone `Arc` for passing shared references
+- `Arc::clone(&shared)` increments reference count (cheap)
+- `RwLock::read().await` for read, `RwLock::write().await` for write
+- Always drop locks explicitly or use scoped blocks to avoid deadlocks
 - Use `futures::future::join_all` for concurrent execution
-- Avoid blocking operations in async contexts
 
 ## Key Design Principles
-- Strong type safety with `Result<T>` error handling
-- Async-first with tokio runtime
-- Provider abstraction via traits
-- Single bash tool covers all file operations
-- Streaming support for faster output
-- Subagents for task isolation and context cleanup
-- Dracula-themed UI with colored output
+- **Type safety**: `Result<T>` error handling everywhere
+- **Async-first**: Tokio runtime, non-blocking I/O
+- **Provider abstraction**: Trait-based LLM client switching
+- **Single tool**: Bash tool handles all file/terminal operations
+- **Streaming support**: Real-time output via SSE
+- **Shared history**: `Arc<RwLock<Vec<Message>>>` for conversation state
