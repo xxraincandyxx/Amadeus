@@ -57,18 +57,18 @@ use crate::agent::messages::{ContentBlock, Message};
 use crate::error::Result;
 
 // async_trait - a crate that enables async methods in traits
-// 
+//
 // WHY IS THIS NEEDED?
 // Rust doesn't natively support async in traits (yet - it's being worked on)
 // The `async_trait` attribute macro transforms the trait definition
-// 
+//
 // Without async_trait, this wouldn't compile:
 //   trait Foo { async fn bar(&self); }
-// 
+//
 // With async_trait, it works:
 //   #[async_trait]
 //   trait Foo { async fn bar(&self); }
-// 
+//
 // The macro rewrites the async method to return Pin<Box<dyn Future>>
 use async_trait::async_trait;
 
@@ -77,11 +77,11 @@ use async_trait::async_trait;
 use futures::Stream;
 
 // Pin - a type that "pins" a value in memory
-// 
+//
 // WHY IS PIN NEEDED?
 // Self-referential futures (futures that reference themselves) need to
 // not move in memory. Pin prevents the value from being moved.
-// 
+//
 // For streaming, we return Pin<Box<dyn Stream>> because:
 // 1. Box puts the stream on the heap
 // 2. Pin prevents it from being moved
@@ -92,7 +92,7 @@ use std::pin::Pin;
  * ============================================================================
  * STREAM EVENT ENUM
  * ============================================================================
- * 
+ *
  * Events that can occur during a streaming response.
  * As the LLM generates text, it emits these events incrementally.
  */
@@ -104,13 +104,13 @@ use std::pin::Pin;
 #[derive(Debug, Clone)]
 pub enum StreamEvent {
     /// A chunk of text content has been generated
-    /// 
+    ///
     /// Example: The LLM says "Hello, " then "world!" in separate chunks
     /// You'd receive two TextDelta events: "Hello, " and "world!"
     TextDelta(String),
 
     /// A tool call is starting (provides tool ID and name)
-    /// 
+    ///
     /// This event fires when the LLM decides to call a tool
     /// The `id` is unique to this specific tool call
     /// The `name` is the tool name (e.g., "bash")
@@ -122,7 +122,7 @@ pub enum StreamEvent {
     },
 
     /// Additional arguments for the current tool call
-    /// 
+    ///
     /// Tool arguments come in pieces (streaming)
     /// Example: For bash tool, you might get {"command": "ls"}, then more
     ToolCallDelta {
@@ -132,13 +132,13 @@ pub enum StreamEvent {
     },
 
     /// The tool call has completed (provides tool ID)
-    /// 
+    ///
     /// Signals that all arguments have been received
     /// Now you can execute the tool
     ToolCallDone(String),
 
     /// The response has finished with a stop reason
-    /// 
+    ///
     /// Stop reasons include:
     /// - "end_turn" - LLM finished its response
     /// - "tool_use" - LLM is waiting for tool execution
@@ -149,10 +149,10 @@ pub enum StreamEvent {
  * ============================================================================
  * LLM CLIENT TRAIT
  * ============================================================================
- * 
+ *
  * A trait defines a shared behavior that types can implement.
  * Think of it like an interface in other languages.
- * 
+ *
  * Any type that implements LLMClient can be used by the Agent.
  * This allows swapping between Anthropic, OpenAI, or other providers.
  */
@@ -175,7 +175,7 @@ pub enum StreamEvent {
 ///
 /// This trait has no type parameters (not generic)
 /// It uses `Self` to refer to the implementing type
-// 
+//
 // #[async_trait] - enables async methods in this trait
 // Without this, Rust would reject `async fn` in a trait
 #[async_trait]
@@ -183,7 +183,7 @@ pub trait LLMClient: Send + Sync {
     // -----------------------------------------------------------------
     // NON-STREAMING METHOD
     // -----------------------------------------------------------------
-    
+
     /// Create a message and get a complete response.
     ///
     /// # Arguments
@@ -198,17 +198,17 @@ pub trait LLMClient: Send + Sync {
     /// A tuple of (stop_reason, content_blocks) where:
     /// - `stop_reason`: Why generation stopped ("end_turn", "tool_use", etc.)
     /// - `content_blocks`: The generated content (text and/or tool calls)
-    
+
     // `async fn` - This is an async method
     // &self - This is a method (takes &self), not a static function
-    // 
+    //
     // Parameter breakdown:
     // - &self: Borrows self immutably
     // - system: &str: Borrows a string slice (cheap)
     // - messages: &[Message]: Borrows a slice of Messages (cheap)
     // - tools: &[serde_json::Value]: Borrows a slice of JSON Values (cheap)
     // - max_tokens: u32: An unsigned 32-bit integer (cheap, Copy type)
-    // 
+    //
     // Return type: Result<(String, Vec<ContentBlock>)>
     // - Result: Our custom Result type (Ok or Err)
     // - (String, Vec<ContentBlock>): A tuple
@@ -225,7 +225,7 @@ pub trait LLMClient: Send + Sync {
     // -----------------------------------------------------------------
     // STREAMING METHOD
     // -----------------------------------------------------------------
-    
+
     /// Create a message with streaming response.
     ///
     /// Returns a stream of `StreamEvent` values that can be consumed
@@ -239,13 +239,13 @@ pub trait LLMClient: Send + Sync {
     ///
     /// A pinned `Stream` of `Result<StreamEvent>` values.
     /// The stream ends when `None` is returned from `next()`.
-    
+
     // Return type is complex, let's break it down:
-    // 
+    //
     // Result<...> - Our Result type (Ok or Err)
-    // 
+    //
     // Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>
-    // 
+    //
     // Starting from inside:
     // - Stream: A trait for async iteration (like Iterator but async)
     // - Item = Result<StreamEvent>: Each item in the stream is a Result
@@ -253,7 +253,7 @@ pub trait LLMClient: Send + Sync {
     // - dyn: Dynamic dispatch (runtime polymorphism)
     // - Box: Heap allocation (needed for dynamic dispatch)
     // - Pin: Prevents the stream from being moved in memory
-    // 
+    //
     // Why this complex type?
     // 1. Streams need to be pinned (they're often self-referential)
     // 2. We return a trait object (don't know concrete type at compile time)
@@ -282,7 +282,7 @@ pub mod openai;
 // Re-export the client types
 // This allows users to import them directly:
 //   use crate::client::{AnthropicClient, OpenAIClient};
-// 
+//
 // Instead of:
 //   use crate::client::anthropic::AnthropicClient;
 //   use crate::client::openai::OpenAIClient;

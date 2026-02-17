@@ -1,9 +1,9 @@
-use claude_agent::agent::messages::{Message, ContentBlock, ToolInput};
+use async_trait::async_trait;
+use claude_agent::agent::messages::{ContentBlock, Message, ToolInput};
 use claude_agent::client::{LLMClient, StreamEvent};
 use claude_agent::error::Result;
 use futures::Stream;
 use std::pin::Pin;
-use async_trait::async_trait;
 
 /// Mock client for testing agent behavior
 pub struct MockLLMClient {
@@ -55,12 +55,7 @@ impl LLMClient for MockLLMClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        let stream = futures::stream::iter(
-            self.stream_events
-                .clone()
-                .into_iter()
-                .map(Ok),
-        );
+        let stream = futures::stream::iter(self.stream_events.clone().into_iter().map(Ok));
         Ok(Box::pin(stream))
     }
 }

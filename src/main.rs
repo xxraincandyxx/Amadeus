@@ -31,12 +31,12 @@ use claude_agent::{
     // Config: Loads configuration from environment
     // Provider: Enum for Anthropic vs OpenAI
     agent::config::{Config, Provider},
+    // The generic agent type
+    agent::loop_agent::Agent,
     // Anthropic-specific client implementation
     client::anthropic::AnthropicClient,
     // OpenAI-specific client implementation
     client::openai::OpenAIClient,
-    // The generic agent type
-    agent::loop_agent::Agent,
     // Color palette for terminal output
     ui::colors::Palette,
     // Interactive REPL
@@ -84,12 +84,12 @@ use claude_agent::{
 /// - `OPENAI_BASE_URL`: The base URL for the OpenAI provider (optional).
 /// - `MODEL_ID`: The model to use for the AI provider.
 /// - `USE_STREAMING`: Whether to use streaming responses.
-// 
+//
 // #[tokio::main] is an attribute macro from the tokio crate
 // It transforms async fn main() into a synchronous main() that:
 // 1. Creates a Tokio runtime
 // 2. Runs the async function inside that runtime
-// 
+//
 // Without this macro, async fn main() wouldn't compile because
 // the entry point must be synchronous
 #[tokio::main]
@@ -97,14 +97,14 @@ async fn main() -> Result<()> {
     // -----------------------------------------------------------------
     // PARSE COMMAND LINE ARGUMENTS
     // -----------------------------------------------------------------
-    
+
     // env::args() returns an iterator over command-line arguments
     // .collect() gathers them into a Vec<String>
-    // 
+    //
     // args will contain:
     // - args[0]: The program name (e.g., "claude-agent" or "target/debug/claude-agent")
     // - args[1..]: User-provided arguments
-    // 
+    //
     // Example: cargo run -- "hello world"
     //   args = ["target/debug/claude-agent", "hello world"]
     let args: Vec<String> = env::args().collect();
@@ -113,6 +113,7 @@ async fn main() -> Result<()> {
     // args.len() > 1 means there's at least one user argument
     if args.len() > 1 {
         // Single-shot mode: run once with the provided prompt
+        // The trailing .await: means we wait for the async operation to complete
         run_single_shot(&args[1]).await
     } else {
         // Interactive mode: start the REPL
@@ -143,21 +144,21 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
     // -----------------------------------------------------------------
     // LOAD CONFIGURATION
     // -----------------------------------------------------------------
-    
+
     // Config::load() reads environment variables and builds a Config
     // The ? operator propagates errors up to the caller
-    // 
+    //
     // This loads from .env file (if present) and environment variables
     let config = Config::load()?;
-    
+
     // -----------------------------------------------------------------
     // CREATE SHARED HISTORY
     // -----------------------------------------------------------------
-    
+
     // Create empty history for this run
     // In single-shot mode, there's no persistent history
     // But we still need Arc<RwLock> because agent.run() expects it
-    // 
+    //
     // Arc::new() creates a new Arc-wrapped value
     // RwLock::new() creates a new RwLock-wrapped value
     // Vec::new() creates an empty vector
@@ -166,7 +167,7 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
     // -----------------------------------------------------------------
     // CREATE CLIENT AND RUN AGENT
     // -----------------------------------------------------------------
-    
+
     // Match on the provider to create the appropriate client
     // config.provider is the Provider enum (Anthropic or OpenAI)
     let result = match config.provider {
@@ -194,14 +195,14 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
                 // Streaming flag from config
                 config.use_streaming,
             );
-            
+
             // Run the agent with the prompt
             // Arc::clone() increments reference count (cheap)
             // .await waits for the async operation
             // ? propagates errors
             agent.run(prompt, Arc::clone(&history)).await?
         }
-        
+
         // -------------------------------------------------------------
         // OPENAI PROVIDER
         // -------------------------------------------------------------
@@ -224,10 +225,10 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
     // -----------------------------------------------------------------
     // PRINT RESULT
     // -----------------------------------------------------------------
-    
+
     // Print the agent's response to stdout
     println!("{}", result);
-    
+
     Ok(())
 }
 
@@ -250,21 +251,23 @@ async fn run_interactive() -> Result<()> {
     // -----------------------------------------------------------------
     // PRINT HEADER
     // -----------------------------------------------------------------
-    
+
     // Print the fancy header (fishing pole emoji in purple)
+    // In Rust, the exclamation mark is used as part of a macro invocation, such
+    // as println!, vec!, or format!
     println!("{}", Palette::header());
 
     // -----------------------------------------------------------------
     // LOAD CONFIGURATION
     // -----------------------------------------------------------------
-    
+
     // Load config same as single-shot mode
     let config = Config::load()?;
 
     // -----------------------------------------------------------------
     // CREATE CLIENT AND START REPL
     // -----------------------------------------------------------------
-    
+
     // Match on provider to create appropriate client and REPL
     match config.provider {
         // -------------------------------------------------------------
@@ -282,7 +285,7 @@ async fn run_interactive() -> Result<()> {
                 config.timeout_seconds,
                 config.use_streaming,
             );
-            
+
             // Create and run the REPL
             // Repl::new() wraps the agent
             // .run() starts the interactive loop
@@ -290,7 +293,7 @@ async fn run_interactive() -> Result<()> {
             // ? propagates errors
             Repl::new(agent).run().await?;
         }
-        
+
         // -------------------------------------------------------------
         // OPENAI PROVIDER
         // -------------------------------------------------------------

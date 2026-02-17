@@ -52,12 +52,12 @@
  * ============================================================================
  * MODULE DECLARATIONS
  * ============================================================================
- * 
+ *
  * In Rust, the `pub mod` keyword declares modules that are part of this crate.
  * Each `pub mod x;` looks for either:
  *   - A file named `x.rs` in the same directory, OR
  *   - A directory named `x/` with a file `x/mod.rs` inside
- * 
+ *
  * The `pub` keyword makes the module visible to external crates that depend
  * on this library. Without `pub`, the module would be private to this crate.
  */
@@ -86,13 +86,13 @@ pub mod ui;
  * ============================================================================
  * RE-EXPORTS
  * ============================================================================
- * 
+ *
  * The `pub use` keyword re-exports items from modules, making them available
  * at the crate root level. This provides a cleaner API for users.
- * 
+ *
  * Without re-exports, users would need to write:
  *   use claude_agent::error::{AgentError, Result};
- * 
+ *
  * With re-exports, users can write:
  *   use claude_agent::{AgentError, Result};
  */

@@ -1,6 +1,6 @@
-use claude_agent::tools::bash::BashTool;
 use claude_agent::agent::messages::ToolInput;
 use claude_agent::error::AgentError;
+use claude_agent::tools::bash::BashTool;
 use std::fs;
 use std::path::Path;
 
@@ -67,7 +67,7 @@ async fn test_bash_timeout() {
 async fn test_bash_write_file() {
     let tool = BashTool::new(30, "/tmp".to_string());
     let test_file = "/tmp/test_agent_write.txt";
-    
+
     let input = ToolInput {
         command: format!("echo 'test content' > {}", test_file),
     };
@@ -228,7 +228,7 @@ async fn test_bash_concurrent() {
 
     let results = tool.execute_all(inputs).await;
     assert_eq!(results.len(), 3);
-    
+
     for result in results {
         assert!(result.is_ok());
         let output = result.unwrap();
@@ -253,12 +253,17 @@ async fn test_bash_concurrent_with_timeout() {
 
     let results = tool.execute_all(inputs).await;
     assert_eq!(results.len(), 3);
-    
+
     let successes = results.iter().filter(|r| r.is_ok()).count();
-    let timeouts = results.iter().filter(|r| {
-        r.as_ref().err().map_or(false, |e| matches!(e, AgentError::Timeout(_)))
-    }).count();
-    
+    let timeouts = results
+        .iter()
+        .filter(|r| {
+            r.as_ref()
+                .err()
+                .map_or(false, |e| matches!(e, AgentError::Timeout(_)))
+        })
+        .count();
+
     assert!(successes >= 2); // Fast commands should succeed
     assert!(timeouts >= 1); // Slow command should timeout
 }

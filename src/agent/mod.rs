@@ -12,10 +12,10 @@
  * ============================================================================
  * MODULE DECLARATIONS
  * ============================================================================
- * 
+ *
  * Each `pub mod` declares a submodule within this module.
  * Since agent/ is a directory, this mod.rs file declares what's inside.
- * 
+ *
  * The `pub` keyword makes these modules accessible from outside.
  */
 

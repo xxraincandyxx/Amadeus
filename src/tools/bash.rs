@@ -59,7 +59,7 @@ use tokio::time::{timeout, Duration};
  * ============================================================================
  * BASH TOOL STRUCT
  * ============================================================================
- * 
+ *
  * A struct that holds the configuration for executing bash commands.
  * It's lightweight - just stores timeout and working directory.
  */
@@ -70,13 +70,13 @@ use tokio::time::{timeout, Duration};
 /// full shell syntax (pipes, redirects, etc.).
 pub struct BashTool {
     /// Timeout in seconds for command execution
-    /// 
+    ///
     /// u64 = unsigned 64-bit integer
     /// Commands running longer than this are killed
     timeout_secs: u64,
-    
+
     /// Working directory for commands
-    /// 
+    ///
     /// All commands execute in this directory
     /// Passed as String (not PathBuf) for simplicity
     workdir: String,
@@ -92,7 +92,7 @@ impl BashTool {
     // -------------------------------------------------------------------------
     // CONSTRUCTOR
     // -------------------------------------------------------------------------
-    
+
     /// Create a new BashTool instance.
     ///
     /// # Arguments
@@ -105,25 +105,25 @@ impl BashTool {
     /// ```rust,ignore
     /// let tool = BashTool::new(60, "/tmp".to_string());
     /// ```
-    
+
     // This is a "associated function" (like a static method in other languages)
     // Called as: BashTool::new(30, "/tmp".to_string())
     // NOT: tool.new(...) - there's no instance yet!
     pub fn new(timeout_secs: u64, workdir: String) -> Self {
         // Create and return a new BashTool instance
-        // 
+        //
         // "Field init shorthand" - when variable name matches field name,
         // you can write just the name instead of `timeout_secs: timeout_secs`
         Self {
-            timeout_secs,  // Same as: timeout_secs: timeout_secs
-            workdir,       // Same as: workdir: workdir
+            timeout_secs, // Same as: timeout_secs: timeout_secs
+            workdir,      // Same as: workdir: workdir
         }
     }
 
     // -------------------------------------------------------------------------
     // EXECUTE SINGLE COMMAND
     // -------------------------------------------------------------------------
-    
+
     /// Execute a single command.
     ///
     /// # Arguments
@@ -140,7 +140,7 @@ impl BashTool {
     /// - `AgentError::Io`: Process execution failed
     pub async fn execute(&self, input: &ToolInput) -> Result<String> {
         // Delegate to the private method that handles the actual execution
-        // 
+        //
         // Why have both execute() and execute_with_timeout()?
         // - execute() is the public API
         // - execute_with_timeout() is the implementation detail
@@ -151,7 +151,7 @@ impl BashTool {
     // -------------------------------------------------------------------------
     // EXECUTE WITH TIMEOUT (INTERNAL)
     // -------------------------------------------------------------------------
-    
+
     /// Execute a command with timeout enforcement.
     ///
     /// Uses `tokio::time::timeout` to enforce the time limit.
@@ -164,40 +164,40 @@ impl BashTool {
     /// # Returns
     ///
     /// Combined stdout + stderr output.
-    
+
     // `async fn` - This function is asynchronous
     // Returns a Future that must be .awaited
     async fn execute_with_timeout(&self, cmd: &str) -> Result<String> {
         // ---------------------------------------------------------------------
         // CREATE DURATION FOR TIMEOUT
         // ---------------------------------------------------------------------
-        
+
         // Convert seconds to Duration type
         // Duration::from_secs() creates a Duration from seconds
-        // 
+        //
         // Duration is used for time-based operations in Tokio
         let duration = Duration::from_secs(self.timeout_secs);
 
         // ---------------------------------------------------------------------
         // DEFINE THE ASYNC OPERATION
         // ---------------------------------------------------------------------
-        
+
         // Create an async block (like a closure, but async)
         // This block contains the actual command execution
-        // 
+        //
         // async { ... } creates a Future
         // The `output` variable holds this Future
         let output = async {
             // -----------------------------------------------------------------
             // SPAWN THE SHELL PROCESS
             // -----------------------------------------------------------------
-            
+
             // Create a new Command to run the shell
-            // 
+            //
             // Command::new("sh") - Use /bin/sh as the program
             // .arg("-c") - Pass the -c flag (read command from next argument)
             // .arg(cmd) - The actual command string to execute
-            // 
+            //
             // This is equivalent to running: sh -c "your command"
             // Using sh -c allows for:
             // - Pipes: "cat file | grep pattern"
@@ -221,29 +221,29 @@ impl BashTool {
             // -----------------------------------------------------------------
             // PROCESS THE OUTPUT
             // -----------------------------------------------------------------
-            
+
             // result.stdout is Vec<u8> (raw bytes)
             // String::from_utf8_lossy() converts bytes to String
-            // 
+            //
             // "Lossy" means: if bytes aren't valid UTF-8, they're replaced
             // with the Unicode replacement character (�) instead of crashing
-            // 
+            //
             // This is important because:
             // - Shell output might not always be valid UTF-8
             // - Binary files might be printed to stdout
             // - Some programs output weird characters
             let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-            
+
             // Same for stderr
             let stderr = String::from_utf8_lossy(&result.stderr).to_string();
 
             // -----------------------------------------------------------------
             // COMBINE STDOUT AND STDERR
             // -----------------------------------------------------------------
-            
+
             // Combine both streams into one string
             // stdout comes first, then stderr
-            // 
+            //
             // format!("{}{}", a, b) concatenates two strings
             // Could also use: stdout + &stderr
             Ok(format!("{}{}", stdout, stderr))
@@ -252,19 +252,19 @@ impl BashTool {
         // ---------------------------------------------------------------------
         // APPLY TIMEOUT
         // ---------------------------------------------------------------------
-        
+
         // `timeout(duration, future)` wraps a future with a timeout
-        // 
+        //
         // Returns: Result<F, Elapsed>
         // - Ok(result) if the future completed within the duration
         // - Err(Elapsed) if the timeout expired
-        // 
+        //
         // This is how we enforce the time limit on commands
         match timeout(duration, output).await {
             // Future completed within timeout
             // result is the inner Result<String, AgentError> from output
             Ok(result) => result,
-            
+
             // Timeout expired
             // _ ignores the Elapsed error (we don't need its details)
             Err(_) => Err(AgentError::Timeout(self.timeout_secs)),
@@ -274,7 +274,7 @@ impl BashTool {
     // -------------------------------------------------------------------------
     // CONCURRENT EXECUTION
     // -------------------------------------------------------------------------
-    
+
     /// Execute multiple commands concurrently.
     ///
     /// Commands are executed in parallel using `futures::future::join_all`.
@@ -298,19 +298,19 @@ impl BashTool {
     /// let results = tool.execute_all(inputs).await;
     /// assert_eq!(results.len(), 2);
     /// ```
-    
+
     // Takes `inputs: Vec<ToolInput>` by value (takes ownership)
     pub async fn execute_all(&self, inputs: Vec<ToolInput>) -> Vec<Result<String>> {
         // ---------------------------------------------------------------------
         // CREATE FUTURES FOR EACH INPUT
         // ---------------------------------------------------------------------
-        
+
         // Transform each ToolInput into a Future
-        // 
+        //
         // .into_iter() - consumes the Vec and gives an iterator that owns items
         // .map() - transforms each item
         // .collect::<Vec<_>>() - collects back into a Vec
-        // 
+        //
         // The <Vec<_>> is a type annotation with inference
         // _ means "infer the element type"
         let futures = inputs
@@ -319,21 +319,21 @@ impl BashTool {
             .map(|input| {
                 // Clone the command string (needed because we move `input`)
                 let cmd = input.command.clone();
-                
+
                 // Create a NEW BashTool instance for this execution
                 // Why create a new one?
                 // - To capture `self.timeout_secs` and `self.workdir`
                 // - Because async blocks can't borrow from `self` easily
                 //   (self might be dropped before the async completes)
-                // 
+                //
                 // This is cheap - BashTool is just two small fields
                 let tool = BashTool::new(self.timeout_secs, self.workdir.clone());
-                
+
                 // Create an async block (the Future)
                 // `move` keyword: move captured variables into the async block
                 // Without `move`, variables would be borrowed (reference)
                 // With `move`, variables are moved (ownership transferred)
-                // 
+                //
                 // We need `move` because:
                 // - `cmd` and `tool` must live as long as the Future
                 // - The Future might outlive this function call
@@ -349,17 +349,17 @@ impl BashTool {
         // ---------------------------------------------------------------------
         // EXECUTE ALL FUTURES CONCURRENTLY
         // ---------------------------------------------------------------------
-        
+
         // `join_all(futures)` runs all futures concurrently
-        // 
+        //
         // Unlike sequential execution:
         //   for f in futures { f.await }  // One at a time
-        // 
+        //
         // join_all starts all futures immediately and waits for all:
         //   join_all(futures).await  // All at once
-        // 
+        //
         // Returns: Vec<F::Output> where F::Output is Result<String>
-        // 
+        //
         // The order of results matches the order of input futures
         join_all(futures).await
     }
