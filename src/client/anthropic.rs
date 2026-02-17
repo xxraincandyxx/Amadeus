@@ -38,6 +38,9 @@
 // StatusCode: HTTP status codes (200, 404, 500, etc.)
 use reqwest::{Client, StatusCode};
 
+// Duration for HTTP client timeouts
+use std::time::Duration;
+
 // JSON value type from serde_json
 // Value can hold any JSON data (object, array, string, number, etc.)
 use serde_json::Value;
@@ -76,11 +79,14 @@ use futures::{Stream, StreamExt};
  */
 
 /// Anthropic API version for the `anthropic-version` header.
-/// 
+///
 /// Anthropic requires this header to specify which API version you're using.
 /// Different versions may have different behaviors.
 /// "2023-06-01" is a stable version that works with the Messages API.
 const API_VERSION: &str = "2023-06-01";
+
+/// Default base URL for the Anthropic API.
+const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 
 /*
  * ============================================================================
@@ -94,26 +100,26 @@ const API_VERSION: &str = "2023-06-01";
 /// supporting both non-streaming and streaming responses.
 pub struct AnthropicClient {
     /// HTTP client for making requests
-    /// 
+    ///
     /// Client is a reqwest type that manages HTTP connections.
     /// It's cheap to clone and can be shared across requests.
     /// Client::new() creates a new client with default settings.
     client: Client,
-    
+
     /// Anthropic API key for authentication
-    /// 
+    ///
     /// This is sent in the `x-api-key` header with every request.
     /// API keys look like: sk-ant-api03-xxx...
     api_key: String,
-    
+
     /// Base URL for the API (allows custom endpoints)
-    /// 
+    ///
     /// Default: https://api.anthropic.com
     /// Can be customized for proxies, local testing, etc.
     base_url: String,
-    
+
     /// Model identifier
-    /// 
+    ///
     /// Examples: claude-sonnet-4-5-20250929, claude-opus-4-5-20250929, claude-haiku-4-5-20250929
     /// This determines which Claude model responds to requests.
     model: String,
@@ -135,16 +141,27 @@ impl AnthropicClient {
     /// * `model` - Model to use (e.g., `claude-sonnet-4-5-20250929`)
     pub fn new(api_key: String, base_url: Option<String>, model: String) -> Self {
         // `unwrap_or_else` provides a default if the Option is None
-        // 
+        //
         // If base_url is Some(url), return url
         // If base_url is None, return the default string
-        let base_url = base_url.unwrap_or_else(|| "https://api.anthropic.com".to_string());
-        
+        let base_url = base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+
+        // Create a configured HTTP client with connection pooling and timeouts
+        // This improves performance for multiple API calls
+        let client = Client::builder()
+            // Maximum idle connections per host (connection pooling)
+            .pool_max_idle_per_host(5)
+            // How long to keep idle connections alive
+            .pool_idle_timeout(Duration::from_secs(30))
+            // Total request timeout (includes connection + response)
+            .timeout(Duration::from_secs(120))
+            // Connection establishment timeout
+            .connect_timeout(Duration::from_secs(10))
+            .build()
+            .expect("Failed to create HTTP client");
+
         Self {
-            // Create a new HTTP client
-            // Client::new() returns a client with default settings
-            // It handles connection pooling, timeouts, etc.
-            client: Client::new(),
+            client,
             api_key,
             base_url,
             model,
@@ -184,17 +201,17 @@ impl LLMClient for AnthropicClient {
         // -----------------------------------------------------------------
         // BUILD THE REQUEST URL
         // -----------------------------------------------------------------
-        
+
         // format! creates a String by formatting
         // {} is a placeholder that gets replaced with self.base_url
-        // 
+        //
         // Result: "https://api.anthropic.com/v1/messages"
         let url = format!("{}/v1/messages", self.base_url);
 
         // -----------------------------------------------------------------
         // BUILD THE REQUEST BODY
         // -----------------------------------------------------------------
-        
+
         // serde_json::json! creates a JSON Value from Rust-like syntax
         // This is a macro, not a function call
         let body = serde_json::json!({
@@ -215,7 +232,7 @@ impl LLMClient for AnthropicClient {
         // -----------------------------------------------------------------
         // SEND THE HTTP REQUEST
         // -----------------------------------------------------------------
-        
+
         // Build and send the HTTP POST request
         let response = self
             .client
@@ -242,14 +259,14 @@ impl LLMClient for AnthropicClient {
         // -----------------------------------------------------------------
         // CHECK RESPONSE STATUS
         // -----------------------------------------------------------------
-        
+
         // Check if the response was successful (HTTP 200 OK)
         if response.status() != StatusCode::OK {
             // Not OK - extract error details
             let status_code = response.status().as_u16();
             // Read the error response body as text
             let error_text = response.text().await?;
-            
+
             // Return an error with details
             return Err(AgentError::InvalidResponse(format!(
                 "API error {}: {}",
@@ -260,27 +277,24 @@ impl LLMClient for AnthropicClient {
         // -----------------------------------------------------------------
         // PARSE THE SUCCESSFUL RESPONSE
         // -----------------------------------------------------------------
-        
+
         // Parse the response body as JSON
         // .json() deserializes the response body to the given type
         let json: Value = response.json().await?;
-        
+
         // Extract the stop_reason from the JSON
-        // 
+        //
         // json["stop_reason"] accesses the "stop_reason" field
         // .as_str() converts the JSON value to &str (returns Option<&str>)
         // .unwrap_or("") provides a default if the field is missing/not a string
         // .to_string() converts &str to String
-        let stop_reason = json["stop_reason"]
-            .as_str()
-            .unwrap_or("")
-            .to_string();
-        
+        let stop_reason = json["stop_reason"].as_str().unwrap_or("").to_string();
+
         // Parse the content array
-        // 
+        //
         // json["content"].clone() - clones the content value (needed for from_value)
         // serde_json::from_value() - converts a Value to a Rust type
-        // 
+        //
         // This parses the JSON content array into Vec<ContentBlock>
         // ? propagates parse errors
         let content: Vec<ContentBlock> = serde_json::from_value(json["content"].clone())?;
@@ -334,14 +348,14 @@ impl LLMClient for AnthropicClient {
         // -----------------------------------------------------------------
         // GET THE BYTE STREAM
         // -----------------------------------------------------------------
-        
+
         // Get the response body as a stream of bytes
         // .bytes_stream() returns a Stream<Item = Result<Bytes>>
         // Each item is a chunk of bytes from the response
         let byte_stream = response.bytes_stream();
-        
+
         // Pin the parsed stream and return it
-        // 
+        //
         // Box::pin() - allocates on heap and pins the value
         // Self::parse_sse_stream() - our method that converts bytes to events
         Ok(Box::pin(Self::parse_sse_stream(byte_stream)))
@@ -371,11 +385,11 @@ impl AnthropicClient {
         // -----------------------------------------------------------------
         // USE UNFOLD TO CREATE THE OUTPUT STREAM
         // -----------------------------------------------------------------
-        
+
         // futures::stream::unfold creates a stream from a state and a closure
-        // 
+        //
         // It's like a while loop that yields values:
-        // 
+        //
         //   let mut state = initial_state;
         //   loop {
         //       let (item, new_state) = closure(state).await;
@@ -385,16 +399,16 @@ impl AnthropicClient {
         //       }
         //       state = new_state;
         //   }
-        // 
+        //
         // Parameters:
         // - stream: the initial state (our byte stream)
         // - |mut s| async move { ... }: the closure that produces values
-        
+
         futures::stream::unfold(stream, |mut s| async move {
             // Get the next chunk of bytes
             // .next() returns Option<...> from the stream
             let result = s.next().await;
-            
+
             match result {
                 // Got a chunk of bytes
                 Some(Ok(bytes)) => {
@@ -409,16 +423,16 @@ impl AnthropicClient {
                         Some((Ok(StreamEvent::TextDelta(String::new())), s))
                     }
                 }
-                
+
                 // Error from the byte stream
                 Some(Err(e)) => {
                     // Return the error and continue
                     // AgentError::Api via #[from] conversion
                     Some((Err(AgentError::Api(e)), s))
                 }
-                
+
                 // Stream ended (None from .next())
-                None => None,  // None ends the unfold stream
+                None => None, // None ends the unfold stream
             }
         })
     }
@@ -437,10 +451,10 @@ impl AnthropicClient {
                 // Extract the JSON part (skip "data: ")
                 // &line[6..] is string slicing: skip first 6 characters
                 let json_str = &line[6..];
-                
+
                 // Check for end-of-stream marker
                 if json_str == "[DONE]" {
-                    return None;  // Signal end of stream
+                    return None; // Signal end of stream
                 }
 
                 // Try to parse the JSON
@@ -456,7 +470,7 @@ impl AnthropicClient {
                                 return Some(StreamEvent::TextDelta(text.to_string()));
                             }
                         }
-                        
+
                         // -----------------------------------------------------
                         // TOOL CALL START
                         // -----------------------------------------------------
@@ -474,7 +488,7 @@ impl AnthropicClient {
                                 }
                             }
                         }
-                        
+
                         // -----------------------------------------------------
                         // TOOL CALL DONE
                         // -----------------------------------------------------
@@ -487,7 +501,7 @@ impl AnthropicClient {
                                 }
                             }
                         }
-                        
+
                         // -----------------------------------------------------
                         // MESSAGE STOP
                         // -----------------------------------------------------
@@ -496,14 +510,14 @@ impl AnthropicClient {
                                 return Some(StreamEvent::StopReason(reason.to_string()));
                             }
                         }
-                        
+
                         // Ignore other event types
                         _ => {}
                     }
                 }
             }
         }
-        
+
         // No valid event found
         None
     }

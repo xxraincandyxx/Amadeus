@@ -25,7 +25,7 @@ use std::sync::Arc;
 // Allows multiple readers OR one writer (not both at once)
 // - read(): Multiple tasks can read simultaneously
 // - write(): Only one task can write, no readers allowed
-// 
+//
 // This is the async version from tokio (not std::sync::RwLock)
 // The async version doesn't block the thread while waiting
 use tokio::sync::RwLock;
@@ -73,24 +73,24 @@ use futures::StreamExt;
 /// This is like a "template" - the same Agent code works with any client
 pub struct Agent<C: LLMClient> {
     /// The LLM client for making API requests
-    /// 
+    ///
     /// We store the client directly (not behind Arc) because:
     /// - Clients are cheap to use (just hold an HTTP client reference)
     /// - We don't share clients between agents
     client: C,
-    
+
     /// Tool for executing bash commands
-    /// 
+    ///
     /// This holds the timeout and working directory settings
     bash_tool: BashTool,
-    
+
     /// Working directory for commands
-    /// 
+    ///
     /// Also used for the system prompt
     workdir: String,
-    
+
     /// Whether to use streaming responses
-    /// 
+    ///
     /// true = real-time text as it's generated
     /// false = wait for complete response
     use_streaming: bool,
@@ -111,7 +111,7 @@ impl<C: LLMClient> Agent<C> {
     pub fn new(client: C, workdir: String, timeout_secs: u64, use_streaming: bool) -> Self {
         // Create the bash tool with same settings
         let bash_tool = BashTool::new(timeout_secs, workdir.clone());
-        
+
         Self {
             client,
             bash_tool,
@@ -135,23 +135,23 @@ impl<C: LLMClient> Agent<C> {
         // -----------------------------------------------------------------
         // ADD USER MESSAGE TO HISTORY
         // -----------------------------------------------------------------
-        
+
         // This block creates a scope for the write lock
         // When the block ends, the lock is automatically released
         {
             // Acquire a WRITE lock on history
             // .write() returns a RwLockWriteGuard
             // .await waits for exclusive access (no other readers or writers)
-            // 
+            //
             // The ? propagates any poisoning error (if a panic occurred while locked)
             let mut history_guard = history.write().await;
-            
+
             // Add the user's prompt as a Message
             // Message::user() creates a Message with role="user"
             history_guard.push(Message::user(prompt));
         }
         // history_guard is dropped here, releasing the write lock
-        // 
+        //
         // WHY DROP MANUALLY?
         // We need to release the lock before calling run_non_streaming
         // Otherwise, that function couldn't acquire its own read lock
@@ -167,21 +167,19 @@ impl<C: LLMClient> Agent<C> {
     /// Run the agent loop in non-streaming mode.
     ///
     /// Wait for complete responses before processing.
-    async fn run_non_streaming(
-        &self,
-        history: Arc<RwLock<Vec<Message>>>,
-    ) -> Result<String> {
+    async fn run_non_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
         // Build the system prompt once
         let system = self.build_system_prompt();
-        
+
         // Get the tool schema
         // This is a Vec because the API expects an array of tools
-        let tools = vec![bash_tool()];
+        // bash_tool() returns &'static Value, so we clone it for the Vec
+        let tools = vec![bash_tool().clone()];
 
         // -----------------------------------------------------------------
         // MAIN AGENT LOOP
         // -----------------------------------------------------------------
-        
+
         // This loop continues until we get a final text response
         // Each iteration:
         // 1. Call LLM
@@ -191,13 +189,13 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // CALL THE LLM
             // -------------------------------------------------------------
-            
+
             // Acquire READ lock to get messages
             let history_guard = history.read().await;
-            
+
             // Call the LLM client
             // create_message returns (stop_reason, content_blocks)
-            // 
+            //
             // We pass:
             // - &system: The system prompt
             // - &history_guard: Derefs to &[Message]
@@ -207,7 +205,7 @@ impl<C: LLMClient> Agent<C> {
                 .client
                 .create_message(&system, &history_guard, &tools, 8000)
                 .await?;
-            
+
             // Release the read lock explicitly
             // We could also let it drop naturally, but this is clearer
             drop(history_guard);
@@ -215,10 +213,10 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // EXTRACT TEXT CONTENT
             // -------------------------------------------------------------
-            
+
             // Accumulate text from text blocks
             let mut text_content = String::new();
-            
+
             // Iterate through content blocks
             for block in &content {
                 // Pattern match: only process Text blocks
@@ -233,21 +231,21 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // ADD ASSISTANT RESPONSE TO HISTORY
             // -------------------------------------------------------------
-            
+
             // Acquire WRITE lock
             let mut history_guard = history.write().await;
-            
+
             // Add the assistant's response
             // Message::assistant() creates Message with role="assistant"
             // content.clone() because we need to use it again below
             history_guard.push(Message::assistant(content.clone()));
-            
+
             drop(history_guard);
 
             // -------------------------------------------------------------
             // CHECK IF DONE
             // -------------------------------------------------------------
-            
+
             // If stop_reason is NOT "tool_use", we're done
             // This means the LLM finished its response (no more tool calls)
             if stop_reason != "tool_use" {
@@ -257,19 +255,20 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // EXECUTE TOOL CALLS
             // -------------------------------------------------------------
-            
-            // Collect tool results
-            let mut tool_results = Vec::new();
-            
+
+            // Count tool calls for pre-allocation
+            let tool_count = content
+                .iter()
+                .filter(|b| matches!(b, ContentBlock::ToolUse { .. }))
+                .count();
+
+            // Collect tool results with pre-allocated capacity
+            let mut tool_results = Vec::with_capacity(tool_count);
+
             // Iterate through content blocks again
             for block in &content {
                 // Pattern match: only process ToolUse blocks
-                if let ContentBlock::ToolUse {
-                    name,
-                    input,
-                    id,
-                } = block
-                {
+                if let ContentBlock::ToolUse { name, input, id } = block {
                     // We only have the "bash" tool
                     if name == "bash" {
                         // Print the command being executed
@@ -297,7 +296,7 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // ADD TOOL RESULTS TO HISTORY
             // -------------------------------------------------------------
-            
+
             // Tool results are sent back as a USER message
             // (The LLM sees tool results as coming from "user")
             let mut history_guard = history.write().await;
@@ -306,7 +305,7 @@ impl<C: LLMClient> Agent<C> {
                 content: tool_results,
             });
             drop(history_guard);
-            
+
             // Loop continues - LLM will see the tool results
         }
     }
@@ -314,12 +313,9 @@ impl<C: LLMClient> Agent<C> {
     /// Run the agent loop in streaming mode.
     ///
     /// Process events as they arrive for real-time feedback.
-    async fn run_streaming(
-        &self,
-        history: Arc<RwLock<Vec<Message>>>,
-    ) -> Result<String> {
+    async fn run_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
         let system = self.build_system_prompt();
-        let tools = vec![bash_tool()];
+        let tools = vec![bash_tool().clone()];
 
         loop {
             // Get a stream from the LLM
@@ -338,7 +334,7 @@ impl<C: LLMClient> Agent<C> {
             // -------------------------------------------------------------
             // PROCESS STREAM EVENTS
             // -------------------------------------------------------------
-            
+
             // .next() returns Option<Result<StreamEvent>>
             // - Some(Ok(event)): Got an event
             // - Some(Err(e)): Error in stream
@@ -355,14 +351,14 @@ impl<C: LLMClient> Agent<C> {
                     // Tool call starting
                     StreamEvent::ToolCallStart { id, name } => {
                         println!("Calling tool: {}", name);
-                        
+
                         // Store the partial tool call
                         current_tool = Some(ContentBlock::ToolUse {
                             id,
                             name,
                             // Command will be filled in by deltas
-                            input: crate::agent::messages::ToolInput { 
-                                command: String::new() 
+                            input: crate::agent::messages::ToolInput {
+                                command: String::new(),
                             },
                         });
                     }
@@ -373,8 +369,11 @@ impl<C: LLMClient> Agent<C> {
                         if let Some(ref mut tool) = current_tool {
                             if let ContentBlock::ToolUse { ref mut input, .. } = tool {
                                 // Parse the arguments JSON
-                                if let Ok(json) = serde_json::from_str::<serde_json::Value>(&arguments) {
-                                    if let Some(cmd) = json.get("command").and_then(|v| v.as_str()) {
+                                if let Ok(json) =
+                                    serde_json::from_str::<serde_json::Value>(&arguments)
+                                {
+                                    if let Some(cmd) = json.get("command").and_then(|v| v.as_str())
+                                    {
                                         input.command = cmd.to_string();
                                     }
                                 }
@@ -444,7 +443,7 @@ impl<C: LLMClient> Agent<C> {
                 content: tool_results,
             });
             drop(history_guard);
-            
+
             // Loop continues
         }
     }

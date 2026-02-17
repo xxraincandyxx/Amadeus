@@ -55,6 +55,10 @@
 // Useful when you need to build JSON programmatically rather than derive it
 use serde_json::Value;
 
+// OnceLock for thread-safe lazy initialization
+// Available in std since Rust 1.70
+use std::sync::OnceLock;
+
 /*
  * ============================================================================
  * BASH TOOL SCHEMA
@@ -67,7 +71,13 @@ use serde_json::Value;
  * 3. Which inputs are required
  */
 
-/// Generate the bash tool schema.
+/// Lazily-initialized bash tool schema.
+///
+/// Using OnceLock ensures the schema is only constructed once,
+/// avoiding repeated JSON allocations on every agent loop iteration.
+static BASH_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
+
+/// Get the bash tool schema.
 ///
 /// This schema describes the bash tool to the LLM, including:
 /// - What the tool does (description)
@@ -76,7 +86,7 @@ use serde_json::Value;
 ///
 /// # Returns
 ///
-/// A `serde_json::Value` representing the tool schema.
+/// A reference to the lazily-initialized `serde_json::Value` representing the tool schema.
 ///
 /// # Schema Structure
 ///
@@ -96,7 +106,7 @@ use serde_json::Value;
 ///   }
 /// }
 /// ```
-pub fn bash_tool() -> Value {
+pub fn bash_tool() -> &'static Value {
     // -------------------------------------------------------------------------
     // THE json! MACRO
     // -------------------------------------------------------------------------
@@ -110,61 +120,64 @@ pub fn bash_tool() -> Value {
     // 2. Interpolation: Can embed Rust values with {variable}
     // 3. No string parsing overhead at runtime
 
-    serde_json::json!({
-        // ---------------------------------------------------------------------
-        // TOOL NAME
-        // ---------------------------------------------------------------------
+    // get_or_init ensures the schema is only built once, on first access
+    // Subsequent calls return the cached reference
+    BASH_TOOL_SCHEMA.get_or_init(|| {
+        serde_json::json!({
+            // -----------------------------------------------------------------
+            // TOOL NAME
+            // -----------------------------------------------------------------
 
-        // The name of the tool
-        // The LLM uses this name when calling the tool
-        "name": "bash",
+            // The name of the tool
+            // The LLM uses this name when calling the tool
+            "name": "bash",
 
-        // ---------------------------------------------------------------------
-        // TOOL DESCRIPTION
-        // ---------------------------------------------------------------------
+            // -----------------------------------------------------------------
+            // TOOL DESCRIPTION
+            // -----------------------------------------------------------------
 
-        // A detailed description of what the tool does
-        // This helps the LLM understand when and how to use it
-        //
-        // Note: Multi-line strings in Rust can span multiple lines
-        // The \n characters are literal newlines in the string
-        "description": "Execute shell command. Common patterns:\n\
-                        - Read: cat/head/tail, grep/find/rg/ls, wc -l\n\
-                        - Write: echo 'content' > file, sed -i 's/old/new/g' file\n\
-                        - Subagent: For complex subtasks, spawn a subagent to keep context clean:\n\
-                          cargo run -- 'task description' (spawns isolated agent, returns summary)",
-
-        // ---------------------------------------------------------------------
-        // INPUT SCHEMA
-        // ---------------------------------------------------------------------
-
-        // Defines the structure of the input object
-        // This is a JSON Schema (https://json-schema.org/)
-        //
-        // "type": "object" means the input is a JSON object (like a Rust struct)
-        "input_schema": {
-            "type": "object",
-
-            // "properties" defines each field of the object
-            // This is like defining struct fields
-            "properties": {
-                // The "command" field
-                "command": {
-                    // It's a string type
-                    "type": "string",
-
-                    // Description helps the LLM understand what to put here
-                    "description": "The shell command to execute"
-                }
-            },
-
-            // "required" lists fields that MUST be present
-            // If a field is not in "required", it's optional
+            // A detailed description of what the tool does
+            // This helps the LLM understand when and how to use it
             //
-            // ["command"] means the "command" field is mandatory
-            "required": ["command"]
-        }
+            // Note: Multi-line strings in Rust can span multiple lines
+            // The \n characters are literal newlines in the string
+            "description": "Execute shell command. Common patterns:\n\
+                            - Read: cat/head/tail, grep/find/rg/ls, wc -l\n\
+                            - Write: echo 'content' > file, sed -i 's/old/new/g' file\n\
+                            - Subagent: For complex subtasks, spawn a subagent to keep context clean:\n\
+                              cargo run -- 'task description' (spawns isolated agent, returns summary)",
+
+            // -----------------------------------------------------------------
+            // INPUT SCHEMA
+            // -----------------------------------------------------------------
+
+            // Defines the structure of the input object
+            // This is a JSON Schema (https://json-schema.org/)
+            //
+            // "type": "object" means the input is a JSON object (like a Rust struct)
+            "input_schema": {
+                "type": "object",
+
+                // "properties" defines each field of the object
+                // This is like defining struct fields
+                "properties": {
+                    // The "command" field
+                    "command": {
+                        // It's a string type
+                        "type": "string",
+
+                        // Description helps the LLM understand what to put here
+                        "description": "The shell command to execute"
+                    }
+                },
+
+                // "required" lists fields that MUST be present
+                // If a field is not in "required", it's optional
+                //
+                // ["command"] means the "command" field is mandatory
+                "required": ["command"]
+            }
+        })
     })
-    // Note: No semicolon needed after json! because it's the return value
-    // The function returns the Value created by json!
+    // Note: Returns a reference to the cached Value
 }
