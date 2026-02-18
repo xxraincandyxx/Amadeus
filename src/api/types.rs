@@ -300,8 +300,9 @@ pub struct HealthResponse {
 ///
 /// ```json
 /// {
-///   "error": "AgentError",
-///   "message": "Command timed out after 30s"
+///   "error": "Timeout",
+///   "message": "Operation timed out after 30s",
+///   "tool": "bash"
 /// }
 /// ```
 #[derive(Debug, Serialize)]
@@ -315,6 +316,14 @@ pub struct ErrorResponse {
     ///
     /// Detailed description of what went wrong.
     pub message: String,
+
+    /// Tool name if error is tool-related.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+
+    /// Seconds to wait before retrying (for rate limiting).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after: Option<u64>,
 }
 
 impl ErrorResponse {
@@ -328,16 +337,61 @@ impl ErrorResponse {
         Self {
             error: error.into(),
             message: message.into(),
+            tool: None,
+            retry_after: None,
         }
     }
 
     /// Create from an AgentError.
     ///
-    /// Converts the agent error into an API error response.
+    /// Converts the agent error into an API error response
+    /// with structured context information.
     pub fn from_agent_error(err: &crate::error::AgentError) -> Self {
-        Self {
-            error: "AgentError".to_string(),
-            message: err.to_string(),
+        use crate::error::AgentError;
+
+        match err {
+            AgentError::ToolInput { tool, reason } => Self {
+                error: "ToolInputError".to_string(),
+                message: reason.clone(),
+                tool: Some(tool.clone()),
+                retry_after: None,
+            },
+            AgentError::Timeout(secs) => Self {
+                error: "Timeout".to_string(),
+                message: format!("Operation timed out after {}s", secs),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::CommandBlocked(cmd) => Self {
+                error: "CommandBlocked".to_string(),
+                message: format!("Command '{}' is blocked for security", cmd),
+                tool: Some("bash".to_string()),
+                retry_after: None,
+            },
+            AgentError::PathEscape(path) => Self {
+                error: "PathEscape".to_string(),
+                message: format!("Path '{}' escapes workspace", path.display()),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::TextNotFound { path, snippet } => Self {
+                error: "TextNotFound".to_string(),
+                message: format!("Text '{}' not found in {}", snippet, path),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::ToolNotFound(name) => Self {
+                error: "ToolNotFound".to_string(),
+                message: format!("Tool '{}' not found", name),
+                tool: Some(name.clone()),
+                retry_after: None,
+            },
+            _ => Self {
+                error: "AgentError".to_string(),
+                message: err.to_string(),
+                tool: None,
+                retry_after: None,
+            },
         }
     }
 }

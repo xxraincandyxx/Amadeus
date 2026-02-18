@@ -12,12 +12,12 @@
 //! - Output truncation to prevent context overflow
 
 use async_trait::async_trait;
-use futures::future::join_all;
 use serde::Deserialize;
 use serde_json::Value;
 use tokio::process::Command;
 use tokio::time::{timeout, Duration};
 
+use crate::agent::config::Config;
 use crate::error::{AgentError, Result};
 use crate::tools::schema::bash_tool;
 use crate::tools::tool_trait::Tool;
@@ -35,6 +35,15 @@ pub struct BashTool {
 }
 
 impl BashTool {
+    pub fn from_config(config: &Config) -> Self {
+        Self {
+            timeout_secs: config.timeout_seconds,
+            workdir: config.workdir.to_string_lossy().to_string(),
+            blocked_commands: config.blocked_commands.clone(),
+            max_output_bytes: config.max_output_bytes,
+        }
+    }
+
     pub fn new(
         timeout_secs: u64,
         workdir: String,
@@ -96,24 +105,6 @@ impl BashTool {
             Err(_) => Err(AgentError::Timeout(self.timeout_secs)),
         }
     }
-
-    pub async fn execute_all(&self, inputs: Vec<BashInput>) -> Vec<Result<String>> {
-        let futures = inputs
-            .into_iter()
-            .map(|input| {
-                let cmd = input.command.clone();
-                let tool = BashTool::new(
-                    self.timeout_secs,
-                    self.workdir.clone(),
-                    self.blocked_commands.clone(),
-                    self.max_output_bytes,
-                );
-                async move { tool.execute_with_timeout(&cmd).await }
-            })
-            .collect::<Vec<_>>();
-
-        join_all(futures).await
-    }
 }
 
 #[async_trait]
@@ -128,13 +119,13 @@ impl Tool for BashTool {
 
     async fn execute(&self, input: Value) -> Result<String> {
         let parsed: BashInput =
-            serde_json::from_value(input).map_err(|e| AgentError::Json(e.to_string()))?;
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "bash".to_string(),
+                reason: e.to_string(),
+            })?;
 
         if self.is_blocked(&parsed.command) {
-            return Err(AgentError::Other(format!(
-                "Blocked command: {}",
-                parsed.command
-            )));
+            return Err(AgentError::CommandBlocked(parsed.command));
         }
 
         let output = self.execute_with_timeout(&parsed.command).await?;

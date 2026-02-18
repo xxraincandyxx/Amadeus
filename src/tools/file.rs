@@ -13,12 +13,13 @@
 //! - **write_file**: Create or overwrite files (creates parent dirs)
 //! - **edit_file**: Make surgical changes using exact string matching
 
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::agent::config::Config;
 use crate::error::{AgentError, Result};
 use crate::tools::schema::{edit_file_tool, read_file_tool, write_file_tool};
 use crate::tools::tool_trait::Tool;
@@ -51,6 +52,13 @@ pub struct FileTools {
 }
 
 impl FileTools {
+    pub fn from_config(config: &Config) -> Self {
+        Self {
+            workdir: config.workdir.clone(),
+            max_output_bytes: config.max_output_bytes,
+        }
+    }
+
     pub fn new(workdir: PathBuf, max_output_bytes: usize) -> Self {
         Self {
             workdir,
@@ -59,15 +67,29 @@ impl FileTools {
     }
 
     fn safe_path(&self, p: &str) -> Result<PathBuf> {
-        let path = (self.workdir.join(p))
-            .canonicalize()
-            .unwrap_or_else(|_| self.workdir.join(p));
+        let path = self.workdir.join(p);
 
-        if !path.starts_with(&self.workdir) {
-            return Err(AgentError::Other(format!("Path escapes workspace: {}", p)));
+        let mut cleaned = PathBuf::new();
+        for component in path.components() {
+            match component {
+                Component::ParentDir => {
+                    if !cleaned.pop() {
+                        return Err(AgentError::PathEscape(PathBuf::from(p)));
+                    }
+                }
+                Component::CurDir => {}
+                Component::Normal(c) => cleaned.push(c),
+                Component::RootDir | Component::Prefix(_) => {
+                    return Err(AgentError::PathEscape(PathBuf::from(p)));
+                }
+            }
         }
 
-        Ok(path)
+        if !cleaned.starts_with(&self.workdir) {
+            return Err(AgentError::PathEscape(PathBuf::from(p)));
+        }
+
+        Ok(cleaned)
     }
 
     fn truncate_output(&self, output: String) -> String {
@@ -86,9 +108,12 @@ impl FileTools {
     pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<String> {
         let fp = self.safe_path(path)?;
 
-        let text = tokio::fs::read_to_string(&fp)
-            .await
-            .map_err(|e| AgentError::Other(format!("Failed to read {}: {}", path, e)))?;
+        let text = tokio::fs::read_to_string(&fp).await.map_err(|e| {
+            AgentError::Io(std::io::Error::other(format!(
+                "Failed to read {}: {}",
+                path, e
+            )))
+        })?;
 
         let mut lines: Vec<&str> = text.lines().collect();
 
@@ -106,14 +131,20 @@ impl FileTools {
         let fp = self.safe_path(path)?;
 
         if let Some(parent) = fp.parent() {
-            tokio::fs::create_dir_all(parent)
-                .await
-                .map_err(|e| AgentError::Other(format!("Failed to create dirs: {}", e)))?;
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                AgentError::Io(std::io::Error::other(format!(
+                    "Failed to create dirs: {}",
+                    e
+                )))
+            })?;
         }
 
-        tokio::fs::write(&fp, content)
-            .await
-            .map_err(|e| AgentError::Other(format!("Failed to write {}: {}", path, e)))?;
+        tokio::fs::write(&fp, content).await.map_err(|e| {
+            AgentError::Io(std::io::Error::other(format!(
+                "Failed to write {}: {}",
+                path, e
+            )))
+        })?;
 
         Ok(format!("Wrote {} bytes to {}", content.len(), path))
     }
@@ -127,20 +158,22 @@ impl FileTools {
     ) -> Result<String> {
         let fp = self.safe_path(path)?;
 
-        let content = tokio::fs::read_to_string(&fp)
-            .await
-            .map_err(|e| AgentError::Other(format!("Failed to read {}: {}", path, e)))?;
+        let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
+            AgentError::Io(std::io::Error::other(format!(
+                "Failed to read {}: {}",
+                path, e
+            )))
+        })?;
 
         if !content.contains(old_text) {
-            return Err(AgentError::Other(format!(
-                "Text not found in {}: {}",
-                path,
-                if old_text.len() > 50 {
+            return Err(AgentError::TextNotFound {
+                path: path.to_string(),
+                snippet: if old_text.len() > 50 {
                     format!("{}...", &old_text[..50])
                 } else {
                     old_text.to_string()
-                }
-            )));
+                },
+            });
         }
 
         let new_content = if replace_all {
@@ -149,9 +182,12 @@ impl FileTools {
             content.replacen(old_text, new_text, 1)
         };
 
-        tokio::fs::write(&fp, &new_content)
-            .await
-            .map_err(|e| AgentError::Other(format!("Failed to write {}: {}", path, e)))?;
+        tokio::fs::write(&fp, &new_content).await.map_err(|e| {
+            AgentError::Io(std::io::Error::other(format!(
+                "Failed to write {}: {}",
+                path, e
+            )))
+        })?;
 
         Ok(format!("Edited {}", path))
     }
@@ -191,7 +227,10 @@ impl Tool for ReadFileTool {
 
     async fn execute(&self, input: Value) -> Result<String> {
         let parsed: ReadFileInput =
-            serde_json::from_value(input).map_err(|e| AgentError::Json(e.to_string()))?;
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "read_file".to_string(),
+                reason: e.to_string(),
+            })?;
 
         self.0.read(&parsed.path, parsed.limit).await
     }
@@ -209,7 +248,10 @@ impl Tool for WriteFileTool {
 
     async fn execute(&self, input: Value) -> Result<String> {
         let parsed: WriteFileInput =
-            serde_json::from_value(input).map_err(|e| AgentError::Json(e.to_string()))?;
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "write_file".to_string(),
+                reason: e.to_string(),
+            })?;
 
         self.0.write(&parsed.path, &parsed.content).await
     }
@@ -227,7 +269,10 @@ impl Tool for EditFileTool {
 
     async fn execute(&self, input: Value) -> Result<String> {
         let parsed: EditFileInput =
-            serde_json::from_value(input).map_err(|e| AgentError::Json(e.to_string()))?;
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "edit_file".to_string(),
+                reason: e.to_string(),
+            })?;
 
         self.0
             .edit(
