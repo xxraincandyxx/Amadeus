@@ -18,6 +18,8 @@ cargo test test_bash                 # Run tests matching pattern
 
 cargo run                            # Interactive mode (Anthropic)
 cargo run -- "list files in src"     # Single-shot mode
+cargo run -- --server                # Start HTTP server on port 3000
+cargo run -- --server 8080           # Start HTTP server on custom port
 PROVIDER=openai cargo run            # Use OpenAI
 USE_STREAMING=true cargo run         # Enable streaming
 ```
@@ -28,9 +30,13 @@ USE_STREAMING=true cargo run         # Enable streaming
 |----------|----------|---------|-------------|
 | `PROVIDER` | No | `anthropic` | LLM provider (`anthropic` or `openai`) |
 | `ANTHROPIC_API_KEY` | Yes* | - | Anthropic API key |
+| `ANTHROPIC_BASE_URL` | No | - | Custom Anthropic endpoint |
 | `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
+| `OPENAI_BASE_URL` | No | - | Custom OpenAI endpoint |
 | `MODEL_ID` | No | Provider default | Model identifier |
 | `USE_STREAMING` | No | `false` | Enable streaming responses |
+| `MAX_OUTPUT_BYTES` | No | `50000` | Max tool output size |
+| `BLOCKED_COMMANDS` | No | `rm -rf /` | Comma-separated blocked commands |
 
 *Required based on selected provider. Configure via `.env` (copy from `.env.example`).
 
@@ -39,16 +45,16 @@ USE_STREAMING=true cargo run         # Enable streaming
 ### Imports
 Group imports in order: std → external crates → crate modules, separated by blank lines:
 ```rust
-use std::sync::Arc;
 use std::path::PathBuf;
+use std::sync::Arc;
 
-use tokio::sync::RwLock;
-use anyhow::Result;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio::sync::RwLock;
 
 use crate::error::{AgentError, Result};
-use crate::agent::messages::{ContentBlock, Message};
-use crate::client::LLMClient;
+use crate::tools::tool_trait::Tool;
 ```
 
 ### Naming Conventions
@@ -67,8 +73,9 @@ src/
   error.rs         # All custom error types
   agent/           # Agent domain (config, messages, loop_agent)
   client/          # LLM client domain (trait + anthropic/openai impls)
-  tools/           # Tool implementations (bash, schema)
+  tools/           # Tool implementations (bash, file, schema, tool_trait)
   ui/              # Terminal UI (colors, repl)
+  api/             # HTTP server (handlers, types, http)
 tests/             # Integration tests (bash_test, messages_test, etc.)
 ```
 
@@ -77,6 +84,7 @@ tests/             # Integration tests (bash_test, messages_test, etc.)
 - Prefer `String` over `&str` for struct fields (owned data)
 - Use `Arc<T>` for shared ownership, `RwLock<T>` for shared mutable state
 - Use `PathBuf` for file paths (not `String`)
+- Use `Option<T>` for nullable values (no null/None in Rust)
 
 ### Error Handling
 Use `thiserror` with `#[from]` for automatic conversion:
@@ -124,17 +132,21 @@ pub enum ContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "tool_use")]
-    ToolUse { id: String, name: String, input: ToolInput },
+    ToolUse { id: String, name: String, input: Value },
 }
+
+#[serde(default)]  // For optional fields with defaults
+pub replace_all: bool,
 ```
 
 ### Testing
 ```rust
 #[tokio::test]
 async fn test_bash_echo() {
-    let tool = BashTool::new(30, "/tmp".to_string());
-    let result = tool.execute(&ToolInput { command: "echo hello".into() }).await;
-    assert!(result.is_ok());
+    let tool = BashTool::new(30, "/tmp".to_string(), vec![], 50_000);
+    let input = json!({"command": "echo hello"});
+    let result = tool.execute(input).await.unwrap();
+    assert!(result.contains("hello"));
 }
 
 // Use matches! for enum variant checking
@@ -153,7 +165,9 @@ Self {
 ```
 
 ### Documentation
-Use `//!` for module-level docs and `///` for item-level docs.
+- Use `//!` for module-level docs
+- Use `///` for item-level docs
+- Include examples in doc comments with ` ```rust,ignore `
 
 ### Concurrency
 - `Arc::clone(&shared)` increments reference count (cheap)
@@ -161,10 +175,25 @@ Use `//!` for module-level docs and `///` for item-level docs.
 - Always drop locks explicitly or use scoped blocks to avoid deadlocks
 - Use `futures::future::join_all` for concurrent execution
 
+### Tool Implementation Pattern
+```rust
+#[async_trait]
+impl Tool for BashTool {
+    fn name(&self) -> &'static str { "bash" }
+    fn schema(&self) -> &'static Value { bash_tool() }
+    async fn execute(&self, input: Value) -> Result<String> {
+        let parsed: BashInput = serde_json::from_value(input)
+            .map_err(|e| AgentError::Json(e.to_string()))?;
+        // ... execution logic
+    }
+}
+```
+
 ## Key Design Principles
 - **Type safety**: `Result<T>` error handling everywhere
 - **Async-first**: Tokio runtime, non-blocking I/O
 - **Provider abstraction**: Trait-based LLM client switching
-- **Single tool**: Bash tool handles all file/terminal operations
+- **Tool abstraction**: `Tool` trait with name, schema, execute
+- **Path safety**: File tools validate paths stay within workspace
 - **Streaming support**: Real-time output via SSE
 - **Shared history**: `Arc<RwLock<Vec<Message>>>` for conversation state
