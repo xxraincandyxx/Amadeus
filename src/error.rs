@@ -138,6 +138,11 @@ pub enum AgentError {
     #[error("Serde error: {0}")]
     Serde(#[from] serde_json::Error),
 
+    // Variant: Json
+    // Used for JSON parsing errors with custom messages.
+    #[error("JSON error: {0}")]
+    Json(String),
+
     // -------------------------------------------------------------------------
     // I/O ERRORS
     // -------------------------------------------------------------------------
@@ -185,6 +190,15 @@ pub enum AgentError {
     // The String describes the streaming error.
     #[error("Stream error: {0}")]
     StreamError(String),
+
+    // -------------------------------------------------------------------------
+    // OTHER ERRORS
+    // -------------------------------------------------------------------------
+
+    // Variant: Other
+    // Used for miscellaneous errors that don't fit other categories.
+    #[error("{0}")]
+    Other(String),
 }
 
 /*

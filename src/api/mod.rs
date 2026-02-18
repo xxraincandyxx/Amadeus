@@ -178,12 +178,6 @@ pub use crate::agent::messages::Message;
 /// Re-exported from `crate::agent::messages`.
 pub use crate::agent::messages::ContentBlock;
 
-/// Input for tool execution.
-///
-/// Contains the command string for bash tool.
-/// Re-exported from `crate::agent::messages`.
-pub use crate::agent::messages::ToolInput;
-
 // -------------------------------------------------------------------------
 // CLIENT TYPES
 // -------------------------------------------------------------------------

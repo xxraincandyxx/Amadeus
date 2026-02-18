@@ -152,6 +152,24 @@ pub struct Config {
     // true = get responses as they're generated (faster feedback)
     // false = wait for complete response (simpler)
     pub use_streaming: bool,
+
+    // -------------------------------------------------------------------------
+    // Tool Settings (v2)
+    // -------------------------------------------------------------------------
+
+    // Maximum output size in bytes for tool results
+    // Prevents large outputs from consuming the context window
+    //
+    // Default: 50,000 bytes (50KB)
+    // Truncates tool output if it exceeds this limit
+    pub max_output_bytes: usize,
+
+    // List of blocked shell commands
+    // Commands matching these patterns are rejected before execution
+    //
+    // Default: ["rm -rf /"] (only the most dangerous)
+    // Can be extended via BLOCKED_COMMANDS env var (comma-separated)
+    pub blocked_commands: Vec<String>,
 }
 
 /*
@@ -363,6 +381,38 @@ impl Config {
             .unwrap_or(false);
 
         // ---------------------------------------------------------------------
+        // PARSE MAX OUTPUT SIZE (v2)
+        // ---------------------------------------------------------------------
+
+        // Get MAX_OUTPUT_BYTES environment variable
+        // Default to 50,000 bytes (50KB) if not set or parsing fails
+        //
+        // This limits tool output size to prevent context window overflow
+        let max_output_bytes = env::var("MAX_OUTPUT_BYTES")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(50_000);
+
+        // ---------------------------------------------------------------------
+        // PARSE BLOCKED COMMANDS (v2)
+        // ---------------------------------------------------------------------
+
+        // Get BLOCKED_COMMANDS environment variable
+        // Comma-separated list of blocked command patterns
+        //
+        // Default: ["rm -rf /"] (most dangerous command)
+        // Example: BLOCKED_COMMANDS="rm -rf /,sudo,mkfs"
+        let blocked_commands = env::var("BLOCKED_COMMANDS")
+            .ok()
+            .map(|s| {
+                s.split(',')
+                    .map(|cmd| cmd.trim().to_string())
+                    .filter(|cmd| !cmd.is_empty())
+                    .collect()
+            })
+            .unwrap_or_else(|| vec!["rm -rf /".to_string()]);
+
+        // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG
         // ---------------------------------------------------------------------
 
@@ -390,6 +440,10 @@ impl Config {
             timeout_seconds: 300,
 
             use_streaming, // Same as: use_streaming: use_streaming
+
+            // v2: Tool settings
+            max_output_bytes,
+            blocked_commands,
         })
     }
 
@@ -415,33 +469,24 @@ impl Config {
     //
     // Note: No `async` - string formatting is synchronous
     pub fn system_prompt(&self) -> String {
-        // `format!` is a macro that creates a String
-        // Similar to println! but returns String instead of printing
-        //
-        // {} are placeholders that get replaced with values
-        // self.workdir.display() formats the PathBuf for display
-        //
-        // Why .display()?
-        // - PathBuf can contain non-UTF8 characters on some systems
-        // - .display() returns a Display wrapper that handles this
         format!(
-            // The system prompt template
-            // Multi-line string literal (can span multiple lines)
-            // \n is a newline character
-            "You are a CLI agent at {}. Solve problems using bash commands.\n\n\
+            "You are a CLI agent at {}.\n\n\
+             Loop: think briefly -> use tools -> report results.\n\n\
              Rules:\n\
-             - Prefer tools over prose. Act first, explain briefly after.\n\
-             - Read files: cat, grep, find, rg, ls, head, tail\n\
-             - Write files: echo '...' > file, sed -i, or cat << 'EOF' > file\n\
-             - Subagent: For complex subtasks, spawn a subagent to keep context clean:\n\
-               cargo run -- 'explore src/ and summarize the architecture'\n\n\
-             When to use subagent:\n\
-             - Task requires reading many files (isolate the exploration)\n\
-             - Task is independent and self-contained\n\
-             - You want to avoid polluting current conversation with intermediate details\n\n\
-             The subagent runs in isolation and returns only its final summary.",
-            // This argument replaces the first {} in the format string
-            // .display() makes the path displayable as text
+             - Prefer tools over prose. Act, don't just explain.\n\
+             - Never invent file paths. Use bash ls/find first if unsure.\n\
+             - Make minimal changes. Don't over-engineer.\n\
+             - After finishing, summarize what changed.\n\n\
+             Available Tools:\n\
+             - bash: Run shell commands (git, npm, python, ls, grep, etc.)\n\
+             - read_file: Read file contents (use for understanding code)\n\
+             - write_file: Create or overwrite files (use for new files)\n\
+             - edit_file: Make surgical changes to existing files\n\n\
+             When to use each tool:\n\
+             - bash: For system commands, searching, running tests\n\
+             - read_file: When you need to see file contents\n\
+             - write_file: When creating new files or complete rewrites\n\
+             - edit_file: When making precise changes to existing files",
             self.workdir.display()
         )
     }

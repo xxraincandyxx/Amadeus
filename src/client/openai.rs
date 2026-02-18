@@ -332,17 +332,9 @@ impl OpenAIClient {
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let command = block
-                                .get("input")
-                                .and_then(|v| v.get("command"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string();
-                            ContentBlock::ToolUse {
-                                id,
-                                name,
-                                input: crate::agent::messages::ToolInput { command },
-                            }
+                            let input =
+                                block.get("input").cloned().unwrap_or(serde_json::json!({}));
+                            ContentBlock::ToolUse { id, name, input }
                         }
 
                         // Tool result
@@ -402,16 +394,10 @@ impl OpenAIClient {
                     let args: serde_json::Value =
                         serde_json::from_str(args_json).unwrap_or(serde_json::json!({}));
 
-                    let command = args
-                        .get("command")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-
                     ContentBlock::ToolUse {
                         id,
                         name,
-                        input: crate::agent::messages::ToolInput { command },
+                        input: args,
                     }
                 })
                 .collect()

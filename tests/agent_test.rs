@@ -1,52 +1,70 @@
-// Agent loop tests
-// Basic tests for agent creation and structure
-
+use claude_agent::agent::config::Config;
 use claude_agent::agent::loop_agent::Agent;
 use claude_agent::client::anthropic::AnthropicClient;
-use claude_agent::client::LLMClient;
+
+fn create_test_config() -> Config {
+    Config {
+        provider: claude_agent::agent::config::Provider::Anthropic,
+        api_key: "test-key".to_string(),
+        base_url: None,
+        model: "test-model".to_string(),
+        workdir: std::path::PathBuf::from("/tmp"),
+        timeout_seconds: 30,
+        use_streaming: false,
+        max_output_bytes: 50_000,
+        blocked_commands: vec!["rm -rf /".to_string()],
+    }
+}
 
 #[tokio::test]
 async fn test_agent_creation() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let config = create_test_config();
 
-    let _agent = Agent::new(client, "/tmp".to_string(), 30, false);
-
-    // Agent creation successful is the test assertion
+    let _agent = Agent::new(client, &config);
 }
 
 #[tokio::test]
 async fn test_agent_with_streaming_enabled() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let mut config = create_test_config();
+    config.use_streaming = true;
 
-    let _agent = Agent::new(
-        client,
-        "/tmp".to_string(),
-        30,
-        true, // streaming enabled
-    );
-
-    // Agent creation with streaming successful
+    let _agent = Agent::new(client, &config);
 }
 
 #[tokio::test]
 async fn test_agent_different_workdir() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let mut config = create_test_config();
+    config.workdir = std::path::PathBuf::from("/home/user");
 
-    let _agent = Agent::new(client, "/home/user".to_string(), 30, false);
-
-    // Agent with custom workdir successful
+    let _agent = Agent::new(client, &config);
 }
 
 #[tokio::test]
 async fn test_agent_custom_timeout() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let mut config = create_test_config();
+    config.timeout_seconds = 60;
 
-    let _agent = Agent::new(
-        client,
-        "/tmp".to_string(),
-        60, // custom timeout
-        false,
-    );
+    let _agent = Agent::new(client, &config);
+}
 
-    // Agent with custom timeout successful
+#[tokio::test]
+async fn test_agent_custom_max_output() {
+    let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let mut config = create_test_config();
+    config.max_output_bytes = 100_000;
+
+    let _agent = Agent::new(client, &config);
+}
+
+#[tokio::test]
+async fn test_agent_custom_blocked_commands() {
+    let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
+    let mut config = create_test_config();
+    config.blocked_commands = vec!["rm -rf /".to_string(), "sudo".to_string()];
+
+    let _agent = Agent::new(client, &config);
 }

@@ -1,5 +1,5 @@
-use claude_agent::agent::messages::{ContentBlock, Message, ToolInput};
-use serde_json;
+use claude_agent::agent::messages::{ContentBlock, Message};
+use serde_json::json;
 
 #[test]
 fn test_message_user_creation() {
@@ -35,9 +35,7 @@ fn test_message_multiple_content_blocks() {
         ContentBlock::ToolUse {
             id: "tool_123".to_string(),
             name: "bash".to_string(),
-            input: ToolInput {
-                command: "ls -la".to_string(),
-            },
+            input: json!({"command": "ls -la"}),
         },
     ];
     let msg = Message::assistant(content);
@@ -61,16 +59,14 @@ fn test_content_block_serialization_tool_use() {
     let block = ContentBlock::ToolUse {
         id: "tool_123".to_string(),
         name: "bash".to_string(),
-        input: ToolInput {
-            command: "echo hello".to_string(),
-        },
+        input: json!({"command": "echo hello"}),
     };
 
-    let json = serde_json::to_value(&block).unwrap();
-    assert_eq!(json["type"], "tool_use");
-    assert_eq!(json["id"], "tool_123");
-    assert_eq!(json["name"], "bash");
-    assert_eq!(json["input"]["command"], "echo hello");
+    let json_val = serde_json::to_value(&block).unwrap();
+    assert_eq!(json_val["type"], "tool_use");
+    assert_eq!(json_val["id"], "tool_123");
+    assert_eq!(json_val["name"], "bash");
+    assert_eq!(json_val["input"]["command"], "echo hello");
 }
 
 #[test]
@@ -88,12 +84,12 @@ fn test_content_block_serialization_tool_result() {
 
 #[test]
 fn test_content_block_deserialization_text() {
-    let json = serde_json::json!({
+    let json_val = json!({
         "type": "text",
         "text": "Hello, world!"
     });
 
-    let block: ContentBlock = serde_json::from_value(json).unwrap();
+    let block: ContentBlock = serde_json::from_value(json_val).unwrap();
 
     if let ContentBlock::Text { text } = block {
         assert_eq!(text, "Hello, world!");
@@ -104,7 +100,7 @@ fn test_content_block_deserialization_text() {
 
 #[test]
 fn test_content_block_deserialization_tool_use() {
-    let json = serde_json::json!({
+    let json_val = json!({
         "type": "tool_use",
         "id": "tool_123",
         "name": "bash",
@@ -113,12 +109,12 @@ fn test_content_block_deserialization_tool_use() {
         }
     });
 
-    let block: ContentBlock = serde_json::from_value(json).unwrap();
+    let block: ContentBlock = serde_json::from_value(json_val).unwrap();
 
     if let ContentBlock::ToolUse { id, name, input } = block {
         assert_eq!(id, "tool_123");
         assert_eq!(name, "bash");
-        assert_eq!(input.command, "ls -la");
+        assert_eq!(input["command"], "ls -la");
     } else {
         panic!("Expected tool_use content block");
     }
@@ -126,13 +122,13 @@ fn test_content_block_deserialization_tool_use() {
 
 #[test]
 fn test_content_block_deserialization_tool_result() {
-    let json = serde_json::json!({
+    let json_val = json!({
         "type": "tool_result",
         "tool_use_id": "tool_123",
         "content": "Command output"
     });
 
-    let block: ContentBlock = serde_json::from_value(json).unwrap();
+    let block: ContentBlock = serde_json::from_value(json_val).unwrap();
 
     if let ContentBlock::ToolResult {
         tool_use_id,
@@ -157,7 +153,7 @@ fn test_message_serialization() {
 
 #[test]
 fn test_message_deserialization() {
-    let json = serde_json::json!({
+    let json_val = json!({
         "role": "user",
         "content": [
             {
@@ -167,75 +163,15 @@ fn test_message_deserialization() {
         ]
     });
 
-    let msg: Message = serde_json::from_value(json).unwrap();
+    let msg: Message = serde_json::from_value(json_val).unwrap();
     assert_eq!(msg.role, "user");
     assert_eq!(msg.content.len(), 1);
-}
-
-#[test]
-fn test_tool_input_creation() {
-    let input = ToolInput {
-        command: "echo hello".to_string(),
-    };
-
-    assert_eq!(input.command, "echo hello");
-}
-
-#[test]
-fn test_tool_input_serialization() {
-    let input = ToolInput {
-        command: "ls -la".to_string(),
-    };
-
-    let json = serde_json::to_value(&input).unwrap();
-    assert_eq!(json["command"], "ls -la");
-}
-
-#[test]
-fn test_tool_input_deserialization() {
-    let json = serde_json::json!({
-        "command": "cat file.txt"
-    });
-
-    let input: ToolInput = serde_json::from_value(json).unwrap();
-    assert_eq!(input.command, "cat file.txt");
 }
 
 #[test]
 fn test_message_with_empty_content() {
     let msg = Message::assistant(Vec::new());
     assert_eq!(msg.content.len(), 0);
-}
-
-#[test]
-fn test_content_block_equality_text() {
-    let block1 = ContentBlock::Text {
-        text: "Hello".to_string(),
-    };
-    let block2 = ContentBlock::Text {
-        text: "Hello".to_string(),
-    };
-    assert!(matches!(&block1, ContentBlock::Text { text } if text == "Hello"));
-    assert!(matches!(&block2, ContentBlock::Text { text } if text == "Hello"));
-}
-
-#[test]
-fn test_content_block_inequality_text() {
-    let block1 = ContentBlock::Text {
-        text: "Hello".to_string(),
-    };
-    let block2 = ContentBlock::Text {
-        text: "World".to_string(),
-    };
-    let (is_same, text1, text2) = match (&block1, &block2) {
-        (ContentBlock::Text { text: t1 }, ContentBlock::Text { text: t2 }) => {
-            (t1 == t2, t1.clone(), t2.clone())
-        }
-        _ => (false, String::new(), String::new()),
-    };
-    assert!(!is_same);
-    assert_eq!(text1, "Hello");
-    assert_eq!(text2, "World");
 }
 
 #[test]
@@ -266,8 +202,8 @@ fn test_content_block_debug_format() {
 #[test]
 fn test_round_trip_serialization_message() {
     let original = Message::user("Hello, world!");
-    let json = serde_json::to_value(&original).unwrap();
-    let deserialized: Message = serde_json::from_value(json).unwrap();
+    let json_val = serde_json::to_value(&original).unwrap();
+    let deserialized: Message = serde_json::from_value(json_val).unwrap();
 
     assert_eq!(original.role, deserialized.role);
     assert_eq!(original.content.len(), deserialized.content.len());
@@ -282,9 +218,7 @@ fn test_complex_message_serialization() {
         ContentBlock::ToolUse {
             id: "tool_1".to_string(),
             name: "bash".to_string(),
-            input: ToolInput {
-                command: "echo test".to_string(),
-            },
+            input: json!({"command": "echo test"}),
         },
         ContentBlock::Text {
             text: "Second!".to_string(),
@@ -292,8 +226,56 @@ fn test_complex_message_serialization() {
     ];
 
     let msg = Message::assistant(content.clone());
-    let json = serde_json::to_value(&msg).unwrap();
-    let deserialized: Message = serde_json::from_value(json).unwrap();
+    let json_val = serde_json::to_value(&msg).unwrap();
+    let deserialized: Message = serde_json::from_value(json_val).unwrap();
 
     assert_eq!(deserialized.content.len(), 3);
+}
+
+#[test]
+fn test_message_tool_results() {
+    let results = vec![
+        ContentBlock::ToolResult {
+            tool_use_id: "tool_1".to_string(),
+            content: "output 1".to_string(),
+        },
+        ContentBlock::ToolResult {
+            tool_use_id: "tool_2".to_string(),
+            content: "output 2".to_string(),
+        },
+    ];
+
+    let msg = Message::tool_results(results);
+    assert_eq!(msg.role, "user");
+    assert_eq!(msg.content.len(), 2);
+}
+
+#[test]
+fn test_tool_use_with_different_tools() {
+    let bash_tool = ContentBlock::ToolUse {
+        id: "tool_1".to_string(),
+        name: "bash".to_string(),
+        input: json!({"command": "ls"}),
+    };
+
+    let read_tool = ContentBlock::ToolUse {
+        id: "tool_2".to_string(),
+        name: "read_file".to_string(),
+        input: json!({"path": "test.txt"}),
+    };
+
+    let write_tool = ContentBlock::ToolUse {
+        id: "tool_3".to_string(),
+        name: "write_file".to_string(),
+        input: json!({"path": "output.txt", "content": "hello"}),
+    };
+
+    let edit_tool = ContentBlock::ToolUse {
+        id: "tool_4".to_string(),
+        name: "edit_file".to_string(),
+        input: json!({"path": "file.txt", "old_text": "old", "new_text": "new", "replace_all": false}),
+    };
+
+    let msg = Message::assistant(vec![bash_tool, read_tool, write_tool, edit_tool]);
+    assert_eq!(msg.content.len(), 4);
 }
