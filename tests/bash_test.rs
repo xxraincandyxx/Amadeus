@@ -1,5 +1,5 @@
 use claude_agent::error::AgentError;
-use claude_agent::tools::bash::{BashInput, BashTool};
+use claude_agent::tools::bash::BashTool;
 use claude_agent::tools::tool_trait::Tool;
 use serde_json::json;
 use std::fs;
@@ -178,63 +178,6 @@ async fn test_bash_mkdir_rmdir() {
     let result = tool.execute(rm_input).await;
     assert!(result.is_ok());
     assert!(!Path::new(dir).exists());
-}
-
-#[tokio::test]
-async fn test_bash_concurrent() {
-    let tool = create_tool();
-    let inputs = vec![
-        BashInput {
-            command: "echo 'a'".to_string(),
-        },
-        BashInput {
-            command: "echo 'b'".to_string(),
-        },
-        BashInput {
-            command: "echo 'c'".to_string(),
-        },
-    ];
-
-    let results = tool.execute_all(inputs).await;
-    assert_eq!(results.len(), 3);
-
-    for result in results {
-        assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.contains("a") || output.contains("b") || output.contains("c"));
-    }
-}
-
-#[tokio::test]
-async fn test_bash_concurrent_with_timeout() {
-    let tool = BashTool::new(1, "/tmp".to_string(), vec![], 50_000);
-    let inputs = vec![
-        BashInput {
-            command: "echo 'fast'".to_string(),
-        },
-        BashInput {
-            command: "sleep 10".to_string(),
-        },
-        BashInput {
-            command: "echo 'also fast'".to_string(),
-        },
-    ];
-
-    let results = tool.execute_all(inputs).await;
-    assert_eq!(results.len(), 3);
-
-    let successes = results.iter().filter(|r| r.is_ok()).count();
-    let timeouts = results
-        .iter()
-        .filter(|r| {
-            r.as_ref()
-                .err()
-                .map_or(false, |e| matches!(e, AgentError::Timeout(_)))
-        })
-        .count();
-
-    assert!(successes >= 2);
-    assert!(timeouts >= 1);
 }
 
 #[tokio::test]

@@ -35,7 +35,7 @@ async fn main() -> Result<()> {
 }
 
 async fn run_single_shot(prompt: &str) -> Result<()> {
-    let config = Config::load()?;
+    let config = Arc::new(Config::load()?);
     let history = Arc::new(RwLock::new(Vec::new()));
 
     let result = match config.provider {
@@ -45,7 +45,7 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             agent.run(prompt, Arc::clone(&history)).await?
         }
         Provider::OpenAI => {
@@ -54,7 +54,7 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             agent.run(prompt, Arc::clone(&history)).await?
         }
     };
@@ -66,7 +66,7 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
 async fn run_interactive() -> Result<()> {
     println!("{}", Palette::header());
 
-    let config = Config::load()?;
+    let config = Arc::new(Config::load()?);
 
     match config.provider {
         Provider::Anthropic => {
@@ -75,7 +75,7 @@ async fn run_interactive() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             Repl::new(agent).run().await?;
         }
         Provider::OpenAI => {
@@ -84,7 +84,7 @@ async fn run_interactive() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             Repl::new(agent).run().await?;
         }
     };

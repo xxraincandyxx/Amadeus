@@ -106,11 +106,11 @@ pub fn edit_file_tool() -> &'static Value {
     })
 }
 
-pub fn all_tools() -> Vec<Value> {
+pub fn all_tools() -> Vec<&'static Value> {
     vec![
-        bash_tool().clone(),
-        read_file_tool().clone(),
-        write_file_tool().clone(),
-        edit_file_tool().clone(),
+        bash_tool(),
+        read_file_tool(),
+        write_file_tool(),
+        edit_file_tool(),
     ]
 }

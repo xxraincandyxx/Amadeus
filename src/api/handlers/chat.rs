@@ -20,6 +20,8 @@ pub async fn chat(
         Err(e) => return Err(Json(ErrorResponse::new("ConfigError", e.to_string()))),
     };
 
+    let config = Arc::new(config);
+
     match config.provider {
         Provider::Anthropic => {
             let client = AnthropicClient::new(
@@ -27,7 +29,7 @@ pub async fn chat(
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             run_agent(agent, &request.message).await
         }
 
@@ -37,7 +39,7 @@ pub async fn chat(
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, &config);
+            let agent = Agent::new(client, config);
             run_agent(agent, &request.message).await
         }
     }

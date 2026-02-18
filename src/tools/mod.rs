@@ -4,9 +4,11 @@
 
 pub mod bash;
 pub mod file;
+pub mod registry;
 pub mod schema;
 pub mod tool_trait;
 
 pub use bash::BashTool;
 pub use file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
+pub use registry::ToolRegistry;
 pub use tool_trait::Tool;

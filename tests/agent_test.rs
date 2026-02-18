@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use claude_agent::agent::config::Config;
 use claude_agent::agent::loop_agent::Agent;
 use claude_agent::client::anthropic::AnthropicClient;
@@ -19,9 +21,9 @@ fn create_test_config() -> Config {
 #[tokio::test]
 async fn test_agent_creation() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
-    let config = create_test_config();
+    let config = Arc::new(create_test_config());
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, config);
 }
 
 #[tokio::test]
@@ -30,7 +32,7 @@ async fn test_agent_with_streaming_enabled() {
     let mut config = create_test_config();
     config.use_streaming = true;
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, Arc::new(config));
 }
 
 #[tokio::test]
@@ -39,7 +41,7 @@ async fn test_agent_different_workdir() {
     let mut config = create_test_config();
     config.workdir = std::path::PathBuf::from("/home/user");
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, Arc::new(config));
 }
 
 #[tokio::test]
@@ -48,7 +50,7 @@ async fn test_agent_custom_timeout() {
     let mut config = create_test_config();
     config.timeout_seconds = 60;
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, Arc::new(config));
 }
 
 #[tokio::test]
@@ -57,7 +59,7 @@ async fn test_agent_custom_max_output() {
     let mut config = create_test_config();
     config.max_output_bytes = 100_000;
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, Arc::new(config));
 }
 
 #[tokio::test]
@@ -66,5 +68,5 @@ async fn test_agent_custom_blocked_commands() {
     let mut config = create_test_config();
     config.blocked_commands = vec!["rm -rf /".to_string(), "sudo".to_string()];
 
-    let _agent = Agent::new(client, &config);
+    let _agent = Agent::new(client, Arc::new(config));
 }

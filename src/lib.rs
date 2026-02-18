@@ -87,7 +87,7 @@ pub mod agent;
 // This looks for src/client/mod.rs
 pub mod client;
 
-// Declare the tools module - contains bash tool and schemas
+// Declare the tools module - contains bash tool, file tools, registry and schemas
 // This looks for src/tools/mod.rs
 pub mod tools;
 
