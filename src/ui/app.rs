@@ -209,7 +209,7 @@ impl<C: LLMClient> App<C> {
             (KeyModifiers::NONE, KeyCode::PageDown) => {
                 self.messages.scroll_down(10);
             }
-            (KeyModifiers::NONE, KeyCode::Char(c)) => {
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 self.input.handle_char(c);
             }
             _ => {}
