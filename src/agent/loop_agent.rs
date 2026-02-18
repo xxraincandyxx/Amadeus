@@ -15,7 +15,20 @@ use crate::error::Result;
 use crate::tools::bash::BashTool;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 use crate::tools::registry::ToolRegistry;
-use crate::ui::colors::{print_command, print_tool_result};
+
+#[derive(Debug, Clone)]
+pub struct ToolCall {
+    pub name: String,
+    pub input: serde_json::Value,
+    pub output: String,
+    pub is_error: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RunResult {
+    pub text: String,
+    pub tool_calls: Vec<ToolCall>,
+}
 
 pub struct Agent<C: LLMClient> {
     client: C,
@@ -44,7 +57,7 @@ impl<C: LLMClient> Agent<C> {
         &self.tools
     }
 
-    pub async fn run(&self, prompt: &str, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
+    pub async fn run(&self, prompt: &str, history: Arc<RwLock<Vec<Message>>>) -> Result<RunResult> {
         {
             let mut history_guard = history.write().await;
             history_guard.push(Message::user(prompt));
@@ -57,9 +70,11 @@ impl<C: LLMClient> Agent<C> {
         }
     }
 
-    async fn run_non_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
+    async fn run_non_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<RunResult> {
         let system = self.config.system_prompt();
         let tools: Vec<serde_json::Value> = self.tools.schemas().into_iter().cloned().collect();
+
+        let mut result = RunResult::default();
 
         loop {
             let (stop_reason, content) = {
@@ -69,12 +84,9 @@ impl<C: LLMClient> Agent<C> {
                     .await?
             };
 
-            let mut text_content = String::new();
-
             for block in &content {
                 if let ContentBlock::Text { text } = block {
-                    print!("{}", text);
-                    text_content.push_str(text);
+                    result.text.push_str(text);
                 }
             }
 
@@ -82,10 +94,11 @@ impl<C: LLMClient> Agent<C> {
                 let mut history_guard = history.write().await;
                 history_guard.push(Message::assistant(content));
                 drop(history_guard);
-                return Ok(text_content);
+                return Ok(result);
             }
 
-            let tool_results = self.execute_tools(&content).await;
+            let (tool_results, tool_calls) = self.execute_tools(&content).await;
+            result.tool_calls.extend(tool_calls);
 
             let mut history_guard = history.write().await;
             history_guard.push(Message::assistant(content));
@@ -94,19 +107,25 @@ impl<C: LLMClient> Agent<C> {
         }
     }
 
-    async fn execute_tools(&self, content: &[ContentBlock]) -> Vec<ContentBlock> {
+    async fn execute_tools(&self, content: &[ContentBlock]) -> (Vec<ContentBlock>, Vec<ToolCall>) {
         let mut tool_results = Vec::new();
+        let mut tool_calls = Vec::new();
 
         for block in content {
             if let ContentBlock::ToolUse { name, input, id } = block {
-                print_command(&format!("{}: {:?}", name, input));
-
                 let output = match self.tools.execute(name, input.clone()).await {
                     Ok(out) => out,
                     Err(e) => format!("Error: {}", e),
                 };
 
-                print_tool_result(&output);
+                let is_error = output.starts_with("Error:");
+
+                tool_calls.push(ToolCall {
+                    name: name.clone(),
+                    input: input.clone(),
+                    output: output.clone(),
+                    is_error,
+                });
 
                 tool_results.push(ContentBlock::ToolResult {
                     tool_use_id: id.clone(),
@@ -115,12 +134,14 @@ impl<C: LLMClient> Agent<C> {
             }
         }
 
-        tool_results
+        (tool_results, tool_calls)
     }
 
-    async fn run_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<String> {
+    async fn run_streaming(&self, history: Arc<RwLock<Vec<Message>>>) -> Result<RunResult> {
         let system = self.config.system_prompt();
         let tools: Vec<serde_json::Value> = self.tools.schemas().into_iter().cloned().collect();
+
+        let mut result = RunResult::default();
 
         loop {
             let mut stream = {
@@ -130,7 +151,6 @@ impl<C: LLMClient> Agent<C> {
                     .await?
             };
 
-            let mut text_content = String::new();
             let mut tool_uses: Vec<ContentBlock> = Vec::new();
             let mut tool_results: Vec<ContentBlock> = Vec::new();
             let mut current_tool: Option<(String, String, String)> = None;
@@ -138,8 +158,7 @@ impl<C: LLMClient> Agent<C> {
             while let Some(event) = stream.next().await {
                 match event? {
                     StreamEvent::TextDelta(text) => {
-                        print!("{}", text);
-                        text_content.push_str(&text);
+                        result.text.push_str(&text);
                     }
 
                     StreamEvent::ToolCallStart { id, name } => {
@@ -157,14 +176,19 @@ impl<C: LLMClient> Agent<C> {
                             let input: serde_json::Value =
                                 serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
 
-                            print_command(&format!("{}: {:?}", name, input));
-
                             let output = match self.tools.execute(&name, input.clone()).await {
                                 Ok(out) => out,
                                 Err(e) => format!("Error: {}", e),
                             };
 
-                            print_tool_result(&output);
+                            let is_error = output.starts_with("Error:");
+
+                            result.tool_calls.push(ToolCall {
+                                name: name.clone(),
+                                input: input.clone(),
+                                output: output.clone(),
+                                is_error,
+                            });
 
                             tool_uses.push(ContentBlock::ToolUse {
                                 id: id.clone(),
@@ -182,18 +206,18 @@ impl<C: LLMClient> Agent<C> {
                     StreamEvent::StopReason(reason) => {
                         if reason != "tool_use" && reason != "tool_calls" {
                             let mut history_guard = history.write().await;
-                            if !text_content.is_empty() || !tool_uses.is_empty() {
+                            if !result.text.is_empty() || !tool_uses.is_empty() {
                                 let mut assistant_content = Vec::new();
-                                if !text_content.is_empty() {
+                                if !result.text.is_empty() {
                                     assistant_content.push(ContentBlock::Text {
-                                        text: text_content.clone(),
+                                        text: result.text.clone(),
                                     });
                                 }
                                 assistant_content.extend(tool_uses.clone());
                                 history_guard.push(Message::assistant(assistant_content));
                             }
                             drop(history_guard);
-                            return Ok(text_content);
+                            return Ok(result);
                         }
                     }
                 }
@@ -204,15 +228,15 @@ impl<C: LLMClient> Agent<C> {
             if !tool_uses.is_empty() {
                 history_guard.push(Message::assistant(tool_uses));
                 history_guard.push(Message::tool_results(tool_results));
-            } else if !text_content.is_empty() {
+            } else if !result.text.is_empty() {
                 history_guard.push(Message::assistant(vec![ContentBlock::Text {
-                    text: text_content.clone(),
+                    text: result.text.clone(),
                 }]));
             }
             drop(history_guard);
 
             if !has_tool_results {
-                return Ok(text_content);
+                return Ok(result);
             }
         }
     }

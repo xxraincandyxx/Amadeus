@@ -140,8 +140,8 @@ pub struct ChatResponse {
     /// Tool calls made during processing.
     ///
     /// List of tools the agent executed.
-    /// Each entry includes the tool name and command.
-    pub tool_calls: Vec<ToolCallInfo>,
+    /// Each entry includes the tool name, input, and output.
+    pub tool_calls: Vec<ToolCall>,
 
     /// Why the agent stopped generating.
     ///
@@ -156,25 +156,14 @@ pub struct ChatResponse {
 ///
 /// Represents a single tool invocation made by the agent.
 #[derive(Debug, Serialize)]
-pub struct ToolCallInfo {
-    /// Unique identifier for this tool call.
-    ///
-    /// Used to correlate tool calls with their results.
-    pub id: String,
-
+pub struct ToolCall {
     /// Name of the tool that was called.
-    ///
-    /// Currently always "bash".
     pub name: String,
 
-    /// The command that was executed.
-    ///
-    /// For the bash tool, this is the shell command.
-    pub command: String,
+    /// The input to the tool.
+    pub input: serde_json::Value,
 
     /// The output from the tool execution.
-    ///
-    /// Combined stdout and stderr.
     pub output: String,
 }
 

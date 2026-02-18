@@ -12,8 +12,7 @@ use claude_agent::{
     api::http::run_server,
     client::anthropic::AnthropicClient,
     client::openai::OpenAIClient,
-    ui::colors::Palette,
-    ui::repl::Repl,
+    ui::App,
 };
 
 #[tokio::main]
@@ -45,7 +44,7 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, config);
+            let agent = Agent::new(client, Arc::clone(&config));
             agent.run(prompt, Arc::clone(&history)).await?
         }
         Provider::OpenAI => {
@@ -54,19 +53,29 @@ async fn run_single_shot(prompt: &str) -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, config);
+            let agent = Agent::new(client, Arc::clone(&config));
             agent.run(prompt, Arc::clone(&history)).await?
         }
     };
 
-    println!("{}", result);
+    for tool_call in &result.tool_calls {
+        if let Some(cmd) = tool_call.input.get("command").and_then(|v| v.as_str()) {
+            println!("$ {}", cmd);
+        }
+        println!("{}", tool_call.output);
+    }
+
+    if !result.text.is_empty() {
+        println!("{}", result.text);
+    }
+
     Ok(())
 }
 
 async fn run_interactive() -> Result<()> {
-    println!("{}", Palette::header());
-
     let config = Arc::new(Config::load()?);
+    let workdir = config.workdir.clone();
+    let model = config.model.clone();
 
     match config.provider {
         Provider::Anthropic => {
@@ -75,8 +84,9 @@ async fn run_interactive() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, config);
-            Repl::new(agent).run().await?;
+            let agent = Agent::new(client, Arc::clone(&config));
+            let mut app = App::new(agent, workdir, model);
+            app.run().await?;
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -84,8 +94,9 @@ async fn run_interactive() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, config);
-            Repl::new(agent).run().await?;
+            let agent = Agent::new(client, Arc::clone(&config));
+            let mut app = App::new(agent, workdir, model);
+            app.run().await?;
         }
     };
 

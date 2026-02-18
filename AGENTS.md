@@ -74,7 +74,11 @@ src/
   agent/           # Agent domain (config, messages, loop_agent)
   client/          # LLM client domain (trait + anthropic/openai impls)
   tools/           # Tool implementations (bash, file, schema, tool_trait)
-  ui/              # Terminal UI (colors, repl)
+  ui/              # Terminal UI (app, colors, event, components)
+    app.rs         # Main TUI application state machine
+    event.rs       # Keyboard/mouse event handling
+    colors.rs      # Dracula theme and Palette
+    components/    # UI widgets (input, messages, sidebar, status, tools)
   api/             # HTTP server (handlers, types, http)
 tests/             # Integration tests (bash_test, messages_test, etc.)
 ```
@@ -197,3 +201,25 @@ impl Tool for BashTool {
 - **Path safety**: File tools validate paths stay within workspace
 - **Streaming support**: Real-time output via SSE
 - **Shared history**: `Arc<RwLock<Vec<Message>>>` for conversation state
+
+## TUI Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit message |
+| `Ctrl+Enter` | Insert newline |
+| `↑` / `↓` | Navigate history |
+| `PgUp` / `PgDn` | Scroll messages |
+| `Ctrl+B` / `⌘B` | Toggle file tree sidebar |
+| `Alt+B` / `⌥B` | Toggle help sidebar |
+| `Esc` | Collapse tool panels / close sidebar |
+| `q` / `Ctrl+D` | Exit |
+
+## UI Components
+
+The TUI uses ratatui with a Dracula-inspired color theme:
+- **Status bar**: Shows processing state, timing, token count, model name
+- **Messages area**: Scrollable conversation history with markdown rendering
+- **Tool panels**: Collapsible output panels for bash/file operations
+- **Input area**: Multiline textarea with command history
+- **Sidebars**: Toggleable file tree (Ctrl+B) and help panel (Alt+B)

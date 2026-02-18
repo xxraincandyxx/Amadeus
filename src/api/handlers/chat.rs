@@ -55,9 +55,17 @@ where
     let history = Arc::new(RwLock::new(Vec::new()));
 
     match agent.run(message, history).await {
-        Ok(content) => Ok(Json(ChatResponse {
-            content,
-            tool_calls: Vec::new(),
+        Ok(result) => Ok(Json(ChatResponse {
+            content: result.text,
+            tool_calls: result
+                .tool_calls
+                .into_iter()
+                .map(|tc| crate::api::types::ToolCall {
+                    name: tc.name,
+                    input: tc.input,
+                    output: tc.output,
+                })
+                .collect(),
             stop_reason: "end_turn".to_string(),
         })),
         Err(e) => Err(Json(ErrorResponse::from_agent_error(&e))),
