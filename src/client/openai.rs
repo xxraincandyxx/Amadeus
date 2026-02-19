@@ -206,16 +206,20 @@ impl OpenAIClient {
                     .collect();
 
                 if msg.role == "assistant" && !tool_calls.is_empty() {
-                    let content_str = if text_content.is_empty() {
-                        Value::Null
+                    // Build message with tool_calls
+                    // Note: Don't include null content, some APIs (litellm) reject it
+                    if text_content.is_empty() {
+                        result.push(serde_json::json!({
+                            "role": "assistant",
+                            "tool_calls": tool_calls
+                        }));
                     } else {
-                        Value::String(text_content.join(""))
-                    };
-                    result.push(serde_json::json!({
-                        "role": "assistant",
-                        "content": content_str,
-                        "tool_calls": tool_calls
-                    }));
+                        result.push(serde_json::json!({
+                            "role": "assistant",
+                            "content": text_content.join(""),
+                            "tool_calls": tool_calls
+                        }));
+                    }
                 } else if !text_content.is_empty() {
                     result.push(serde_json::json!({
                         "role": msg.role,
@@ -605,10 +609,14 @@ impl OpenAIClient {
                                 }
                             }
 
-                            // Finish reason
+                            // Finish reason - emit ToolCallDone before StopReason for tool_calls
                             if let Some(finish_reason) =
                                 choice.get("finish_reason").and_then(|v| v.as_str())
                             {
+                                if finish_reason == "tool_calls" {
+                                    // Signal tool call completion before stop reason
+                                    return Some(StreamEvent::ToolCallDone(String::new()));
+                                }
                                 return Some(StreamEvent::StopReason(finish_reason.to_string()));
                             }
                         }
