@@ -62,6 +62,7 @@ impl ToolPanel {
             return;
         }
 
+        let max_lines = area.height as usize;
         let mut lines: Vec<Line> = Vec::new();
         let tool_border_color = if self.results.iter().any(|r| r.is_error) {
             THEME.red
@@ -70,6 +71,10 @@ impl ToolPanel {
         };
 
         for result in &self.results {
+            if lines.len() >= max_lines {
+                break;
+            }
+
             let header_style = Style::default()
                 .fg(tool_border_color)
                 .add_modifier(Modifier::BOLD);
@@ -98,11 +103,13 @@ impl ToolPanel {
 
             if !result.is_collapsed {
                 if let Some(cmd) = &result.command {
-                    lines.push(Line::from(vec![
-                        Span::styled("│ ", Style::default().fg(THEME.border)),
-                        Span::styled("$ ", Style::default().fg(THEME.purple)),
-                        Span::styled(cmd, Style::default().fg(THEME.cyan)),
-                    ]));
+                    if lines.len() < max_lines {
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(THEME.border)),
+                            Span::styled("$ ", Style::default().fg(THEME.purple)),
+                            Span::styled(cmd, Style::default().fg(THEME.cyan)),
+                        ]));
+                    }
                 }
 
                 let output_style = if result.is_error {
@@ -111,14 +118,15 @@ impl ToolPanel {
                     Style::default().fg(THEME.fg)
                 };
 
-                for line in result.output.lines().take(20) {
+                let remaining = max_lines.saturating_sub(lines.len() + 1);
+                for line in result.output.lines().take(remaining) {
                     lines.push(Line::from(vec![
                         Span::styled("│ ", Style::default().fg(THEME.border)),
                         Span::styled(line, output_style),
                     ]));
                 }
 
-                if result.output.lines().count() > 20 {
+                if result.output.lines().count() > remaining && lines.len() < max_lines {
                     lines.push(Line::from(vec![
                         Span::styled("│ ", Style::default().fg(THEME.border)),
                         Span::styled("... (truncated)", Style::default().fg(THEME.comment)),
@@ -126,10 +134,12 @@ impl ToolPanel {
                 }
             }
 
-            lines.push(Line::from(vec![Span::styled(
-                "└──",
-                Style::default().fg(THEME.border),
-            )]));
+            if lines.len() < max_lines {
+                lines.push(Line::from(vec![Span::styled(
+                    "└──",
+                    Style::default().fg(THEME.border),
+                )]));
+            }
         }
 
         let paragraph = Paragraph::new(lines).block(
@@ -143,6 +153,10 @@ impl ToolPanel {
 
     pub fn has_results(&self) -> bool {
         !self.results.is_empty()
+    }
+
+    pub fn all_collapsed(&self) -> bool {
+        self.results.iter().all(|r| r.is_collapsed)
     }
 }
 

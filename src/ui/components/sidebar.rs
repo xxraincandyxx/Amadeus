@@ -27,7 +27,6 @@ pub struct FileSidebar {
     workdir: PathBuf,
     entries: Vec<FileEntry>,
     selected: usize,
-    #[allow(dead_code)]
     scroll_offset: usize,
 }
 
@@ -82,13 +81,32 @@ impl FileSidebar {
     pub fn select_up(&mut self) {
         if self.selected > 0 {
             self.selected -= 1;
+            self.ensure_selected_visible(0);
         }
     }
 
-    pub fn select_down(&mut self) {
+    pub fn select_down(&mut self, visible_count: usize) {
         if self.selected < self.entries.len().saturating_sub(1) {
             self.selected += 1;
+            self.ensure_selected_visible(visible_count);
         }
+    }
+
+    fn ensure_selected_visible(&mut self, visible_count: usize) {
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + visible_count && visible_count > 0 {
+            self.scroll_offset = self.selected - visible_count + 1;
+        }
+    }
+
+    pub fn scroll_up(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_down(&mut self, visible_count: usize) {
+        let max_scroll = self.entries.len().saturating_sub(visible_count);
+        self.scroll_offset = self.scroll_offset.saturating_add(1).min(max_scroll);
     }
 
     pub fn selected_path(&self) -> Option<&str> {
@@ -102,18 +120,22 @@ impl FileSidebar {
 
         let content_width = area.width.saturating_sub(2) as usize;
         let indent_str = "  ";
+        let visible_count = area.height.saturating_sub(2) as usize;
 
         let items: Vec<ListItem> = self
             .entries
             .iter()
+            .skip(self.scroll_offset)
+            .take(visible_count)
             .enumerate()
             .map(|(i, entry)| {
+                let actual_index = i + self.scroll_offset;
                 let indent = indent_str.repeat(entry.depth);
                 let icon = if entry.is_dir { "📁 " } else { "📄 " };
                 let name = entry.path.split('/').next_back().unwrap_or(&entry.path);
 
                 let available_width =
-                    content_width.saturating_sub(indent.width() + icon.width() + 1);
+                    content_width.saturating_sub(indent.width() + icon.width() + 2);
                 let truncated_name = if name.width() > available_width {
                     let mut result = String::new();
                     let mut width = 0;
@@ -130,7 +152,7 @@ impl FileSidebar {
                     name.to_string()
                 };
 
-                let style = if i == self.selected {
+                let style = if actual_index == self.selected {
                     Style::default()
                         .fg(THEME.cyan)
                         .bg(THEME.selection)

@@ -108,6 +108,9 @@ impl InputComponent {
             .set_cursor_style(Style::default().fg(crate::ui::colors::THEME.cyan));
         self.textarea
             .set_placeholder_style(Style::default().fg(crate::ui::colors::THEME.comment));
+        self.textarea
+            .set_placeholder_text(" Type your message... (Enter to send, Ctrl+Enter for newline)");
+        self.textarea.move_cursor(CursorMove::End);
     }
 
     pub fn insert_newline(&mut self) {

@@ -51,6 +51,7 @@ pub struct App<C: LLMClient> {
     stream_abort: Option<tokio::task::JoinHandle<()>>,
     current_text: String,
     messages_area: Rect,
+    sidebar_area: Rect,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -73,6 +74,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             stream_abort: None,
             current_text: String::new(),
             messages_area: Rect::default(),
+            sidebar_area: Rect::default(),
         }
     }
 
@@ -160,13 +162,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 }
             }
             MouseEventKind::ScrollUp => {
-                self.messages.scroll_up(3);
+                if self.is_mouse_in_messages_area(event.column, event.row) {
+                    self.messages.scroll_up(3);
+                }
             }
             MouseEventKind::ScrollDown => {
-                self.messages.scroll_down(3);
+                if self.is_mouse_in_messages_area(event.column, event.row) {
+                    self.messages.scroll_down(3);
+                }
             }
             _ => {}
         }
+    }
+
+    fn is_mouse_in_messages_area(&self, x: u16, y: u16) -> bool {
+        x >= self.messages_area.x
+            && x < self.messages_area.x + self.messages_area.width
+            && y >= self.messages_area.y
+            && y < self.messages_area.y + self.messages_area.height
     }
 
     fn handle_agent_event(&mut self, event: AgentEvent) -> bool {
@@ -265,7 +278,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::NONE, KeyCode::Down) => {
                 if let Some(Sidebar::Files(ref mut sidebar)) = self.sidebar {
-                    sidebar.select_down();
+                    let visible_count = self.sidebar_area.height.saturating_sub(2) as usize;
+                    sidebar.select_down(visible_count);
                 }
             }
             _ => {}
@@ -506,6 +520,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             };
 
         if let Some(sidebar_area) = sidebar_area {
+            self.sidebar_area = sidebar_area;
             if let Some(ref sidebar) = self.sidebar {
                 match sidebar {
                     Sidebar::Files(fs) => fs.render(frame, sidebar_area),
@@ -516,7 +531,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let input_height = self.input.height();
         let status_height = 1u16;
-        let tool_height = if self.tool_panel.has_results() {
+        let tool_height = if self.tool_panel.has_results() && !self.tool_panel.all_collapsed() {
             8u16
         } else {
             0u16

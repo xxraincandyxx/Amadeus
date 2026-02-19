@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
+use unicode_width::UnicodeWidthStr;
 
 use crate::ui::colors::THEME;
 use crate::ui::components::markdown::render_markdown;
@@ -178,6 +179,7 @@ impl MessagesComponent {
                     )
                 }
             };
+            let role_prefix_width = role_prefix.content.width();
 
             if msg.role == MessageRole::Tool && msg.is_collapsed {
                 lines.push(Line::from(vec![
@@ -186,7 +188,31 @@ impl MessagesComponent {
                     Span::styled("(collapsed)", Style::default().fg(THEME.comment)),
                 ]));
             } else {
-                let content_lines = render_markdown(&msg.content, content_width);
+                let first_line_width = content_width.saturating_sub(role_prefix_width);
+                let mut content_lines = render_markdown(&msg.content, content_width);
+                if let Some(first_line) = content_lines.first_mut() {
+                    let first_line_spans: Vec<Span> = first_line
+                        .spans
+                        .iter()
+                        .flat_map(|span| {
+                            let span_width = span.content.width();
+                            if span_width <= first_line_width {
+                                vec![span.clone()]
+                            } else {
+                                let chars: Vec<char> = span.content.chars().collect();
+                                let mut result = Vec::new();
+                                for chunk in chars.chunks(first_line_width) {
+                                    result.push(Span::styled(
+                                        chunk.iter().collect::<String>(),
+                                        span.style,
+                                    ));
+                                }
+                                result
+                            }
+                        })
+                        .collect();
+                    first_line.spans = first_line_spans;
+                }
 
                 for (i, content_line) in content_lines.into_iter().enumerate() {
                     if i == 0 {
@@ -211,8 +237,32 @@ impl MessagesComponent {
                     .fg(THEME.assistant_msg)
                     .add_modifier(Modifier::BOLD),
             );
-
-            let content_lines = render_markdown(streaming, content_width);
+            let role_prefix_width = role_prefix.content.width();
+            let first_line_width = content_width.saturating_sub(role_prefix_width);
+            let mut content_lines = render_markdown(streaming, content_width);
+            if let Some(first_line) = content_lines.first_mut() {
+                let first_line_spans: Vec<Span> = first_line
+                    .spans
+                    .iter()
+                    .flat_map(|span| {
+                        let span_width = span.content.width();
+                        if span_width <= first_line_width {
+                            vec![span.clone()]
+                        } else {
+                            let chars: Vec<char> = span.content.chars().collect();
+                            let mut result = Vec::new();
+                            for chunk in chars.chunks(first_line_width) {
+                                result.push(Span::styled(
+                                    chunk.iter().collect::<String>(),
+                                    span.style,
+                                ));
+                            }
+                            result
+                        }
+                    })
+                    .collect();
+                first_line.spans = first_line_spans;
+            }
 
             for (i, content_line) in content_lines.into_iter().enumerate() {
                 if i == 0 {
