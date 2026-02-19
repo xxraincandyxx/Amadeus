@@ -1,215 +1,215 @@
-# Amadeus V2 重构文档
+# Amadeus V2 Refactor Document
 
-> 基于 "Agent OS" 理念的多 Agent 编排系统重构
+> Multi-Agent Orchestration System Based on "Agent OS" Philosophy
 
-## 背景
+## Background
 
-### 当前架构限制
+### Current Architecture Limitations
 
-| 问题 | 表现 |
-|------|------|
-| 单 Agent | 无法并行任务，无法协作 |
-| 状态在内存 | 重启丢失，无法回滚 |
-| 线性历史 | 无法分支探索，无法版本控制 |
-| 无协作原语 | Agent 间通信困难 |
-| 无持久化 | 无法恢复，无法审计 |
+| Issue | Impact |
+|-------|--------|
+| Single Agent | No parallel tasks, no collaboration |
+| In-memory State | Lost on restart, no rollback |
+| Linear History | No branching exploration, no version control |
+| No Collaboration Primitives | Difficult inter-agent communication |
+| No Persistence | No recovery, no audit trail |
 
-### 目标
+### Goal
 
-构建一个 **Agent OS** —— 像操作系统一样管理 Agent 的生命周期、状态、通信和版本。
+Build an **Agent OS** — manage agent lifecycle, state, communication, and versioning like an operating system.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Amadeus V2 Architecture                     │
 ├─────────────────────────────────────────────────────────────────┤
-│  Scheduler │ Router │ Supervisor │ Checkpointer                │  ← 调度层
+│  Scheduler │ Router │ Supervisor │ Checkpointer                │  ← Scheduling
 ├─────────────────────────────────────────────────────────────────┤
-│  Workspace │ Branch │ Commit │ EventLog │ StateStore           │  ← 存储层
+│  Workspace │ Branch │ Commit │ EventLog │ StateStore           │  ← Storage
 ├─────────────────────────────────────────────────────────────────┤
-│  IPC │ PubSub │ RPC │ LockManager │ TransactionManager         │  ← 通信层
+│  IPC │ PubSub │ RPC │ LockManager │ TransactionManager         │  ← Communication
 ├─────────────────────────────────────────────────────────────────┤
-│  Agent Pool │ ToolRegistry │ LLMClient Pool                    │  ← 执行层
+│  Agent Pool │ ToolRegistry │ LLMClient Pool                    │  ← Execution
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 核心概念
+## Core Concepts
 
-### 1. Workspace（工作空间）
+### 1. Workspace
 
-所有 Agent 共享的工作空间，类似 Git repository。
+Shared workspace for all agents, similar to a Git repository.
 
 ```rust
-/// 工作空间 - Agent 协作的共享上下文
+/// Workspace - Shared context for agent collaboration
 pub struct Workspace {
-    /// 唯一标识
+    /// Unique identifier
     pub id: Uuid,
 
-    /// 工作目录
+    /// Working directory
     pub workdir: PathBuf,
 
-    /// 分支系统
+    /// Branch system
     branches: HashMap<String, Branch>,
     active_branch: String,
 
-    /// 事件日志（append-only）
+    /// Event log (append-only)
     event_log: EventLog,
 
-    /// 版本化状态
+    /// Versioned state
     state: VersionedState,
 
-    /// Agent 注册表
+    /// Agent registry
     agents: HashMap<AgentId, AgentMeta>,
 
-    /// 锁管理器
+    /// Lock manager
     locks: LockManager,
 }
 
 impl Workspace {
-    /// 创建新工作空间
+    /// Create new workspace
     pub async fn create(path: PathBuf) -> Result<Self>;
 
-    /// 从快照恢复
+    /// Restore from snapshot
     pub async fn restore(snapshot: Snapshot) -> Result<Self>;
 
-    /// 创建分支
+    /// Create branch
     pub async fn branch(&mut self, name: &str, from: Option<&str>) -> Result<()>;
 
-    /// 切换分支
+    /// Switch branch
     pub async fn checkout(&mut self, name: &str) -> Result<()>;
 
-    /// 合并分支
+    /// Merge branch
     pub async fn merge(&mut self, from: &str, into: &str, strategy: MergeStrategy) -> Result<()>;
 
-    /// 创建提交
+    /// Create commit
     pub async fn commit(&mut self, message: &str, author: AgentId) -> Result<CommitId>;
 
-    /// 回滚到指定提交
+    /// Reset to commit
     pub async fn reset(&mut self, to: CommitId, mode: ResetMode) -> Result<()>;
 
-    /// 查看 diff
+    /// View diff
     pub async fn diff(&self, from: &str, to: &str) -> Result<Diff>;
 
-    /// 查看历史
+    /// View history
     pub async fn log(&self, limit: usize) -> Result<Vec<Commit>>;
 
-    /// 创建快照（用于持久化）
+    /// Create snapshot (for persistence)
     pub async fn snapshot(&self) -> Result<Snapshot>;
 }
 ```
 
-### 2. Branch（分支）
+### 2. Branch
 
-**核心创新**：让 Agent 可以"后悔"，可以并行探索。
+**Key Innovation**: Allow agents to "regret", to explore in parallel.
 
 ```rust
-/// 分支 - 独立的工作线
+/// Branch - Independent line of work
 pub struct Branch {
-    /// 分支名
+    /// Branch name
     pub name: String,
 
-    /// 父分支和 commit（用于 merge）
+    /// Parent branch and commit (for merge)
     pub parent: Option<(String, CommitId)>,
 
-    /// 提交历史
+    /// Commit history
     commits: Vec<CommitId>,
 
-    /// 当前 HEAD
+    /// Current HEAD
     head: CommitId,
 
-    /// 创建时间
+    /// Creation time
     created_at: DateTime<Utc>,
 
-    /// 最后更新时间
+    /// Last update time
     updated_at: DateTime<Utc>,
 }
 ```
 
-**使用场景：**
+**Use Cases:**
 
 ```rust
-// 1. 探索性任务 - 试错
+// 1. Exploratory tasks - trial and error
 ws.branch("experiment-fix", from="main")?;
 ws.checkout("experiment-fix")?;
-// Agent 执行，如果失败...
+// Agent executes, if it fails...
 ws.checkout("main")?;
 ws.delete_branch("experiment-fix")?;
 
-// 2. 并行任务 - 多方案竞争
+// 2. Parallel tasks - competing approaches
 ws.branch("approach-a", from="main")?;
 ws.branch("approach-b", from="main")?;
 
-// 在不同分支并行运行 Agent
+// Run agents in parallel on different branches
 let a = ws.run_in_branch("approach-a", agent_a).await?;
 let b = ws.run_in_branch("approach-b", agent_b).await?;
 
-// 选择最好的结果
+// Choose the best result
 let winner = compare(a, b)?;
 ws.merge(winner, into="main")?;
 
-// 3. 回滚 - 恢复到之前状态
+// 3. Rollback - restore to previous state
 let commit = ws.find_commit_by_message("before refactor")?;
 ws.reset(commit, ResetMode::Hard)?;
 ```
 
-### 3. Commit（提交）
+### 3. Commit
 
-状态快照，支持回滚和审计。
+State snapshot, supports rollback and auditing.
 
 ```rust
-/// 提交 - 状态快照
+/// Commit - State snapshot
 pub struct Commit {
-    /// 唯一标识
+    /// Unique identifier
     pub id: CommitId,
 
-    /// 父提交
+    /// Parent commit
     pub parent: Option<CommitId>,
 
-    /// 状态快照（KV 快照）
+    /// State snapshot (KV snapshot)
     pub state: StateSnapshot,
 
-    /// 提交信息
+    /// Commit message
     pub message: String,
 
-    /// 作者（Agent）
+    /// Author (Agent)
     pub author: AgentId,
 
-    /// 时间戳
+    /// Timestamp
     pub timestamp: DateTime<Utc>,
 
-    /// 触发原因
+    /// Trigger reason
     pub trigger: CommitTrigger,
 }
 
 #[derive(Debug, Clone)]
 pub enum CommitTrigger {
-    /// 用户显式请求
+    /// User explicit request
     UserRequest,
 
-    /// Agent 完成关键步骤
+    /// Agent completed key step
     AgentCheckpoint { agent: AgentId, step: String },
 
-    /// 定时自动保存
+    /// Scheduled auto-save
     AutoSave,
 
-    /// 工具执行前后
+    /// Before/after tool execution
     ToolExecution { tool: String, phase: Phase },
 
-    /// 错误恢复点
+    /// Error recovery point
     RecoveryPoint,
 }
 ```
 
-### 4. Event（事件）
+### 4. Event
 
-Append-only 事件日志，用于审计和回放。
+Append-only event log, for auditing and replay.
 
 ```rust
-/// 事件 - 系统中发生的一切
+/// Event - Everything that happens in the system
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Event {
-    // === Agent 生命周期 ===
+    // === Agent Lifecycle ===
     AgentSpawned {
         id: AgentId,
         role: String,
@@ -224,7 +224,7 @@ pub enum Event {
         status: AgentStatus
     },
 
-    // === 思考与行动 ===
+    // === Thinking & Action ===
     AgentThinking {
         id: AgentId,
         content: String
@@ -234,7 +234,7 @@ pub enum Event {
         action: Action
     },
 
-    // === 通信 ===
+    // === Communication ===
     MessageSent {
         from: AgentId,
         to: AgentId,
@@ -247,7 +247,7 @@ pub enum Event {
         channel: String,
     },
 
-    // === 状态变更 ===
+    // === State Changes ===
     StateUpdated {
         key: String,
         old: Option<Value>,
@@ -255,7 +255,7 @@ pub enum Event {
         author: AgentId,
     },
 
-    // === 工具调用 ===
+    // === Tool Calls ===
     ToolCallStart {
         agent: AgentId,
         tool: String,
@@ -273,7 +273,7 @@ pub enum Event {
         error: String
     },
 
-    // === 分支与版本 ===
+    // === Branch & Version ===
     BranchCreated {
         name: String,
         from: String,
@@ -295,7 +295,7 @@ pub enum Event {
         mode: ResetMode,
     },
 
-    // === 锁与事务 ===
+    // === Locks & Transactions ===
     LockAcquired {
         resource: String,
         holder: AgentId,
@@ -313,52 +313,52 @@ pub enum Event {
     TransactionRolledBack { tx_id: TxId, reason: String },
 }
 
-/// 事件日志 - append-only 存储
+/// Event log - append-only storage
 pub struct EventLog {
     events: Vec<Event>,
-    index: HashMap<String, Vec<usize>>,  // 索引，快速查找
+    index: HashMap<String, Vec<usize>>,  // Index for fast lookup
 }
 
 impl EventLog {
-    /// 追加事件
+    /// Append event
     pub fn append(&mut self, event: Event) -> Result<usize>;
 
-    /// 查询事件（支持过滤）
+    /// Query events (with filter)
     pub fn query(&self, filter: EventFilter) -> Result<Vec<&Event>>;
 
-    /// 从指定位置回放
+    /// Replay from position
     pub fn replay_from(&self, index: usize) -> Result<Vec<Event>>;
 
-    /// 持久化到磁盘
+    /// Persist to disk
     pub async fn flush(&self, path: &Path) -> Result<()>;
 }
 ```
 
-### 5. State（状态）
+### 5. State
 
-版本化的 KV 存储，支持事务。
+Versioned KV store with transaction support.
 
 ```rust
-/// 版本化状态
+/// Versioned state
 pub struct VersionedState {
-    /// KV 存储
+    /// KV store
     data: BTreeMap<String, (Value, Version)>,
 
-    /// 当前版本号
+    /// Current version number
     version: u64,
 
-    /// 锁管理器引用
+    /// Lock manager reference
     locks: Arc<LockManager>,
 }
 
 impl VersionedState {
-    /// 读取值
+    /// Read value
     pub async fn read(&self, key: &str) -> Result<Option<Value>>;
 
-    /// 写入值
+    /// Write value
     pub async fn write(&mut self, key: &str, value: Value) -> Result<()>;
 
-    /// Compare-and-Swap（乐观锁）
+    /// Compare-and-Swap (optimistic lock)
     pub async fn cas(
         &mut self,
         key: &str,
@@ -366,128 +366,128 @@ impl VersionedState {
         new: Value
     ) -> Result<bool>;
 
-    /// 原子更新
+    /// Atomic update
     pub async fn update<F>(&mut self, key: &str, f: F) -> Result<Value>
     where
         F: FnOnce(Option<&Value>) -> Value;
 
-    /// 批量读取
+    /// Batch read
     pub async fn read_batch(&self, keys: &[&str]) -> Result<HashMap<String, Option<Value>>>;
 
-    /// 批量写入
+    /// Batch write
     pub async fn write_batch(&mut self, updates: HashMap<String, Value>) -> Result<()>;
 
-    /// 创建快照
+    /// Create snapshot
     pub fn snapshot(&self) -> StateSnapshot;
 
-    /// 从快照恢复
+    /// Restore from snapshot
     pub fn restore(&mut self, snapshot: StateSnapshot);
 }
 ```
 
 ---
 
-## Agent 系统
+## Agent System
 
-### Agent 定义
+### Agent Definition
 
 ```rust
-/// Agent 配置
+/// Agent configuration
 pub struct AgentConfig {
-    /// Agent ID（自动生成或指定）
+    /// Agent ID (auto-generated or specified)
     pub id: Option<AgentId>,
 
-    /// 角色/名称
+    /// Role/name
     pub role: String,
 
-    /// 系统提示词
+    /// System prompt
     pub system_prompt: String,
 
-    /// 使用的模型
+    /// Model to use
     pub model: ModelConfig,
 
-    /// 可用工具（None 表示全部）
+    /// Available tools (None = all)
     pub tools: Option<Vec<String>>,
 
-    /// 最大工具调用次数
+    /// Max tool calls
     pub max_tool_calls: usize,
 
-    /// 超时时间
+    /// Timeout
     pub timeout: Duration,
 
-    /// 权重（用于调度）
+    /// Priority (for scheduling)
     pub priority: u8,
 
-    /// 重启策略
+    /// Restart policy
     pub restart_policy: RestartPolicy,
 }
 
-/// Agent 运行时状态
+/// Agent runtime state
 pub struct Agent {
-    /// 配置
+    /// Configuration
     config: AgentConfig,
 
-    /// 所属工作空间
+    /// Workspace reference
     workspace: Arc<Workspace>,
 
-    /// LLM 客户端
+    /// LLM client
     client: Arc<dyn LLMClient>,
 
-    /// 工具注册表（可能是子集）
+    /// Tool registry (possibly subset)
     tools: ToolRegistry,
 
-    /// 本地状态
+    /// Local state
     local_state: HashMap<String, Value>,
 
-    /// 运行时状态
+    /// Runtime status
     status: AgentStatus,
 
-    /// 统计信息
+    /// Statistics
     stats: AgentStats,
 }
 
 impl Agent {
-    /// 执行任务（阻塞直到完成）
+    /// Execute task (blocking until complete)
     pub async fn run(&mut self, input: &str) -> Result<RunResult>;
 
-    /// 执行任务（流式返回事件）
+    /// Execute task (stream events)
     pub fn run_stream(&mut self, input: &str) -> impl Stream<Item = AgentEvent>;
 
-    /// 执行任务（channel 版本）
+    /// Execute task (channel version)
     pub async fn run_channel(&mut self, input: &str) -> Result<mpsc::Receiver<AgentEvent>>;
 
-    /// 停止执行
+    /// Stop execution
     pub async fn stop(&mut self) -> Result<()>;
 
-    /// 暂停/恢复
+    /// Pause/resume
     pub async fn pause(&mut self) -> Result<()>;
     pub async fn resume(&mut self) -> Result<()>;
 
-    /// 获取状态
+    /// Get status
     pub fn status(&self) -> AgentStatus;
 
-    /// 获取统计
+    /// Get stats
     pub fn stats(&self) -> &AgentStats;
 }
 ```
 
-### Agent 事件
+### Agent Events
 
 ```rust
-/// Agent 执行事件
+/// Agent execution events
 #[derive(Debug, Clone)]
 pub enum AgentEvent {
-    // === 生命周期 ===
+    // === Lifecycle ===
     Started { id: AgentId },
     Paused { id: AgentId },
     Resumed { id: AgentId },
     Stopped { id: AgentId, reason: StopReason },
 
-    // === LLM 交互 ===
+    // === LLM Interaction ===
     TextDelta { delta: String },
     Thinking { content: String },
 
-    // === 工具调用 ===
+    // === Tool Calls ===
     ToolStart { id: String, name: String },
     ToolInputDelta { id: String, delta: String },
     ToolComplete {
@@ -498,10 +498,10 @@ pub enum AgentEvent {
         is_error: bool,
     },
 
-    // === 状态变更 ===
+    // === State Changes ===
     StateUpdated { key: String, old: Option<Value>, new: Value },
 
-    // === 完成 ===
+    // === Completion ===
     Done { result: RunResult },
     Error { message: String },
 }
@@ -509,49 +509,49 @@ pub enum AgentEvent {
 
 ---
 
-## 协作模式
+## Collaboration Patterns
 
 ### 1. Supervisor-Worker
 
 ```rust
-/// Supervisor 配置
+/// Supervisor configuration
 pub struct SupervisorConfig {
-    /// Supervisor Agent
+    /// Supervisor agent
     supervisor: AgentConfig,
 
-    /// Worker Agents
+    /// Worker agents
     workers: Vec<AgentConfig>,
 
-    /// 任务分配策略
+    /// Task dispatch strategy
     strategy: DispatchStrategy,
 
-    /// 最大并行数
+    /// Max parallel tasks
     max_parallel: usize,
 }
 
-/// 任务分配策略
+/// Dispatch strategies
 pub enum DispatchStrategy {
-    /// 轮询
+    /// Round-robin
     RoundRobin,
-    /// 最少任务优先
+    /// Least loaded first
     LeastLoaded,
-    /// 随机
+    /// Random
     Random,
-    /// 基于 Agent 能力匹配
+    /// Match by agent capability
     CapabilityMatch,
 }
 
 impl Supervisor {
-    /// 分发任务给 workers
+    /// Dispatch task to workers
     pub async fn dispatch(&mut self, task: Task) -> Result<Vec<TaskResult>>;
 
-    /// 广播给所有 workers
+    /// Broadcast to all workers
     pub async fn broadcast(&mut self, message: &str) -> Result<Vec<RunResult>>;
 
-    /// 收集 worker 结果
+    /// Collect worker results
     pub async fn collect(&mut self) -> Result<Vec<TaskResult>>;
 
-    /// 监控 workers 状态
+    /// Monitor worker status
     pub fn workers_status(&self) -> HashMap<AgentId, AgentStatus>;
 }
 ```
@@ -559,7 +559,7 @@ impl Supervisor {
 ### 2. Pipeline
 
 ```rust
-/// 流水线
+/// Pipeline
 pub struct Pipeline {
     stages: Vec<PipelineStage>,
     config: PipelineConfig,
@@ -573,20 +573,20 @@ pub struct PipelineStage {
 }
 
 impl Pipeline {
-    /// 创建流水线
+    /// Create pipeline
     pub fn new() -> Self;
 
-    /// 添加阶段
+    /// Add stage
     pub fn stage(mut self, name: &str, agent: AgentConfig) -> Self;
 
-    /// 执行流水线
+    /// Execute pipeline
     pub async fn run(&self, input: Value) -> Result<PipelineResult>;
 
-    /// 流式执行
+    /// Stream execution
     pub fn run_stream(&self, input: Value) -> impl Stream<Item = PipelineEvent>;
 }
 
-// 使用示例
+// Usage example
 let pipeline = Pipeline::new()
     .stage("parse", AgentConfig::for_role("parser"))
     .stage("analyze", AgentConfig::for_role("analyzer"))
@@ -596,10 +596,10 @@ let pipeline = Pipeline::new()
 let result = pipeline.run(input).await?;
 ```
 
-### 3. Mesh（网状）
+### 3. Mesh
 
 ```rust
-/// 网状拓扑
+/// Mesh topology
 pub struct Mesh {
     agents: HashMap<AgentId, Agent>,
     topology: Topology,
@@ -607,99 +607,99 @@ pub struct Mesh {
 }
 
 pub enum Topology {
-    /// 全连接（每个 Agent 可以直接通信）
+    /// Fully connected (every agent can communicate directly)
     FullMesh,
-    /// 星形（中心路由）
+    /// Star (central router)
     Star { center: AgentId },
-    /// 环形
+    /// Ring
     Ring,
-    /// 自定义邻接表
+    /// Custom adjacency list
     Custom(HashMap<AgentId, Vec<AgentId>>),
 }
 
 impl Mesh {
-    /// 创建网状
+    /// Create mesh
     pub fn new(topology: Topology) -> Self;
 
-    /// 添加 Agent
+    /// Add agent
     pub fn add(mut self, id: &str, agent: Agent) -> Self;
 
-    /// 启动所有 Agent
+    /// Start all agents
     pub async fn start(&mut self) -> Result<()>;
 
-    /// 发送消息
+    /// Send message
     pub async fn send(&mut self, from: AgentId, to: AgentId, msg: &str) -> Result<()>;
 
-    /// 广播
+    /// Broadcast
     pub async fn broadcast(&mut self, from: AgentId, msg: &str) -> Result<()>;
 
-    /// 运行直到所有 Agent 完成
+    /// Run until all agents complete
     pub async fn run(&mut self, initial: Option<(AgentId, &str)>) -> Result<MeshResult>;
 }
 ```
 
-### 4. Race（竞争）
+### 4. Race
 
 ```rust
-/// 竞争执行
+/// Competitive execution
 pub struct Race {
     agents: Vec<Agent>,
     config: RaceConfig,
 }
 
 pub struct RaceConfig {
-    /// 停止条件
+    /// Stop condition
     stop_on: StopCondition,
 
-    /// 超时
+    /// Timeout
     timeout: Duration,
 
-    /// 是否返回所有结果（即使有赢家）
+    /// Return all results (even with winner)
     return_all: bool,
 }
 
 pub enum StopCondition {
-    /// 第一个成功
+    /// First success
     FirstSuccess,
-    /// 第一个完成（不管成功失败）
+    /// First complete (success or failure)
     FirstComplete,
-    /// 所有完成
+    /// All complete
     AllComplete,
-    /// 投票决定
+    /// Vote decision
     Vote { voters: Vec<AgentId>, threshold: f32 },
 }
 
 impl Race {
-    /// 创建竞争
+    /// Create race
     pub fn new(agents: Vec<Agent>) -> Self;
 
-    /// 运行竞争
+    /// Run race
     pub async fn run(&mut self, task: &str) -> Result<RaceResult>;
 }
 
 pub struct RaceResult {
-    /// 赢家
+    /// Winner
     pub winner: Option<AgentId>,
 
-    /// 赢家结果
+    /// Winner result
     pub winner_result: Option<RunResult>,
 
-    /// 所有结果
+    /// All results
     pub all_results: HashMap<AgentId, Result<RunResult>>,
 
-    /// 排名（按完成时间）
+    /// Ranking (by completion time)
     pub ranking: Vec<(AgentId, Duration)>,
 }
 ```
 
 ---
 
-## 并发控制
+## Concurrency Control
 
-### 锁管理
+### Lock Management
 
 ```rust
-/// 锁管理器
+/// Lock manager
 pub struct LockManager {
     locks: HashMap<String, LockEntry>,
     wait_queue: HashMap<String, VecDeque<Waiter>>,
@@ -714,14 +714,14 @@ struct LockEntry {
 
 #[derive(Debug, Clone, Copy)]
 pub enum LockMode {
-    /// 共享锁（读）
+    /// Shared lock (read)
     Shared,
-    /// 排他锁（写）
+    /// Exclusive lock (write)
     Exclusive,
 }
 
 impl LockManager {
-    /// 尝试获取锁（非阻塞）
+    /// Try acquire lock (non-blocking)
     pub fn try_acquire(
         &mut self,
         resource: &str,
@@ -729,7 +729,7 @@ impl LockManager {
         mode: LockMode
     ) -> Result<bool>;
 
-    /// 获取锁（阻塞）
+    /// Acquire lock (blocking)
     pub async fn acquire(
         &mut self,
         resource: &str,
@@ -738,21 +738,21 @@ impl LockManager {
         timeout: Duration
     ) -> Result<()>;
 
-    /// 释放锁
+    /// Release lock
     pub fn release(&mut self, resource: &str, holder: AgentId) -> Result<()>;
 
-    /// 查询锁状态
+    /// Query lock status
     pub fn status(&self, resource: &str) -> Option<LockStatus>;
 
-    /// 强制释放（管理员）
+    /// Force release (admin)
     pub fn force_release(&mut self, resource: &str) -> Result<()>;
 }
 ```
 
-### 事务
+### Transactions
 
 ```rust
-/// 事务管理器
+/// Transaction manager
 pub struct TransactionManager {
     active: HashMap<TxId, Transaction>,
     state: Arc<RwLock<VersionedState>>,
@@ -781,129 +781,129 @@ pub enum TxState {
 }
 
 impl TransactionManager {
-    /// 开始事务
+    /// Begin transaction
     pub async fn begin(&mut self, initiator: AgentId) -> Result<TxId>;
 
-    /// 事务内写入
+    /// Write in transaction
     pub async fn write(&mut self, tx: TxId, key: &str, value: Value) -> Result<()>;
 
-    /// 提交事务
+    /// Commit transaction
     pub async fn commit(&mut self, tx: TxId) -> Result<()>;
 
-    /// 回滚事务
+    /// Rollback transaction
     pub async fn rollback(&mut self, tx: TxId, reason: &str) -> Result<()>;
 
-    /// 获取事务状态
+    /// Get transaction state
     pub fn status(&self, tx: TxId) -> Option<TxState>;
 }
 ```
 
 ---
 
-## API 设计
+## API Design
 
-### 核心 API
+### Core API
 
 ```rust
 // === Workspace API ===
 
-// 创建工作空间
+// Create workspace
 let ws = Workspace::create("./my-project").await?;
 
-// 注册 Agent
+// Register agent
 ws.register_agent("analyzer", AgentConfig {
     role: "code-analyzer".into(),
     system_prompt: "You analyze code...".into(),
     ..Default::default()
 }).await?;
 
-// 创建分支
+// Create branch
 ws.branch("feature-auth", from="main").await?;
 ws.checkout("feature-auth").await?;
 
-// 执行 Agent
+// Execute agent
 let result = ws.run("analyzer", "Analyze the authentication module").await?;
 
-// 查看事件
+// View events
 let events = ws.events(EventFilter::agent("analyzer")).await?;
 
-// 提交
+// Commit
 let commit = ws.commit("Completed auth analysis", author).await?;
 
-// 合并回 main
+// Merge back to main
 ws.checkout("main").await?;
 ws.merge("feature-auth", into="main", MergeStrategy::Auto).await?;
 ```
 
-### TUI 集成
+### TUI Integration
 
 ```rust
-/// TUI App（V2）
+/// TUI App (V2)
 pub struct App {
-    /// 工作空间
+    /// Workspace
     workspace: Arc<Workspace>,
 
-    /// 当前活跃 Agent
+    /// Currently active agent
     active_agent: Option<AgentId>,
 
-    /// UI 组件
+    /// UI components
     components: Components,
 
-    /// 事件订阅
+    /// Event subscription
     event_sub: mpsc::Receiver<Event>,
 }
 
 impl App {
-    /// 启动 TUI
+    /// Start TUI
     pub async fn run(&mut self) -> Result<()>;
 
-    /// 处理键盘事件
+    /// Handle keyboard events
     async fn handle_key(&mut self, key: KeyEvent) -> Result<()>;
 
-    /// 处理 Agent 事件
+    /// Handle agent events
     async fn handle_agent_event(&mut self, event: AgentEvent) -> Result<()>;
 
-    /// 渲染 UI
+    /// Render UI
     fn render(&mut self, frame: &mut Frame);
 }
 ```
 
 ---
 
-## 目录结构（重构后）
+## Directory Structure (Refactored)
 
 ```
 src/
-├── lib.rs                    # 公共导出
-├── main.rs                   # CLI 入口
+├── lib.rs                    # Public exports
+├── main.rs                   # CLI entry point
 │
-├── core/                     # 核心原语
+├── core/                     # Core primitives
 │   ├── mod.rs
 │   ├── workspace.rs          # Workspace
 │   ├── branch.rs             # Branch
 │   ├── commit.rs             # Commit
 │   ├── event.rs              # Event, EventLog
 │   ├── state.rs              # VersionedState
-│   ├── snapshot.rs           # 快照/恢复
-│   └── error.rs              # 错误类型
+│   ├── snapshot.rs           # Snapshot/restore
+│   └── error.rs              # Error types
 │
-├── agent/                    # Agent 系统
+├── agent/                    # Agent system
 │   ├── mod.rs
 │   ├── agent.rs              # Agent, AgentConfig
 │   ├── events.rs             # AgentEvent
-│   ├── registry.rs           # Agent 注册表
+│   ├── registry.rs           # Agent registry
 │   ├── supervisor.rs         # Supervisor-Worker
 │   ├── pipeline.rs           # Pipeline
 │   ├── mesh.rs               # Mesh
 │   └── race.rs               # Race
 │
-├── client/                   # LLM 客户端（保留）
+├── client/                   # LLM clients (keep)
 │   ├── mod.rs
 │   ├── trait.rs              # LLMClient trait
 │   ├── anthropic.rs
 │   └── openai.rs
 │
-├── tools/                    # 工具系统（保留）
+├── tools/                    # Tool system (keep)
 │   ├── mod.rs
 │   ├── trait.rs              # Tool trait
 │   ├── registry.rs           # ToolRegistry
@@ -911,53 +911,53 @@ src/
 │   ├── file.rs
 │   └── schema.rs
 │
-├── concurrency/              # 并发控制
+├── concurrency/              # Concurrency control
 │   ├── mod.rs
 │   ├── lock.rs               # LockManager
 │   └── transaction.rs        # TransactionManager
 │
-├── api/                      # HTTP API（保留）
+├── api/                      # HTTP API (keep)
 │   ├── mod.rs
 │   ├── server.rs
 │   ├── handlers/
 │   └── types.rs
 │
-├── tui/                      # TUI（重构）
+├── tui/                      # TUI (refactor)
 │   ├── mod.rs
 │   ├── app.rs                # App state
-│   ├── event.rs              # 事件处理
+│   ├── event.rs              # Event handling
 │   └── components/
 │       ├── mod.rs
 │       ├── messages.rs
 │       ├── sidebar.rs
-│       ├── branch.rs         # 新增：分支选择器
-│       ├── agents.rs         # 新增：Agent 状态面板
+│       ├── branch.rs         # NEW: Branch selector
+│       ├── agents.rs         # NEW: Agent status panel
 │       └── ...
 │
-└── storage/                  # 持久化
+└── storage/                  # Persistence
     ├── mod.rs
-    ├── file.rs               # 文件存储
-    ├── sqlite.rs             # SQLite 存储（可选）
-    └── format.rs             # 序列化格式
+    ├── file.rs               # File storage
+    ├── sqlite.rs             # SQLite storage (optional)
+    └── format.rs             # Serialization format
 ```
 
 ---
 
-## 实施计划
+## Implementation Plan
 
-### Phase 1: 核心原语（2 周）
+### Phase 1: Core Primitives (2 weeks)
 
-**目标：** 实现 Workspace + Branch + Commit + EventLog
+**Goal:** Implement Workspace + Branch + Commit + EventLog
 
-**交付物：**
-- [ ] `core/workspace.rs` - Workspace 创建/加载
-- [ ] `core/branch.rs` - 分支创建/切换/合并
-- [ ] `core/commit.rs` - 提交创建/查询
-- [ ] `core/event.rs` - 事件日志 append/query
-- [ ] `core/state.rs` - 版本化 KV 存储
-- [ ] `storage/` - 文件持久化
+**Deliverables:**
+- [ ] `core/workspace.rs` - Workspace create/load
+- [ ] `core/branch.rs` - Branch create/switch/merge
+- [ ] `core/commit.rs` - Commit create/query
+- [ ] `core/event.rs` - Event log append/query
+- [ ] `core/state.rs` - Versioned KV store
+- [ ] `storage/` - File persistence
 
-**测试：**
+**Test:**
 ```rust
 #[tokio::test]
 async fn test_workspace_branch_merge() {
@@ -977,17 +977,17 @@ async fn test_workspace_branch_merge() {
 }
 ```
 
-### Phase 2: Agent 系统（2 周）
+### Phase 2: Agent System (2 weeks)
 
-**目标：** 重构 Agent，集成 Workspace
+**Goal:** Refactor Agent, integrate with Workspace
 
-**交付物：**
-- [ ] `agent/agent.rs` - Agent 重构，支持 Workspace
-- [ ] `agent/events.rs` - AgentEvent 扩展
-- [ ] `agent/registry.rs` - Agent 注册表
-- [ ] 集成现有 `client/` 和 `tools/`
+**Deliverables:**
+- [ ] `agent/agent.rs` - Agent refactor, Workspace support
+- [ ] `agent/events.rs` - AgentEvent extension
+- [ ] `agent/registry.rs` - Agent registry
+- [ ] Integrate existing `client/` and `tools/`
 
-**API 变更：**
+**API Change:**
 ```rust
 // V1
 let agent = Agent::new(client, workdir, timeout, stream);
@@ -998,51 +998,51 @@ let agent = workspace.spawn_agent("analyzer", config).await?;
 let result = agent.run("analyze this").await?;
 ```
 
-### Phase 3: 协作模式（2 周）
+### Phase 3: Collaboration Patterns (2 weeks)
 
-**目标：** 实现 Supervisor/Pipeline/Mesh/Race
+**Goal:** Implement Supervisor/Pipeline/Mesh/Race
 
-**交付物：**
+**Deliverables:**
 - [ ] `agent/supervisor.rs` - Supervisor-Worker
 - [ ] `agent/pipeline.rs` - Pipeline
 - [ ] `agent/mesh.rs` - Mesh
 - [ ] `agent/race.rs` - Race
 
-### Phase 4: 并发控制（1 周）
+### Phase 4: Concurrency Control (1 week)
 
-**目标：** 锁和事务
+**Goal:** Locks and transactions
 
-**交付物：**
+**Deliverables:**
 - [ ] `concurrency/lock.rs` - LockManager
 - [ ] `concurrency/transaction.rs` - TransactionManager
 
-### Phase 5: TUI 重构（2 周）
+### Phase 5: TUI Refactor (2 weeks)
 
-**目标：** 集成新架构到 TUI
+**Goal:** Integrate new architecture into TUI
 
-**交付物：**
-- [ ] 分支选择器组件
-- [ ] Agent 状态面板
-- [ ] 事件日志查看器
-- [ ] 工具执行历史
+**Deliverables:**
+- [ ] Branch selector component
+- [ ] Agent status panel
+- [ ] Event log viewer
+- [ ] Tool execution history
 
-### Phase 6: 文档与测试（1 周）
+### Phase 6: Documentation & Testing (1 week)
 
-**目标：** 完善文档和测试覆盖率
+**Goal:** Improve documentation and test coverage
 
-**交付物：**
-- [ ] API 文档
-- [ ] 架构图更新
-- [ ] 单元测试 > 80%
-- [ ] 集成测试
+**Deliverables:**
+- [ ] API documentation
+- [ ] Architecture diagram updates
+- [ ] Unit tests > 80%
+- [ ] Integration tests
 
 ---
 
-## 迁移指南
+## Migration Guide
 
-### 从 V1 迁移到 V2
+### V1 to V2 Migration
 
-**V1 代码：**
+**V1 Code:**
 ```rust
 let config = Config::load()?;
 let client = AnthropicClient::new(config.api_key, None, config.model);
@@ -1052,7 +1052,7 @@ let history = Arc::new(RwLock::new(vec![]));
 let result = agent.run("prompt", history).await?;
 ```
 
-**V2 等价代码：**
+**V2 Equivalent:**
 ```rust
 let ws = Workspace::create(workdir).await?;
 let agent = ws.spawn_agent("default", AgentConfig {
@@ -1063,27 +1063,27 @@ let agent = ws.spawn_agent("default", AgentConfig {
 let result = agent.run("prompt").await?;
 ```
 
-**自动迁移脚本：** TODO
+**Auto-migration script:** TODO
 
 ---
 
-## 风险与缓解
+## Risks & Mitigation
 
-| 风险 | 缓解措施 |
-|------|---------|
-| 复杂度激增 | 渐进式迁移，保持 V1 API 兼容 |
-| 性能下降 | 基准测试，优化热点 |
-| 持久化开销 | 异步写入，批量提交 |
-| 并发 Bug | 充分测试，形式化验证关键路径 |
+| Risk | Mitigation |
+|------|-----------|
+| Complexity explosion | Gradual migration, maintain V1 API compatibility |
+| Performance degradation | Benchmarks, optimize hot paths |
+| Persistence overhead | Async writes, batch commits |
+| Concurrency bugs | Thorough testing, formal verification of critical paths |
 
 ---
 
-## 参考
+## References
 
-- Git 内部设计
-- Kafka 事件日志
-- Raft 共识算法（部分概念）
-- Erlang/OTP Actor 模型
+- Git internals
+- Kafka event log
+- Raft consensus algorithm (partial concepts)
+- Erlang/OTP actor model
 
 ---
 
