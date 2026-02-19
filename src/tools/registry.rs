@@ -64,6 +64,30 @@ impl ToolRegistry {
             None => Err(crate::error::AgentError::ToolNotFound(name.to_string())),
         }
     }
+
+    pub fn filter_by_name(self, allowed: &[String]) -> Self {
+        let allowed_set: std::collections::HashSet<&str> =
+            allowed.iter().map(|s| s.as_str()).collect();
+
+        let filtered: ToolMap = self
+            .tools
+            .iter()
+            .filter(|(name, _)| allowed_set.contains(*name))
+            .map(|(name, tool)| (*name, tool.clone()))
+            .collect();
+
+        Self {
+            tools: Arc::new(filtered),
+        }
+    }
+
+    pub fn register_arc(self, tool: Arc<dyn Tool>) -> Self {
+        let mut tools: ToolMap = (*self.tools).clone();
+        tools.insert(tool.name(), tool);
+        Self {
+            tools: Arc::new(tools),
+        }
+    }
 }
 
 impl Default for ToolRegistry {

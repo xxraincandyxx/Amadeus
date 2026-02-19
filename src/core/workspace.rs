@@ -347,6 +347,10 @@ impl Workspace {
         &self.event_log
     }
 
+    pub fn append_event(&mut self, event: Event) {
+        self.event_log.append(event);
+    }
+
     pub fn workdir(&self) -> &PathBuf {
         &self.workdir
     }
