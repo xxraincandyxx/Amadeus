@@ -9,6 +9,7 @@ cargo build                          # Debug build
 cargo build --release                # Release build
 cargo check                          # Fast check without building
 cargo clippy                         # Lint
+cargo fmt                            # Format code
 
 cargo test                           # Run all tests
 cargo test test_bash_echo            # Run specific test function
@@ -75,23 +76,25 @@ use crate::tools::tool_trait::Tool;
 #[derive(Debug, Error)]
 pub enum AgentError {
     #[error("API request failed: {0}")]
-    Api(#[from] reqwest::Error),
+    ApiRequest(#[from] reqwest::Error),
     #[error("Command timed out after {0}s")]
     Timeout(u64),
     #[error("Tool input validation failed for '{tool}': {reason}")]
     ToolInput { tool: String, reason: String },
+    #[error("Path escapes workspace: {0}")]
+    PathEscape(PathBuf),
 }
 ```
 
 ### Async Patterns
 ```rust
-// Timeout handling
-match timeout(duration, operation).await {
+use tokio::time::{timeout, Duration};
+
+match timeout(Duration::from_secs(30), operation).await {
     Ok(result) => result,
-    Err(_) => Err(AgentError::Timeout(secs)),
+    Err(_) => Err(AgentError::Timeout(30)),
 }
 
-// RwLock: drop locks explicitly to avoid deadlocks
 let mut history = history.write().await;
 history.push(Message::user("prompt"));
 drop(history);
@@ -122,7 +125,6 @@ async fn test_bash_echo() {
     assert!(result.contains("hello"));
 }
 
-// Use matches! for enum variant checking
 assert!(matches!(result.unwrap_err(), AgentError::Timeout(_)));
 ```
 
@@ -151,7 +153,7 @@ src/
   main.rs          # CLI entry point
   error.rs         # Custom error types (AgentError, Result)
   core/            # Core primitives (workspace, state, event, id, branch, commit)
-  agent/           # Agent system (agent, config, messages, events)
+  agent/           # Agent system (agent, config, messages, events, supervisor, pipeline)
   client/          # LLM client trait + anthropic/openai impls
   tools/           # Tool implementations (bash, file, registry, schema)
   concurrency/     # Lock and transaction management
@@ -168,7 +170,7 @@ tests/             # Integration tests
 - **Provider abstraction**: Trait-based LLM client switching
 - **Tool abstraction**: `Tool` trait with name, schema, execute
 - **Path safety**: File tools validate paths stay within workspace
-- **Shared history**: `Arc<RwLock<Vec<Message>>>` for conversation state
+- **Shared state**: `Arc<RwLock<T>>` for thread-safe shared mutable state
 
 ## TUI Keyboard Shortcuts
 
