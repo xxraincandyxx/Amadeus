@@ -477,7 +477,6 @@ User Input (TUI)
 | `ANTHROPIC_API_KEY` | Yes* | - | Anthropic API key |
 | `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
 | `MODEL_ID` | No | Provider default | Model identifier |
-| `USE_STREAMING` | No | `false` | Enable streaming responses |
 | `MAX_OUTPUT_BYTES` | No | `50000` | Max tool output size |
 | `BLOCKED_COMMANDS` | No | `rm -rf /` | Comma-separated blocked commands |
 
@@ -491,7 +490,6 @@ pub struct Config {
     pub model: String,
     pub workdir: PathBuf,
     pub timeout_seconds: u64,
-    pub use_streaming: bool,
     pub max_output_bytes: usize,
     pub blocked_commands: Vec<String>,
 }
@@ -507,7 +505,7 @@ pub struct Config {
 | `PgUp` / `PgDn` | Scroll messages |
 | `Ctrl+B` / `⌘B` | Toggle file tree sidebar |
 | `Alt+B` / `⌥B` | Toggle help sidebar |
-| `Esc` | Collapse tool panels / close sidebar |
+| `Esc` | Cancel stream / collapse panels / close sidebar |
 | `q` / `Ctrl+D` | Exit |
 
 ## Dependencies

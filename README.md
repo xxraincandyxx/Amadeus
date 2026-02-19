@@ -16,10 +16,9 @@ This project demonstrates that **one tool is sufficient** for a fully functional
 - **Single bash tool** - Covers all file operations and command execution
 - **Recursive subagents** - Spawn isolated agents for complex tasks
 - **Async architecture** - Based on Tokio for non-blocking I/O
-- **Streaming responses** - Optional real-time streaming for better UX
+- **Real-time streaming** - Live text updates and tool execution feedback
 - **Type-safe** - Strong error handling with `Result<T>` and `thiserror`
-- **Concurrent execution** - Parallel tool execution for independent tasks
-- **Dracula-themed UI** - Purple/pink terminal colors
+- **Dracula-themed TUI** - Beautiful terminal interface with ratatui
 
 ## Quick Start
 
@@ -31,16 +30,13 @@ cargo install --locked
 cp .env.example .env
 # Edit .env with your ANTHROPIC_API_KEY or OPENAI_API_KEY
 
-# 3. Interactive mode
+# 3. Interactive TUI mode
 cargo run
 
 # 4. Use OpenAI instead
 PROVIDER=openai cargo run
 
-# 5. Enable streaming
-USE_STREAMING=true cargo run
-
-# 6. Subagent mode (single task)
+# 5. Subagent mode (single task)
 cargo run -- "echo hello world and tell me the output"
 ```
 
@@ -56,8 +52,8 @@ Environment variables in `.env` file:
 | `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
 | `OPENAI_BASE_URL` | No | https://api.openai.com | OpenAI API endpoint |
 | `MODEL_ID` | No | Provider default | Model to use |
-| `USE_STREAMING` | No | false | Enable streaming responses |
-| `TIMEOUT_SECONDS` | No | 300 | Command timeout in seconds |
+| `MAX_OUTPUT_BYTES` | No | 50000 | Max tool output size |
+| `BLOCKED_COMMANDS` | No | rm -rf / | Comma-separated blocked commands |
 
 *At least one provider API key required.
 
