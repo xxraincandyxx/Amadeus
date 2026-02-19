@@ -50,7 +50,7 @@ async fn run_agent<C>(
     message: &str,
 ) -> std::result::Result<Json<ChatResponse>, Json<ErrorResponse>>
 where
-    C: crate::client::LLMClient,
+    C: crate::client::LLMClient + Clone + 'static,
 {
     let history = Arc::new(RwLock::new(Vec::new()));
 

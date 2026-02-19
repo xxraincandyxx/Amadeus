@@ -178,6 +178,11 @@ pub use crate::agent::messages::Message;
 /// Re-exported from `crate::agent::messages`.
 pub use crate::agent::messages::ContentBlock;
 
+/// Events emitted during agent execution.
+///
+/// Re-exported from `crate::agent::events`.
+pub use crate::agent::events::AgentEvent;
+
 // -------------------------------------------------------------------------
 // CLIENT TYPES
 // -------------------------------------------------------------------------
