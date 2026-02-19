@@ -6,6 +6,7 @@
 //!
 //! The library is organized into several modules:
 //!
+//! - **`core`**: Core primitives (Workspace, Branch, Commit, Event, State)
 //! - **`api`**: Public SDK API with HTTP server support (re-exports all types)
 //! - **`error`**: Custom error types and Result alias for the crate
 //! - **`agent`**: Agent loop, configuration, and message types
@@ -71,6 +72,10 @@
  * on this library. Without `pub`, the module would be private to this crate.
  */
 
+// Declare the core module - contains Workspace, Branch, Commit, Event, State
+// This looks for src/core/mod.rs (it's a directory module)
+pub mod core;
+
 // Declare the api module - contains public SDK API and HTTP server
 // This looks for src/api/mod.rs (it's a directory module)
 pub mod api;
@@ -94,6 +99,10 @@ pub mod tools;
 // Declare the ui module - contains colors and REPL
 // This looks for src/ui/mod.rs
 pub mod ui;
+
+// Declare the storage module - contains file persistence
+// This looks for src/storage/mod.rs
+pub mod storage;
 
 /*
  * ============================================================================

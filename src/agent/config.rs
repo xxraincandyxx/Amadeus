@@ -49,6 +49,9 @@ use std::env;
 // - More type-safe (can't accidentally put non-path strings in it)
 use std::path::PathBuf;
 
+// Serde for serialization
+use serde::{Deserialize, Serialize};
+
 /*
  * ============================================================================
  * PROVIDER ENUM
@@ -61,7 +64,7 @@ use std::path::PathBuf;
 // `#[derive(Clone)]` - Allows creating copies with .clone()
 // `#[derive(PartialEq)]` - Allows comparison with ==
 // `#[derive(Eq)]` - Full equality (required for HashMap keys, etc.)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Provider {
     // Anthropic Claude models (default)
     // No data - this is a "unit variant" (just a name, no fields)
@@ -82,7 +85,7 @@ pub enum Provider {
  */
 
 // `#[derive(Debug)]` - Enables debug formatting
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     // -------------------------------------------------------------------------
     // Which LLM provider to use (Anthropic or OpenAI)
