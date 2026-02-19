@@ -11,8 +11,11 @@ pub enum AgentError {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    #[error("API error: {0}")]
+    Api(String),
+
     #[error("API request failed: {0}")]
-    Api(#[from] reqwest::Error),
+    ApiRequest(#[from] reqwest::Error),
 
     #[error("Command execution failed: {0}")]
     Command(String),
@@ -40,6 +43,9 @@ pub enum AgentError {
 
     #[error("Stream error: {0}")]
     StreamError(String),
+
+    #[error("Stream ended unexpectedly")]
+    StreamEndedUnexpectedly,
 
     #[error("Path escapes workspace: {0}")]
     PathEscape(PathBuf),
