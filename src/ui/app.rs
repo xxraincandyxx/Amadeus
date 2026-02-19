@@ -12,8 +12,9 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Terminal,
 };
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 
+use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
 use crate::agent::messages::Message;
 use crate::client::LLMClient;
@@ -46,9 +47,12 @@ pub struct App<C: LLMClient> {
     sidebar: Option<Sidebar>,
     should_quit: bool,
     workdir: PathBuf,
+    stream_rx: Option<mpsc::Receiver<AgentEvent>>,
+    stream_abort: Option<tokio::task::JoinHandle<()>>,
+    current_text: String,
 }
 
-impl<C: LLMClient> App<C> {
+impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
         let history = Arc::new(RwLock::new(Vec::new()));
         let status = StatusBar::new(model_name);
@@ -64,6 +68,9 @@ impl<C: LLMClient> App<C> {
             sidebar: None,
             should_quit: false,
             workdir,
+            stream_rx: None,
+            stream_abort: None,
+            current_text: String::new(),
         }
     }
 
@@ -74,9 +81,9 @@ impl<C: LLMClient> App<C> {
         let backend = CrosstermBackend::new(stdout);
         let mut terminal = Terminal::new(backend)?;
 
-        let events = EventHandler::new(Duration::from_millis(100));
+        let mut events = EventHandler::new(Duration::from_millis(100));
 
-        let res = self.run_loop(&mut terminal, events).await;
+        let res = self.run_loop(&mut terminal, &mut events).await;
 
         disable_raw_mode()?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
@@ -88,7 +95,7 @@ impl<C: LLMClient> App<C> {
     async fn run_loop(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-        events: EventHandler,
+        events: &mut EventHandler,
     ) -> Result<()> {
         loop {
             if self.should_quit {
@@ -97,17 +104,110 @@ impl<C: LLMClient> App<C> {
 
             terminal.draw(|f| self.render(f))?;
 
-            match events.next()? {
-                AppEvent::Key(key) => self.handle_key(key).await?,
-                AppEvent::Mouse(_) => {}
-                AppEvent::Resize(_, _) => {}
-                AppEvent::Tick => {
-                    self.status.tick();
+            tokio::select! {
+                event = events.next() => {
+                    self.handle_event(event?).await?;
+                }
+
+                agent_event = async {
+                    match &mut self.stream_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(event) = agent_event {
+                        if self.handle_agent_event(event) {
+                            self.stream_rx = None;
+                            self.stream_abort = None;
+                        }
+                    } else {
+                        self.stream_rx = None;
+                        self.stream_abort = None;
+                    }
                 }
             }
         }
 
         Ok(())
+    }
+
+    async fn handle_event(&mut self, event: AppEvent) -> Result<()> {
+        match event {
+            AppEvent::Key(key) => self.handle_key(key).await?,
+            AppEvent::Mouse(_) => {}
+            AppEvent::Resize(_, _) => {}
+            AppEvent::Tick => {
+                self.status.tick();
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_agent_event(&mut self, event: AgentEvent) -> bool {
+        match event {
+            AgentEvent::TextDelta { delta } => {
+                self.current_text.push_str(&delta);
+                self.messages.update_streaming_text(&self.current_text);
+            }
+
+            AgentEvent::ToolStart { name, .. } => {
+                self.status.set_state(AppState::Processing);
+                self.messages.update_streaming_text(&format!(
+                    "{}\n\nRunning tool: {}...",
+                    self.current_text, name
+                ));
+            }
+
+            AgentEvent::ToolComplete {
+                name,
+                input,
+                output,
+                is_error,
+                ..
+            } => {
+                let command = if name == "bash" {
+                    input
+                        .get("command")
+                        .and_then(|v: &serde_json::Value| v.as_str())
+                        .map(String::from)
+                } else {
+                    None
+                };
+
+                self.tool_panel.add_result(ToolResult {
+                    tool_name: name,
+                    command,
+                    output,
+                    is_error,
+                    is_collapsed: false,
+                });
+
+                self.messages.update_streaming_text(&self.current_text);
+            }
+
+            AgentEvent::Done { result } => {
+                self.messages.finalize_assistant(result.text);
+                self.status.set_state(AppState::Success);
+                self.current_text.clear();
+                return true;
+            }
+
+            AgentEvent::Error { message } => {
+                if self.current_text.is_empty() {
+                    self.messages.add_assistant(format!("Error: {}", message));
+                } else {
+                    self.messages
+                        .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
+                }
+                self.status.set_state(AppState::Error);
+                self.current_text.clear();
+                return true;
+            }
+
+            AgentEvent::ToolInputDelta { .. } => {}
+        }
+
+        false
     }
 
     async fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
@@ -156,15 +256,23 @@ impl<C: LLMClient> App<C> {
                 self.input.insert_newline();
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
-                self.mode = AppMode::Normal;
-                self.sidebar = None;
-                self.tool_panel.collapse_all();
+                if self.stream_rx.is_some() {
+                    self.cancel_stream();
+                } else {
+                    self.mode = AppMode::Normal;
+                    self.sidebar = None;
+                    self.tool_panel.collapse_all();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
-                self.input.history_up();
+                if self.stream_rx.is_none() {
+                    self.input.history_up();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Down) => {
-                self.input.history_down();
+                if self.stream_rx.is_none() {
+                    self.input.history_down();
+                }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
                 self.toggle_sidebar(SidebarKind::Files);
@@ -179,29 +287,41 @@ impl<C: LLMClient> App<C> {
                 self.should_quit = true;
             }
             (KeyModifiers::NONE, KeyCode::Char('q')) => {
-                if self.input.get_input().trim().is_empty() {
+                if self.input.get_input().trim().is_empty() && self.stream_rx.is_none() {
                     self.should_quit = true;
-                } else {
+                } else if self.stream_rx.is_none() {
                     self.input.handle_char('q');
                 }
             }
             (KeyModifiers::NONE, KeyCode::Backspace) => {
-                self.input.handle_backspace();
+                if self.stream_rx.is_none() {
+                    self.input.handle_backspace();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Delete) => {
-                self.input.handle_delete();
+                if self.stream_rx.is_none() {
+                    self.input.handle_delete();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Left) => {
-                self.input.move_cursor_left();
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_left();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Right) => {
-                self.input.move_cursor_right();
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_right();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Home) => {
-                self.input.move_cursor_line_start();
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_line_start();
+                }
             }
             (KeyModifiers::NONE, KeyCode::End) => {
-                self.input.move_cursor_line_end();
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_line_end();
+                }
             }
             (KeyModifiers::NONE, KeyCode::PageUp) => {
                 self.messages.scroll_up(10);
@@ -210,11 +330,30 @@ impl<C: LLMClient> App<C> {
                 self.messages.scroll_down(10);
             }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-                self.input.handle_char(c);
+                if self.stream_rx.is_none() {
+                    self.input.handle_char(c);
+                }
             }
             _ => {}
         }
         Ok(())
+    }
+
+    fn cancel_stream(&mut self) {
+        if let Some(handle) = self.stream_abort.take() {
+            handle.abort();
+        }
+        self.stream_rx = None;
+
+        if !self.current_text.is_empty() {
+            self.messages
+                .finalize_assistant(format!("{}\n\n[Cancelled]", self.current_text));
+        } else {
+            self.messages.add_assistant("[Cancelled]".to_string());
+        }
+
+        self.current_text.clear();
+        self.status.set_state(AppState::Idle);
     }
 
     fn can_show_sidebar(&self, area: Rect) -> bool {
@@ -231,6 +370,10 @@ impl<C: LLMClient> App<C> {
     }
 
     async fn submit_input(&mut self) -> Result<()> {
+        if self.stream_rx.is_some() {
+            return Ok(());
+        }
+
         let input = self.input.get_input();
         let trimmed = input.trim();
 
@@ -245,44 +388,48 @@ impl<C: LLMClient> App<C> {
         self.messages.add_user(trimmed.to_string());
         self.input.clear();
         self.tool_panel.clear();
-
+        self.current_text.clear();
         self.status.set_state(AppState::Processing);
 
-        let result = self.agent.run(trimmed, Arc::clone(&self.history)).await;
+        {
+            let mut history = self.history.write().await;
+            history.push(Message::user(trimmed));
+        }
 
-        self.status.set_state(match &result {
-            Ok(_) => AppState::Success,
-            Err(_) => AppState::Error,
+        let agent = self.agent.clone();
+        let history = Arc::clone(&self.history);
+
+        let (tx, rx) = mpsc::channel(64);
+        let handle = tokio::spawn(async move {
+            let stream = agent.run_stream(history);
+            futures::pin_mut!(stream);
+
+            use futures::StreamExt;
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(e) => {
+                        let is_done = matches!(e, AgentEvent::Done { .. });
+                        if tx.send(e).await.is_err() {
+                            break;
+                        }
+                        if is_done {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx
+                            .send(AgentEvent::Error {
+                                message: e.to_string(),
+                            })
+                            .await;
+                        break;
+                    }
+                }
+            }
         });
 
-        match result {
-            Ok(run_result) => {
-                for tool_call in &run_result.tool_calls {
-                    let command = if tool_call.name == "bash" {
-                        tool_call
-                            .input
-                            .get("command")
-                            .and_then(|v| v.as_str())
-                            .map(String::from)
-                    } else {
-                        None
-                    };
-
-                    self.tool_panel.add_result(ToolResult {
-                        tool_name: tool_call.name.clone(),
-                        command,
-                        output: tool_call.output.clone(),
-                        is_error: tool_call.is_error,
-                        is_collapsed: false,
-                    });
-                }
-
-                self.messages.add_assistant(run_result.text);
-            }
-            Err(e) => {
-                self.messages.add_assistant(format!("Error: {}", e));
-            }
-        }
+        self.stream_rx = Some(rx);
+        self.stream_abort = Some(handle);
 
         Ok(())
     }

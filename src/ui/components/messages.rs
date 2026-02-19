@@ -32,6 +32,7 @@ pub struct MessagesComponent {
     messages: Vec<Message>,
     scroll_offset: usize,
     auto_scroll: bool,
+    streaming_text: Option<String>,
 }
 
 impl MessagesComponent {
@@ -40,6 +41,7 @@ impl MessagesComponent {
             messages: Vec::new(),
             scroll_offset: 0,
             auto_scroll: true,
+            streaming_text: None,
         }
     }
 
@@ -57,9 +59,31 @@ impl MessagesComponent {
     }
 
     pub fn add_assistant(&mut self, content: String) {
+        self.streaming_text = None;
         self.messages.push(Message {
             role: MessageRole::Assistant,
             content,
+            timestamp: Instant::now(),
+            tool_name: None,
+            is_collapsed: false,
+        });
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
+    }
+
+    pub fn update_streaming_text(&mut self, text: &str) {
+        self.streaming_text = Some(text.to_string());
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
+    }
+
+    pub fn finalize_assistant(&mut self, text: String) {
+        self.streaming_text = None;
+        self.messages.push(Message {
+            role: MessageRole::Assistant,
+            content: text,
             timestamp: Instant::now(),
             tool_name: None,
             is_collapsed: false,
@@ -164,6 +188,31 @@ impl MessagesComponent {
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
                     }
+                }
+            }
+
+            lines.push(Line::from(""));
+        }
+
+        if let Some(ref streaming) = self.streaming_text {
+            let role_prefix = Span::styled(
+                "[Assistant] ",
+                Style::default()
+                    .fg(THEME.assistant_msg)
+                    .add_modifier(Modifier::BOLD),
+            );
+
+            let content_lines = render_markdown(streaming, content_width);
+
+            for (i, content_line) in content_lines.into_iter().enumerate() {
+                if i == 0 {
+                    let mut spans = vec![Span::raw(" "), role_prefix.clone()];
+                    spans.extend(content_line.spans.into_iter());
+                    lines.push(Line::from(spans));
+                } else {
+                    let mut spans = vec![Span::raw(" ")];
+                    spans.extend(content_line.spans.into_iter());
+                    lines.push(Line::from(spans));
                 }
             }
 
