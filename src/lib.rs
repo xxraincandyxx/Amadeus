@@ -104,6 +104,10 @@ pub mod ui;
 // This looks for src/storage/mod.rs
 pub mod storage;
 
+// Declare the concurrency module - contains locks and transactions
+// This looks for src/concurrency/mod.rs
+pub mod concurrency;
+
 /*
  * ============================================================================
  * RE-EXPORTS
