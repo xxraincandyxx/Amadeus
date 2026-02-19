@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::{
-    event::{KeyCode, KeyModifiers},
+    event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -50,6 +50,7 @@ pub struct App<C: LLMClient> {
     stream_rx: Option<mpsc::Receiver<AgentEvent>>,
     stream_abort: Option<tokio::task::JoinHandle<()>>,
     current_text: String,
+    messages_area: Rect,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -71,6 +72,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             stream_rx: None,
             stream_abort: None,
             current_text: String::new(),
+            messages_area: Rect::default(),
         }
     }
 
@@ -134,13 +136,37 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     async fn handle_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Key(key) => self.handle_key(key).await?,
-            AppEvent::Mouse(_) => {}
+            AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {
                 self.status.tick();
             }
         }
         Ok(())
+    }
+
+    fn handle_mouse(&mut self, event: crossterm::event::MouseEvent) {
+        match event.kind {
+            MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) => {
+                let scrollbar_x = self.messages_area.x + self.messages_area.width.saturating_sub(1);
+                if event.column == scrollbar_x
+                    && event.row >= self.messages_area.y
+                    && event.row < self.messages_area.y + self.messages_area.height
+                {
+                    let relative_y = event.row - self.messages_area.y;
+                    let height = self.messages_area.height.max(1);
+                    let ratio = relative_y as f32 / height as f32;
+                    self.messages.scroll_to_ratio(ratio);
+                }
+            }
+            MouseEventKind::ScrollUp => {
+                self.messages.scroll_up(3);
+            }
+            MouseEventKind::ScrollDown => {
+                self.messages.scroll_down(3);
+            }
+            _ => {}
+        }
     }
 
     fn handle_agent_event(&mut self, event: AgentEvent) -> bool {
@@ -507,6 +533,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .split(main_area);
 
         self.status.render(frame, chunks[0]);
+        self.messages_area = chunks[1];
         self.messages.render(frame, chunks[1]);
 
         if tool_height > 0 && chunks[2].height > 0 {

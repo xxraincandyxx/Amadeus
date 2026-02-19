@@ -1,3 +1,7 @@
+//! # Stream Handler
+//!
+//! Handles GET /stream requests for real-time agent execution updates using SSE.
+
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -16,6 +20,33 @@ use crate::agent::loop_agent::Agent;
 use crate::agent::messages::Message;
 use crate::client::{AnthropicClient, OpenAIClient};
 
+/// Stream agent execution events via Server-Sent Events (SSE).
+///
+/// This endpoint provides real-time feedback as the agent thinks,
+/// uses tools, and receives results. It is ideal for UI applications
+/// that want to show a live typing effect and tool execution progress.
+///
+/// ### Events
+///
+/// | Event Name | Payload Type | Description |
+/// |------------|--------------|-------------|
+/// | `text` | [`TextEvent`] | Partial text response delta |
+/// | `tool_start` | [`ToolStartEvent`] | Agent started using a tool |
+/// | `tool_done` | [`ToolDoneEvent`] | Tool execution finished |
+/// | `done` | [`DoneEvent`] | Agent loop completed |
+/// | `error` | [`ErrorEvent`] | An error occurred during execution |
+///
+/// ### Request
+///
+/// - **Method:** GET
+/// - **Path:** /stream
+/// - **Query Params:** [`StreamQuery`]
+///
+/// ### Example
+///
+/// ```bash
+/// curl -N http://localhost:3000/stream?message=hello
+/// ```
 #[derive(Debug, serde::Deserialize)]
 pub struct StreamQuery {
     pub message: String,

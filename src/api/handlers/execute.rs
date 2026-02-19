@@ -10,6 +10,33 @@ use crate::error::AgentError;
 use crate::tools::bash::BashTool;
 use crate::tools::tool_trait::Tool;
 
+/// Execute a bash command directly on the host system.
+///
+/// This endpoint provides direct access to the `bash` tool. It is useful
+/// for running system commands, tests, or scripts without full agent logic.
+///
+/// ### Security
+///
+/// Commands are checked against a blocklist and timed out if they run too long.
+///
+/// ### Request
+///
+/// - **Method:** POST
+/// - **Path:** /execute
+/// - **Body:** [`ExecuteRequest`]
+///
+/// ### Response
+///
+/// - **Success:** 200 OK with [`ExecuteResponse`]
+/// - **Error:** 200 OK with exit_code -1 in the response body (for execution errors)
+///
+/// ### Example
+///
+/// ```bash
+/// curl -X POST http://localhost:3000/execute \
+///   -H "Content-Type: application/json" \
+///   -d '{"command": "ls -la", "timeout_secs": 10}'
+/// ```
 pub async fn execute(
     Json(request): Json<ExecuteRequest>,
 ) -> Result<Json<ExecuteResponse>, Json<ErrorResponse>> {

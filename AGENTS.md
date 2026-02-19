@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Rust-based AI coding agent supporting Anthropic and OpenAI APIs.
+Rust-based AI coding agent supporting Anthropic and OpenAI APIs with a terminal UI and HTTP server mode.
 
 ## Build / Lint / Test
 
@@ -78,8 +78,8 @@ pub enum AgentError {
     Api(#[from] reqwest::Error),
     #[error("Command timed out after {0}s")]
     Timeout(u64),
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("Tool input validation failed for '{tool}': {reason}")]
+    ToolInput { tool: String, reason: String },
 }
 ```
 
@@ -149,12 +149,15 @@ impl Tool for BashTool {
 src/
   lib.rs           # Public exports, module declarations
   main.rs          # CLI entry point
-  error.rs         # Custom error types
-  agent/           # Agent loop, config, messages
+  error.rs         # Custom error types (AgentError, Result)
+  core/            # Core primitives (workspace, state, event, id, branch, commit)
+  agent/           # Agent system (agent, config, messages, events)
   client/          # LLM client trait + anthropic/openai impls
-  tools/           # Tool implementations (bash, file, schema)
-  ui/              # Terminal UI (app, colors, components)
+  tools/           # Tool implementations (bash, file, registry, schema)
+  concurrency/     # Lock and transaction management
+  storage/         # File-based persistence
   api/             # HTTP server (handlers, types)
+  ui/              # Terminal UI (app, colors, components)
 tests/             # Integration tests
 ```
 

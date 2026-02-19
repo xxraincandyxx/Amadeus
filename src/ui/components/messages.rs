@@ -33,6 +33,8 @@ pub struct MessagesComponent {
     scroll_offset: usize,
     auto_scroll: bool,
     streaming_text: Option<String>,
+    total_lines: usize,
+    viewport_height: usize,
 }
 
 impl MessagesComponent {
@@ -42,6 +44,8 @@ impl MessagesComponent {
             scroll_offset: 0,
             auto_scroll: true,
             streaming_text: None,
+            total_lines: 0,
+            viewport_height: 0,
         }
     }
 
@@ -120,6 +124,12 @@ impl MessagesComponent {
         self.auto_scroll = true;
     }
 
+    pub fn scroll_to_ratio(&mut self, ratio: f32) {
+        self.auto_scroll = false;
+        let max_scroll = self.total_lines.saturating_sub(self.viewport_height);
+        self.scroll_offset = ((ratio * max_scroll as f32) as usize).min(max_scroll);
+    }
+
     pub fn toggle_collapse(&mut self, index: usize) {
         if let Some(msg) = self.messages.get_mut(index) {
             if msg.role == MessageRole::Tool {
@@ -136,7 +146,7 @@ impl MessagesComponent {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.width < 3 || area.height < 1 {
             return;
         }
@@ -234,6 +244,8 @@ impl MessagesComponent {
         }
 
         let visible_lines = area.height as usize;
+        self.viewport_height = visible_lines;
+        self.total_lines = total_lines;
         let max_scroll = total_lines.saturating_sub(visible_lines);
         let scroll_offset = self.scroll_offset.min(max_scroll);
 

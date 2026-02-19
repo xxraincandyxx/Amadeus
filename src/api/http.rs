@@ -6,9 +6,9 @@
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
-//! │                        HTTP Server                           │
+//! │                        HTTP Server                          │
 //! ├─────────────────────────────────────────────────────────────┤
-//! │  Router                                                      │
+//! │  Router                                                     │
 //! │  ├── GET  /health   → health::health                        │
 //! │  ├── POST /chat     → chat::chat                            │
 //! │  ├── POST /execute  → execute::execute                      │
