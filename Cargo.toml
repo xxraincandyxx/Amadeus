@@ -18,6 +18,7 @@ tui-textarea = "0.6"
 unicode-width = "0.2"
 futures = "0.3"
 async-trait = "0.1"
+async-stream = "0.3"
 bytes = "1.0"
 
 # HTTP server dependencies (for SDK API)
