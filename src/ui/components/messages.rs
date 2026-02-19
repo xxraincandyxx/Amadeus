@@ -11,67 +11,70 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::colors::THEME;
 use crate::ui::components::markdown::render_markdown;
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum MessageRole {
-    User,
-    Assistant,
-    Tool,
-}
+use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
 
 #[derive(Debug, Clone)]
-pub struct Message {
-    pub role: MessageRole,
-    pub content: String,
-    #[allow(dead_code)]
-    pub timestamp: Instant,
-    pub tool_name: Option<String>,
-    pub is_collapsed: bool,
+pub enum HistoryItem {
+    User { content: String, timestamp: Instant },
+    Assistant { content: String, timestamp: Instant },
+    ToolGroup { group: ToolGroup },
+}
+
+impl HistoryItem {
+    pub fn user(content: String) -> Self {
+        Self::User {
+            content,
+            timestamp: Instant::now(),
+        }
+    }
+
+    pub fn assistant(content: String) -> Self {
+        Self::Assistant {
+            content,
+            timestamp: Instant::now(),
+        }
+    }
+
+    pub fn tool_group(group: ToolGroup) -> Self {
+        Self::ToolGroup { group }
+    }
 }
 
 pub struct MessagesComponent {
-    messages: Vec<Message>,
+    items: Vec<HistoryItem>,
     scroll_offset: usize,
     auto_scroll: bool,
     streaming_text: Option<String>,
     total_lines: usize,
     viewport_height: usize,
+    pending_tool_group: Option<ToolGroup>,
 }
 
 impl MessagesComponent {
     pub fn new() -> Self {
         Self {
-            messages: Vec::new(),
+            items: Vec::new(),
             scroll_offset: 0,
             auto_scroll: true,
             streaming_text: None,
             total_lines: 0,
             viewport_height: 0,
+            pending_tool_group: None,
         }
     }
 
     pub fn add_user(&mut self, content: String) {
-        self.messages.push(Message {
-            role: MessageRole::User,
-            content,
-            timestamp: Instant::now(),
-            tool_name: None,
-            is_collapsed: false,
-        });
+        self.finalize_pending_tool_group();
+        self.items.push(HistoryItem::user(content));
         if self.auto_scroll {
             self.scroll_to_bottom();
         }
     }
 
     pub fn add_assistant(&mut self, content: String) {
+        self.finalize_pending_tool_group();
         self.streaming_text = None;
-        self.messages.push(Message {
-            role: MessageRole::Assistant,
-            content,
-            timestamp: Instant::now(),
-            tool_name: None,
-            is_collapsed: false,
-        });
+        self.items.push(HistoryItem::assistant(content));
         if self.auto_scroll {
             self.scroll_to_bottom();
         }
@@ -85,29 +88,81 @@ impl MessagesComponent {
     }
 
     pub fn finalize_assistant(&mut self, text: String) {
+        self.finalize_pending_tool_group();
         self.streaming_text = None;
-        self.messages.push(Message {
-            role: MessageRole::Assistant,
-            content: text,
-            timestamp: Instant::now(),
-            tool_name: None,
-            is_collapsed: false,
-        });
+        self.items.push(HistoryItem::assistant(text));
         if self.auto_scroll {
             self.scroll_to_bottom();
         }
     }
 
-    pub fn add_tool(&mut self, tool_name: String, content: String) {
-        self.messages.push(Message {
-            role: MessageRole::Tool,
-            content,
-            timestamp: Instant::now(),
-            tool_name: Some(tool_name),
-            is_collapsed: true,
-        });
+    pub fn start_tool(&mut self, tool_id: String, tool_name: String, command: Option<String>) {
+        use crate::ui::components::tool_group::ToolCall;
+
+        if self.pending_tool_group.is_none() {
+            self.pending_tool_group = Some(ToolGroup::new());
+        }
+
+        if let Some(ref mut group) = self.pending_tool_group {
+            let mut tool = ToolCall::new(tool_id, tool_name);
+            if let Some(cmd) = command {
+                tool = tool.with_command(cmd);
+            }
+            group.add_tool(tool);
+        }
+
         if self.auto_scroll {
             self.scroll_to_bottom();
+        }
+    }
+
+    pub fn complete_tool(
+        &mut self,
+        tool_id: &str,
+        output: String,
+        is_error: bool,
+        command: Option<String>,
+    ) {
+        if let Some(ref mut group) = self.pending_tool_group {
+            group.update_tool(tool_id, output, is_error);
+            if let Some(cmd) = command {
+                if let Some(tool) = group.tools.iter_mut().find(|t| t.id == tool_id) {
+                    tool.command = Some(cmd);
+                }
+            }
+        }
+        if self.auto_scroll {
+            self.scroll_to_bottom();
+        }
+    }
+
+    fn finalize_pending_tool_group(&mut self) {
+        if let Some(group) = self.pending_tool_group.take() {
+            if !group.is_empty() {
+                self.items.push(HistoryItem::tool_group(group));
+            }
+        }
+    }
+
+    pub fn collapse_all_tools(&mut self) {
+        for item in &mut self.items {
+            if let HistoryItem::ToolGroup { group } = item {
+                group.collapse_all();
+            }
+        }
+        if let Some(ref mut group) = self.pending_tool_group {
+            group.collapse_all();
+        }
+    }
+
+    pub fn expand_all_tools(&mut self) {
+        for item in &mut self.items {
+            if let HistoryItem::ToolGroup { group } = item {
+                group.expand_all();
+            }
+        }
+        if let Some(ref mut group) = self.pending_tool_group {
+            group.expand_all();
         }
     }
 
@@ -131,22 +186,6 @@ impl MessagesComponent {
         self.scroll_offset = ((ratio * max_scroll as f32) as usize).min(max_scroll);
     }
 
-    pub fn toggle_collapse(&mut self, index: usize) {
-        if let Some(msg) = self.messages.get_mut(index) {
-            if msg.role == MessageRole::Tool {
-                msg.is_collapsed = !msg.is_collapsed;
-            }
-        }
-    }
-
-    pub fn collapse_all(&mut self) {
-        for msg in &mut self.messages {
-            if msg.role == MessageRole::Tool {
-                msg.is_collapsed = true;
-            }
-        }
-    }
-
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.width < 3 || area.height < 1 {
             return;
@@ -155,78 +194,122 @@ impl MessagesComponent {
         let mut lines: Vec<Line> = Vec::new();
         let content_width = area.width.saturating_sub(3) as usize;
 
-        for msg in self.messages.iter() {
-            let role_prefix: Span = match msg.role {
-                MessageRole::User => Span::styled(
-                    "[You] ",
-                    Style::default()
-                        .fg(THEME.user_msg)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                MessageRole::Assistant => Span::styled(
-                    "[Assistant] ",
-                    Style::default()
-                        .fg(THEME.assistant_msg)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                MessageRole::Tool => {
-                    let name = msg.tool_name.as_deref().unwrap_or("tool");
-                    Span::styled(
-                        format!("[Tool: {}] ", name),
+        for item in self.items.iter() {
+            match item {
+                HistoryItem::User { content, .. } => {
+                    let role_prefix = Span::styled(
+                        "[You] ",
                         Style::default()
-                            .fg(THEME.orange)
+                            .fg(THEME.user_msg)
                             .add_modifier(Modifier::BOLD),
-                    )
-                }
-            };
-            let role_prefix_width = role_prefix.content.width();
+                    );
+                    let role_prefix_width = role_prefix.content.width();
 
-            if msg.role == MessageRole::Tool && msg.is_collapsed {
-                lines.push(Line::from(vec![
-                    Span::raw(" "),
-                    role_prefix,
-                    Span::styled("(collapsed)", Style::default().fg(THEME.comment)),
-                ]));
-            } else {
-                let first_line_width = content_width.saturating_sub(role_prefix_width);
-                let mut content_lines = render_markdown(&msg.content, content_width);
-                if let Some(first_line) = content_lines.first_mut() {
-                    let first_line_spans: Vec<Span> = first_line
-                        .spans
-                        .iter()
-                        .flat_map(|span| {
-                            let span_width = span.content.width();
-                            if span_width <= first_line_width {
-                                vec![span.clone()]
-                            } else {
-                                let chars: Vec<char> = span.content.chars().collect();
-                                let mut result = Vec::new();
-                                for chunk in chars.chunks(first_line_width) {
-                                    result.push(Span::styled(
-                                        chunk.iter().collect::<String>(),
-                                        span.style,
-                                    ));
+                    let mut content_lines = render_markdown(content, content_width);
+                    if let Some(first_line) = content_lines.first_mut() {
+                        let first_line_width = content_width.saturating_sub(role_prefix_width);
+                        let first_line_spans: Vec<Span> = first_line
+                            .spans
+                            .iter()
+                            .flat_map(|span| {
+                                let span_width = span.content.width();
+                                if span_width <= first_line_width {
+                                    vec![span.clone()]
+                                } else {
+                                    let chars: Vec<char> = span.content.chars().collect();
+                                    let mut result = Vec::new();
+                                    for chunk in chars.chunks(first_line_width) {
+                                        result.push(Span::styled(
+                                            chunk.iter().collect::<String>(),
+                                            span.style,
+                                        ));
+                                    }
+                                    result
                                 }
-                                result
-                            }
-                        })
-                        .collect();
-                    first_line.spans = first_line_spans;
+                            })
+                            .collect();
+                        first_line.spans = first_line_spans;
+                    }
+
+                    for (i, content_line) in content_lines.into_iter().enumerate() {
+                        if i == 0 {
+                            let mut spans = vec![Span::raw(" "), role_prefix.clone()];
+                            spans.extend(content_line.spans.into_iter());
+                            lines.push(Line::from(spans));
+                        } else {
+                            let mut spans = vec![Span::raw(" ")];
+                            spans.extend(content_line.spans.into_iter());
+                            lines.push(Line::from(spans));
+                        }
+                    }
+                    lines.push(Line::from(""));
                 }
 
-                for (i, content_line) in content_lines.into_iter().enumerate() {
-                    if i == 0 {
-                        let mut spans = vec![Span::raw(" "), role_prefix.clone()];
-                        spans.extend(content_line.spans.into_iter());
-                        lines.push(Line::from(spans));
-                    } else {
-                        let mut spans = vec![Span::raw(" ")];
-                        spans.extend(content_line.spans.into_iter());
-                        lines.push(Line::from(spans));
+                HistoryItem::Assistant { content, .. } => {
+                    let role_prefix = Span::styled(
+                        "[Assistant] ",
+                        Style::default()
+                            .fg(THEME.assistant_msg)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                    let role_prefix_width = role_prefix.content.width();
+
+                    let mut content_lines = render_markdown(content, content_width);
+                    if let Some(first_line) = content_lines.first_mut() {
+                        let first_line_width = content_width.saturating_sub(role_prefix_width);
+                        let first_line_spans: Vec<Span> = first_line
+                            .spans
+                            .iter()
+                            .flat_map(|span| {
+                                let span_width = span.content.width();
+                                if span_width <= first_line_width {
+                                    vec![span.clone()]
+                                } else {
+                                    let chars: Vec<char> = span.content.chars().collect();
+                                    let mut result = Vec::new();
+                                    for chunk in chars.chunks(first_line_width) {
+                                        result.push(Span::styled(
+                                            chunk.iter().collect::<String>(),
+                                            span.style,
+                                        ));
+                                    }
+                                    result
+                                }
+                            })
+                            .collect();
+                        first_line.spans = first_line_spans;
                     }
+
+                    for (i, content_line) in content_lines.into_iter().enumerate() {
+                        if i == 0 {
+                            let mut spans = vec![Span::raw(" "), role_prefix.clone()];
+                            spans.extend(content_line.spans.into_iter());
+                            lines.push(Line::from(spans));
+                        } else {
+                            let mut spans = vec![Span::raw(" ")];
+                            spans.extend(content_line.spans.into_iter());
+                            lines.push(Line::from(spans));
+                        }
+                    }
+                    lines.push(Line::from(""));
+                }
+
+                HistoryItem::ToolGroup { group } => {
+                    let tool_lines =
+                        render_tool_group_with_limit(group, area, area.height as usize);
+                    for line in tool_lines {
+                        lines.push(line);
+                    }
+                    lines.push(Line::from(""));
                 }
             }
+        }
 
+        if let Some(ref group) = self.pending_tool_group {
+            let tool_lines = render_tool_group_with_limit(group, area, area.height as usize);
+            for line in tool_lines {
+                lines.push(line);
+            }
             lines.push(Line::from(""));
         }
 
@@ -332,11 +415,11 @@ impl MessagesComponent {
     }
 
     pub fn len(&self) -> usize {
-        self.messages.len()
+        self.items.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.messages.is_empty()
+        self.items.is_empty()
     }
 }
 

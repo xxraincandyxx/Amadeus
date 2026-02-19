@@ -22,7 +22,7 @@ use crate::error::Result;
 use crate::ui::colors::THEME;
 use crate::ui::components::{
     AppState, FileSidebar, HelpSidebar, InputComponent, MessagesComponent, Sidebar, SidebarKind,
-    StatusBar, ToolPanel, ToolResult,
+    StatusBar,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 
@@ -43,7 +43,6 @@ pub struct App<C: LLMClient> {
     messages: MessagesComponent,
     input: InputComponent,
     status: StatusBar,
-    tool_panel: ToolPanel,
     sidebar: Option<Sidebar>,
     should_quit: bool,
     workdir: PathBuf,
@@ -66,7 +65,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
             status,
-            tool_panel: ToolPanel::new(),
             sidebar: None,
             should_quit: false,
             workdir,
@@ -189,20 +187,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.messages.update_streaming_text(&self.current_text);
             }
 
-            AgentEvent::ToolStart { name, .. } => {
+            AgentEvent::ToolStart { id, name } => {
                 self.status.set_state(AppState::Processing);
-                self.messages.update_streaming_text(&format!(
-                    "{}\n\nRunning tool: {}...",
-                    self.current_text, name
-                ));
+                self.messages.start_tool(id, name, None);
             }
 
             AgentEvent::ToolComplete {
+                id,
                 name,
                 input,
                 output,
                 is_error,
-                ..
             } => {
                 let command = if name == "bash" {
                     input
@@ -212,16 +207,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 } else {
                     None
                 };
-
-                self.tool_panel.add_result(ToolResult {
-                    tool_name: name,
-                    command,
-                    output,
-                    is_error,
-                    is_collapsed: false,
-                });
-
-                self.messages.update_streaming_text(&self.current_text);
+                self.messages.complete_tool(&id, output, is_error, command);
             }
 
             AgentEvent::Done { result } => {
@@ -269,7 +255,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 self.sidebar = None;
-                self.tool_panel.collapse_all();
+                self.messages.collapse_all_tools();
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if let Some(Sidebar::Files(ref mut sidebar)) = self.sidebar {
@@ -301,7 +287,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 } else {
                     self.mode = AppMode::Normal;
                     self.sidebar = None;
-                    self.tool_panel.collapse_all();
+                    self.messages.collapse_all_tools();
                 }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
@@ -427,7 +413,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.messages.add_user(trimmed.to_string());
         self.input.clear();
-        self.tool_panel.clear();
         self.current_text.clear();
         self.status.set_state(AppState::Processing);
 
@@ -531,18 +516,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let input_height = self.input.height();
         let status_height = 1u16;
-        let tool_height = if self.tool_panel.has_results() && !self.tool_panel.all_collapsed() {
-            8u16
-        } else {
-            0u16
-        };
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(status_height),
                 Constraint::Min(0),
-                Constraint::Length(tool_height),
                 Constraint::Length(input_height),
             ])
             .split(main_area);
@@ -551,10 +530,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages_area = chunks[1];
         self.messages.render(frame, chunks[1]);
 
-        if tool_height > 0 && chunks[2].height > 0 {
-            self.tool_panel.render(frame, chunks[2]);
-        }
-
-        self.input.render(frame, chunks[3]);
+        self.input.render(frame, chunks[2]);
     }
 }

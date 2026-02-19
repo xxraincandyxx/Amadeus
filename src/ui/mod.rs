@@ -23,5 +23,5 @@ pub use repl::Repl;
 
 pub use components::{
     AppState, FileSidebar, HelpSidebar, InputComponent, MessagesComponent, Sidebar, SidebarKind,
-    StatusBar, ToolPanel,
+    StatusBar,
 };
