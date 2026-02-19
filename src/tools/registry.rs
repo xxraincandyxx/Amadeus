@@ -11,28 +11,35 @@
 
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::error::Result;
 use crate::tools::tool_trait::Tool;
 
+type ToolMap = HashMap<&'static str, Arc<dyn Tool>>;
+
+#[derive(Clone)]
 pub struct ToolRegistry {
-    tools: HashMap<&'static str, Box<dyn Tool>>,
+    tools: Arc<ToolMap>,
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
-            tools: HashMap::new(),
+            tools: Arc::new(HashMap::new()),
         }
     }
 
-    pub fn register(mut self, tool: Box<dyn Tool>) -> Self {
-        self.tools.insert(tool.name(), tool);
-        self
+    pub fn register(self, tool: Box<dyn Tool>) -> Self {
+        let mut tools: ToolMap = (*self.tools).clone();
+        tools.insert(tool.name(), Arc::from(tool));
+        Self {
+            tools: Arc::new(tools),
+        }
     }
 
-    pub fn get(&self, name: &str) -> Option<&dyn Tool> {
-        self.tools.get(name).map(|t| t.as_ref())
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.tools.get(name).cloned()
     }
 
     pub fn schemas(&self) -> Vec<&'static Value> {

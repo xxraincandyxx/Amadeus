@@ -71,26 +71,11 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com";
  * ============================================================================
  */
 
-/// Client for the OpenAI Chat Completions API.
+#[derive(Clone)]
 pub struct OpenAIClient {
-    /// HTTP client for making requests
     client: Client,
-
-    /// OpenAI API key for authentication
-    ///
-    /// Sent in Authorization: Bearer <api_key> header
-    /// API keys look like: sk-proj-xxx... or sk-xxx...
     api_key: String,
-
-    /// Base URL for the API
-    ///
-    /// Default: https://api.openai.com
-    /// Can be customized for Azure OpenAI, proxies, etc.
     base_url: String,
-
-    /// Model identifier
-    ///
-    /// Examples: gpt-4, gpt-4o, gpt-4-turbo, gpt-3.5-turbo
     model: String,
 }
 
@@ -536,7 +521,7 @@ impl OpenAIClient {
                         Some((Ok(StreamEvent::TextDelta(String::new())), s))
                     }
                 }
-                Some(Err(e)) => Some((Err(AgentError::Api(e)), s)),
+                Some(Err(e)) => Some((Err(AgentError::Api(e.to_string())), s)),
                 None => None,
             }
         })

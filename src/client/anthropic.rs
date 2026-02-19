@@ -98,30 +98,11 @@ const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 ///
 /// This client handles communication with Anthropic's Claude models,
 /// supporting both non-streaming and streaming responses.
+#[derive(Clone)]
 pub struct AnthropicClient {
-    /// HTTP client for making requests
-    ///
-    /// Client is a reqwest type that manages HTTP connections.
-    /// It's cheap to clone and can be shared across requests.
-    /// Client::new() creates a new client with default settings.
     client: Client,
-
-    /// Anthropic API key for authentication
-    ///
-    /// This is sent in the `x-api-key` header with every request.
-    /// API keys look like: sk-ant-api03-xxx...
     api_key: String,
-
-    /// Base URL for the API (allows custom endpoints)
-    ///
-    /// Default: https://api.anthropic.com
-    /// Can be customized for proxies, local testing, etc.
     base_url: String,
-
-    /// Model identifier
-    ///
-    /// Examples: claude-sonnet-4-5-20250929, claude-opus-4-5-20250929, claude-haiku-4-5-20250929
-    /// This determines which Claude model responds to requests.
     model: String,
 }
 
@@ -425,11 +406,7 @@ impl AnthropicClient {
                 }
 
                 // Error from the byte stream
-                Some(Err(e)) => {
-                    // Return the error and continue
-                    // AgentError::Api via #[from] conversion
-                    Some((Err(AgentError::Api(e)), s))
-                }
+                Some(Err(e)) => Some((Err(AgentError::Api(e.to_string())), s)),
 
                 // Stream ended (None from .next())
                 None => None, // None ends the unfold stream
