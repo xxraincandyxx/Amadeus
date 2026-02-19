@@ -1,61 +1,77 @@
 //! # Claude Agent Library
 //!
-//! A Rust-based AI coding agent implementation supporting both Anthropic and OpenAI APIs.
+//! A Rust-based AI coding agent SDK supporting Anthropic and OpenAI APIs.
 //!
 //! ## Architecture
 //!
 //! The library is organized into several modules:
 //!
 //! - **`core`**: Core primitives (Workspace, Branch, Commit, Event, State)
-//! - **`api`**: Public SDK API with HTTP server support (re-exports all types)
-//! - **`error`**: Custom error types and Result alias for the crate
-//! - **`agent`**: Agent loop, configuration, and message types
-//! - **`client`**: LLM client trait and provider implementations (Anthropic, OpenAI)
-//! - **`tools`**: Tool implementations (bash execution, schemas)
-//! - **`ui`**: Terminal UI components (colors, REPL)
+//! - **`agent`**: Agent system with collaboration patterns
+//! - **`client`**: LLM client trait and provider implementations
+//! - **`tools`**: Tool implementations (bash, file operations)
+//! - **`concurrency`**: Lock and transaction management
+//! - **`storage`**: File-based persistence
+//! - **`api`**: HTTP server and SDK API
+//! - **`ui`**: Terminal UI components
 //!
-//! ## SDK Usage
-//!
-//! ### Using the API Module (Recommended)
-//!
-//! ```rust,ignore
-//! use claude_agent::api::prelude::*;
-//!
-//! // Load config from environment
-//! let config = Config::load()?;
-//!
-//! // Create an Anthropic client
-//! let client = AnthropicClient::new(
-//!     config.api_key,
-//!     config.base_url,
-//!     config.model,
-//! );
-//!
-//! // Create and run the agent
-//! let agent = Agent::new(client, "/path/to/workdir".to_string(), 300, false);
-//! let result = agent.run("your prompt", history).await?;
-//! ```
-//!
-//! ## HTTP Server Usage
-//!
-//! ```bash
-//! # Start server on default port (3000)
-//! cargo run -- --server
-//!
-//! # Start server on custom port
-//! cargo run -- --server 8080
-//! ```
-//!
-//! ## Provider Abstraction
-//!
-//! The `LLMClient` trait enables swapping between providers:
+//! ## V2 API Usage
 //!
 //! ```rust,ignore
-//! // Use Anthropic (default)
-//! let client = AnthropicClient::new(api_key, None, "claude-sonnet-4-5-20250929".to_string());
+//! use claude_agent::core::{Workspace, AgentId};
+//! use claude_agent::agent::{Agent, AgentConfig};
+//! use claude_agent::client::AnthropicClient;
+//! use std::sync::Arc;
+//! use tokio::sync::RwLock;
 //!
-//! // Or use OpenAI
-//! let client = OpenAIClient::new(api_key, None, "gpt-4".to_string());
+//! // Create workspace
+//! let workspace = Arc::new(RwLock::new(Workspace::create("./project").await?));
+//!
+//! // Create agent with config
+//! let config = AgentConfig::from_env()?;
+//! let client = AnthropicClient::new(config.api_key.clone(), None, config.model.clone());
+//! let mut agent = Agent::new(client, config, workspace.clone());
+//!
+//! // Run agent
+//! let result = agent.run("analyze this codebase").await?;
+//! ```
+//!
+//! ## Collaboration Patterns
+//!
+//! ```rust,ignore
+//! use claude_agent::agent::{Supervisor, Pipeline, Mesh, Race};
+//!
+//! // Supervisor-Worker
+//! let mut supervisor = Supervisor::new(workspace.clone(), client, config);
+//! supervisor.spawn_workers().await?;
+//! let result = supervisor.dispatch(Task::new("task-1", "prompt")).await?;
+//!
+//! // Pipeline
+//! let pipeline = Pipeline::new(workspace.clone(), client)
+//!     .stage(StageConfig::new("parse", parser_config))
+//!     .stage(StageConfig::new("analyze", analyzer_config));
+//! let result = pipeline.run(input).await?;
+//!
+//! // Race
+//! let race = Race::new(workspace.clone(), client)
+//!     .add(config_a)
+//!     .add(config_b)
+//!     .stop_on(StopCondition::FirstSuccess);
+//! let result = race.run("solve this problem").await?;
+//! ```
+//!
+//! ## Legacy API
+//!
+//! The V1 API is still available in the `agent::legacy` module:
+//!
+//! ```rust,ignore
+//! use claude_agent::agent::legacy::Agent;
+//! use claude_agent::agent::config::Config;
+//!
+//! let config = Arc::new(Config::load()?);
+//! let client = AnthropicClient::new(config.api_key.clone(), None, config.model.clone());
+//! let agent = Agent::new(client, Arc::clone(&config));
+//! let result = agent.run("prompt", history).await?;
 //! ```
 
 /*
