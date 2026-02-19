@@ -12,7 +12,6 @@
 //! | `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
 //! | `OPENAI_BASE_URL` | No | `https://api.openai.com` | Custom OpenAI endpoint |
 //! | `MODEL_ID` | No | Provider default | Model identifier |
-//! | `USE_STREAMING` | No | `false` | Enable streaming responses |
 //!
 //! *Required based on selected provider.
 //!
@@ -145,13 +144,6 @@ pub struct Config {
     //
     // Commands that run longer than this are killed
     pub timeout_seconds: u64,
-
-    // Whether to use streaming responses
-    // bool = true or false
-    //
-    // true = get responses as they're generated (faster feedback)
-    // false = wait for complete response (simpler)
-    pub use_streaming: bool,
 
     // -------------------------------------------------------------------------
     // Tool Settings (v2)
@@ -347,40 +339,6 @@ impl Config {
         });
 
         // ---------------------------------------------------------------------
-        // PARSE STREAMING FLAG
-        // ---------------------------------------------------------------------
-
-        // Get USE_STREAMING environment variable
-        // Default to false if not set or if parsing fails
-        //
-        // Breaking down the chain:
-        // 1. env::var("USE_STREAMING") -> Result<String, VarError>
-        // 2. .ok() -> Option<String>
-        // 3. .and_then(|s| s.parse::<bool>().ok()) -> Option<bool>
-        // 4. .unwrap_or(false) -> bool
-        let use_streaming = env::var("USE_STREAMING")
-            // Convert Result to Option (ignore errors)
-            .ok()
-            // If we have a string, try to parse it as bool
-            //
-            // `and_then` takes a closure that returns Option
-            // If input is Some(value), call closure with value
-            // If input is None, return None
-            //
-            // `s.parse::<bool>()` tries to parse string as bool
-            // - "true" -> Ok(true)
-            // - "false" -> Ok(false)
-            // - anything else -> Err
-            //
-            // The ::<bool> is a "turbofish" - explicit type parameter
-            // Tells parse() what type to parse to
-            //
-            // .ok() converts the Result to Option
-            .and_then(|s| s.parse::<bool>().ok())
-            // If None (not set or parse failed), use false as default
-            .unwrap_or(false);
-
-        // ---------------------------------------------------------------------
         // PARSE MAX OUTPUT SIZE (v2)
         // ---------------------------------------------------------------------
 
@@ -438,8 +396,6 @@ impl Config {
             // Hardcoded timeout of 300 seconds (5 minutes)
             // Could be made configurable via env var if needed
             timeout_seconds: 300,
-
-            use_streaming, // Same as: use_streaming: use_streaming
 
             // v2: Tool settings
             max_output_bytes,

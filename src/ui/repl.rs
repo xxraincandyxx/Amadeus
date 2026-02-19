@@ -53,7 +53,7 @@ pub struct Repl<C: LLMClient> {
     agent: Agent<C>,
 }
 
-impl<C: LLMClient> Repl<C> {
+impl<C: LLMClient + Clone + 'static> Repl<C> {
     /// Create a new REPL instance.
     pub fn new(agent: Agent<C>) -> Self {
         Self { agent }

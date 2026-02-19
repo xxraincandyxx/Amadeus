@@ -12,7 +12,6 @@ fn create_test_config() -> Config {
         model: "test-model".to_string(),
         workdir: std::path::PathBuf::from("/tmp"),
         timeout_seconds: 30,
-        use_streaming: false,
         max_output_bytes: 50_000,
         blocked_commands: vec!["rm -rf /".to_string()],
     }
@@ -24,15 +23,6 @@ async fn test_agent_creation() {
     let config = Arc::new(create_test_config());
 
     let _agent = Agent::new(client, config);
-}
-
-#[tokio::test]
-async fn test_agent_with_streaming_enabled() {
-    let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
-    let mut config = create_test_config();
-    config.use_streaming = true;
-
-    let _agent = Agent::new(client, Arc::new(config));
 }
 
 #[tokio::test]
