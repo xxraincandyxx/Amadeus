@@ -30,7 +30,7 @@ pub struct Agent<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> Agent<C> {
     pub fn new(client: C, config: AgentConfig, workspace: Arc<RwLock<Workspace>>) -> Self {
-        let id = config.id.unwrap_or_else(AgentId::new);
+        let id = config.id.unwrap_or_default();
 
         let tools = ToolRegistry::new()
             .register(Box::new(BashTool::new(
@@ -318,8 +318,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     pub async fn save_history(&self, history: &[Message]) -> Result<()> {
         let mut ws = self.workspace.write().await;
         let history_key = format!("agent.{}.history", self.id);
-        let history_json = serde_json::to_value(history)
-            .map_err(|e| crate::error::AgentError::Serde(e))?;
+        let history_json =
+            serde_json::to_value(history).map_err(crate::error::AgentError::Serde)?;
         ws.state_mut().write(&history_key, history_json);
         Ok(())
     }

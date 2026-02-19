@@ -425,13 +425,21 @@ impl LLMClient for OpenAIClient {
         let openai_messages = Self::prepare_messages(system, messages);
         let openai_tools = Self::transform_tools(tools);
 
-        // Build request body
-        let body = serde_json::json!({
-            "model": self.model,
-            "messages": openai_messages,
-            "tools": openai_tools,
-            "max_tokens": max_tokens,
-        });
+        // Build request body - only include tools if non-empty
+        let body = if openai_tools.is_empty() {
+            serde_json::json!({
+                "model": self.model,
+                "messages": openai_messages,
+                "max_tokens": max_tokens,
+            })
+        } else {
+            serde_json::json!({
+                "model": self.model,
+                "messages": openai_messages,
+                "tools": openai_tools,
+                "max_tokens": max_tokens,
+            })
+        };
 
         // Send request
         let response = self
@@ -472,14 +480,23 @@ impl LLMClient for OpenAIClient {
         let openai_messages = Self::prepare_messages(system, messages);
         let openai_tools = Self::transform_tools(tools);
 
-        // Build request with stream: true
-        let body = serde_json::json!({
-            "model": self.model,
-            "messages": openai_messages,
-            "tools": openai_tools,
-            "max_tokens": max_tokens,
-            "stream": true,
-        });
+        // Build request with stream: true - only include tools if non-empty
+        let body = if openai_tools.is_empty() {
+            serde_json::json!({
+                "model": self.model,
+                "messages": openai_messages,
+                "max_tokens": max_tokens,
+                "stream": true,
+            })
+        } else {
+            serde_json::json!({
+                "model": self.model,
+                "messages": openai_messages,
+                "tools": openai_tools,
+                "max_tokens": max_tokens,
+                "stream": true,
+            })
+        };
 
         let response = self
             .client
@@ -541,8 +558,7 @@ impl OpenAIClient {
         }
 
         for line in text.lines() {
-            if line.starts_with("data: ") {
-                let json_str = &line[6..];
+            if let Some(json_str) = line.strip_prefix("data: ") {
                 if json_str == "[DONE]" {
                     return None;
                 }

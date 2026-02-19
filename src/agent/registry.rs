@@ -35,7 +35,7 @@ impl<C: LLMClient + Clone + 'static> AgentRegistry<C> {
     }
 
     pub async fn spawn(&mut self, config: AgentConfig) -> Result<AgentId> {
-        let id = config.id.unwrap_or_else(AgentId::new);
+        let id = config.id.unwrap_or_default();
         let role = config.role.clone();
 
         let meta = AgentMeta {
@@ -81,7 +81,11 @@ impl<C: LLMClient + Clone + 'static> AgentRegistry<C> {
             .collect()
     }
 
-    pub async fn terminate(&mut self, id: AgentId, reason: crate::core::event::TerminationReason) -> Result<()> {
+    pub async fn terminate(
+        &mut self,
+        id: AgentId,
+        reason: crate::core::event::TerminationReason,
+    ) -> Result<()> {
         if let Some(_meta) = self.agents.remove(&id) {
             let mut ws = self.workspace.write().await;
             ws.append_event(Event::AgentTerminated { id, reason });

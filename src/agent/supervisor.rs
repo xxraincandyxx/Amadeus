@@ -132,7 +132,9 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     pub async fn dispatch(&mut self, task: Task) -> Result<TaskResult> {
         let worker_idx = self.select_worker();
         if worker_idx >= self.workers.len() {
-            return Err(crate::error::AgentError::Api("No workers available".to_string()));
+            return Err(crate::error::AgentError::Api(
+                "No workers available".to_string(),
+            ));
         }
 
         let worker = &self.workers[worker_idx];
@@ -185,11 +187,7 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
 
         for worker in &self.config.workers {
             let agent_id = worker.id.unwrap_or_else(AgentId::new);
-            let mut agent = Agent::new(
-                self.client.clone(),
-                worker.clone(),
-                self.workspace.clone(),
-            );
+            let mut agent = Agent::new(self.client.clone(), worker.clone(), self.workspace.clone());
             let result = agent.run(prompt).await;
 
             results.push(match result {
@@ -224,14 +222,13 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                 self.next_worker += 1;
                 idx
             }
-            DispatchStrategy::LeastLoaded => {
-                self.workers
-                    .iter()
-                    .enumerate()
-                    .min_by_key(|(_, w)| w.task_count)
-                    .map(|(i, _)| i)
-                    .unwrap_or(0)
-            }
+            DispatchStrategy::LeastLoaded => self
+                .workers
+                .iter()
+                .enumerate()
+                .min_by_key(|(_, w)| w.task_count)
+                .map(|(i, _)| i)
+                .unwrap_or(0),
             DispatchStrategy::Random => {
                 let len = self.workers.len();
                 if len == 0 {
@@ -263,6 +260,9 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     }
 
     pub fn idle_worker_count(&self) -> usize {
-        self.workers.iter().filter(|w| w.status == AgentStatus::Idle).count()
+        self.workers
+            .iter()
+            .filter(|w| w.status == AgentStatus::Idle)
+            .count()
     }
 }

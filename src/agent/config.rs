@@ -199,7 +199,6 @@ impl Config {
     /// let config = Config::load()?;
     /// assert_eq!(config.provider, Provider::Anthropic);
     /// ```
-
     // `pub` - Public, accessible from outside the module
     // `fn` - Function keyword
     // `load` - Function name
@@ -420,7 +419,6 @@ impl Config {
     /// # Returns
     ///
     /// A formatted system prompt string.
-
     // `pub` - Public
     // `fn` - Function
     // `&self` - Borrows self (this is a method, not a static function)

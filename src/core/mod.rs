@@ -10,8 +10,8 @@ pub use branch::{Branch, BranchDiff, MergeConflict, MergeResult, MergeStrategy, 
 pub use commit::{Commit, CommitBuilder, CommitTrigger, Phase};
 pub use error::{CoreError, Result};
 pub use event::{
-    Action, AgentStatus, Event, EventEntry, EventFilter, EventLog, LockMode, MergeResult as EventMergeResult,
-    TerminationReason,
+    Action, AgentStatus, Event, EventEntry, EventFilter, EventLog, LockMode,
+    MergeResult as EventMergeResult, TerminationReason,
 };
 pub use id::{AgentId, CommitId, SnapshotId, TxId};
 pub use state::{StateChange, StateSnapshot, Version, VersionedState};

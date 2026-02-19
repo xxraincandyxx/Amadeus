@@ -63,10 +63,21 @@ pub struct PipelineResult {
 
 #[derive(Debug, Clone)]
 pub enum PipelineEvent {
-    StageStart { name: String },
-    StageComplete { name: String, result: StageResult },
-    StageError { name: String, error: String, attempt: usize },
-    PipelineComplete { result: PipelineResult },
+    StageStart {
+        name: String,
+    },
+    StageComplete {
+        name: String,
+        result: StageResult,
+    },
+    StageError {
+        name: String,
+        error: String,
+        attempt: usize,
+    },
+    PipelineComplete {
+        result: PipelineResult,
+    },
 }
 
 pub struct Pipeline<C: LLMClient> {
@@ -132,7 +143,8 @@ impl<C: LLMClient + Clone + 'static> Pipeline<C> {
 
                 match tokio::time::timeout(stage_config.timeout, agent.run(&prompt)).await {
                     Ok(Ok(result)) => {
-                        current_input = serde_json::to_value(&result.text).unwrap_or(serde_json::Value::Null);
+                        current_input =
+                            serde_json::to_value(&result.text).unwrap_or(serde_json::Value::Null);
                         stage_output = Some(result.text);
                         stage_success = true;
                         break;
@@ -148,7 +160,8 @@ impl<C: LLMClient + Clone + 'static> Pipeline<C> {
                         if attempt < stage_config.retry_count {
                             tokio::time::sleep(stage_config.retry_delay).await;
                         } else {
-                            stage_error = Some(format!("Timeout after {}s", stage_config.timeout.as_secs()));
+                            stage_error =
+                                Some(format!("Timeout after {}s", stage_config.timeout.as_secs()));
                         }
                     }
                 }
@@ -186,10 +199,7 @@ impl<C: LLMClient + Clone + 'static> Pipeline<C> {
         })
     }
 
-    pub fn run_stream(
-        self,
-        input: serde_json::Value,
-    ) -> impl Stream<Item = PipelineEvent> + Send {
+    pub fn run_stream(self, input: serde_json::Value) -> impl Stream<Item = PipelineEvent> + Send {
         async_stream::stream! {
             let start = std::time::Instant::now();
             let mut stages_results = Vec::new();

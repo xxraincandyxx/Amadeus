@@ -144,20 +144,15 @@ pub enum RestartPolicy {
     Always,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AgentStatus {
+    #[default]
     Idle,
     Thinking,
     ExecutingTool,
     Waiting,
     Paused,
     Stopped,
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -157,7 +157,7 @@ impl InputComponent {
         let height_by_lines = line_count + 2;
         let height_by_width = (max_line_width / 80) + 2;
 
-        (height_by_lines.max(height_by_width) as u16).min(10).max(3)
+        (height_by_lines.max(height_by_width) as u16).clamp(3, 10)
     }
 }
 

@@ -3,8 +3,8 @@ pub mod agent_config;
 pub mod config;
 pub mod events;
 pub mod loop_agent;
-pub mod messages;
 pub mod mesh;
+pub mod messages;
 pub mod pipeline;
 pub mod race;
 pub mod registry;
@@ -18,4 +18,6 @@ pub use mesh::{Mesh, MeshConfig, MeshMessage, MeshResult, Topology};
 pub use pipeline::{Pipeline, PipelineEvent, PipelineResult, StageConfig, StageResult};
 pub use race::{Race, RaceConfig, RaceResult, StopCondition};
 pub use registry::AgentRegistry;
-pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerInfo};
+pub use supervisor::{
+    DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerInfo,
+};

@@ -167,7 +167,7 @@ pub async fn run_server(port: u16) -> Result<()> {
     // This runs forever until the process is killed (Ctrl+C)
     axum::serve(listener, app.into_make_service())
         .await
-        .map_err(|e| crate::error::AgentError::Io(e))?;
+        .map_err(crate::error::AgentError::Io)?;
 
     Ok(())
 }

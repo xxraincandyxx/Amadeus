@@ -198,7 +198,6 @@ pub trait LLMClient: Send + Sync {
     /// A tuple of (stop_reason, content_blocks) where:
     /// - `stop_reason`: Why generation stopped ("end_turn", "tool_use", etc.)
     /// - `content_blocks`: The generated content (text and/or tool calls)
-
     // `async fn` - This is an async method
     // &self - This is a method (takes &self), not a static function
     //
@@ -239,7 +238,6 @@ pub trait LLMClient: Send + Sync {
     ///
     /// A pinned `Stream` of `Result<StreamEvent>` values.
     /// The stream ends when `None` is returned from `next()`.
-
     // Return type is complex, let's break it down:
     //
     // Result<...> - Our Result type (Ok or Err)

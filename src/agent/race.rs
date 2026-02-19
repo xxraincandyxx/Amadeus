@@ -73,7 +73,7 @@ impl<C: LLMClient + Clone + 'static> Race<C> {
         }
     }
 
-    pub fn add(mut self, config: AgentConfig) -> Self {
+    pub fn with_agent(mut self, config: AgentConfig) -> Self {
         self.agents.push(config);
         self
     }
@@ -119,10 +119,13 @@ impl<C: LLMClient + Clone + 'static> Race<C> {
                 self.workspace.clone(),
             );
 
-            let result: Result<RunResult> = match tokio::time::timeout(self.config.timeout, agent.run(task)).await {
-                Ok(inner) => inner,
-                Err(_) => Err(crate::error::AgentError::Timeout(self.config.timeout.as_secs())),
-            };
+            let result: Result<RunResult> =
+                match tokio::time::timeout(self.config.timeout, agent.run(task)).await {
+                    Ok(inner) => inner,
+                    Err(_) => Err(crate::error::AgentError::Timeout(
+                        self.config.timeout.as_secs(),
+                    )),
+                };
 
             let duration = start.elapsed();
 
@@ -155,13 +158,13 @@ impl<C: LLMClient + Clone + 'static> Race<C> {
                 Err(e) => {
                     ranking.push((agent_id, duration));
                     all_errors.insert(agent_id, e.to_string());
-                    if matches!(self.config.stop_on, StopCondition::FirstComplete) {
-                        if winner.is_none() {
-                            winner = Some(agent_id);
-                            winner_error = Some(e.to_string());
-                            if !self.config.return_all {
-                                break;
-                            }
+                    if matches!(self.config.stop_on, StopCondition::FirstComplete)
+                        && winner.is_none()
+                    {
+                        winner = Some(agent_id);
+                        winner_error = Some(e.to_string());
+                        if !self.config.return_all {
+                            break;
                         }
                     }
                 }

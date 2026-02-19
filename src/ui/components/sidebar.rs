@@ -110,7 +110,7 @@ impl FileSidebar {
             .map(|(i, entry)| {
                 let indent = indent_str.repeat(entry.depth);
                 let icon = if entry.is_dir { "📁 " } else { "📄 " };
-                let name = entry.path.split('/').last().unwrap_or(&entry.path);
+                let name = entry.path.split('/').next_back().unwrap_or(&entry.path);
 
                 let available_width =
                     content_width.saturating_sub(indent.width() + icon.width() + 1);

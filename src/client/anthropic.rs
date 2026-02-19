@@ -424,11 +424,9 @@ impl AnthropicClient {
         // Process each line
         for line in text.lines() {
             // SSE data lines start with "data: "
-            if line.starts_with("data: ") {
+            if let Some(json_str) = line.strip_prefix("data: ") {
                 // Extract the JSON part (skip "data: ")
                 // &line[6..] is string slicing: skip first 6 characters
-                let json_str = &line[6..];
-
                 // Check for end-of-stream marker
                 if json_str == "[DONE]" {
                     return None; // Signal end of stream

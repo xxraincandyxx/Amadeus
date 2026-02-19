@@ -82,7 +82,7 @@ impl Workspace {
         self.event_log.append(Event::BranchCreated {
             name: name.to_string(),
             from: from_branch_name.to_string(),
-            from_commit: from_commit,
+            from_commit,
         });
 
         Ok(())
@@ -155,7 +155,7 @@ impl Workspace {
         let commit = self
             .commits
             .get(&to)
-            .ok_or_else(|| CoreError::CommitNotFound(to))?
+            .ok_or(CoreError::CommitNotFound(to))?
             .clone();
 
         match mode {
@@ -195,12 +195,12 @@ impl Workspace {
         let from_commit = self
             .commits
             .get(&from_branch.head)
-            .ok_or_else(|| CoreError::CommitNotFound(from_branch.head))?;
+            .ok_or(CoreError::CommitNotFound(from_branch.head))?;
 
         let into_commit = self
             .commits
             .get(&into_branch.head)
-            .ok_or_else(|| CoreError::CommitNotFound(into_branch.head))?;
+            .ok_or(CoreError::CommitNotFound(into_branch.head))?;
 
         let result = match strategy {
             MergeStrategy::Theirs => {
@@ -258,11 +258,7 @@ impl Workspace {
         Ok(result)
     }
 
-    fn create_merge_commit(
-        &mut self,
-        parents: Vec<CommitId>,
-        message: String,
-    ) -> Result<CommitId> {
+    fn create_merge_commit(&mut self, parents: Vec<CommitId>, message: String) -> Result<CommitId> {
         let commit = Commit {
             id: CommitId::new(),
             parent: parents.first().copied(),

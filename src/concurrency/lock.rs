@@ -217,7 +217,12 @@ mod tests {
         let mut lm = LockManager::new();
         let agent = AgentId::new();
 
-        let result = lm.try_acquire("file.txt", agent, LockMode::Exclusive, Duration::from_secs(60));
+        let result = lm.try_acquire(
+            "file.txt",
+            agent,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
         assert!(result);
     }
 
@@ -236,8 +241,18 @@ mod tests {
         let agent1 = AgentId::new();
         let agent2 = AgentId::new();
 
-        lm.try_acquire("file.txt", agent1, LockMode::Exclusive, Duration::from_secs(60));
-        let result = lm.try_acquire("file.txt", agent2, LockMode::Exclusive, Duration::from_secs(60));
+        lm.try_acquire(
+            "file.txt",
+            agent1,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
+        let result = lm.try_acquire(
+            "file.txt",
+            agent2,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
         assert!(!result);
     }
 
@@ -246,7 +261,12 @@ mod tests {
         let mut lm = LockManager::new();
         let agent = AgentId::new();
 
-        lm.try_acquire("file.txt", agent, LockMode::Exclusive, Duration::from_secs(60));
+        lm.try_acquire(
+            "file.txt",
+            agent,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
         let result = lm.release("file.txt", agent);
         assert!(result.is_ok());
     }
@@ -256,8 +276,18 @@ mod tests {
         let mut lm = LockManager::new();
         let agent = AgentId::new();
 
-        lm.try_acquire("file1.txt", agent, LockMode::Exclusive, Duration::from_secs(60));
-        lm.try_acquire("file2.txt", agent, LockMode::Exclusive, Duration::from_secs(60));
+        lm.try_acquire(
+            "file1.txt",
+            agent,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
+        lm.try_acquire(
+            "file2.txt",
+            agent,
+            LockMode::Exclusive,
+            Duration::from_secs(60),
+        );
 
         let held = lm.held_locks(agent);
         assert_eq!(held.len(), 2);

@@ -80,21 +80,13 @@ impl ToolPanel {
                     " {} {} {}",
                     status,
                     result.tool_name,
-                    if result.command.is_some() {
-                        result.command.as_ref().unwrap()
-                    } else {
-                        ""
-                    }
+                    result.command.as_deref().unwrap_or("")
                 )
             } else {
                 format!(
                     " {} {}",
                     result.tool_name,
-                    if result.command.is_some() {
-                        result.command.as_ref().unwrap()
-                    } else {
-                        ""
-                    }
+                    result.command.as_deref().unwrap_or("")
                 )
             };
 

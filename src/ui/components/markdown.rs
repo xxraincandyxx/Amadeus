@@ -24,11 +24,6 @@ fn detect_code_blocks(content: &str) -> Vec<(String, bool)> {
                 }
                 in_code_block = true;
             }
-        } else if in_code_block {
-            if !current_segment.is_empty() {
-                current_segment.push('\n');
-            }
-            current_segment.push_str(line);
         } else {
             if !current_segment.is_empty() {
                 current_segment.push('\n');
@@ -116,23 +111,23 @@ fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![Line::from("")];
     }
 
-    let header_line = if trimmed.starts_with("### ") {
+    let header_line = if let Some(stripped) = trimmed.strip_prefix("### ") {
         Some(Line::from(vec![Span::styled(
-            trimmed[4..].to_string(),
+            stripped.to_string(),
             Style::default()
                 .fg(THEME.purple)
                 .add_modifier(Modifier::BOLD),
         )]))
-    } else if trimmed.starts_with("## ") {
+    } else if let Some(stripped) = trimmed.strip_prefix("## ") {
         Some(Line::from(vec![Span::styled(
-            trimmed[3..].to_string(),
+            stripped.to_string(),
             Style::default()
                 .fg(THEME.purple)
                 .add_modifier(Modifier::BOLD),
         )]))
-    } else if trimmed.starts_with("# ") {
+    } else if let Some(stripped) = trimmed.strip_prefix("# ") {
         Some(Line::from(vec![Span::styled(
-            trimmed[2..].to_string(),
+            stripped.to_string(),
             Style::default()
                 .fg(THEME.purple)
                 .add_modifier(Modifier::BOLD),

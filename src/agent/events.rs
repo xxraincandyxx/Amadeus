@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RunResult {
     pub text: String,
     pub tool_calls: Vec<ToolCall>,
@@ -13,15 +13,6 @@ pub struct ToolCall {
     pub input: Value,
     pub output: String,
     pub is_error: bool,
-}
-
-impl Default for RunResult {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            tool_calls: Vec::new(),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

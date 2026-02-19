@@ -73,10 +73,8 @@ impl<C: LLMClient + Clone + 'static> Mesh<C> {
             config
         } else {
             let parsed: Option<AgentId> = id.into().parse().ok();
-            let agent_id = parsed.unwrap_or_else(AgentId::new);
-            AgentConfig::default()
-                .id(agent_id)
-                .role(config.role)
+            let agent_id = parsed.unwrap_or_default();
+            AgentConfig::default().id(agent_id).role(config.role)
         };
         let agent_id = config.id.unwrap_or_else(AgentId::new);
         self.agents.insert(agent_id, config.id(agent_id));
@@ -93,10 +91,19 @@ impl<C: LLMClient + Clone + 'static> Mesh<C> {
 
     pub fn get_connections(&self, agent_id: AgentId) -> Vec<AgentId> {
         match &self.topology {
-            Topology::FullMesh => self.agents.keys().copied().filter(|id| *id != agent_id).collect(),
+            Topology::FullMesh => self
+                .agents
+                .keys()
+                .copied()
+                .filter(|id| *id != agent_id)
+                .collect(),
             Topology::Star { center } => {
                 if agent_id == *center {
-                    self.agents.keys().copied().filter(|id| *id != agent_id).collect()
+                    self.agents
+                        .keys()
+                        .copied()
+                        .filter(|id| *id != agent_id)
+                        .collect()
                 } else {
                     vec![*center]
                 }
@@ -135,7 +142,9 @@ impl<C: LLMClient + Clone + 'static> Mesh<C> {
         let config = self.agents.get(&to).cloned().unwrap_or_default();
         let mut agent = Agent::new(self.client.clone(), config, self.workspace.clone());
 
-        agent.run(&format!("Message from {}: {}", from, msg)).await?;
+        agent
+            .run(&format!("Message from {}: {}", from, msg))
+            .await?;
 
         Ok(())
     }

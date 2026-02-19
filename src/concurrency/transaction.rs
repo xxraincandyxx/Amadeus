@@ -10,8 +10,13 @@ use crate::error::Result;
 
 #[derive(Debug, Clone)]
 pub enum Operation {
-    Write { key: String, value: serde_json::Value },
-    Delete { key: String },
+    Write {
+        key: String,
+        value: serde_json::Value,
+    },
+    Delete {
+        key: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,7 +80,8 @@ impl TransactionManager {
     }
 
     pub async fn begin(&mut self, initiator: AgentId) -> TxId {
-        self.begin_with_timeout(initiator, self.default_timeout).await
+        self.begin_with_timeout(initiator, self.default_timeout)
+            .await
     }
 
     pub async fn begin_with_timeout(&mut self, initiator: AgentId, timeout: Duration) -> TxId {
@@ -96,10 +102,9 @@ impl TransactionManager {
     }
 
     pub async fn write(&mut self, tx_id: TxId, key: &str, value: serde_json::Value) -> Result<()> {
-        let tx = self
-            .active
-            .get_mut(&tx_id)
-            .ok_or_else(|| crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id)))?;
+        let tx = self.active.get_mut(&tx_id).ok_or_else(|| {
+            crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id))
+        })?;
 
         if !tx.is_active() {
             return Err(crate::error::AgentError::Api(format!(
@@ -117,10 +122,9 @@ impl TransactionManager {
     }
 
     pub async fn delete(&mut self, tx_id: TxId, key: &str) -> Result<()> {
-        let tx = self
-            .active
-            .get_mut(&tx_id)
-            .ok_or_else(|| crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id)))?;
+        let tx = self.active.get_mut(&tx_id).ok_or_else(|| {
+            crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id))
+        })?;
 
         if !tx.is_active() {
             return Err(crate::error::AgentError::Api(format!(
@@ -137,10 +141,9 @@ impl TransactionManager {
     }
 
     pub async fn commit(&mut self, tx_id: TxId) -> Result<()> {
-        let tx = self
-            .active
-            .get_mut(&tx_id)
-            .ok_or_else(|| crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id)))?;
+        let tx = self.active.get_mut(&tx_id).ok_or_else(|| {
+            crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id))
+        })?;
 
         if !tx.is_active() {
             return Err(crate::error::AgentError::Api(format!(
@@ -171,10 +174,9 @@ impl TransactionManager {
     }
 
     pub async fn rollback(&mut self, tx_id: TxId, _reason: &str) -> Result<()> {
-        let tx = self
-            .active
-            .get_mut(&tx_id)
-            .ok_or_else(|| crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id)))?;
+        let tx = self.active.get_mut(&tx_id).ok_or_else(|| {
+            crate::error::AgentError::Api(format!("Transaction {:?} not found", tx_id))
+        })?;
 
         tx.state = TxState::RolledBack;
         self.active.remove(&tx_id);
@@ -235,7 +237,9 @@ mod tests {
         let agent = AgentId::new();
 
         let tx_id = tm.begin(agent).await;
-        tm.write(tx_id, "key", serde_json::json!("value")).await.unwrap();
+        tm.write(tx_id, "key", serde_json::json!("value"))
+            .await
+            .unwrap();
         tm.commit(tx_id).await.unwrap();
 
         let state_guard = state.read().await;
@@ -249,7 +253,9 @@ mod tests {
         let agent = AgentId::new();
 
         let tx_id = tm.begin(agent).await;
-        tm.write(tx_id, "key", serde_json::json!("value")).await.unwrap();
+        tm.write(tx_id, "key", serde_json::json!("value"))
+            .await
+            .unwrap();
         tm.rollback(tx_id, "test rollback").await.unwrap();
 
         let state_guard = state.read().await;
@@ -261,7 +267,9 @@ mod tests {
         let state = Arc::new(RwLock::new(VersionedState::new()));
         let mut tm = TransactionManager::new(state);
 
-        let result = tm.write(TxId::new(), "key", serde_json::json!("value")).await;
+        let result = tm
+            .write(TxId::new(), "key", serde_json::json!("value"))
+            .await;
         assert!(result.is_err());
     }
 }
