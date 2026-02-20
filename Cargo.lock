@@ -18,6 +18,38 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "amadeus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "axum",
+ "bytes",
+ "chrono",
+ "colored 2.2.0",
+ "crossterm 0.27.0",
+ "dotenvy",
+ "futures",
+ "mockito",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tokio-util",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+ "tui-textarea",
+ "unicode-width 0.2.2",
+ "uuid",
+ "walkdir",
+ "wiremock",
+]
+
+[[package]]
 name = "android_system_properties"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -209,38 +241,6 @@ dependencies = [
  "serde",
  "wasm-bindgen",
  "windows-link",
-]
-
-[[package]]
-name = "claude-agent"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-stream",
- "async-trait",
- "axum",
- "bytes",
- "chrono",
- "colored 2.2.0",
- "crossterm 0.27.0",
- "dotenvy",
- "futures",
- "mockito",
- "ratatui",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror",
- "tokio",
- "tokio-test",
- "tokio-util",
- "tower 0.4.13",
- "tower-http 0.5.2",
- "tui-textarea",
- "unicode-width 0.2.2",
- "uuid",
- "walkdir",
- "wiremock",
 ]
 
 [[package]]

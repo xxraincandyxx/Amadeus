@@ -1,4 +1,4 @@
-use claude_agent::agent::config::{Config, Provider};
+use amadeus::agent::config::{Config, Provider};
 
 #[test]
 fn test_provider_equality() {
