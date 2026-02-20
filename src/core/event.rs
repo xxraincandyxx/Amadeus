@@ -54,7 +54,7 @@ impl Event {
     pub fn timestamp(&self) -> DateTime<Utc> {
         Utc::now()
     }
-    
+
     pub fn to_entry(&self) -> EventEntry {
         EventEntry {
             timestamp: self.timestamp(),

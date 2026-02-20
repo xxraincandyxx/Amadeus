@@ -13,9 +13,9 @@ async fn main() -> Result<()> {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(3000);
-    
+
     println!("Starting Amadeus SDK HTTP server on port {}...", port);
     run_server(port).await?;
-    
+
     Ok(())
 }

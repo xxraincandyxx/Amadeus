@@ -41,6 +41,9 @@ use reqwest::{Client, StatusCode};
 // Duration for HTTP client timeouts
 use std::time::Duration;
 
+// Tracing for structured logging
+use tracing::{debug, info, warn};
+
 // JSON value type from serde_json
 // Value can hold any JSON data (object, array, string, number, etc.)
 use serde_json::Value;
@@ -189,6 +192,13 @@ impl LLMClient for AnthropicClient {
         // Result: "https://api.anthropic.com/v1/messages"
         let url = format!("{}/v1/messages", self.base_url);
 
+        debug!(
+            model = %self.model,
+            messages = messages.len(),
+            tools = tools.len(),
+            "Creating Anthropic message"
+        );
+
         // -----------------------------------------------------------------
         // BUILD THE REQUEST BODY
         // -----------------------------------------------------------------
@@ -248,6 +258,12 @@ impl LLMClient for AnthropicClient {
             // Read the error response body as text
             let error_text = response.text().await?;
 
+            warn!(
+                status_code = status_code,
+                error = %error_text,
+                "Anthropic API error"
+            );
+
             // Return an error with details
             return Err(AgentError::InvalidResponse(format!(
                 "API error {}: {}",
@@ -279,6 +295,12 @@ impl LLMClient for AnthropicClient {
         // This parses the JSON content array into Vec<ContentBlock>
         // ? propagates parse errors
         let content: Vec<ContentBlock> = serde_json::from_value(json["content"].clone())?;
+
+        info!(
+            stop_reason = %stop_reason,
+            content_blocks = content.len(),
+            "Anthropic response received"
+        );
 
         // Return the tuple (stop_reason, content)
         Ok((stop_reason, content))

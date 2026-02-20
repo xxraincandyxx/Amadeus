@@ -1,7 +1,7 @@
-use async_trait::async_trait;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
+use async_trait::async_trait;
 use futures::Stream;
 use serde_json::json;
 use std::pin::Pin;

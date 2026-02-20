@@ -19,8 +19,24 @@ use amadeus::{
     ui::App,
 };
 
+#[cfg(feature = "tui")]
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
+#[cfg(feature = "tui")]
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(feature = "tui")]
+    init_tracing();
+
     let args: Vec<String> = std::env::args().collect();
 
     #[cfg(feature = "api")]

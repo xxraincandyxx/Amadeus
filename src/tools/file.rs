@@ -70,6 +70,7 @@ impl FileTools {
         let path = self.workdir.join(p);
 
         let mut cleaned = PathBuf::new();
+        let mut first = true;
         for component in path.components() {
             match component {
                 Component::ParentDir => {
@@ -79,10 +80,22 @@ impl FileTools {
                 }
                 Component::CurDir => {}
                 Component::Normal(c) => cleaned.push(c),
-                Component::RootDir | Component::Prefix(_) => {
-                    return Err(AgentError::PathEscape(PathBuf::from(p)));
+                Component::RootDir => {
+                    if first {
+                        cleaned.push(component);
+                    } else {
+                        return Err(AgentError::PathEscape(PathBuf::from(p)));
+                    }
+                }
+                Component::Prefix(_) => {
+                    if first {
+                        cleaned.push(component);
+                    } else {
+                        return Err(AgentError::PathEscape(PathBuf::from(p)));
+                    }
                 }
             }
+            first = false;
         }
 
         if !cleaned.starts_with(&self.workdir) {
