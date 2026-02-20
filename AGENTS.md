@@ -1,186 +1,170 @@
-# AGENTS.md
+# AGENTS.md - AI Agent Development Guide
 
-Rust-based AI coding agent supporting Anthropic and OpenAI APIs with a terminal UI and HTTP server mode.
+## Project Overview
 
-## Build / Lint / Test
+Amadeus is an **Agent SDK** - a Rust library providing core building blocks for building AI agents. It is NOT a platform or application.
+
+## Core Principles
+
+1. **SDK, not Platform** - We provide agent capabilities, not session/memory/platform features
+2. **Minimal dependencies** - Only what's needed for LLM interaction and tool execution
+3. **Type-safe** - Strong typing with Result-based error handling
+4. **Streaming-first** - Real-time response streaming as a first-class feature
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Amadeus SDK                              │
+│                                                             │
+│  Agent Loop │ Tool System │ LLM Clients │ Streaming         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**See also:**
+- [SDK_SCOPE.md](docs/SDK_SCOPE.md) - Detailed scope definition
+- [INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md) - Integration with NeuroCore
+
+## Development Workflow
+
+### Building
 
 ```bash
-cargo build                          # Debug build
-cargo build --release                # Release build
-cargo check                          # Fast check without building
-cargo clippy                         # Lint
-cargo fmt                            # Format code
-
-cargo test                           # Run all tests
-cargo test test_bash_echo            # Run specific test function
-cargo test --test bash_test          # Run specific test file
-cargo test test_bash                 # Run tests matching pattern
-cargo test -- --nocapture            # Show test output
-
-cargo run                            # Interactive mode (Anthropic)
-cargo run -- "your prompt"           # Single-shot mode
-cargo run -- --server                # HTTP server on port 3000
-PROVIDER=openai cargo run            # Use OpenAI
+cargo build
+cargo test
+cargo clippy
 ```
 
-## Environment Variables
+### Running TUI Test Harness
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PROVIDER` | `anthropic` | LLM provider (`anthropic` or `openai`) |
-| `ANTHROPIC_API_KEY` | - | Anthropic API key (required if provider=anthropic) |
-| `OPENAI_API_KEY` | - | OpenAI API key (required if provider=openai) |
-| `MODEL_ID` | Provider default | Model identifier |
-| `MAX_OUTPUT_BYTES` | `50000` | Max tool output size |
-| `BLOCKED_COMMANDS` | `rm -rf /` | Comma-separated blocked commands |
+```bash
+# The TUI is for testing SDK performance
+cargo run --example tui
 
-Configure via `.env` (copy from `.env.example`).
-
-## Code Style
-
-### Code Comments
-- **DO NOT ADD COMMENTS** unless explicitly requested by the user
-
-### Imports
-Group in order: std → external crates → crate modules, separated by blank lines:
-```rust
-use std::path::PathBuf;
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tokio::sync::RwLock;
-
-use crate::error::{AgentError, Result};
-use crate::tools::tool_trait::Tool;
+# Or with custom config
+ANTHROPIC_API_KEY=xxx cargo run --example tui
 ```
 
-### Naming Conventions
-| Type | Convention | Example |
-|------|------------|---------|
-| Functions/Variables | `snake_case` | `execute_tool`, `api_key` |
-| Types/Structs/Enums | `PascalCase` | `AgentError`, `Config` |
-| Constants | `SCREAMING_SNAKE_CASE` | `API_VERSION` |
-| Test functions | `test_<subject>_<scenario>` | `test_bash_timeout` |
+### Building Python Bindings
 
-### Types
-- Use `Result<T>` from `crate::error` (not `std::result::Result`)
-- Prefer `String` over `&str` for struct fields
-- Use `Arc<T>` for shared ownership, `RwLock<T>` for shared mutable state
-- Use `PathBuf` for file paths (not `String`)
-- Use `Option<T>` for nullable values
-
-### Error Handling
-```rust
-#[derive(Debug, Error)]
-pub enum AgentError {
-    #[error("API request failed: {0}")]
-    ApiRequest(#[from] reqwest::Error),
-    #[error("Command timed out after {0}s")]
-    Timeout(u64),
-    #[error("Tool input validation failed for '{tool}': {reason}")]
-    ToolInput { tool: String, reason: String },
-    #[error("Path escapes workspace: {0}")]
-    PathEscape(PathBuf),
-}
+```bash
+cd bindings/python
+maturin develop --release
 ```
 
-### Async Patterns
-```rust
-use tokio::time::{timeout, Duration};
+## Code Organization
 
-match timeout(Duration::from_secs(30), operation).await {
-    Ok(result) => result,
-    Err(_) => Err(AgentError::Timeout(30)),
-}
-
-let mut history = history.write().await;
-history.push(Message::user("prompt"));
-drop(history);
-```
-
-### Serde Patterns
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "tool_use")]
-    ToolUse { id: String, name: String, input: Value },
-}
-
-#[serde(default)]
-pub replace_all: bool,
-```
-
-### Testing
-```rust
-#[tokio::test]
-async fn test_bash_echo() {
-    let tool = BashTool::new(30, "/tmp".to_string(), vec![], 50_000);
-    let input = json!({"command": "echo hello"});
-    let result = tool.execute(input).await.unwrap();
-    assert!(result.contains("hello"));
-}
-
-assert!(matches!(result.unwrap_err(), AgentError::Timeout(_)));
-```
-
-### Tool Implementation
-```rust
-#[async_trait]
-impl Tool for BashTool {
-    fn name(&self) -> &'static str { "bash" }
-    fn schema(&self) -> &'static Value { bash_tool() }
-    async fn execute(&self, input: Value) -> Result<String> {
-        let parsed: BashInput = serde_json::from_value(input)
-            .map_err(|e| AgentError::ToolInput {
-                tool: "bash".to_string(),
-                reason: e.to_string(),
-            })?;
-        // execution logic
-    }
-}
-```
-
-## File Organization
+### Keep (SDK Core)
 
 ```
 src/
-  lib.rs           # Public exports, module declarations
-  main.rs          # CLI entry point
-  error.rs         # Custom error types (AgentError, Result)
-  core/            # Core primitives (workspace, state, event, id, branch, commit)
-  agent/           # Agent system (agent, config, messages, events, supervisor, pipeline)
-  client/          # LLM client trait + anthropic/openai impls
-  tools/           # Tool implementations (bash, file, registry, schema)
-  concurrency/     # Lock and transaction management
-  storage/         # File-based persistence
-  api/             # HTTP server (handlers, types)
-  ui/              # Terminal UI (app, colors, components)
-tests/             # Integration tests
+├── lib.rs              # Public SDK exports
+├── error.rs            # Error types
+├── agent/
+│   ├── agent.rs        # Agent<C> struct
+│   ├── config.rs       # AgentConfig
+│   ├── messages.rs     # Message types
+│   └── events.rs       # AgentEvent
+├── client/
+│   ├── mod.rs          # LLMClient trait
+│   ├── anthropic.rs    # Anthropic implementation
+│   └── openai.rs       # OpenAI implementation
+└── tools/
+    ├── mod.rs          # Tool trait
+    ├── bash.rs         # BashTool
+    └── file.rs         # FileTools
 ```
 
-## Key Design Principles
+### Remove/Move (Platform Layer)
 
-- **Type safety**: `Result<T>` error handling everywhere
-- **Async-first**: Tokio runtime, non-blocking I/O
-- **Provider abstraction**: Trait-based LLM client switching
-- **Tool abstraction**: `Tool` trait with name, schema, execute
-- **Path safety**: File tools validate paths stay within workspace
-- **Shared state**: `Arc<RwLock<T>>` for thread-safe shared mutable state
+```
+src/
+├── api/                # Move to examples/ - for testing only
+├── core/workspace.rs   # Remove - Platform concern
+└── concurrency/        # Remove - Platform concern
+```
 
-## TUI Keyboard Shortcuts
+## When Adding New Features
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit message |
-| `Ctrl+Enter` | Insert newline |
-| `↑` / `↓` | Navigate history |
-| `PgUp` / `PgDn` | Scroll messages |
-| `Ctrl+B` | Toggle file tree sidebar |
-| `Alt+B` | Toggle help sidebar |
-| `Esc` | Collapse tool panels / close sidebar |
-| `q` / `Ctrl+D` | Exit |
+### ✅ Belongs in SDK
+
+- New LLM client (e.g., Gemini, Claude direct)
+- New tool type (e.g., web search, database)
+- Agent loop improvements
+- Streaming optimizations
+- Error handling improvements
+
+### ❌ Does NOT Belong in SDK
+
+- Session persistence
+- Memory management
+- HTTP server (except for testing)
+- Platform adapters (Discord, Slack, etc.)
+- User authentication
+- Database connections
+
+## Testing
+
+### Unit Tests
+
+```bash
+cargo test
+cargo test --test bash_test
+```
+
+### Integration Tests
+
+Mock LLM responses:
+
+```rust
+use wiremock::{MockServer, Mock, ResponseTemplate};
+
+#[tokio::test]
+async fn test_agent_run() {
+    let mock_server = MockServer::start();
+    // Setup mock response
+    // Test agent
+}
+```
+
+### TUI Testing
+
+Use the TUI to manually test:
+- Streaming performance
+- Tool execution
+- Error handling
+- Long-running conversations
+
+## Commit Guidelines
+
+```
+feat(agent): add support for tool result streaming
+fix(client): handle timeout errors correctly
+docs(readme): update installation instructions
+refactor(tools): simplify bash tool implementation
+test(agent): add tests for multi-turn conversations
+```
+
+## Key Files to Understand
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | SDK entry point, re-exports |
+| `src/agent/agent.rs` | Core Agent struct |
+| `src/client/mod.rs` | LLMClient trait definition |
+| `src/tools/mod.rs` | Tool trait definition |
+| `src/error.rs` | All error types |
+
+## Platform Integration
+
+Amadeus SDK is used by NeuroCore Platform. When making changes:
+
+1. Check if it breaks the Python bindings
+2. Update `INTEGRATION_GUIDE.md` if API changes
+3. Test with NeuroCore integration tests
+4. Version bump appropriately
+
+---
+
+*Last updated: 2026-02-20*
