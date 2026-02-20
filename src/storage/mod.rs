@@ -121,7 +121,6 @@ impl WorkspaceSnapshot {
 mod tests {
     use super::*;
     use crate::core::id::AgentId;
-    use std::collections::BTreeMap;
 
     fn temp_dir() -> PathBuf {
         std::env::temp_dir().join(format!("amadeus-test-{}", uuid::Uuid::new_v4()))

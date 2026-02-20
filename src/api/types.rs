@@ -262,7 +262,7 @@ pub struct ExecuteResponse {
 ///   "version": "0.1.0"
 /// }
 /// ```
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HealthResponse {
     /// Health status.
     ///

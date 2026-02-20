@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tokio::sync::RwLock;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use claude_agent::{
     agent::config::{Config, Provider},
@@ -15,8 +16,20 @@ use claude_agent::{
     ui::App,
 };
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    init_tracing();
+
     let args: Vec<String> = env::args().collect();
 
     if args.len() > 1 {

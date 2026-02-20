@@ -60,4 +60,28 @@ pub enum AgentError {
     TextNotFound { path: String, snippet: String },
 }
 
+impl AgentError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            AgentError::ApiRequest(_) => true,
+            AgentError::Timeout(_) => true,
+            AgentError::StreamError(_) => true,
+            AgentError::Api(msg) => {
+                let msg_lower = msg.to_lowercase();
+                msg_lower.contains("rate limit")
+                    || msg_lower.contains("overload")
+                    || msg_lower.contains("timeout")
+                    || msg_lower.contains("connection")
+                    || msg_lower.contains("503")
+                    || msg_lower.contains("502")
+                    || msg_lower.contains("429")
+            }
+            AgentError::InvalidResponse(msg) => {
+                msg.contains("429") || msg.contains("503") || msg.contains("502")
+            }
+            _ => false,
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, AgentError>;

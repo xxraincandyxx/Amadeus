@@ -41,6 +41,9 @@ use reqwest::{Client, StatusCode};
 // Duration for HTTP client timeouts
 use std::time::Duration;
 
+// Tracing for structured logging
+use tracing::{debug, info, warn};
+
 // JSON value type from serde_json
 // Value can hold any JSON data (object, array, string, number, etc.)
 use serde_json::Value;
@@ -179,108 +182,60 @@ impl LLMClient for AnthropicClient {
         tools: &[Value],
         max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)> {
-        // -----------------------------------------------------------------
-        // BUILD THE REQUEST URL
-        // -----------------------------------------------------------------
-
-        // format! creates a String by formatting
-        // {} is a placeholder that gets replaced with self.base_url
-        //
-        // Result: "https://api.anthropic.com/v1/messages"
         let url = format!("{}/v1/messages", self.base_url);
 
-        // -----------------------------------------------------------------
-        // BUILD THE REQUEST BODY
-        // -----------------------------------------------------------------
+        debug!(
+            model = %self.model,
+            messages = messages.len(),
+            tools = tools.len(),
+            "Creating Anthropic message"
+        );
 
-        // serde_json::json! creates a JSON Value from Rust-like syntax
-        // This is a macro, not a function call
         let body = serde_json::json!({
-            // The model to use
             "model": self.model,
-            // Maximum tokens in the response
-            // u32 automatically converts to JSON number
             "max_tokens": max_tokens,
-            // System prompt (instructions for the model)
             "system": system,
-            // Conversation history
-            // &[Message] automatically serializes to JSON array
             "messages": messages,
-            // Available tools
             "tools": tools,
         });
 
-        // -----------------------------------------------------------------
-        // SEND THE HTTP REQUEST
-        // -----------------------------------------------------------------
-
-        // Build and send the HTTP POST request
         let response = self
             .client
-            // Create a POST request to the URL
             .post(&url)
-            // Add the API key header
-            // Anthropic uses "x-api-key" header for authentication
             .header("x-api-key", &self.api_key)
-            // Add the API version header
-            // Required by Anthropic to specify API version
             .header("anthropic-version", API_VERSION)
-            // Set content type to JSON
             .header("content-type", "application/json")
-            // Add the JSON body
-            // .json() serializes the Value to JSON and sets the body
             .json(&body)
-            // Send the request
-            // .send() returns a Future that resolves to the response
             .send()
-            // .await waits for the response
-            // ? propagates errors (converts reqwest::Error to AgentError)
             .await?;
 
-        // -----------------------------------------------------------------
-        // CHECK RESPONSE STATUS
-        // -----------------------------------------------------------------
-
-        // Check if the response was successful (HTTP 200 OK)
         if response.status() != StatusCode::OK {
-            // Not OK - extract error details
             let status_code = response.status().as_u16();
-            // Read the error response body as text
             let error_text = response.text().await?;
 
-            // Return an error with details
+            warn!(
+                status_code = status_code,
+                error = %error_text,
+                "Anthropic API error"
+            );
+
             return Err(AgentError::InvalidResponse(format!(
                 "API error {}: {}",
                 status_code, error_text
             )));
         }
 
-        // -----------------------------------------------------------------
-        // PARSE THE SUCCESSFUL RESPONSE
-        // -----------------------------------------------------------------
-
-        // Parse the response body as JSON
-        // .json() deserializes the response body to the given type
         let json: Value = response.json().await?;
 
-        // Extract the stop_reason from the JSON
-        //
-        // json["stop_reason"] accesses the "stop_reason" field
-        // .as_str() converts the JSON value to &str (returns Option<&str>)
-        // .unwrap_or("") provides a default if the field is missing/not a string
-        // .to_string() converts &str to String
         let stop_reason = json["stop_reason"].as_str().unwrap_or("").to_string();
-
-        // Parse the content array
-        //
-        // json["content"].clone() - clones the content value (needed for from_value)
-        // serde_json::from_value() - converts a Value to a Rust type
-        //
-        // This parses the JSON content array into Vec<ContentBlock>
-        // ? propagates parse errors
         let content: Vec<ContentBlock> = serde_json::from_value(json["content"].clone())?;
 
-        // Return the tuple (stop_reason, content)
+        info!(
+            stop_reason = %stop_reason,
+            content_blocks = content.len(),
+            "Anthropic response received"
+        );
+
         Ok((stop_reason, content))
     }
 

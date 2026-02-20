@@ -1,8 +1,10 @@
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 
 use futures::{Stream, StreamExt};
 use tokio::sync::{mpsc, RwLock};
+use tracing::{debug, info, instrument, warn};
 
 use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, RunResult, ToolCall};
@@ -30,6 +32,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             ))))
             .register(Box::new(EditFileTool::new(FileTools::from_config(&config))));
 
+        info!(
+            model = %config.model,
+            workdir = %config.workdir.display(),
+            "Agent initialized"
+        );
+
         Self {
             client,
             tools,
@@ -41,7 +49,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         &self.tools
     }
 
+    #[instrument(skip(self, history), fields(prompt = %prompt))]
     pub async fn run(&self, prompt: &str, history: Arc<RwLock<Vec<Message>>>) -> Result<RunResult> {
+        debug!("Starting agent run");
+        let start = Instant::now();
+
         {
             let mut history_guard = history.write().await;
             history_guard.push(Message::user(prompt));
@@ -50,9 +62,18 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut stream = self.run_stream(history.clone());
         while let Some(event) = stream.next().await {
             match event? {
-                AgentEvent::Done { result } => return Ok(result),
+                AgentEvent::Done { result } => {
+                    info!(
+                        duration_ms = start.elapsed().as_millis() as u64,
+                        tool_calls = result.tool_calls.len(),
+                        text_len = result.text.len(),
+                        "Agent run completed"
+                    );
+                    return Ok(result);
+                }
                 AgentEvent::Error { message } => {
-                    return Err(crate::error::AgentError::Api(message))
+                    warn!(error = %message, "Agent run failed");
+                    return Err(crate::error::AgentError::Api(message));
                 }
                 _ => {}
             }
@@ -113,12 +134,21 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 let input: serde_json::Value =
                                     serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
 
+                                let tool_start = Instant::now();
                                 let output = match tools.execute(&name, input.clone()).await {
                                     Ok(out) => out,
                                     Err(e) => format!("Error: {}", e),
                                 };
+                                let duration_ms = tool_start.elapsed().as_millis() as u64;
 
                                 let is_error = output.starts_with("Error:");
+
+                                info!(
+                                    tool = %name,
+                                    duration_ms = duration_ms,
+                                    is_error = is_error,
+                                    "Tool executed"
+                                );
 
                                 yield Ok(AgentEvent::ToolComplete {
                                     id: id.clone(),
