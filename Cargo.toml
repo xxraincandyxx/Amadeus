@@ -15,7 +15,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "amadeus"
 path = "src/main.rs"
-required-features = ["tui"]
+required-features = ["full"]
 
 [features]
 default = []
