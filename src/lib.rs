@@ -77,6 +77,9 @@ pub mod tools;
 /// Error types
 pub mod error;
 
+/// System prompts (configurable)
+pub mod prompts;
+
 /*
  * ============================================================================
  * OPTIONAL MODULES (for testing/examples)
@@ -94,6 +97,10 @@ pub mod ui;
 /// Core primitives (IDs, events)
 pub mod core;
 
+/// Concurrency primitives (locks, coordination)
+#[cfg(feature = "concurrency")]
+pub mod concurrency;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -101,3 +108,12 @@ pub mod core;
  */
 
 pub use error::{AgentError, Result};
+
+#[cfg(feature = "concurrency")]
+pub use concurrency::{LockEntry, LockError, LockManager, LockMode, LockStatus};
+
+#[cfg(feature = "supervisor")]
+pub use agent::{
+    DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerConfig, WorkerInfo,
+    WorkerStatus,
+};

@@ -5,7 +5,19 @@ pub mod events;
 pub mod loop_agent;
 pub mod messages;
 
+#[cfg(feature = "supervisor")]
+pub mod supervisor;
+
+#[cfg(feature = "supervisor")]
+pub mod worker;
+
 pub use config::{Config, Provider};
 pub use events::{AgentEvent, RunResult, ToolCall};
 pub use loop_agent::Agent;
 pub use messages::{ContentBlock, Message};
+
+#[cfg(feature = "supervisor")]
+pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+
+#[cfg(feature = "supervisor")]
+pub use worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

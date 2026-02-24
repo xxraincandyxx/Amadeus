@@ -20,14 +20,20 @@ required-features = ["full"]
 [features]
 default = []
 
-# HTTP API server (for testing SDK via HTTP)
+# Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util"]
-
-# Terminal UI (for testing SDK performance)
 tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored"]
 
-# All features for testing
-full = ["api", "tui"]
+# Concurrency & Multi-Agent
+concurrency = []
+supervisor = ["concurrency"]
+mesh = ["supervisor"]
+
+# Context Management
+context = []
+
+# All features
+full = ["api", "tui", "concurrency", "supervisor", "mesh", "context"]
 
 [dependencies]
 # Core dependencies
@@ -42,6 +48,9 @@ futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
 bytes = "1.0"
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Core primitives
 uuid = { version = "1.10", features = ["v4", "serde"] }
