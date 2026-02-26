@@ -1,48 +1,56 @@
-# AGENTS.md
+# AGENTS.md - AI Agent Development Guide
 
-Rust-based AI coding agent supporting Anthropic and OpenAI APIs with a terminal UI and HTTP server mode.
+## Project Overview
 
-## Build / Lint / Test
+Amadeus is an **Agent SDK** - a Rust library providing core building blocks for building AI agents. It is NOT a platform or application.
+
+## Core Principles
+
+1. **SDK, not Platform** - We provide agent capabilities, not session/memory/platform features
+2. **Minimal dependencies** - Only what's needed for LLM interaction and tool execution
+3. **Type-safe** - Strong typing with Result-based error handling
+4. **Streaming-first** - Real-time response streaming as a first-class feature
+
+## Build/Lint/Test Commands
 
 ```bash
-cargo build                          # Debug build
-cargo build --release                # Release build
-cargo check                          # Fast check without building
-cargo clippy                         # Lint
-cargo fmt                            # Format code
+# Build
+cargo build                    # Debug build
+cargo build --release          # Release build
+cargo build --features full    # Build with all optional features (api, tui)
 
-cargo test                           # Run all tests
-cargo test test_bash_echo            # Run specific test function
-cargo test --test bash_test          # Run specific test file
-cargo test test_bash                 # Run tests matching pattern
-cargo test -- --nocapture            # Show test output
+# Lint
+cargo clippy                   # Run linter (fix all warnings)
+cargo clippy --fix             # Auto-fix lint warnings
 
-cargo run                            # Interactive mode (Anthropic)
-cargo run -- "your prompt"           # Single-shot mode
-cargo run -- --server                # HTTP server on port 3000
-PROVIDER=openai cargo run            # Use OpenAI
+# Format
+cargo fmt                      # Format code (run before commits)
+
+# Test
+cargo test                     # Run all tests
+cargo test --test bash_test    # Run specific integration test file
+cargo test test_bash_echo      # Run specific test function
+cargo test --test agent_test   # Run agent tests
+cargo test -- --nocapture      # Run tests with stdout visible
+
+# Run examples
+cargo run --example tui --features tui           # TUI test harness
+cargo run --example server --features api        # HTTP API server
+ANTHROPIC_API_KEY=xxx cargo run --example tui --features tui
+
+# Python bindings (optional)
+cd bindings/python && maturin develop --release
 ```
 
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PROVIDER` | `anthropic` | LLM provider (`anthropic` or `openai`) |
-| `ANTHROPIC_API_KEY` | - | Anthropic API key (required if provider=anthropic) |
-| `OPENAI_API_KEY` | - | OpenAI API key (required if provider=openai) |
-| `MODEL_ID` | Provider default | Model identifier |
-| `MAX_OUTPUT_BYTES` | `50000` | Max tool output size |
-| `BLOCKED_COMMANDS` | `rm -rf /` | Comma-separated blocked commands |
-
-Configure via `.env` (copy from `.env.example`).
-
-## Code Style
-
-### Code Comments
-- **DO NOT ADD COMMENTS** unless explicitly requested by the user
+## Code Style Guidelines
 
 ### Imports
-Group in order: std → external crates → crate modules, separated by blank lines:
+
+Group imports in this order, separated by blank lines:
+1. Standard library (`std::...`)
+2. External crates (`use serde_json::...`)
+3. Internal modules (`use crate::...`)
+
 ```rust
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -50,137 +58,151 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::process::Command;
 
 use crate::error::{AgentError, Result};
 use crate::tools::tool_trait::Tool;
 ```
 
-### Naming Conventions
-| Type | Convention | Example |
-|------|------------|---------|
-| Functions/Variables | `snake_case` | `execute_tool`, `api_key` |
-| Types/Structs/Enums | `PascalCase` | `AgentError`, `Config` |
-| Constants | `SCREAMING_SNAKE_CASE` | `API_VERSION` |
-| Test functions | `test_<subject>_<scenario>` | `test_bash_timeout` |
+### Formatting
 
-### Types
-- Use `Result<T>` from `crate::error` (not `std::result::Result`)
-- Prefer `String` over `&str` for struct fields
-- Use `Arc<T>` for shared ownership, `RwLock<T>` for shared mutable state
-- Use `PathBuf` for file paths (not `String`)
-- Use `Option<T>` for nullable values
+- Use `cargo fmt` before committing
+- Max line length: 100 characters (default rustfmt)
+- Indent with 4 spaces
+- Match arms: align with the match expression
+
+### Types and Naming
+
+- **Structs/Enums**: PascalCase (`AgentError`, `StreamEvent`)
+- **Functions/Methods**: snake_case (`create_message`, `execute_with_timeout`)
+- **Constants**: SCREAMING_SNAKE_CASE (`API_VERSION`, `DEFAULT_BASE_URL`)
+- **Module names**: snake_case (`tool_trait`, `loop_agent`)
+- **Type parameters**: Single uppercase letter or short name (`Agent<C>` where `C: LLMClient`)
 
 ### Error Handling
+
+- Use `Result<T>` from `crate::error` (alias for `std::result::Result<T, AgentError>`)
+- Use `?` operator to propagate errors
+- Use `thiserror` for custom error types (see `src/error.rs`)
+- Convert external errors using `#[from]` attribute:
+
 ```rust
 #[derive(Debug, Error)]
 pub enum AgentError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    
     #[error("API request failed: {0}")]
     ApiRequest(#[from] reqwest::Error),
-    #[error("Command timed out after {0}s")]
-    Timeout(u64),
-    #[error("Tool input validation failed for '{tool}': {reason}")]
-    ToolInput { tool: String, reason: String },
-    #[error("Path escapes workspace: {0}")]
-    PathEscape(PathBuf),
 }
 ```
 
 ### Async Patterns
+
+- Use `#[async_trait]` for traits with async methods
+- Use `tokio` as the async runtime
+- Return `Pin<Box<dyn Stream<Item = Result<T>> + Send>>` for streaming APIs
+- Use `Arc<RwLock<T>>` for shared mutable state
+
+### Traits
+
+- All trait implementations require `Send + Sync` for thread safety
+- Use `&'static str` for tool names and schemas (compile-time known)
+
 ```rust
-use tokio::time::{timeout, Duration};
-
-match timeout(Duration::from_secs(30), operation).await {
-    Ok(result) => result,
-    Err(_) => Err(AgentError::Timeout(30)),
+#[async_trait]
+pub trait Tool: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn schema(&self) -> &'static Value;
+    async fn execute(&self, input: Value) -> Result<String>;
 }
-
-let mut history = history.write().await;
-history.push(Message::user("prompt"));
-drop(history);
-```
-
-### Serde Patterns
-```rust
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    #[serde(rename = "text")]
-    Text { text: String },
-    #[serde(rename = "tool_use")]
-    ToolUse { id: String, name: String, input: Value },
-}
-
-#[serde(default)]
-pub replace_all: bool,
 ```
 
 ### Testing
-```rust
-#[tokio::test]
-async fn test_bash_echo() {
-    let tool = BashTool::new(30, "/tmp".to_string(), vec![], 50_000);
-    let input = json!({"command": "echo hello"});
-    let result = tool.execute(input).await.unwrap();
-    assert!(result.contains("hello"));
-}
 
-assert!(matches!(result.unwrap_err(), AgentError::Timeout(_)));
-```
+- Place integration tests in `tests/` directory
+- Use `#[tokio::test]` for async tests
+- Use `wiremock` or `mockito` for mocking HTTP responses
+- Create helper functions for common test setup:
 
-### Tool Implementation
 ```rust
-#[async_trait]
-impl Tool for BashTool {
-    fn name(&self) -> &'static str { "bash" }
-    fn schema(&self) -> &'static Value { bash_tool() }
-    async fn execute(&self, input: Value) -> Result<String> {
-        let parsed: BashInput = serde_json::from_value(input)
-            .map_err(|e| AgentError::ToolInput {
-                tool: "bash".to_string(),
-                reason: e.to_string(),
-            })?;
-        // execution logic
+fn create_test_config() -> Config {
+    Config {
+        provider: Provider::Anthropic,
+        api_key: "test-key".to_string(),
+        // ...
     }
 }
 ```
 
-## File Organization
+## Architecture
 
 ```
 src/
-  lib.rs           # Public exports, module declarations
-  main.rs          # CLI entry point
-  error.rs         # Custom error types (AgentError, Result)
-  core/            # Core primitives (workspace, state, event, id, branch, commit)
-  agent/           # Agent system (agent, config, messages, events, supervisor, pipeline)
-  client/          # LLM client trait + anthropic/openai impls
-  tools/           # Tool implementations (bash, file, registry, schema)
-  concurrency/     # Lock and transaction management
-  storage/         # File-based persistence
-  api/             # HTTP server (handlers, types)
-  ui/              # Terminal UI (app, colors, components)
-tests/             # Integration tests
+├── lib.rs              # Public SDK exports
+├── error.rs            # Error types (AgentError, Result)
+├── agent/
+│   ├── mod.rs          # Re-exports
+│   ├── config.rs       # Config, Provider
+│   ├── loop_agent.rs   # Agent<C> struct
+│   ├── messages.rs     # Message, ContentBlock
+│   └── events.rs       # AgentEvent, RunResult, ToolCall
+├── client/
+│   ├── mod.rs          # LLMClient trait, StreamEvent
+│   ├── anthropic.rs    # AnthropicClient
+│   └── openai.rs       # OpenAIClient
+├── tools/
+│   ├── mod.rs          # Re-exports
+│   ├── tool_trait.rs   # Tool trait
+│   ├── bash.rs         # BashTool
+│   ├── file.rs         # ReadFileTool, WriteFileTool, EditFileTool
+│   ├── registry.rs     # ToolRegistry
+│   └── schema.rs       # JSON schemas for tools
+├── core/               # Primitives (IDs, events)
+├── api/                # HTTP API (optional, feature = "api")
+└── ui/                 # Terminal UI (optional, feature = "tui")
 ```
 
-## Key Design Principles
+## SDK Scope
 
-- **Type safety**: `Result<T>` error handling everywhere
-- **Async-first**: Tokio runtime, non-blocking I/O
-- **Provider abstraction**: Trait-based LLM client switching
-- **Tool abstraction**: `Tool` trait with name, schema, execute
-- **Path safety**: File tools validate paths stay within workspace
-- **Shared state**: `Arc<RwLock<T>>` for thread-safe shared mutable state
+### Belongs in SDK
 
-## TUI Keyboard Shortcuts
+- LLM clients (Anthropic, OpenAI, Gemini, etc.)
+- Tool implementations (bash, file, web search, etc.)
+- Agent loop logic
+- Streaming infrastructure
+- Error handling
 
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit message |
-| `Ctrl+Enter` | Insert newline |
-| `↑` / `↓` | Navigate history |
-| `PgUp` / `PgDn` | Scroll messages |
-| `Ctrl+B` | Toggle file tree sidebar |
-| `Alt+B` | Toggle help sidebar |
-| `Esc` | Collapse tool panels / close sidebar |
-| `q` / `Ctrl+D` | Exit |
+### Does NOT Belong in SDK
+
+- Session persistence
+- Memory management
+- HTTP server (except for testing)
+- Platform adapters (Discord, Slack)
+- User authentication
+- Database connections
+
+## Commit Guidelines
+
+Use conventional commits:
+```
+feat(agent): add support for tool result streaming
+fix(client): handle timeout errors correctly
+docs(readme): update installation instructions
+refactor(tools): simplify bash tool implementation
+test(agent): add tests for multi-turn conversations
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/lib.rs` | SDK entry point, public exports |
+| `src/error.rs` | All error types |
+| `src/agent/loop_agent.rs` | Core Agent struct and run loop |
+| `src/client/mod.rs` | LLMClient trait definition |
+| `src/tools/tool_trait.rs` | Tool trait definition |
+| `src/tools/registry.rs` | Tool registration and execution |
+
+---
+*Last updated: 2026-02-24*
