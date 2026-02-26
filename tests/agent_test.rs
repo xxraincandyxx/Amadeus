@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
-use claude_agent::agent::config::Config;
-use claude_agent::agent::loop_agent::Agent;
-use claude_agent::client::anthropic::AnthropicClient;
+use amadeus::agent::config::Config;
+use amadeus::agent::loop_agent::Agent;
+use amadeus::client::anthropic::AnthropicClient;
 
 fn create_test_config() -> Config {
     Config {
-        provider: claude_agent::agent::config::Provider::Anthropic,
+        provider: amadeus::agent::config::Provider::Anthropic,
         api_key: "test-key".to_string(),
         base_url: None,
         model: "test-model".to_string(),

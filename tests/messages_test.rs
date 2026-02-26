@@ -1,4 +1,4 @@
-use claude_agent::agent::messages::{ContentBlock, Message};
+use amadeus::agent::messages::{ContentBlock, Message};
 use serde_json::json;
 
 #[test]

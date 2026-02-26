@@ -1,6 +1,6 @@
-use claude_agent::error::AgentError;
-use claude_agent::tools::bash::BashTool;
-use claude_agent::tools::tool_trait::Tool;
+use amadeus::error::AgentError;
+use amadeus::tools::bash::BashTool;
+use amadeus::tools::tool_trait::Tool;
 use serde_json::json;
 use std::fs;
 use std::path::Path;
