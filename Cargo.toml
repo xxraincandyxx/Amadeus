@@ -1,9 +1,42 @@
 [package]
-name = "claude-agent"
+name = "amadeus"
 version = "0.1.0"
 edition = "2021"
+description = "AI Agent SDK - Core building blocks for building AI agents"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "llm", "sdk", "openai"]
+categories = ["api-bindings", "development-tools"]
+
+[lib]
+name = "amadeus"
+path = "src/lib.rs"
+
+[[bin]]
+name = "amadeus"
+path = "src/main.rs"
+required-features = ["full"]
+
+[features]
+default = []
+
+# Testing/Examples
+api = ["axum", "tower", "tower-http", "tokio-util"]
+tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored"]
+
+# Concurrency & Multi-Agent
+concurrency = []
+supervisor = ["concurrency"]
+mesh = ["supervisor"]
+
+# Context Management
+context = []
+
+# All features
+full = ["api", "tui", "concurrency", "supervisor", "mesh", "context"]
 
 [dependencies]
+# Core dependencies
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -11,11 +44,6 @@ serde_json = "1.0"
 dotenvy = "0.15"
 anyhow = "1.0"
 thiserror = "1.0"
-colored = "2.1"
-crossterm = { version = "0.27", features = ["event-stream"] }
-ratatui = "0.28"
-tui-textarea = "0.6"
-unicode-width = "0.2"
 futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
@@ -24,17 +52,36 @@ bytes = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# HTTP server dependencies (for SDK API)
-axum = "0.7"
-tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["cors"] }
-tokio-util = { version = "0.7", features = ["io"] }
-walkdir = "2.5"
+# Core primitives
 uuid = { version = "1.10", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
+
+# Optional: HTTP server
+axum = { version = "0.7", optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["cors"], optional = true }
+tokio-util = { version = "0.7", features = ["io"], optional = true }
+walkdir = "2.5"
+
+# Optional: TUI
+crossterm = { version = "0.27", features = ["event-stream"], optional = true }
+ratatui = { version = "0.28", optional = true }
+tui-textarea = { version = "0.6", optional = true }
+unicode-width = { version = "0.2", optional = true }
+colored = { version = "2.1", optional = true }
 
 [dev-dependencies]
 mockito = "1.4"
 wiremock = "0.6"
 tokio-test = "0.4"
 tempfile = "3.10"
+
+[[example]]
+name = "tui"
+path = "examples/tui/main.rs"
+required-features = ["tui"]
+
+[[example]]
+name = "server"
+path = "examples/server/main.rs"
+required-features = ["api"]

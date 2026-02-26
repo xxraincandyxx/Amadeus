@@ -58,6 +58,9 @@ pub enum AgentError {
 
     #[error("Text not found in {path}: {snippet}")]
     TextNotFound { path: String, snippet: String },
+
+    #[error("Task join error: {0}")]
+    JoinError(String),
 }
 
 impl AgentError {
@@ -81,6 +84,12 @@ impl AgentError {
             }
             _ => false,
         }
+    }
+}
+
+impl From<tokio::task::JoinError> for AgentError {
+    fn from(e: tokio::task::JoinError) -> Self {
+        AgentError::JoinError(e.to_string())
     }
 }
 

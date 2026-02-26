@@ -419,32 +419,7 @@ impl Config {
     /// # Returns
     ///
     /// A formatted system prompt string.
-    // `pub` - Public
-    // `fn` - Function
-    // `&self` - Borrows self (this is a method, not a static function)
-    // `-> String` - Returns an owned String
-    //
-    // Note: No `async` - string formatting is synchronous
     pub fn system_prompt(&self) -> String {
-        format!(
-            "You are a CLI agent at {}.\n\n\
-             Loop: think briefly -> use tools -> report results.\n\n\
-             Rules:\n\
-             - Prefer tools over prose. Act, don't just explain.\n\
-             - Never invent file paths. Use bash ls/find first if unsure.\n\
-             - Make minimal changes. Don't over-engineer.\n\
-             - After finishing, summarize what changed.\n\n\
-             Available Tools:\n\
-             - bash: Run shell commands (git, npm, python, ls, grep, etc.)\n\
-             - read_file: Read file contents (use for understanding code)\n\
-             - write_file: Create or overwrite files (use for new files)\n\
-             - edit_file: Make surgical changes to existing files\n\n\
-             When to use each tool:\n\
-             - bash: For system commands, searching, running tests\n\
-             - read_file: When you need to see file contents\n\
-             - write_file: When creating new files or complete rewrites\n\
-             - edit_file: When making precise changes to existing files",
-            self.workdir.display()
-        )
+        crate::prompts::render_system_prompt(&self.workdir.display().to_string())
     }
 }

@@ -1,23 +1,23 @@
-pub mod agent;
-pub mod agent_config;
+//! Agent system for the SDK
+
 pub mod config;
 pub mod events;
 pub mod loop_agent;
-pub mod mesh;
 pub mod messages;
-pub mod pipeline;
-pub mod race;
-pub mod registry;
+
+#[cfg(feature = "supervisor")]
 pub mod supervisor;
 
-pub use agent::Agent;
-pub use agent_config::{AgentConfig, AgentMeta, AgentStats, AgentStatus, RestartPolicy};
+#[cfg(feature = "supervisor")]
+pub mod worker;
+
+pub use config::{Config, Provider};
 pub use events::{AgentEvent, RunResult, ToolCall};
-pub use loop_agent as legacy;
-pub use mesh::{Mesh, MeshConfig, MeshMessage, MeshResult, Topology};
-pub use pipeline::{Pipeline, PipelineEvent, PipelineResult, StageConfig, StageResult};
-pub use race::{Race, RaceConfig, RaceResult, StopCondition};
-pub use registry::AgentRegistry;
-pub use supervisor::{
-    DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerInfo,
-};
+pub use loop_agent::Agent;
+pub use messages::{ContentBlock, Message};
+
+#[cfg(feature = "supervisor")]
+pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+
+#[cfg(feature = "supervisor")]
+pub use worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
