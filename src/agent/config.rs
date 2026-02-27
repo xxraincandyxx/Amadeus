@@ -173,6 +173,9 @@ pub struct Config {
     // Optional directory to save session logs
     // If set, each session's history will be saved as a JSON file here.
     pub session_log_dir: Option<PathBuf>,
+
+    /// Whether to compress session logs using Gzip.
+    pub session_log_compress: bool,
 }
 
 /*
@@ -385,6 +388,10 @@ impl Config {
         // ---------------------------------------------------------------------
 
         let session_log_dir = env::var("SESSION_LOG_DIR").ok().map(PathBuf::from);
+        let session_log_compress = env::var("SESSION_LOG_COMPRESS")
+            .ok()
+            .and_then(|s| s.parse::<bool>().ok())
+            .unwrap_or(false);
 
         // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG

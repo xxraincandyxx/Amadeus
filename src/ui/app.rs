@@ -113,11 +113,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-        let filename = format!("session-{}.json", timestamp);
-        let path = log_dir.join(filename);
-
         let json = serde_json::to_string_pretty(&*history)?;
-        std::fs::write(&path, json)?;
+
+        if config.session_log_compress {
+            let filename = format!("session-{}.json.gz", timestamp);
+            let path = log_dir.join(filename);
+            
+            use flate2::Compression;
+            use flate2::write::GzEncoder;
+            use std::io::Write;
+
+            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+            encoder.write_all(json.as_bytes())?;
+            let compressed = encoder.finish()?;
+            std::fs::write(&path, compressed)?;
+        } else {
+            let filename = format!("session-{}.json", timestamp);
+            let path = log_dir.join(filename);
+            std::fs::write(&path, json)?;
+        }
 
         Ok(())
     }
