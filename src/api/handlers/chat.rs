@@ -2,13 +2,13 @@
 //!
 //! Handles POST /chat requests to send messages to the agent.
 
-use std::sync::Arc;
 use axum::{extract::State, Json};
+use std::sync::Arc;
 
-use crate::api::types::{ChatRequest, ChatResponse, ErrorResponse};
-use crate::api::http::AppState;
-use crate::client::LLMClient;
 use crate::agent::worker::Task;
+use crate::api::http::AppState;
+use crate::api::types::{ChatRequest, ChatResponse, ErrorResponse};
+use crate::client::LLMClient;
 
 /// Process a chat request and return the agent's response.
 pub async fn chat<C: LLMClient + Clone + 'static>(
@@ -17,7 +17,7 @@ pub async fn chat<C: LLMClient + Clone + 'static>(
 ) -> std::result::Result<Json<ChatResponse>, Json<ErrorResponse>> {
     // For single chat, we can dispatch a generic task to the supervisor
     let task = Task::new("chat-request".to_string(), request.message);
-    
+
     match state.supervisor.execute(task).await {
         Ok(result) => Ok(Json(ChatResponse {
             content: result.output.unwrap_or_default(),

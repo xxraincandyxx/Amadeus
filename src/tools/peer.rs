@@ -96,7 +96,7 @@ impl Tool for PeerTool {
         );
 
         let (response_tx, response_rx) = oneshot::channel();
-        
+
         let task = Task::new(format!("subtask-{}", uuid::Uuid::new_v4()), task_prompt)
             .requires(capabilities);
 
@@ -107,19 +107,24 @@ impl Tool for PeerTool {
         };
 
         if let Err(e) = self.help_tx.send(help_request).await {
-            return Err(AgentError::Command(format!("Failed to contact supervisor: {}", e)));
+            return Err(AgentError::Command(format!(
+                "Failed to contact supervisor: {}",
+                e
+            )));
         }
 
         debug!("Waiting for peer response...");
-        let result = response_rx.await.map_err(|_| {
-            AgentError::Command("Peer response channel closed".to_string())
-        })?;
+        let result = response_rx
+            .await
+            .map_err(|_| AgentError::Command("Peer response channel closed".to_string()))?;
 
         if result.success {
-            Ok(result.output.unwrap_or_else(|| "Task completed with no output".to_string()))
+            Ok(result
+                .output
+                .unwrap_or_else(|| "Task completed with no output".to_string()))
         } else {
             Err(AgentError::Command(format!(
-                "Peer task failed: {}", 
+                "Peer task failed: {}",
                 result.error.unwrap_or_else(|| "Unknown error".to_string())
             )))
         }

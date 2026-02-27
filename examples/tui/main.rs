@@ -3,8 +3,8 @@
 //! This is a test harness for the Amadeus SDK.
 //! It demonstrates SDK usage and tests performance.
 
-use std::sync::Arc;
 use anyhow::Result;
+use std::sync::Arc;
 
 use amadeus::{
     agent::config::{Config, Provider},

@@ -121,7 +121,11 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     }
 
     /// Spawn worker agents with a specific client.
-    pub async fn spawn_with_client(&mut self, configs: Vec<WorkerConfig>, client: C) -> Result<Vec<AgentId>> {
+    pub async fn spawn_with_client(
+        &mut self,
+        configs: Vec<WorkerConfig>,
+        client: C,
+    ) -> Result<Vec<AgentId>> {
         let mut ids = Vec::new();
         let mut workers = self.workers.write().await;
 
@@ -137,10 +141,11 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
             };
 
             // Initialize agent with PeerTool
-            let agent = crate::agent::loop_agent::AgentBuilder::new(client.clone(), worker_sdk_config)
-                .with_default_tools()
-                .register_tool(Box::new(PeerTool::new(id, self.help_tx.clone())))
-                .build();
+            let agent =
+                crate::agent::loop_agent::AgentBuilder::new(client.clone(), worker_sdk_config)
+                    .with_default_tools()
+                    .register_tool(Box::new(PeerTool::new(id, self.help_tx.clone())))
+                    .build();
 
             let info = WorkerInfo {
                 id,
@@ -181,9 +186,9 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     /// Run the supervisor background loop to process help requests.
     pub async fn run(&self) -> Result<()> {
         info!("Supervisor loop started");
-        
+
         let mut interval = tokio::time::interval(Duration::from_millis(100));
-        
+
         loop {
             tokio::select! {
                 // Handle help requests from peers
@@ -255,10 +260,11 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
             let workers_map = Arc::clone(&self.workers);
             let strategy = self.config.strategy;
             let next_idx_mutex = Arc::clone(&self.next_worker_idx);
-            
+
             let worker_selection = {
                 let workers_guard = workers_map.read().await;
-                Self::select_worker_internal(&workers_guard, &entry.task, strategy, next_idx_mutex).await
+                Self::select_worker_internal(&workers_guard, &entry.task, strategy, next_idx_mutex)
+                    .await
             };
 
             if let Ok(id) = worker_selection {
@@ -266,7 +272,9 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                 tokio::spawn(async move {
                     let workers_guard = workers_map.read().await;
                     if let Some(worker_entry) = workers_guard.get(&id) {
-                        let result = Self::dispatch_internal(id, worker_entry, entry.task, timeout_dur).await;
+                        let result =
+                            Self::dispatch_internal(id, worker_entry, entry.task, timeout_dur)
+                                .await;
                         let _ = entry.response_tx.send(result).await;
                     }
                 });
@@ -285,10 +293,15 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
             if queue.len() >= self.config.max_pending_tasks {
                 return Err(AgentError::Config("Task queue is full".to_string()));
             }
-            queue.push_back(QueueEntry { task, response_tx: tx });
+            queue.push_back(QueueEntry {
+                task,
+                response_tx: tx,
+            });
         }
 
-        rx.recv().await.ok_or_else(|| AgentError::Command("Task response channel closed".to_string()))?
+        rx.recv()
+            .await
+            .ok_or_else(|| AgentError::Command("Task response channel closed".to_string()))?
     }
 
     async fn select_worker_internal(
@@ -316,19 +329,15 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                     Some(candidates[idx].0)
                 }
             }
-            DispatchStrategy::LeastLoaded => {
-                candidates
-                    .iter()
-                    .min_by_key(|(_, info)| info.active_tasks)
-                    .map(|(id, _)| *id)
-            }
-            DispatchStrategy::CapabilityMatch => {
-                candidates
-                    .iter()
-                    .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
-                    .min_by_key(|(_, info)| info.active_tasks)
-                    .map(|(id, _)| *id)
-            }
+            DispatchStrategy::LeastLoaded => candidates
+                .iter()
+                .min_by_key(|(_, info)| info.active_tasks)
+                .map(|(id, _)| *id),
+            DispatchStrategy::CapabilityMatch => candidates
+                .iter()
+                .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
+                .min_by_key(|(_, info)| info.active_tasks)
+                .map(|(id, _)| *id),
         };
 
         worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))

@@ -65,10 +65,10 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 // Internal dependencies
-use crate::error::Result;
-use crate::api::handlers::{chat, execute, health, stream, handle_task};
 use crate::agent::supervisor::Supervisor;
+use crate::api::handlers::{chat, execute, handle_task, health, stream};
 use crate::client::LLMClient;
+use crate::error::Result;
 
 /*
  * ============================================================================
@@ -178,32 +178,24 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
 /// # Returns
 ///
 /// A configured `Router` ready to serve requests.
-pub fn create_router<C: LLMClient + Clone + 'static>(
-    state: Arc<AppState<C>>,
-) -> Router {
+pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) -> Router {
     Router::new()
         // Health check endpoint (Stateless)
         .route("/health", get(health))
-        
         // Chat endpoint (Stateless wrapper around Supervisor)
         // POST /chat
         .route("/chat", post(chat))
-        
         // Execute endpoint (Direct tool access)
         // POST /execute
         .route("/execute", post(execute))
-        
         // Stream endpoint (SSE event stream)
         // GET /stream?message=...
         .route("/stream", get(stream))
-        
         // Tasks endpoint (Multi-agent orchestration)
         // POST /tasks
         .route("/tasks", post(handle_task))
-        
         // Inject shared state into all handlers
         .with_state(state)
-        
         // Add middleware layer
         .layer(
             ServiceBuilder::new().layer(

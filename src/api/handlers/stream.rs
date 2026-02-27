@@ -131,7 +131,7 @@ pub async fn stream<C: LLMClient + Clone + 'static>(
     // In a multi-agent context, this represents a "primary" agent interaction.
     let agent = crate::agent::loop_agent::AgentBuilder::new(
         state.supervisor.client().clone(),
-        state.supervisor.config().clone()
+        state.supervisor.config().clone(),
     )
     .with_default_tools()
     .build();
@@ -150,8 +150,8 @@ pub async fn stream<C: LLMClient + Clone + 'static>(
 /// This function manages the conversation history injection and orchestrates
 /// the mapping between internal SDK events and public API SSE tokens.
 async fn create_sse_stream<C: LLMClient + Clone + 'static>(
-    agent: crate::agent::loop_agent::Agent<C>, 
-    message: &str
+    agent: crate::agent::loop_agent::Agent<C>,
+    message: &str,
 ) -> Sse<BoxedSseStream> {
     // 1. Inject initial user message into history
     {
@@ -171,13 +171,13 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                 .event("text")
                 .json_data(TextEvent { content: delta })
                 .unwrap())),
-            
+
             // Tool execution initiated
             Ok(AgentEvent::ToolStart { id, name }) => Some(Ok(Event::default()
                 .event("tool_start")
                 .json_data(ToolStartEvent { id, name })
                 .unwrap())),
-            
+
             // Tool execution completed
             Ok(AgentEvent::ToolComplete {
                 id,
@@ -194,7 +194,7 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     is_error,
                 })
                 .unwrap())),
-            
+
             // Agent loop finished successfully
             Ok(AgentEvent::Done { .. }) => Some(Ok(Event::default()
                 .event("done")
@@ -202,16 +202,16 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     stop_reason: "end_turn".to_string(),
                 })
                 .unwrap())),
-            
+
             // Critical agent error
             Ok(AgentEvent::Error { message }) => Some(Ok(Event::default()
                 .event("error")
                 .json_data(ErrorEvent { message })
                 .unwrap())),
-            
+
             // Intermediate deltas (e.g. tool arguments) are suppressed for public API
             Ok(AgentEvent::ToolInputDelta { .. }) => None,
-            
+
             // Stream processing error
             Err(e) => Some(Ok(Event::default()
                 .event("error")

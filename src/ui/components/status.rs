@@ -106,7 +106,9 @@ impl StatusBar {
         if self.token_count > 0 {
             left_spans.push(Span::styled(
                 format!(" {} tokens ", self.token_count),
-                Style::default().fg(THEME.orange).add_modifier(Modifier::DIM),
+                Style::default()
+                    .fg(THEME.orange)
+                    .add_modifier(Modifier::DIM),
             ));
         }
 

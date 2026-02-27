@@ -197,10 +197,16 @@ impl MessagesComponent {
             match item {
                 HistoryItem::User { content, .. } => {
                     lines.push(Line::from(vec![
-                        Span::styled(" ❯ ", Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD)),
-                        Span::styled("YOU", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            " ❯ ",
+                            Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            "YOU",
+                            Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                        ),
                     ]));
-                    
+
                     let content_lines = render_markdown(content, content_width);
                     for content_line in content_lines {
                         let mut spans = vec![Span::raw("   ")];
@@ -212,8 +218,16 @@ impl MessagesComponent {
 
                 HistoryItem::Assistant { content, .. } => {
                     lines.push(Line::from(vec![
-                        Span::styled(" ❯ ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                        Span::styled("AMADEUS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            " ❯ ",
+                            Style::default()
+                                .fg(THEME.purple)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            "AMADEUS",
+                            Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                        ),
                     ]));
 
                     let content_lines = render_markdown(content, content_width);
@@ -246,8 +260,16 @@ impl MessagesComponent {
 
         if let Some(ref streaming) = self.streaming_text {
             lines.push(Line::from(vec![
-                Span::styled(" ❯ ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
-                Span::styled("AMADEUS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    " ❯ ",
+                    Style::default()
+                        .fg(THEME.purple)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    "AMADEUS",
+                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                ),
             ]));
 
             let content_lines = render_markdown(streaming, content_width);
@@ -265,10 +287,18 @@ impl MessagesComponent {
                 Line::from(""),
                 Line::from(vec![
                     Span::raw("   "),
-                    Span::styled("Waiting for your instructions...", Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC)),
+                    Span::styled(
+                        "Waiting for your instructions...",
+                        Style::default()
+                            .fg(THEME.comment)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
                 ]),
             ];
-            frame.render_widget(Paragraph::new(empty_lines).style(Style::default().bg(THEME.bg)), area);
+            frame.render_widget(
+                Paragraph::new(empty_lines).style(Style::default().bg(THEME.bg)),
+                area,
+            );
             return;
         }
 

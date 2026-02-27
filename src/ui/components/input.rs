@@ -31,10 +31,17 @@ impl InputComponent {
                 ),
         );
         textarea.set_style(Style::default().fg(THEME.fg));
-        textarea.set_cursor_style(Style::default().fg(THEME.cyan).add_modifier(Modifier::REVERSED));
-        textarea.set_placeholder_style(Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC));
-        textarea
-            .set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
+        textarea.set_cursor_style(
+            Style::default()
+                .fg(THEME.cyan)
+                .add_modifier(Modifier::REVERSED),
+        );
+        textarea.set_placeholder_style(
+            Style::default()
+                .fg(THEME.comment)
+                .add_modifier(Modifier::ITALIC),
+        );
+        textarea.set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
 
         Self {
             textarea,
@@ -71,12 +78,17 @@ impl InputComponent {
                         .add_modifier(Modifier::BOLD),
                 ),
         );
-        self.textarea
-            .set_style(Style::default().fg(THEME.fg));
-        self.textarea
-            .set_cursor_style(Style::default().fg(THEME.cyan).add_modifier(Modifier::REVERSED));
-        self.textarea
-            .set_placeholder_style(Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC));
+        self.textarea.set_style(Style::default().fg(THEME.fg));
+        self.textarea.set_cursor_style(
+            Style::default()
+                .fg(THEME.cyan)
+                .add_modifier(Modifier::REVERSED),
+        );
+        self.textarea.set_placeholder_style(
+            Style::default()
+                .fg(THEME.comment)
+                .add_modifier(Modifier::ITALIC),
+        );
         self.textarea
             .set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
     }

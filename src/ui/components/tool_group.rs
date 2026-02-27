@@ -145,15 +145,28 @@ pub fn render_tool_group_with_limit(
         // Header line
         lines.push(Line::from(vec![
             Span::styled("   ", Style::default()),
-            Span::styled(format!("{} ", status_icon), Style::default().fg(status_color).add_modifier(Modifier::BOLD)),
-            Span::styled(tool.name.to_uppercase(), Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("{} ", status_icon),
+                Style::default()
+                    .fg(status_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                tool.name.to_uppercase(),
+                Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+            ),
             Span::styled(" tool", Style::default().fg(THEME.comment)),
         ]));
 
         if tool.status == ToolStatus::Pending && tool.output.is_empty() {
             lines.push(Line::from(vec![
                 Span::styled("   │ ", Style::default().fg(THEME.border)),
-                Span::styled("Running...", Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC)),
+                Span::styled(
+                    "Running...",
+                    Style::default()
+                        .fg(THEME.comment)
+                        .add_modifier(Modifier::ITALIC),
+                ),
             ]));
         } else if !tool.is_collapsed {
             if let Some(cmd) = &tool.command {
@@ -181,12 +194,17 @@ pub fn render_tool_group_with_limit(
                 if total_output_lines > 10 {
                     lines.push(Line::from(vec![
                         Span::styled("   │ ", Style::default().fg(THEME.border)),
-                        Span::styled(format!("... ({} more lines)", total_output_lines - 10), Style::default().fg(THEME.comment).add_modifier(Modifier::DIM)),
+                        Span::styled(
+                            format!("... ({} more lines)", total_output_lines - 10),
+                            Style::default()
+                                .fg(THEME.comment)
+                                .add_modifier(Modifier::DIM),
+                        ),
                     ]));
                 }
             }
         }
-        
+
         lines.push(Line::from(""));
     }
 

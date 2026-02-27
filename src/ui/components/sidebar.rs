@@ -189,7 +189,10 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
-                Span::styled("SHORTCUTS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "SHORTCUTS",
+                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -207,7 +210,10 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
-                Span::styled("SIDEBAR", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "SIDEBAR",
+                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -221,7 +227,10 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
-                Span::styled("SYSTEM", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    "SYSTEM",
+                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![

@@ -2,9 +2,9 @@
 //!
 //! Types for worker agents in a supervisor pattern.
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tokio::sync::oneshot;
-use serde::{Deserialize, Serialize};
 
 use crate::agent::events::ToolCall;
 use crate::core::id::AgentId;

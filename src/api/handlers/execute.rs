@@ -2,11 +2,11 @@
 //!
 //! Handles POST /execute requests to run bash commands directly.
 
-use std::sync::Arc;
 use axum::{extract::State, Json};
+use std::sync::Arc;
 
-use crate::api::types::{ErrorResponse, ExecuteRequest, ExecuteResponse};
 use crate::api::http::AppState;
+use crate::api::types::{ErrorResponse, ExecuteRequest, ExecuteResponse};
 use crate::client::LLMClient;
 use crate::tools::bash::BashTool;
 use crate::tools::tool_trait::Tool;
@@ -17,7 +17,7 @@ pub async fn execute<C: LLMClient + Clone + 'static>(
     Json(request): Json<ExecuteRequest>,
 ) -> std::result::Result<Json<ExecuteResponse>, Json<ErrorResponse>> {
     let bash = BashTool::from_config(state.supervisor.config());
-    
+
     let input = serde_json::json!({
         "command": request.command,
     });
