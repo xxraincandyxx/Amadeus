@@ -155,8 +155,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         Box::pin(async_stream::stream! {
             let mut total_result = RunResult::default();
             let mut should_continue = true;
+            let mut turn_count = 0;
 
             while should_continue {
+                turn_count += 1;
+                debug!(turn = turn_count, "Starting agent turn");
+                
                 let mut stream = {
                     let history_guard = history.read().await;
                     client
@@ -167,15 +171,21 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut tool_uses: Vec<ContentBlock> = Vec::new();
                 let mut tool_results: Vec<ContentBlock> = Vec::new();
                 let mut current_tool: Option<(String, String, String)> = None;
+                let mut has_activity_in_turn = false;
+                let mut turn_stop_reason = String::new();
 
                 while let Some(event) = stream.next().await {
                     match event? {
                         StreamEvent::TextDelta(text) => {
+                            debug!(turn = turn_count, text = %text, "Received TextDelta");
+                            has_activity_in_turn = true;
                             total_result.text.push_str(&text);
                             yield Ok(AgentEvent::TextDelta { delta: text });
                         }
 
                         StreamEvent::ToolCallStart { id, name } => {
+                            debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
+                            has_activity_in_turn = true;
                             current_tool = Some((id.clone(), name.clone(), String::new()));
                             yield Ok(AgentEvent::ToolStart { id, name });
                         }
@@ -202,12 +212,9 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 };
                                 let duration_ms = tool_start.elapsed().as_millis() as u64;
 
-                                let is_error = output.starts_with("Error:");
-
                                 debug!(
                                     tool = %name,
                                     duration_ms = duration_ms,
-                                    is_error = is_error,
                                     "Tool executed"
                                 );
 
@@ -216,14 +223,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     name: name.clone(),
                                     input: input.clone(),
                                     output: output.clone(),
-                                    is_error,
+                                    is_error: output.starts_with("Error:"),
                                 });
 
                                 total_result.tool_calls.push(ToolCall {
                                     name: name.clone(),
                                     input: input.clone(),
                                     output: output.clone(),
-                                    is_error,
+                                    is_error: output.starts_with("Error:"),
                                 });
 
                                 tool_uses.push(ContentBlock::ToolUse {
@@ -240,28 +247,34 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         }
 
                         StreamEvent::StopReason(reason) => {
-                            if reason != "tool_use" && reason != "tool_calls" {
-                                should_continue = false;
-                            }
+                            debug!(turn = turn_count, reason = %reason, "Stream stopped");
+                            turn_stop_reason = reason;
                         }
                     }
                 }
 
+                // Update history and decide whether to continue
                 let mut history_guard = history.write().await;
                 if !tool_uses.is_empty() {
+                    debug!(turn = turn_count, tool_calls = tool_uses.len(), "Pushing tool results to history, continuing loop");
                     history_guard.push(Message::assistant(tool_uses));
                     history_guard.push(Message::tool_results(tool_results));
-                } else if !total_result.text.is_empty() {
+                    should_continue = true;
+                } else if has_activity_in_turn {
+                    // LLM provided text but no tools
+                    debug!(turn = turn_count, "Final text provided, ending loop");
                     history_guard.push(Message::assistant(vec![ContentBlock::Text {
                         text: total_result.text.clone(),
                     }]));
                     should_continue = false;
                 } else {
+                    debug!(turn = turn_count, stop_reason = %turn_stop_reason, "No activity in turn, ending loop");
                     should_continue = false;
                 }
                 drop(history_guard);
             }
 
+            debug!("Yielding Done event");
             yield Ok(AgentEvent::Done { result: total_result });
         })
     }

@@ -3,7 +3,7 @@
 //! Types for worker agents in a supervisor pattern.
 
 use std::collections::HashMap;
-
+use tokio::sync::oneshot;
 use serde::{Deserialize, Serialize};
 
 use crate::agent::events::ToolCall;
@@ -34,6 +34,12 @@ impl WorkerConfig {
             max_concurrent: 1,
             model: None,
         }
+    }
+
+    /// Set explicit ID.
+    pub fn id(mut self, id: Option<AgentId>) -> Self {
+        self.id = id;
+        self
     }
 
     /// Add a capability tag.
@@ -82,9 +88,9 @@ impl Task {
         }
     }
 
-    /// Add a required capability.
-    pub fn requires(mut self, cap: impl Into<String>) -> Self {
-        self.required_capabilities.push(cap.into());
+    /// Add required capabilities.
+    pub fn requires(mut self, caps: Vec<String>) -> Self {
+        self.required_capabilities.extend(caps);
         self
     }
 
@@ -99,6 +105,17 @@ impl Task {
         self.metadata.insert(key.into(), value);
         self
     }
+}
+
+/// A request for help sent from one worker to another.
+#[derive(Debug)]
+pub struct HelpRequest {
+    /// The task to be performed.
+    pub task: Task,
+    /// Channel to send the result back to the requesting worker.
+    pub response_tx: oneshot::Sender<TaskResult>,
+    /// ID of the worker requesting help.
+    pub requester_id: AgentId,
 }
 
 /// Result of task execution.

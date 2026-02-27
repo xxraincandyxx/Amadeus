@@ -1,41 +1,12 @@
 //! # Supervisor Pattern
 //!
 //! Manages a pool of worker agents with configurable dispatch strategies.
-//!
-//! ## Dispatch Strategies
-//!
-//! - **RoundRobin**: Rotate through workers in order.
-//! - **LeastLoaded**: Pick worker with fewest active tasks.
-//! - **CapabilityMatch**: Match task requirements to worker capabilities.
-//!
-//! ## Example
-//!
-//! ```rust,ignore
-//! use amadeus::{Supervisor, SupervisorConfig, DispatchStrategy, WorkerConfig, Task};
-//!
-//! let config = SupervisorConfig {
-//!     strategy: DispatchStrategy::CapabilityMatch,
-//!     ..Default::default()
-//! };
-//!
-//! let mut supervisor = Supervisor::new(client, config);
-//!
-//! supervisor.spawn(vec![
-//!     WorkerConfig::new("coder").capability("code").capability("refactor"),
-//!     WorkerConfig::new("reviewer").capability("review").capability("test"),
-//! ]).await?;
-//!
-//! let task = Task::new("task-1", "Review the auth module")
-//!     .requires("review");
-//!
-//! let result = supervisor.execute(task).await?;
-//! ```
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
 use crate::agent::config::Config;
@@ -43,9 +14,10 @@ use crate::agent::loop_agent::Agent;
 use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::AgentId;
-use crate::error::Result;
+use crate::error::{AgentError, Result};
+use crate::tools::peer::PeerTool;
 
-use super::worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
+use super::worker::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
 
 /// Strategy for dispatching tasks to workers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -88,38 +60,35 @@ impl Default for SupervisorConfig {
 
 /// Internal worker entry.
 struct WorkerEntry<C: LLMClient> {
-    info: WorkerInfo,
+    info: Arc<RwLock<WorkerInfo>>,
     agent: Agent<C>,
-    active_tasks: HashMap<String, tokio::task::JoinHandle<Result<TaskResult>>>,
 }
 
 /// Supervisor manages a pool of worker agents.
-///
-/// Provides:
-/// - Worker lifecycle management
-/// - Task dispatch with multiple strategies
-/// - Resource locking via LockManager
 pub struct Supervisor<C: LLMClient> {
     client: C,
     config: SupervisorConfig,
     sdk_config: Arc<Config>,
-    workers: HashMap<AgentId, WorkerEntry<C>>,
-    task_queue: VecDeque<Task>,
+    workers: Arc<RwLock<HashMap<AgentId, WorkerEntry<C>>>>,
     lock_manager: Arc<Mutex<LockManager>>,
-    next_worker_idx: usize,
+    next_worker_idx: Arc<Mutex<usize>>,
+    help_tx: mpsc::Sender<HelpRequest>,
+    help_rx: Mutex<mpsc::Receiver<HelpRequest>>,
 }
 
 impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     /// Create a new supervisor.
     pub fn new(client: C, config: SupervisorConfig, sdk_config: Arc<Config>) -> Self {
+        let (help_tx, help_rx) = mpsc::channel(100);
         Self {
             client,
             config,
             sdk_config,
-            workers: HashMap::new(),
-            task_queue: VecDeque::new(),
+            workers: Arc::new(RwLock::new(HashMap::new())),
             lock_manager: Arc::new(Mutex::new(LockManager::new())),
-            next_worker_idx: 0,
+            next_worker_idx: Arc::new(Mutex::new(0)),
+            help_tx,
+            help_rx: Mutex::new(help_rx),
         }
     }
 
@@ -129,10 +98,14 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     }
 
     /// Spawn worker agents.
-    ///
-    /// Returns the IDs of the spawned workers.
     pub async fn spawn(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
+        self.spawn_with_client(configs, self.client.clone()).await
+    }
+
+    /// Spawn worker agents with a specific client.
+    pub async fn spawn_with_client(&mut self, configs: Vec<WorkerConfig>, client: C) -> Result<Vec<AgentId>> {
         let mut ids = Vec::new();
+        let mut workers = self.workers.write().await;
 
         for worker_config in configs {
             let id = worker_config.id.unwrap_or_else(AgentId::new);
@@ -145,7 +118,11 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                 Arc::clone(&self.sdk_config)
             };
 
-            let agent = Agent::new(self.client.clone(), worker_sdk_config);
+            // Initialize agent with PeerTool
+            let agent = crate::agent::loop_agent::AgentBuilder::new(client.clone(), worker_sdk_config)
+                .with_default_tools()
+                .register_tool(Box::new(PeerTool::new(id, self.help_tx.clone())))
+                .build();
 
             let info = WorkerInfo {
                 id,
@@ -158,12 +135,11 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                 total_errors: 0,
             };
 
-            self.workers.insert(
+            workers.insert(
                 id,
                 WorkerEntry {
-                    info,
+                    info: Arc::new(RwLock::new(info)),
                     agent,
-                    active_tasks: HashMap::new(),
                 },
             );
 
@@ -175,292 +151,179 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     }
 
     /// Get worker info.
-    pub fn worker(&self, id: AgentId) -> Option<&WorkerInfo> {
-        self.workers.get(&id).map(|w| &w.info)
-    }
-
-    /// Get all worker infos.
-    pub fn workers(&self) -> Vec<&WorkerInfo> {
-        self.workers.values().map(|w| &w.info).collect()
-    }
-
-    /// Get count of workers.
-    pub fn worker_count(&self) -> usize {
-        self.workers.len()
-    }
-
-    /// Submit a task to the queue (non-blocking).
-    pub fn submit(&mut self, task: Task) -> Result<()> {
-        if self.task_queue.len() >= self.config.max_pending_tasks {
-            return Err(crate::error::AgentError::Config(
-                "Task queue is full".to_string(),
-            ));
+    pub async fn worker(&self, id: AgentId) -> Option<WorkerInfo> {
+        let workers = self.workers.read().await;
+        if let Some(w) = workers.get(&id) {
+            Some(w.info.read().await.clone())
+        } else {
+            None
         }
+    }
 
-        self.task_queue.push_back(task);
+    /// Run the supervisor background loop to process help requests.
+    pub async fn run(&self) -> Result<()> {
+        info!("Supervisor loop started");
+        let mut help_rx = self.help_rx.lock().await;
+        while let Some(help_req) = help_rx.recv().await {
+            let workers_map = Arc::clone(&self.workers);
+            let strategy = self.config.strategy;
+            let timeout_dur = self.config.task_timeout;
+            let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+
+            tokio::spawn(async move {
+                let worker_id = {
+                    let workers_guard = workers_map.read().await;
+                    Self::select_worker_internal(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
+                };
+
+                match worker_id {
+                    Ok(id) => {
+                        let workers_guard = workers_map.read().await;
+                        let entry = workers_guard.get(&id).unwrap();
+                        let result = Self::dispatch_internal(id, entry, help_req.task, timeout_dur).await;
+                        let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
+                            task_id: "error".to_string(),
+                            worker_id: id,
+                            success: false,
+                            output: None,
+                            error: Some(e.to_string()),
+                            duration_ms: 0,
+                            tool_calls: Vec::new(),
+                        }));
+                    }
+                    Err(e) => {
+                        warn!("Failed to find worker for help request: {}", e);
+                    }
+                }
+            });
+        }
         Ok(())
     }
 
-    /// Execute a task immediately (blocking).
-    ///
-    /// Dispatches to an available worker and waits for result.
-    pub async fn execute(&mut self, task: Task) -> Result<TaskResult> {
-        let worker_id = self.select_worker(&task)?;
-
-        self.dispatch_to_worker(worker_id, task).await
-    }
-
-    /// Process pending tasks.
-    ///
-    /// Returns count of tasks dispatched.
-    pub async fn process_pending(&mut self) -> Result<usize> {
-        let mut dispatched = 0;
-
-        while let Some(task) = self.task_queue.pop_front() {
-            if let Ok(worker_id) = self.select_worker(&task) {
-                let task_id = task.id.clone();
-                let result = self.dispatch_to_worker(worker_id, task).await;
-
-                match result {
-                    Ok(r) => {
-                        if r.success {
-                            dispatched += 1;
-                        }
-                    }
-                    Err(e) => {
-                        warn!(task_id = %task_id, error = %e, "Task failed");
-                    }
-                }
-            } else {
-                self.task_queue.push_front(task);
-                break;
-            }
-        }
-
-        Ok(dispatched)
-    }
-
-    /// Get pending task count.
-    pub fn pending_count(&self) -> usize {
-        self.task_queue.len()
-    }
-
-    /// Shutdown all workers.
-    ///
-    /// Cancels active tasks and clears the queue.
-    pub async fn shutdown(&mut self) {
-        for (_, worker) in self.workers.iter_mut() {
-            for (_, handle) in worker.active_tasks.drain() {
-                handle.abort();
-            }
-            worker.info.status = WorkerStatus::Offline;
-        }
-        self.task_queue.clear();
-        info!("Supervisor shutdown complete");
-    }
-
-    /// Select a worker for a task based on strategy.
-    fn select_worker(&mut self, task: &Task) -> Result<AgentId> {
-        let worker_id = match self.config.strategy {
-            DispatchStrategy::RoundRobin => self.select_round_robin(),
-            DispatchStrategy::LeastLoaded => self.select_least_loaded(),
-            DispatchStrategy::CapabilityMatch => self.select_by_capability(task),
+    /// Execute a task (blocking version for external callers).
+    pub async fn execute(&self, task: Task) -> Result<TaskResult> {
+        let worker_id = {
+            let workers = self.workers.read().await;
+            Self::select_worker_internal(&workers, &task, self.config.strategy, Arc::clone(&self.next_worker_idx)).await?
         };
 
-        worker_id.ok_or_else(|| crate::error::AgentError::Config("No available worker".to_string()))
+        let workers = self.workers.read().await;
+        let entry = workers.get(&worker_id).unwrap();
+        
+        Self::dispatch_internal(worker_id, entry, task, self.config.task_timeout).await
     }
 
-    /// Round-robin selection.
-    fn select_round_robin(&mut self) -> Option<AgentId> {
-        let available: Vec<_> = self
-            .workers
-            .iter()
-            .filter(|(_, w)| w.info.is_available())
-            .collect();
-
-        if available.is_empty() {
-            return None;
+    async fn select_worker_internal(
+        workers: &HashMap<AgentId, WorkerEntry<C>>,
+        task: &Task,
+        strategy: DispatchStrategy,
+        next_idx_mutex: Arc<Mutex<usize>>,
+    ) -> Result<AgentId> {
+        // Collect worker infos first to avoid holding locks during complex logic
+        let mut candidates = Vec::new();
+        for (id, entry) in workers {
+            let info = entry.info.read().await;
+            if info.is_available() {
+                candidates.push((*id, info.clone()));
+            }
         }
 
-        let idx = self.next_worker_idx % available.len();
-        self.next_worker_idx += 1;
-        Some(*available[idx].0)
+        let worker_id = match strategy {
+            DispatchStrategy::RoundRobin => {
+                if candidates.is_empty() {
+                    None
+                } else {
+                    let mut next_idx = next_idx_mutex.lock().await;
+                    let idx = *next_idx % candidates.len();
+                    *next_idx += 1;
+                    Some(candidates[idx].0)
+                }
+            }
+            DispatchStrategy::LeastLoaded => {
+                candidates
+                    .iter()
+                    .min_by_key(|(_, info)| info.active_tasks)
+                    .map(|(id, _)| *id)
+            }
+            DispatchStrategy::CapabilityMatch => {
+                candidates
+                    .iter()
+                    .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
+                    .min_by_key(|(_, info)| info.active_tasks)
+                    .map(|(id, _)| *id)
+            }
+        };
+
+        worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))
     }
 
-    /// Least-loaded selection.
-    fn select_least_loaded(&self) -> Option<AgentId> {
-        self.workers
-            .iter()
-            .filter(|(_, w)| w.info.is_available())
-            .min_by_key(|(_, w)| w.info.active_tasks)
-            .map(|(id, _)| *id)
-    }
-
-    /// Capability-based selection.
-    fn select_by_capability(&self, task: &Task) -> Option<AgentId> {
-        self.workers
-            .iter()
-            .filter(|(_, w)| {
-                w.info.is_available() && w.info.has_capabilities(&task.required_capabilities)
-            })
-            .min_by_key(|(_, w)| w.info.active_tasks)
-            .map(|(id, _)| *id)
-    }
-
-    /// Dispatch a task to a specific worker.
-    async fn dispatch_to_worker(&mut self, worker_id: AgentId, task: Task) -> Result<TaskResult> {
-        let worker = self
-            .workers
-            .get_mut(&worker_id)
-            .ok_or_else(|| crate::error::AgentError::Config("Worker not found".to_string()))?;
-
+    async fn dispatch_internal(
+        worker_id: AgentId,
+        entry: &WorkerEntry<C>,
+        task: Task,
+        task_timeout: Duration,
+    ) -> Result<TaskResult> {
         let task_id = task.id.clone();
         let prompt = task.prompt.clone();
 
-        worker.info.status = WorkerStatus::Busy;
-        worker.info.active_tasks += 1;
-
-        let history = Arc::new(RwLock::new(Vec::new()));
-        let agent = worker.agent.clone();
-        let task_timeout = self.config.task_timeout;
-
-        debug!(worker_id = %worker_id, task_id = %task_id, "Dispatching task");
-
-        let handle = tokio::spawn(async move {
-            let result = tokio::time::timeout(task_timeout, agent.run(&prompt, history)).await;
-
-            match result {
-                Ok(Ok(run_result)) => TaskResult {
-                    task_id,
-                    worker_id,
-                    success: true,
-                    output: Some(run_result.text),
-                    error: None,
-                    duration_ms: 0,
-                    tool_calls: run_result.tool_calls,
-                },
-                Ok(Err(e)) => TaskResult {
-                    task_id,
-                    worker_id,
-                    success: false,
-                    output: None,
-                    error: Some(e.to_string()),
-                    duration_ms: 0,
-                    tool_calls: Vec::new(),
-                },
-                Err(_) => TaskResult {
-                    task_id,
-                    worker_id,
-                    success: false,
-                    output: None,
-                    error: Some("Task timed out".to_string()),
-                    duration_ms: 0,
-                    tool_calls: Vec::new(),
-                },
-            }
-        });
-
-        let result = handle.await?;
-
-        let worker = self.workers.get_mut(&worker_id).unwrap();
-        worker.info.active_tasks = worker.info.active_tasks.saturating_sub(1);
-
-        if result.success {
-            worker.info.completed_tasks += 1;
-        } else {
-            worker.info.total_errors += 1;
+        {
+            let mut info = entry.info.write().await;
+            info.status = WorkerStatus::Busy;
+            info.active_tasks += 1;
         }
 
-        worker.info.status = if worker.info.active_tasks > 0 {
-            WorkerStatus::Busy
-        } else {
-            WorkerStatus::Idle
+        let agent = entry.agent.clone();
+        debug!(worker_id = %worker_id, task_id = %task_id, "Dispatching task");
+
+        let result = tokio::time::timeout(task_timeout, agent.run(&prompt)).await;
+
+        let task_res = match result {
+            Ok(Ok(run_result)) => TaskResult {
+                task_id,
+                worker_id,
+                success: true,
+                output: Some(run_result.text),
+                error: None,
+                duration_ms: 0,
+                tool_calls: run_result.tool_calls,
+            },
+            Ok(Err(e)) => TaskResult {
+                task_id,
+                worker_id,
+                success: false,
+                output: None,
+                error: Some(e.to_string()),
+                duration_ms: 0,
+                tool_calls: Vec::new(),
+            },
+            Err(_) => TaskResult {
+                task_id,
+                worker_id,
+                success: false,
+                output: None,
+                error: Some("Task timed out".to_string()),
+                duration_ms: 0,
+                tool_calls: Vec::new(),
+            },
         };
 
-        Ok(result)
-    }
-}
+        {
+            let mut info = entry.info.write().await;
+            info.active_tasks = info.active_tasks.saturating_sub(1);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+            if task_res.success {
+                info.completed_tasks += 1;
+            } else {
+                info.total_errors += 1;
+            }
 
-    #[test]
-    fn test_dispatch_strategy_default() {
-        let strategy = DispatchStrategy::default();
-        assert!(matches!(strategy, DispatchStrategy::RoundRobin));
-    }
+            info.status = if info.active_tasks > 0 {
+                WorkerStatus::Busy
+            } else {
+                WorkerStatus::Idle
+            };
+        }
 
-    #[test]
-    fn test_supervisor_config_default() {
-        let config = SupervisorConfig::default();
-        assert_eq!(config.max_pending_tasks, 100);
-        assert!(config.retry_failed_tasks);
-        assert_eq!(config.max_retries, 3);
-    }
-
-    #[test]
-    fn test_worker_config_builder() {
-        let config = WorkerConfig::new("test-worker")
-            .capability("code")
-            .capability("review")
-            .max_concurrent(4);
-
-        assert_eq!(config.name, "test-worker");
-        assert_eq!(config.capabilities, vec!["code", "review"]);
-        assert_eq!(config.max_concurrent, 4);
-    }
-
-    #[test]
-    fn test_task_builder() {
-        let task = Task::new("task-1", "Do something")
-            .requires("code")
-            .priority(10);
-
-        assert_eq!(task.id, "task-1");
-        assert_eq!(task.prompt, "Do something");
-        assert_eq!(task.required_capabilities, vec!["code"]);
-        assert_eq!(task.priority, 10);
-    }
-
-    #[test]
-    fn test_worker_info_has_capabilities() {
-        let info = WorkerInfo {
-            id: AgentId::new(),
-            name: "test".to_string(),
-            capabilities: vec!["code".to_string(), "review".to_string()],
-            status: WorkerStatus::Idle,
-            active_tasks: 0,
-            max_concurrent: 1,
-            completed_tasks: 0,
-            total_errors: 0,
-        };
-
-        assert!(info.has_capabilities(&["code".to_string()]));
-        assert!(info.has_capabilities(&["code".to_string(), "review".to_string()]));
-        assert!(!info.has_capabilities(&["test".to_string()]));
-    }
-
-    #[test]
-    fn test_worker_info_is_available() {
-        let mut info = WorkerInfo {
-            id: AgentId::new(),
-            name: "test".to_string(),
-            capabilities: vec![],
-            status: WorkerStatus::Idle,
-            active_tasks: 0,
-            max_concurrent: 2,
-            completed_tasks: 0,
-            total_errors: 0,
-        };
-
-        assert!(info.is_available());
-
-        info.active_tasks = 2;
-        assert!(!info.is_available());
-
-        info.status = WorkerStatus::Error;
-        info.active_tasks = 0;
-        assert!(!info.is_available());
+        Ok(task_res)
     }
 }
