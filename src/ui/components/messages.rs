@@ -192,104 +192,36 @@ impl MessagesComponent {
         }
 
         let mut lines: Vec<Line> = Vec::new();
-        let content_width = area.width.saturating_sub(3) as usize;
+        let content_width = area.width.saturating_sub(4) as usize;
 
         for item in self.items.iter() {
             match item {
                 HistoryItem::User { content, .. } => {
-                    let role_prefix = Span::styled(
-                        "[You] ",
-                        Style::default()
-                            .fg(THEME.user_msg)
-                            .add_modifier(Modifier::BOLD),
-                    );
-                    let role_prefix_width = role_prefix.content.width();
-
-                    let mut content_lines = render_markdown(content, content_width);
-                    if let Some(first_line) = content_lines.first_mut() {
-                        let first_line_width = content_width.saturating_sub(role_prefix_width);
-                        let first_line_spans: Vec<Span> = first_line
-                            .spans
-                            .iter()
-                            .flat_map(|span| {
-                                let span_width = span.content.width();
-                                if span_width <= first_line_width {
-                                    vec![span.clone()]
-                                } else {
-                                    let chars: Vec<char> = span.content.chars().collect();
-                                    let mut result = Vec::new();
-                                    for chunk in chars.chunks(first_line_width) {
-                                        result.push(Span::styled(
-                                            chunk.iter().collect::<String>(),
-                                            span.style,
-                                        ));
-                                    }
-                                    result
-                                }
-                            })
-                            .collect();
-                        first_line.spans = first_line_spans;
-                    }
-
-                    for (i, content_line) in content_lines.into_iter().enumerate() {
-                        if i == 0 {
-                            let mut spans = vec![Span::raw(" "), role_prefix.clone()];
-                            spans.extend(content_line.spans.into_iter());
-                            lines.push(Line::from(spans));
-                        } else {
-                            let mut spans = vec![Span::raw(" ")];
-                            spans.extend(content_line.spans.into_iter());
-                            lines.push(Line::from(spans));
-                        }
+                    lines.push(Line::from(vec![
+                        Span::styled(" ❯ ", Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD)),
+                        Span::styled("YOU", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                    ]));
+                    
+                    let content_lines = render_markdown(content, content_width);
+                    for content_line in content_lines {
+                        let mut spans = vec![Span::raw("   ")];
+                        spans.extend(content_line.spans.into_iter());
+                        lines.push(Line::from(spans));
                     }
                     lines.push(Line::from(""));
                 }
 
                 HistoryItem::Assistant { content, .. } => {
-                    let role_prefix = Span::styled(
-                        "[Assistant] ",
-                        Style::default()
-                            .fg(THEME.assistant_msg)
-                            .add_modifier(Modifier::BOLD),
-                    );
-                    let role_prefix_width = role_prefix.content.width();
+                    lines.push(Line::from(vec![
+                        Span::styled(" ❯ ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                        Span::styled("AMADEUS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+                    ]));
 
-                    let mut content_lines = render_markdown(content, content_width);
-                    if let Some(first_line) = content_lines.first_mut() {
-                        let first_line_width = content_width.saturating_sub(role_prefix_width);
-                        let first_line_spans: Vec<Span> = first_line
-                            .spans
-                            .iter()
-                            .flat_map(|span| {
-                                let span_width = span.content.width();
-                                if span_width <= first_line_width {
-                                    vec![span.clone()]
-                                } else {
-                                    let chars: Vec<char> = span.content.chars().collect();
-                                    let mut result = Vec::new();
-                                    for chunk in chars.chunks(first_line_width) {
-                                        result.push(Span::styled(
-                                            chunk.iter().collect::<String>(),
-                                            span.style,
-                                        ));
-                                    }
-                                    result
-                                }
-                            })
-                            .collect();
-                        first_line.spans = first_line_spans;
-                    }
-
-                    for (i, content_line) in content_lines.into_iter().enumerate() {
-                        if i == 0 {
-                            let mut spans = vec![Span::raw(" "), role_prefix.clone()];
-                            spans.extend(content_line.spans.into_iter());
-                            lines.push(Line::from(spans));
-                        } else {
-                            let mut spans = vec![Span::raw(" ")];
-                            spans.extend(content_line.spans.into_iter());
-                            lines.push(Line::from(spans));
-                        }
+                    let content_lines = render_markdown(content, content_width);
+                    for content_line in content_lines {
+                        let mut spans = vec![Span::raw("   ")];
+                        spans.extend(content_line.spans.into_iter());
+                        lines.push(Line::from(spans));
                     }
                     lines.push(Line::from(""));
                 }
@@ -314,65 +246,30 @@ impl MessagesComponent {
         }
 
         if let Some(ref streaming) = self.streaming_text {
-            let role_prefix = Span::styled(
-                "[Assistant] ",
-                Style::default()
-                    .fg(THEME.assistant_msg)
-                    .add_modifier(Modifier::BOLD),
-            );
-            let role_prefix_width = role_prefix.content.width();
-            let first_line_width = content_width.saturating_sub(role_prefix_width);
-            let mut content_lines = render_markdown(streaming, content_width);
-            if let Some(first_line) = content_lines.first_mut() {
-                let first_line_spans: Vec<Span> = first_line
-                    .spans
-                    .iter()
-                    .flat_map(|span| {
-                        let span_width = span.content.width();
-                        if span_width <= first_line_width {
-                            vec![span.clone()]
-                        } else {
-                            let chars: Vec<char> = span.content.chars().collect();
-                            let mut result = Vec::new();
-                            for chunk in chars.chunks(first_line_width) {
-                                result.push(Span::styled(
-                                    chunk.iter().collect::<String>(),
-                                    span.style,
-                                ));
-                            }
-                            result
-                        }
-                    })
-                    .collect();
-                first_line.spans = first_line_spans;
-            }
+            lines.push(Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(THEME.purple).add_modifier(Modifier::BOLD)),
+                Span::styled("AMADEUS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+            ]));
 
-            for (i, content_line) in content_lines.into_iter().enumerate() {
-                if i == 0 {
-                    let mut spans = vec![Span::raw(" "), role_prefix.clone()];
-                    spans.extend(content_line.spans.into_iter());
-                    lines.push(Line::from(spans));
-                } else {
-                    let mut spans = vec![Span::raw(" ")];
-                    spans.extend(content_line.spans.into_iter());
-                    lines.push(Line::from(spans));
-                }
+            let content_lines = render_markdown(streaming, content_width);
+            for content_line in content_lines {
+                let mut spans = vec![Span::raw("   ")];
+                spans.extend(content_line.spans.into_iter());
+                lines.push(Line::from(spans));
             }
-
             lines.push(Line::from(""));
         }
 
         let total_lines = lines.len();
         if total_lines == 0 {
-            let empty_text = Paragraph::new(Line::from(vec![
-                Span::raw(" "),
-                Span::styled(
-                    "Start a conversation by typing a message below...",
-                    Style::default().fg(THEME.comment),
-                ),
-            ]))
-            .style(Style::default().bg(THEME.bg));
-            frame.render_widget(empty_text, area);
+            let empty_lines = vec![
+                Line::from(""),
+                Line::from(vec![
+                    Span::raw("   "),
+                    Span::styled("Waiting for your instructions...", Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC)),
+                ]),
+            ];
+            frame.render_widget(Paragraph::new(empty_lines).style(Style::default().bg(THEME.bg)), area);
             return;
         }
 
@@ -397,20 +294,13 @@ impl MessagesComponent {
                 .orientation(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
                 .end_symbol(None)
-                .style(Style::default().fg(THEME.comment));
-
-            let scrollbar_area = Rect::new(
-                area.x + area.width.saturating_sub(1),
-                area.y,
-                1,
-                area.height,
-            );
+                .style(Style::default().fg(THEME.border));
 
             let mut scrollbar_state = ScrollbarState::new(total_lines)
                 .position(scroll_offset)
                 .viewport_content_length(visible_lines);
 
-            frame.render_stateful_widget(scrollbar, scrollbar_area, &mut scrollbar_state);
+            frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
         }
     }
 

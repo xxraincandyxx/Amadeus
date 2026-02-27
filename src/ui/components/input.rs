@@ -1,11 +1,13 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     widgets::{Block, Borders},
     Frame,
 };
 use tui_textarea::{CursorMove, TextArea};
 use unicode_width::UnicodeWidthStr;
+
+use crate::ui::colors::THEME;
 
 pub struct InputComponent {
     textarea: TextArea<'static>,
@@ -20,13 +22,19 @@ impl InputComponent {
         textarea.set_block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(crate::ui::colors::THEME.border)),
+                .border_style(Style::default().fg(THEME.border))
+                .title(" ❯ PROMPT ")
+                .title_style(
+                    Style::default()
+                        .fg(THEME.purple)
+                        .add_modifier(Modifier::BOLD),
+                ),
         );
-        textarea.set_style(Style::default().fg(crate::ui::colors::THEME.fg));
-        textarea.set_cursor_style(Style::default().fg(crate::ui::colors::THEME.cyan));
-        textarea.set_placeholder_style(Style::default().fg(crate::ui::colors::THEME.comment));
+        textarea.set_style(Style::default().fg(THEME.fg));
+        textarea.set_cursor_style(Style::default().fg(THEME.cyan).add_modifier(Modifier::REVERSED));
+        textarea.set_placeholder_style(Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC));
         textarea
-            .set_placeholder_text(" Type your message... (Enter to send, Ctrl+Enter for newline)");
+            .set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
 
         Self {
             textarea,
@@ -46,21 +54,31 @@ impl InputComponent {
             self.history.push(input);
         }
         self.textarea = TextArea::default();
+        self.setup_textarea();
+        self.history_index = None;
+        self.current_draft.clear();
+    }
+
+    fn setup_textarea(&mut self) {
         self.textarea.set_block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(crate::ui::colors::THEME.border)),
+                .border_style(Style::default().fg(THEME.border))
+                .title(" ❯ PROMPT ")
+                .title_style(
+                    Style::default()
+                        .fg(THEME.purple)
+                        .add_modifier(Modifier::BOLD),
+                ),
         );
         self.textarea
-            .set_style(Style::default().fg(crate::ui::colors::THEME.fg));
+            .set_style(Style::default().fg(THEME.fg));
         self.textarea
-            .set_cursor_style(Style::default().fg(crate::ui::colors::THEME.cyan));
+            .set_cursor_style(Style::default().fg(THEME.cyan).add_modifier(Modifier::REVERSED));
         self.textarea
-            .set_placeholder_style(Style::default().fg(crate::ui::colors::THEME.comment));
+            .set_placeholder_style(Style::default().fg(THEME.comment).add_modifier(Modifier::ITALIC));
         self.textarea
-            .set_placeholder_text(" Type your message... (Enter to send, Ctrl+Enter for newline)");
-        self.history_index = None;
-        self.current_draft.clear();
+            .set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
     }
 
     pub fn history_up(&mut self) {
@@ -97,19 +115,7 @@ impl InputComponent {
     fn set_text(&mut self, text: &str) {
         let lines: Vec<String> = text.lines().map(String::from).collect();
         self.textarea = TextArea::new(lines);
-        self.textarea.set_block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(crate::ui::colors::THEME.border)),
-        );
-        self.textarea
-            .set_style(Style::default().fg(crate::ui::colors::THEME.fg));
-        self.textarea
-            .set_cursor_style(Style::default().fg(crate::ui::colors::THEME.cyan));
-        self.textarea
-            .set_placeholder_style(Style::default().fg(crate::ui::colors::THEME.comment));
-        self.textarea
-            .set_placeholder_text(" Type your message... (Enter to send, Ctrl+Enter for newline)");
+        self.setup_textarea();
         self.textarea.move_cursor(CursorMove::End);
     }
 
@@ -160,7 +166,7 @@ impl InputComponent {
         let height_by_lines = line_count + 2;
         let height_by_width = (max_line_width / 80) + 2;
 
-        (height_by_lines.max(height_by_width) as u16).clamp(3, 10)
+        (height_by_lines.max(height_by_width) as u16).clamp(4, 12)
     }
 }
 

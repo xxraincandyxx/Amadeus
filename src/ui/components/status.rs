@@ -59,44 +59,34 @@ impl StatusBar {
         SPINNER_FRAMES[self.spinner_frame]
     }
 
-    #[allow(dead_code)]
-    fn format_duration(&self) -> String {
-        if let Some(start) = self.start_time {
-            let elapsed = start.elapsed();
-            let secs = elapsed.as_secs();
-            let millis = elapsed.subsec_millis();
-            if secs > 0 {
-                format!("{}.{}s", secs, millis / 100)
-            } else {
-                format!("{}ms", millis)
-            }
-        } else {
-            String::new()
-        }
-    }
-
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if area.width < 3 {
             return;
         }
 
         let (status_icon, status_color, status_text) = match self.state {
-            AppState::Idle => ("●", THEME.comment, "Ready"),
-            AppState::Processing => (self.get_spinner(), THEME.cyan, "Processing"),
-            AppState::Success => ("✓", THEME.green, "Done"),
-            AppState::Error => ("✗", THEME.red, "Error"),
+            AppState::Idle => (" ● ", THEME.comment, "IDLE"),
+            AppState::Processing => (format!(" {} ", self.get_spinner()), THEME.cyan, "BUSY"),
+            AppState::Success => (" ✓ ", THEME.green, "DONE"),
+            AppState::Error => (" ✗ ", THEME.red, "ERR "),
         };
 
         let mut left_spans = vec![
-            Span::raw(" "),
             Span::styled(
                 status_icon,
                 Style::default()
+                    .fg(THEME.bg)
+                    .bg(status_color)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!(" {} ", status_text),
+                Style::default()
                     .fg(status_color)
+                    .bg(THEME.current_line)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
-            Span::styled(status_text, Style::default().fg(status_color)),
         ];
 
         if self.state == AppState::Processing {
@@ -104,9 +94,9 @@ impl StatusBar {
                 let elapsed = start.elapsed();
                 left_spans.push(Span::styled(
                     format!(
-                        " · {}.{:02}s",
+                        " {}.{:01}s ",
                         elapsed.as_secs(),
-                        elapsed.subsec_millis() / 10
+                        elapsed.subsec_millis() / 100
                     ),
                     Style::default().fg(THEME.comment),
                 ));
@@ -115,24 +105,31 @@ impl StatusBar {
 
         if self.token_count > 0 {
             left_spans.push(Span::styled(
-                format!(" · tokens: {}", self.token_count),
-                Style::default().fg(THEME.comment),
+                format!(" {} tokens ", self.token_count),
+                Style::default().fg(THEME.orange).add_modifier(Modifier::DIM),
             ));
         }
 
-        let right_side = format!(" {} ", self.model_name);
-        let right_width = right_side.chars().count() as u16;
+        let right_text = format!(" {} ", self.model_name.to_uppercase());
+        let right_span = Span::styled(
+            &right_text,
+            Style::default()
+                .fg(THEME.purple)
+                .bg(THEME.current_line)
+                .add_modifier(Modifier::BOLD),
+        );
+
         let left_width: usize = left_spans.iter().map(|s| s.content.chars().count()).sum();
-        let available = area.width.saturating_sub(right_width) as usize;
+        let right_width = right_text.chars().count();
+        let available = (area.width as usize).saturating_sub(left_width + right_width);
 
-        if left_width < available {
-            left_spans.push(Span::raw(" ".repeat(available - left_width)));
+        if available > 0 {
+            left_spans.push(Span::raw(" ".repeat(available)));
         }
-
-        left_spans.push(Span::styled(right_side, Style::default().fg(THEME.comment)));
+        left_spans.push(right_span);
 
         let line = Line::from(left_spans);
-        let paragraph = Paragraph::new(line).style(Style::default().bg(THEME.current_line));
+        let paragraph = Paragraph::new(line).style(Style::default().bg(THEME.bg));
 
         frame.render_widget(paragraph, area);
     }
@@ -140,6 +137,6 @@ impl StatusBar {
 
 impl Default for StatusBar {
     fn default() -> Self {
-        Self::new("claude-sonnet".to_string())
+        Self::new("claude-3-sonnet".to_string())
     }
 }

@@ -100,19 +100,6 @@ impl FileSidebar {
         }
     }
 
-    pub fn scroll_up(&mut self) {
-        self.scroll_offset = self.scroll_offset.saturating_sub(1);
-    }
-
-    pub fn scroll_down(&mut self, visible_count: usize) {
-        let max_scroll = self.entries.len().saturating_sub(visible_count);
-        self.scroll_offset = self.scroll_offset.saturating_add(1).min(max_scroll);
-    }
-
-    pub fn selected_path(&self) -> Option<&str> {
-        self.entries.get(self.selected).map(|e| e.path.as_str())
-    }
-
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if area.width < 5 {
             return;
@@ -131,11 +118,11 @@ impl FileSidebar {
             .map(|(i, entry)| {
                 let actual_index = i + self.scroll_offset;
                 let indent = indent_str.repeat(entry.depth);
-                let icon = if entry.is_dir { "📁 " } else { "📄 " };
+                let icon = if entry.is_dir { "📁" } else { "📄" };
                 let name = entry.path.split('/').next_back().unwrap_or(&entry.path);
 
                 let available_width =
-                    content_width.saturating_sub(indent.width() + icon.width() + 2);
+                    content_width.saturating_sub(indent.width() + icon.width() + 3);
                 let truncated_name = if name.width() > available_width {
                     let mut result = String::new();
                     let mut width = 0;
@@ -162,9 +149,8 @@ impl FileSidebar {
                 };
 
                 ListItem::new(Line::from(vec![
-                    Span::raw(" "),
                     Span::styled(indent, style),
-                    Span::styled(icon, style),
+                    Span::styled(format!(" {} ", icon), Style::default().fg(THEME.purple)),
                     Span::styled(truncated_name, style),
                 ]))
             })
@@ -172,10 +158,10 @@ impl FileSidebar {
 
         let list = List::new(items).block(
             Block::default()
-                .title(" Files ")
+                .title(" EXPLORER ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.purple)
+                        .fg(THEME.comment)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::RIGHT)
@@ -201,82 +187,59 @@ impl HelpSidebar {
 
         let lines = vec![
             Line::from(""),
-            Line::from(Span::styled(
-                " Shortcuts",
-                Style::default()
-                    .fg(THEME.purple)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
             Line::from(vec![
-                Span::raw(" "),
-                Span::styled("Enter", Style::default().fg(THEME.cyan)),
-                Span::styled("  Send message", Style::default().fg(THEME.fg)),
-            ]),
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("Ctrl+↵", Style::default().fg(THEME.cyan)),
-                Span::styled("  New line", Style::default().fg(THEME.fg)),
-            ]),
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("↑/↓", Style::default().fg(THEME.cyan)),
-                Span::styled("    History", Style::default().fg(THEME.fg)),
-            ]),
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("PgUp", Style::default().fg(THEME.cyan)),
-                Span::styled("  Scroll up", Style::default().fg(THEME.fg)),
-            ]),
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("PgDn", Style::default().fg(THEME.cyan)),
-                Span::styled("  Scroll down", Style::default().fg(THEME.fg)),
+                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled("SHORTCUTS", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
             ]),
             Line::from(""),
-            Line::from(Span::styled(
-                " Sidebar",
-                Style::default()
-                    .fg(THEME.purple)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
             Line::from(vec![
-                Span::raw(" "),
-                Span::styled("⌘B", Style::default().fg(THEME.cyan)),
-                Span::styled("   File tree", Style::default().fg(THEME.fg)),
+                Span::styled("   Enter ", Style::default().fg(THEME.cyan)),
+                Span::styled(" Send", Style::default().fg(THEME.comment)),
             ]),
             Line::from(vec![
-                Span::raw(" "),
-                Span::styled("⌥B", Style::default().fg(THEME.cyan)),
-                Span::styled("   This help", Style::default().fg(THEME.fg)),
-            ]),
-            Line::from(""),
-            Line::from(Span::styled(
-                " General",
-                Style::default()
-                    .fg(THEME.purple)
-                    .add_modifier(Modifier::BOLD),
-            )),
-            Line::from(""),
-            Line::from(vec![
-                Span::raw(" "),
-                Span::styled("Esc", Style::default().fg(THEME.cyan)),
-                Span::styled("   Collapse", Style::default().fg(THEME.fg)),
+                Span::styled("   A-Enter ", Style::default().fg(THEME.cyan)),
+                Span::styled(" New Line", Style::default().fg(THEME.comment)),
             ]),
             Line::from(vec![
-                Span::raw(" "),
-                Span::styled("q", Style::default().fg(THEME.cyan)),
-                Span::styled("     Exit", Style::default().fg(THEME.fg)),
+                Span::styled("   Up/Down ", Style::default().fg(THEME.cyan)),
+                Span::styled(" History", Style::default().fg(THEME.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled("SIDEBAR", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   ^B ", Style::default().fg(THEME.cyan)),
+                Span::styled(" Files", Style::default().fg(THEME.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   !H ", Style::default().fg(THEME.cyan)),
+                Span::styled(" Help", Style::default().fg(THEME.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled("SYSTEM", Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   Esc ", Style::default().fg(THEME.cyan)),
+                Span::styled(" Collapse", Style::default().fg(THEME.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   ^C ", Style::default().fg(THEME.cyan)),
+                Span::styled(" Exit", Style::default().fg(THEME.comment)),
             ]),
         ];
 
         let paragraph = Paragraph::new(lines).block(
             Block::default()
-                .title(" Help ")
+                .title(" COMMANDS ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.purple)
+                        .fg(THEME.comment)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::RIGHT)
