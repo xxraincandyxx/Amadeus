@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
-use amadeus::agent::supervisor::{Supervisor, SupervisorConfig, DispatchStrategy};
-use amadeus::agent::worker::{WorkerConfig, Task};
 use amadeus::agent::messages::{ContentBlock, Message};
+use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+use amadeus::agent::worker::{Task, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
 use async_trait::async_trait;
@@ -23,16 +23,28 @@ struct StoryClient {
 
 #[async_trait]
 impl LLMClient for StoryClient {
-    async fn create_message(&self, _: &str, _: &[Message], _: &[serde_json::Value], _: u32) -> Result<(String, Vec<ContentBlock>)> {
+    async fn create_message(
+        &self,
+        _: &str,
+        _: &[Message],
+        _: &[serde_json::Value],
+        _: u32,
+    ) -> Result<(String, Vec<ContentBlock>)> {
         Ok(("end_turn".to_string(), vec![]))
     }
 
-    async fn create_message_stream(&self, _: &str, _: &[Message], _: &[serde_json::Value], _: u32) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+    async fn create_message_stream(
+        &self,
+        _: &str,
+        _: &[Message],
+        _: &[serde_json::Value],
+        _: u32,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let mut turn = self.turn.lock().await;
         *turn += 1;
 
         let mut events = Vec::new();
-        
+
         match (self.role.as_str(), *turn) {
             // --- PRODUCT MANAGER TURN 1 ---
             ("PM", 1) => {
@@ -41,21 +53,32 @@ impl LLMClient for StoryClient {
 
             // --- CODER TURNS ---
             ("Coder", 1) => {
-                events.push(Ok(StreamEvent::TextDelta("Implementation started. I need to clarify the overflow behavior with the PM.".to_string())));
-                events.push(Ok(StreamEvent::ToolCallStart { id: "pm_consult".into(), name: "call_peer".into() }));
-                events.push(Ok(StreamEvent::ToolCallDelta { 
+                events.push(Ok(StreamEvent::TextDelta(
+                    "Implementation started. I need to clarify the overflow behavior with the PM."
+                        .to_string(),
+                )));
+                events.push(Ok(StreamEvent::ToolCallStart {
+                    id: "pm_consult".into(),
+                    name: "call_peer".into(),
+                }));
+                events.push(Ok(StreamEvent::ToolCallDelta {
                     arguments: json!({"task": "Should the Calculator handle integer overflow or return an error?", "capabilities": ["product"]}).to_string() 
                 }));
                 events.push(Ok(StreamEvent::ToolCallDone("pm_consult".into())));
                 events.push(Ok(StreamEvent::StopReason("tool_use".into())));
             }
             ("Coder", 2) => {
-                events.push(Ok(StreamEvent::TextDelta("Understood. PM said to handle it gracefully. I've implemented the Calculator.".to_string())));
+                events.push(Ok(StreamEvent::TextDelta(
+                    "Understood. PM said to handle it gracefully. I've implemented the Calculator."
+                        .to_string(),
+                )));
             }
 
             // --- PM RESPONSE TO CODER ---
             ("PM", 2) => {
-                events.push(Ok(StreamEvent::TextDelta("The Calculator should return an 'Error' string on overflow.".to_string())));
+                events.push(Ok(StreamEvent::TextDelta(
+                    "The Calculator should return an 'Error' string on overflow.".to_string(),
+                )));
             }
 
             // --- REVIEWER TURN 1 ---
@@ -88,32 +111,58 @@ fn create_test_config() -> Arc<Config> {
 
 #[tokio::test]
 async fn test_e2e_product_development_flow() {
-    println!("
-🎭 --- STARTING E2E PRODUCT DEVELOPMENT FLOW --- 🎭");
-    
+    println!(
+        "
+🎭 --- STARTING E2E PRODUCT DEVELOPMENT FLOW --- 🎭"
+    );
+
     let mut config = SupervisorConfig::default();
     config.strategy = DispatchStrategy::CapabilityMatch;
 
     let mut supervisor = Supervisor::new(
-        StoryClient { role: "Base".into(), turn: Arc::new(Mutex::new(0)) }, 
-        config, 
-        create_test_config()
+        StoryClient {
+            role: "Base".into(),
+            turn: Arc::new(Mutex::new(0)),
+        },
+        config,
+        create_test_config(),
     );
-    
+
     // 1. Setup the Team
     println!("👥 Spawning the product team...");
-    
-    supervisor.spawn_with_client(vec![
-        WorkerConfig::new("Alice (PM)").capability("product")
-    ], StoryClient { role: "PM".into(), turn: Arc::new(Mutex::new(0)) }).await.unwrap();
 
-    supervisor.spawn_with_client(vec![
-        WorkerConfig::new("Bob (Coder)").capability("code")
-    ], StoryClient { role: "Coder".into(), turn: Arc::new(Mutex::new(0)) }).await.unwrap();
+    supervisor
+        .spawn_with_client(
+            vec![WorkerConfig::new("Alice (PM)").capability("product")],
+            StoryClient {
+                role: "PM".into(),
+                turn: Arc::new(Mutex::new(0)),
+            },
+        )
+        .await
+        .unwrap();
 
-    supervisor.spawn_with_client(vec![
-        WorkerConfig::new("Charlie (Reviewer)").capability("review")
-    ], StoryClient { role: "Reviewer".into(), turn: Arc::new(Mutex::new(0)) }).await.unwrap();
+    supervisor
+        .spawn_with_client(
+            vec![WorkerConfig::new("Bob (Coder)").capability("code")],
+            StoryClient {
+                role: "Coder".into(),
+                turn: Arc::new(Mutex::new(0)),
+            },
+        )
+        .await
+        .unwrap();
+
+    supervisor
+        .spawn_with_client(
+            vec![WorkerConfig::new("Charlie (Reviewer)").capability("review")],
+            StoryClient {
+                role: "Reviewer".into(),
+                turn: Arc::new(Mutex::new(0)),
+            },
+        )
+        .await
+        .unwrap();
 
     let supervisor = Arc::new(supervisor);
     let supervisor_clone = Arc::clone(&supervisor);
@@ -122,43 +171,59 @@ async fn test_e2e_product_development_flow() {
     });
 
     // 2. The Narrative
-    
+
     // Turn A: PM Plans
-    println!("
-📋 Phase 1: Planning");
-    let plan_task = Task::new("plan-1", "Design the Calculator feature")
-        .requires(vec!["product".into()]);
+    println!(
+        "
+📋 Phase 1: Planning"
+    );
+    let plan_task =
+        Task::new("plan-1", "Design the Calculator feature").requires(vec!["product".into()]);
     let plan_res = supervisor.execute(plan_task).await.unwrap();
     println!("   PM Response: {}", plan_res.output.as_ref().unwrap());
 
     // Turn B: Coder Implements (includes a P2P call back to PM)
-    println!("
-💻 Phase 2: Implementation (Bob working...)");
+    println!(
+        "
+💻 Phase 2: Implementation (Bob working...)"
+    );
     let code_task = Task::new("code-1", "Implement the Calculator as per the PM's plan")
         .requires(vec!["code".into()]);
     let code_res = supervisor.execute(code_task).await.unwrap();
     println!("   Coder Result: {}", code_res.output.as_ref().unwrap());
 
     // Turn C: Reviewer Verifies
-    println!("
-🔍 Phase 3: Review (Charlie checking...)");
+    println!(
+        "
+🔍 Phase 3: Review (Charlie checking...)"
+    );
     let review_task = Task::new("review-1", "Verify the Calculator implementation")
         .requires(vec!["review".into()]);
     let review_res = supervisor.execute(review_task).await.unwrap();
-    println!("   Reviewer Result: {}", review_res.output.as_ref().unwrap());
+    println!(
+        "   Reviewer Result: {}",
+        review_res.output.as_ref().unwrap()
+    );
 
     // 3. Verification
-    println!("
-🏁 --- E2E FLOW COMPLETE --- 🏁");
-    
+    println!(
+        "
+🏁 --- E2E FLOW COMPLETE --- 🏁"
+    );
+
     assert!(plan_res.success);
     assert!(code_res.success);
     assert!(review_res.success);
-    
+
     // Verify specific story points
-    assert!(code_res.output.unwrap().contains("PM said to handle it gracefully"));
+    assert!(code_res
+        .output
+        .unwrap()
+        .contains("PM said to handle it gracefully"));
     assert!(review_res.output.unwrap().contains("Approved"));
 
-    println!("
-✅ All phases completed successfully. Team collaboration verified.");
+    println!(
+        "
+✅ All phases completed successfully. Team collaboration verified."
+    );
 }

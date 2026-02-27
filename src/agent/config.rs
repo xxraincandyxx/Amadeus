@@ -425,6 +425,7 @@ impl Config {
             blocked_commands,
 
             session_log_dir,
+            session_log_compress,
         })
     }
 

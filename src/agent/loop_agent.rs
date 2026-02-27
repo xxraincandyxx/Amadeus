@@ -94,7 +94,9 @@ pub struct Agent<C: LLMClient> {
 impl<C: LLMClient + Clone + 'static> Agent<C> {
     /// Create a new agent with default tools.
     pub fn new(client: C, config: Arc<Config>) -> Self {
-        AgentBuilder::new(client, config).with_default_tools().build()
+        AgentBuilder::new(client, config)
+            .with_default_tools()
+            .build()
     }
 
     /// Create an AgentBuilder for custom configuration.
@@ -108,6 +110,10 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     pub fn history(&self) -> Arc<RwLock<Vec<Message>>> {
         Arc::clone(&self.history)
+    }
+
+    pub fn config(&self) -> Arc<Config> {
+        Arc::clone(&self.config)
     }
 
     /// Run a single turn with a prompt and return the result.
@@ -160,7 +166,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             while should_continue {
                 turn_count += 1;
                 debug!(turn = turn_count, "Starting agent turn");
-                
+
                 let mut stream = {
                     let history_guard = history.read().await;
                     client

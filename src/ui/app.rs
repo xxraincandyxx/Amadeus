@@ -6,13 +6,13 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     Terminal,
 };
 use tokio::sync::mpsc;
-use futures::StreamExt;
 
 use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
@@ -97,7 +97,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     async fn save_session_log(&self) -> Result<()> {
         let config = self.agent.config();
-        let log_dir = match &config.session_log_dir {
+        let log_dir: &std::path::PathBuf = match &config.session_log_dir {
             Some(dir) => dir,
             None => return Ok(()),
         };
@@ -118,9 +118,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if config.session_log_compress {
             let filename = format!("session-{}.json.gz", timestamp);
             let path = log_dir.join(filename);
-            
-            use flate2::Compression;
+
             use flate2::write::GzEncoder;
+            use flate2::Compression;
             use std::io::Write;
 
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
@@ -469,7 +469,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 let mut history = history_arc.write().await;
                 history.push(crate::agent::messages::Message::user(&prompt));
             }
-            
+
             let mut stream = agent.run_stream();
             while let Some(event) = stream.next().await {
                 match event {
@@ -484,11 +484,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     }
                     Err(e) => {
                         let error_msg = e.to_string();
-                        let _ = tx
-                            .send(AgentEvent::Error {
-                                message: error_msg,
-                            })
-                            .await;
+                        let _ = tx.send(AgentEvent::Error { message: error_msg }).await;
                         break;
                     }
                 }

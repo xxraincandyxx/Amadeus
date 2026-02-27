@@ -56,7 +56,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # Core primitives
 uuid = { version = "1.10", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
 
 # Optional: HTTP server
 axum = { version = "0.7", optional = true }
