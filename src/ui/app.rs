@@ -83,11 +83,43 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let res = self.run_loop(&mut terminal, &mut events).await;
 
+        // Save session log before exiting
+        if let Err(e) = self.save_session_log().await {
+            eprintln!("Failed to save session log: {}", e);
+        }
+
         disable_raw_mode()?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
         terminal.show_cursor()?;
 
         res
+    }
+
+    async fn save_session_log(&self) -> Result<()> {
+        let config = self.agent.config();
+        let log_dir = match &config.session_log_dir {
+            Some(dir) => dir,
+            None => return Ok(()),
+        };
+
+        if !log_dir.exists() {
+            std::fs::create_dir_all(log_dir)?;
+        }
+
+        let history_arc = self.agent.history();
+        let history = history_arc.read().await;
+        if history.is_empty() {
+            return Ok(());
+        }
+
+        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let filename = format!("session-{}.json", timestamp);
+        let path = log_dir.join(filename);
+
+        let json = serde_json::to_string_pretty(&*history)?;
+        std::fs::write(&path, json)?;
+
+        Ok(())
     }
 
     async fn run_loop(

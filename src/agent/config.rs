@@ -165,6 +165,14 @@ pub struct Config {
     // Default: ["rm -rf /"] (only the most dangerous)
     // Can be extended via BLOCKED_COMMANDS env var (comma-separated)
     pub blocked_commands: Vec<String>,
+
+    // -------------------------------------------------------------------------
+    // Logging Settings
+    // -------------------------------------------------------------------------
+
+    // Optional directory to save session logs
+    // If set, each session's history will be saved as a JSON file here.
+    pub session_log_dir: Option<PathBuf>,
 }
 
 /*
@@ -373,6 +381,12 @@ impl Config {
             .unwrap_or_else(|| vec!["rm -rf /".to_string()]);
 
         // ---------------------------------------------------------------------
+        // PARSE SESSION LOG DIR
+        // ---------------------------------------------------------------------
+
+        let session_log_dir = env::var("SESSION_LOG_DIR").ok().map(PathBuf::from);
+
+        // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG
         // ---------------------------------------------------------------------
 
@@ -402,6 +416,8 @@ impl Config {
             // v2: Tool settings
             max_output_bytes,
             blocked_commands,
+
+            session_log_dir,
         })
     }
 
