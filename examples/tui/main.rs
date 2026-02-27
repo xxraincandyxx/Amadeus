@@ -20,14 +20,16 @@ async fn main() -> Result<()> {
     let workdir = config.workdir.clone();
     let model = config.model.clone();
 
-    let agent = match config.provider {
+    match config.provider {
         Provider::Anthropic => {
             let client = AnthropicClient::new(
                 config.api_key.clone(),
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            Agent::new(client, Arc::clone(&config))
+            let agent = Agent::new(client, Arc::clone(&config));
+            let mut app = App::new(agent, workdir, model);
+            app.run().await?;
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -35,12 +37,11 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            Agent::new(client, Arc::clone(&config))
+            let agent = Agent::new(client, Arc::clone(&config));
+            let mut app = App::new(agent, workdir, model);
+            app.run().await?;
         }
     };
-
-    let mut app = App::new(agent, workdir, model);
-    app.run().await?;
 
     Ok(())
 }

@@ -12,6 +12,7 @@ use ratatui::{
     Terminal,
 };
 use tokio::sync::mpsc;
+use futures::StreamExt;
 
 use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
@@ -418,7 +419,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let handle = tokio::spawn(async move {
             // Add to history first
             {
-                let mut history = agent.history().write().await;
+                let history_arc = agent.history();
+                let mut history = history_arc.write().await;
                 history.push(crate::agent::messages::Message::user(&prompt));
             }
             
@@ -435,9 +437,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         }
                     }
                     Err(e) => {
+                        let error_msg = e.to_string();
                         let _ = tx
                             .send(AgentEvent::Error {
-                                message: e.to_string(),
+                                message: error_msg,
                             })
                             .await;
                         break;

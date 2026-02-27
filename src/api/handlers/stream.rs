@@ -128,7 +128,8 @@ where
 {
     // Add to history
     {
-        let mut h = agent.history().write().await;
+        let h_arc = agent.history();
+        let mut h = h_arc.write().await;
         h.push(Message::user(message));
     }
 
