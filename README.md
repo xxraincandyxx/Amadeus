@@ -94,6 +94,8 @@ let result = supervisor.execute(task).await?;
 ## Documentation
 
 - **[ARCHITECTURE.md](docs/ARCHITECTURE-V3.md)** - Actor-based agents, concurrency, and backpressure.
+- **[TUI_GUIDE.md](docs/TUI_GUIDE.md)** - Guide to using the modernized terminal interface.
+- **[REST_API.md](docs/REST_API.md)** - Comprehensive reference for the Axum REST APIs.
 - **[SDK_SCOPE.md](docs/SDK_SCOPE.md)** - Definition of SDK vs. Platform responsibilities.
 - **[INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md)** - How to build platforms (like NeuroCore) on top of Amadeus.
 - **[TEST_FLOW.md](docs/TEST_FLOW.md)** - Guide to the internal testing architecture.
