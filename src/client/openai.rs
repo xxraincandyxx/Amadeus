@@ -107,6 +107,31 @@ impl OpenAIClient {
         }
     }
 
+    /// Build the full URL for chat completions, handling custom base URLs gracefully.
+    fn build_url(&self) -> String {
+        let base = self.base_url.trim_end_matches('/');
+
+        // If the base URL already looks like a full endpoint, use it as is
+        if base.ends_with("/chat/completions") {
+            return base.to_string();
+        }
+
+        // Check if the base URL ends with a version identifier (e.g., /v1, /v4)
+        // This is common for OpenAI-compatible providers like Zhipu AI (BigModel)
+        let has_version = base
+            .split('/')
+            .next_back()
+            .map(|s| s.starts_with('v') && s[1..].chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or(false);
+
+        if has_version {
+            format!("{}/chat/completions", base)
+        } else {
+            // Default to the standard OpenAI path structure
+            format!("{}/v1/chat/completions", base)
+        }
+    }
+
     /// Transform Anthropic-style tools to OpenAI format.
     ///
     /// OpenAI wraps tool definitions differently:
@@ -418,8 +443,8 @@ impl LLMClient for OpenAIClient {
         tools: &[Value],
         max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)> {
-        // Build URL
-        let url = format!("{}/v1/chat/completions", self.base_url);
+        // Build URL using helper to handle versioning correctly
+        let url = self.build_url();
 
         // Transform inputs for OpenAI format
         let openai_messages = Self::prepare_messages(system, messages);
@@ -475,7 +500,7 @@ impl LLMClient for OpenAIClient {
         tools: &[Value],
         max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        let url = format!("{}/v1/chat/completions", self.base_url);
+        let url = self.build_url();
 
         let openai_messages = Self::prepare_messages(system, messages);
         let openai_tools = Self::transform_tools(tools);
