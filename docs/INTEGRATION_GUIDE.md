@@ -8,24 +8,24 @@ This document defines the integration between Amadeus SDK and NeuroCore Platform
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        NeuroCore                                 │
-│                     (Agent Platform)                             │
+│                        NeuroCore                                │
+│                     (Agent Platform)                            │
 │                                                                 │
-│  Sessions │ Memory │ Adapters │ HTTP API │ Plugins │ UI        │
+│  Sessions │ Memory │ Adapters │ HTTP API │ Plugins │ UI         │
 │                                                                 │
-│  "When to run, what context, where to send results"            │
+│  "When to run, what context, where to send results"             │
 │                                                                 │
 └───────────────────────────┬─────────────────────────────────────┘
                             │
                             │ uses
                             │
 ┌───────────────────────────▼─────────────────────────────────────┐
-│                        Amadeus                                   │
-│                      (Agent SDK)                                 │
+│                        Amadeus                                  │
+│                      (Agent SDK)                                │
 │                                                                 │
 │  Agent Loop │ Tools │ LLM Clients │ Streaming                   │
 │                                                                 │
-│  "How to run, how to call LLM, how to execute tools"           │
+│  "How to run, how to call LLM, how to execute tools"            │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```

@@ -34,28 +34,28 @@ The SDK provides the core building blocks for building AI agents. It does NOT ma
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Platform Layer                           │
-│  (NeuroCore, or custom implementation)                       │
+│                     Platform Layer                          │
+│  (NeuroCore, or custom implementation)                      │
 │                                                             │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
-│  │ Session     │ │ Memory      │ │ Platform Adapters   │   │
-│  │ Manager     │ │ Engine      │ │ Discord/Telegram    │   │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐    │
+│  │ Session     │ │ Memory      │ │ Platform Adapters   │    │
+│  │ Manager     │ │ Engine      │ │ Discord/Telegram    │    │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘    │
 │                                                             │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
-│  │ HTTP API    │ │ Plugin Sys  │ │ UI (Web/TUI/Desktop)│   │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐    │
+│  │ HTTP API    │ │ Plugin Sys  │ │ UI (Web/TUI/Desktop)│    │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘    │
 │                                                             │
 └───────────────────────────┬─────────────────────────────────┘
                             │ uses
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│                     Amadeus SDK                              │
+│                     Amadeus SDK                             │
 │                                                             │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐   │
-│  │ Agent Loop  │ │ Tool System │ │ LLM Clients         │   │
-│  │ (ReAct)     │ │ (Registry)  │ │ Anthropic/OpenAI    │   │
-│  └─────────────┘ └─────────────┘ └─────────────────────┘   │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────────────┐    │
+│  │ Agent Loop  │ │ Tool System │ │ LLM Clients         │    │
+│  │ (ReAct)     │ │ (Registry)  │ │ Anthropic/OpenAI    │    │
+│  └─────────────┘ └─────────────┘ └─────────────────────┘    │
 │                                                             │
 │  No state, no persistence, no platform knowledge            │
 │                                                             │
@@ -77,9 +77,9 @@ pub struct Agent<C: LLMClient> {
 impl<C: LLMClient> Agent<C> {
     /// Run a single turn
     pub async fn run(&self, prompt: &str, history: &[Message]) -> Result<RunResult>;
-    
+
     /// Run with streaming
-    pub async fn run_stream(&self, prompt: &str, history: &[Message]) 
+    pub async fn run_stream(&self, prompt: &str, history: &[Message])
         -> impl Stream<Item = AgentEvent>;
 }
 
@@ -120,7 +120,7 @@ pub trait LLMClient: Send + Sync {
         tools: &[ToolSchema],
         max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)>;
-    
+
     async fn create_message_stream(
         &self,
         system: &str,
