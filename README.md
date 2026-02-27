@@ -1,125 +1,102 @@
-# Amadeus - AI Coding Agent
+# Amadeus - AI Agent SDK
 
-**Bash is all you need.** A minimal AI coding agent implementation in Rust.
+**Bash is all you need.** A high-performance, modular AI agent SDK implemented in Rust.
 
 ## Philosophy
 
-This project demonstrates that **one tool is sufficient** for a fully functional AI coding agent. With bash, the model can:
-- Read files: `cat`, `grep`, `head`, `tail`, `rg`, `ls`
-- Write files: `echo '...' > file`, `sed`, `cat << 'EOF' > file`
-- Execute any command: `python`, `npm`, `make`, `cargo`, etc.
-- Spawn subagents: `cargo run -- "task description"` for isolated context
+Amadeus is an **Agent SDK**, designed to be the core engine for AI applications. It follows a minimalist "Bash-first" philosophy, where a single robust tool enables the agent to perform almost any computing task.
+
+The SDK focuses on the **Agent Loop (ReAct)**, **LLM Orchestration**, and **High-Performance Tool Execution**, leaving platform concerns like session management and UI to the integration layer.
 
 ## Features
 
-- **Multi-provider support** - Anthropic and OpenAI APIs with unified interface
-- **Single bash tool** - Covers all file operations and command execution
-- **Recursive subagents** - Spawn isolated agents for complex tasks
-- **Async architecture** - Based on Tokio for non-blocking I/O
-- **Real-time streaming** - Live text updates and tool execution feedback
-- **Type-safe** - Strong error handling with `Result<T>` and `thiserror`
-- **Dracula-themed TUI** - Beautiful terminal interface with ratatui
+- **Modular SDK Architecture** - Gated by feature flags (`tui`, `api`, `supervisor`) to keep dependencies minimal.
+- **Multi-Agent Orchestration** - Reactive `Supervisor` with task queuing, backpressure, and load balancing.
+- **P2P Collaboration** - Agents can recursively delegate sub-tasks to peers with specific capabilities.
+- **Multi-Provider Support** - Native clients for Anthropic and OpenAI with a unified interface.
+- **High-Performance Bash Tool** - Surgical file operations and command execution with timeout and output management.
+- **Modern Dracula TUI** - A sleek, event-driven terminal interface for rapid testing and interaction.
+- **Production-Ready** - Built on Tokio with comprehensive error handling and thread-safe concurrency.
 
 ## Quick Start
 
-```bash
-# 1. Install dependencies
-cargo install --locked
+### Installation
 
-# 2. Configure API key
+```bash
+# Clone the repository
+git clone https://github.com/xxraincandyxx/Amadeus.git
+cd amadeus
+
+# Setup environment
 cp .env.example .env
-# Edit .env with your ANTHROPIC_API_KEY or OPENAI_API_KEY
-
-# 3. Interactive TUI mode
-cargo run
-
-# 4. Use OpenAI instead
-PROVIDER=openai cargo run
-
-# 5. Subagent mode (single task)
-cargo run -- "echo hello world and tell me the output"
+# Add your ANTHROPIC_API_KEY or OPENAI_API_KEY to .env
 ```
 
-## Configuration
+### Usage Modes
 
-Environment variables in `.env` file:
-
-| Variable | Required | Default | Description |
-|----------|-----------|---------|-------------|
-| `PROVIDER` | No | `anthropic` | AI provider: `anthropic` or `openai` |
-| `ANTHROPIC_API_KEY` | Yes* | - | Anthropic API key |
-| `ANTHROPIC_BASE_URL` | No | https://api.anthropic.com | Anthropic API endpoint |
-| `OPENAI_API_KEY` | Yes* | - | OpenAI API key |
-| `OPENAI_BASE_URL` | No | https://api.openai.com | OpenAI API endpoint |
-| `MODEL_ID` | No | Provider default | Model to use |
-| `MAX_OUTPUT_BYTES` | No | 50000 | Max tool output size |
-| `BLOCKED_COMMANDS` | No | rm -rf / | Comma-separated blocked commands |
-
-*At least one provider API key required.
-
-## Testing
-
+#### 1. Interactive TUI (Human-in-the-loop)
 ```bash
-# Run all tests
-cargo test
-
-# Run specific test file
-cargo test --test bash_test
-
-# Run with output
-cargo test -- --nocapture
-
-# Lint check
-cargo check
+cargo run --example tui --features tui
 ```
 
-## Documentation
+#### 2. Single Task CLI
+```bash
+cargo run -- "List the files in the current directory and summarize the project structure"
+```
 
-- **[ARCHITECTURE.md](ARCHITECTURE.md)** - Detailed technical documentation, design patterns
-- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Development guide, working theory
-- **[AGENTS.md](AGENTS.md)** - Guide for AI agents working in this codebase
+#### 3. HTTP API Server
+```bash
+cargo run --example server --features api
+```
+
+## SDK Integration
+
+### Basic Agent
+```rust
+use amadeus::{AgentBuilder, OpenAIClient, Config};
+
+let sdk_config = Arc::new(Config::load()?);
+let client = OpenAIClient::new(api_key, None, model);
+
+let agent = AgentBuilder::new(client, sdk_config)
+    .with_default_tools() // Includes Bash and File tools
+    .build();
+
+let result = agent.run("Write a rust function to calculate fibonacci").await?;
+println!("Result: {}", result.text);
+```
+
+### Multi-Agent Supervisor
+```rust
+let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config);
+
+// Spawn specialized workers
+supervisor.spawn(vec![
+    WorkerConfig::new("Coder").capability("rust").capability("bash"),
+    WorkerConfig::new("Reviewer").capability("security"),
+]).await?;
+
+// Execute tasks via the supervisor
+let task = Task::new("task-1", "Implement a secure API endpoint")
+    .requires(vec!["rust".into()]);
+let result = supervisor.execute(task).await?;
+```
 
 ## Project Structure
 
-```
-src/
-├── main.rs              # CLI entry point
-├── lib.rs               # Library exports
-├── error.rs             # Custom error types (thiserror)
-├── agent/
-│   ├── mod.rs
-│   ├── config.rs        # Environment-based configuration
-│   ├── messages.rs      # Message types with serde
-│   └── loop_agent.rs   # Core agent loop (streaming + non-streaming)
-├── client/
-│   ├── mod.rs           # LLMClient trait (generic provider abstraction)
-│   ├── anthropic.rs     # Anthropic API implementation
-│   └── openai.rs        # OpenAI API implementation
-├── tools/
-│   ├── mod.rs
-│   ├── bash.rs          # Async bash executor with timeout
-│   └── schema.rs        # Tool schemas (JSON)
-└── ui/
-    ├── colors.rs        # Dracula theme palette
-    └── repl.rs          # Interactive REPL
+- `src/agent/` - Core ReAct loop, Supervisor orchestration, and Worker logic.
+- `src/client/` - LLM provider implementations (Anthropic, OpenAI).
+- `src/tools/` - Extensible tool system (Bash, Peer delegation, File ops).
+- `src/ui/` - Modern Dracula-themed TUI components.
+- `src/api/` - Axum-based HTTP handlers for SDK-as-a-service.
+- `tests/` - Comprehensive test suite including P2P simulations and E2E flows.
 
-tests/                    # Integration tests
-├── bash_test.rs
-├── agent_test.rs
-├── config_test.rs
-└── messages_test.rs
-```
+## Documentation
 
-## Comparison with Python Reference
-
-| Feature | Python v0 | Rust v0 |
-|---------|-----------|----------|
-| Lines of code | ~50 | ~200 |
-| Async | No | Yes (Tokio) |
-| Type safety | Dynamic | Strong |
-| Error handling | String returns | `Result<T>` |
-| Concurrency | No | Yes |
-| Tool count | 1 (bash) | 1 (bash) |
+- **[ARCHITECTURE.md](docs/ARCHITECTURE-V3.md)** - Actor-based agents, concurrency, and backpressure.
+- **[SDK_SCOPE.md](docs/SDK_SCOPE.md)** - Definition of SDK vs. Platform responsibilities.
+- **[INTEGRATION_GUIDE.md](docs/INTEGRATION_GUIDE.md)** - How to build platforms (like NeuroCore) on top of Amadeus.
+- **[TEST_FLOW.md](docs/TEST_FLOW.md)** - Guide to the internal testing architecture.
 
 ## License
 
