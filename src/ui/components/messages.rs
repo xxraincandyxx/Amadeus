@@ -7,7 +7,6 @@ use ratatui::{
     widgets::{Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState},
     Frame,
 };
-use unicode_width::UnicodeWidthStr;
 
 use crate::ui::colors::THEME;
 use crate::ui::components::markdown::render_markdown;

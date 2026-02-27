@@ -65,10 +65,10 @@ impl StatusBar {
         }
 
         let (status_icon, status_color, status_text) = match self.state {
-            AppState::Idle => (" ● ", THEME.comment, "IDLE"),
+            AppState::Idle => (" ● ".to_string(), THEME.comment, "IDLE"),
             AppState::Processing => (format!(" {} ", self.get_spinner()), THEME.cyan, "BUSY"),
-            AppState::Success => (" ✓ ", THEME.green, "DONE"),
-            AppState::Error => (" ✗ ", THEME.red, "ERR "),
+            AppState::Success => (" ✓ ".to_string(), THEME.green, "DONE"),
+            AppState::Error => (" ✗ ".to_string(), THEME.red, "ERR "),
         };
 
         let mut left_spans = vec![

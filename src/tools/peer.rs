@@ -2,15 +2,22 @@
 //!
 //! Allows agents to request assistance from other workers in the swarm.
 
+#[cfg(feature = "supervisor")]
 use async_trait::async_trait;
+#[cfg(feature = "supervisor")]
 use serde_json::{json, Value};
+#[cfg(feature = "supervisor")]
 use tokio::sync::{mpsc, oneshot};
+#[cfg(feature = "supervisor")]
 use tracing::{debug, info};
 
 #[cfg(feature = "supervisor")]
 use crate::agent::worker::{HelpRequest, Task};
+#[cfg(feature = "supervisor")]
 use crate::core::id::AgentId;
+#[cfg(feature = "supervisor")]
 use crate::error::{AgentError, Result};
+#[cfg(feature = "supervisor")]
 use crate::tools::tool_trait::Tool;
 
 /// A tool that delegates tasks to other agents.
