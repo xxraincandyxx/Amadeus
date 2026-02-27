@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use crossterm::{
@@ -12,11 +11,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     Terminal,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::mpsc;
 
 use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
-use crate::agent::messages::Message;
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::colors::THEME;
@@ -38,7 +36,6 @@ pub enum AppMode {
 
 pub struct App<C: LLMClient> {
     agent: Agent<C>,
-    history: Arc<RwLock<Vec<Message>>>,
     mode: AppMode,
     messages: MessagesComponent,
     input: InputComponent,
@@ -55,12 +52,10 @@ pub struct App<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
-        let history = Arc::new(RwLock::new(Vec::new()));
         let status = StatusBar::new(model_name);
 
         Self {
             agent,
-            history,
             mode: AppMode::Input,
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
@@ -416,20 +411,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.current_text.clear();
         self.status.set_state(AppState::Processing);
 
-        {
-            let mut history = self.history.write().await;
-            history.push(Message::user(trimmed));
-        }
-
         let agent = self.agent.clone();
-        let history = Arc::clone(&self.history);
+        let prompt = trimmed.to_string();
 
         let (tx, rx) = mpsc::channel(64);
         let handle = tokio::spawn(async move {
-            let stream = agent.run_stream(history);
-            futures::pin_mut!(stream);
-
-            use futures::StreamExt;
+            // Add to history first
+            {
+                let mut history = agent.history().write().await;
+                history.push(crate::agent::messages::Message::user(&prompt));
+            }
+            
+            let mut stream = agent.run_stream();
             while let Some(event) = stream.next().await {
                 match event {
                     Ok(e) => {

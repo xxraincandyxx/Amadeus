@@ -4,8 +4,6 @@
 //! It demonstrates SDK usage and tests performance.
 
 use std::sync::Arc;
-use tokio::sync::RwLock;
-
 use anyhow::Result;
 
 use amadeus::{
@@ -22,16 +20,14 @@ async fn main() -> Result<()> {
     let workdir = config.workdir.clone();
     let model = config.model.clone();
 
-    match config.provider {
+    let agent = match config.provider {
         Provider::Anthropic => {
             let client = AnthropicClient::new(
                 config.api_key.clone(),
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, Arc::clone(&config));
-            let mut app = App::new(agent, workdir, model);
-            app.run().await?;
+            Agent::new(client, Arc::clone(&config))
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -39,11 +35,12 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let agent = Agent::new(client, Arc::clone(&config));
-            let mut app = App::new(agent, workdir, model);
-            app.run().await?;
+            Agent::new(client, Arc::clone(&config))
         }
     };
+
+    let mut app = App::new(agent, workdir, model);
+    app.run().await?;
 
     Ok(())
 }

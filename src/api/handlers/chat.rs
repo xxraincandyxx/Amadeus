@@ -5,7 +5,6 @@
 use std::sync::Arc;
 
 use axum::Json;
-use tokio::sync::RwLock;
 
 use crate::agent::config::{Config, Provider};
 use crate::agent::loop_agent::Agent;
@@ -77,9 +76,7 @@ async fn run_agent<C>(
 where
     C: crate::client::LLMClient + Clone + 'static,
 {
-    let history = Arc::new(RwLock::new(Vec::new()));
-
-    match agent.run(message, history).await {
+    match agent.run(message).await {
         Ok(result) => Ok(Json(ChatResponse {
             content: result.text,
             tool_calls: result

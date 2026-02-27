@@ -99,8 +99,7 @@ fn create_test_config() -> Arc<Config> {
 
 #[tokio::test]
 async fn test_agent_functional_loop() {
-    println!("
-🎭 AMADEUS AGENT - FUNCTIONAL SIMULATION 🎭");
+    println!("\n🎭 AMADEUS AGENT - FUNCTIONAL SIMULATION 🎭");
     println!("============================================");
     
     let mock_responses = vec![
@@ -123,11 +122,17 @@ async fn test_agent_functional_loop() {
     let client = StatefulMockClient::new(mock_responses);
     let config = create_test_config();
     let agent = Agent::new(client, config);
-    let history = Arc::new(tokio::sync::RwLock::new(Vec::new()));
 
     println!("👤 USER: Run a system check.");
     
-    let mut stream = agent.run_stream(history.clone());
+    // Add to history manually as Agent.run would do
+    {
+        let history_arc = agent.history();
+        let mut history = history_arc.write().await;
+        history.push(Message::user("Run a system check."));
+    }
+
+    let mut stream = agent.run_stream();
     let mut final_text = String::new();
     let mut tool_count = 0;
 
@@ -142,8 +147,7 @@ async fn test_agent_functional_loop() {
                 io::stdout().flush().unwrap();
             }
             AgentEvent::ToolStart { name, .. } => {
-                println!("
-⚙️  AGENT REQUESTS TOOL: [{}]", name);
+                println!("\n⚙️  AGENT REQUESTS TOOL: [{}]", name);
             }
             AgentEvent::ToolComplete { output, .. } => {
                 println!("📝 TOOL OUTPUT: {}", output.trim());
@@ -151,12 +155,10 @@ async fn test_agent_functional_loop() {
                 println!("🤖 AGENT PROCESSING OUTPUT...");
             }
             AgentEvent::Done { result } => {
-                println!("
-
-🏁 SIMULATION COMPLETE");
+                println!("\n\n🏁 SIMULATION COMPLETE");
                 println!("--------------------------------------------");
                 println!("📊 Stats:");
-                println!("   - Total Turns: {}", history.read().await.len());
+                println!("   - Total Turns: {}", agent.history().read().await.len());
                 println!("   - Tools Used: {}", tool_count);
                 println!("   - Final Answer: {}", result.text);
             }
@@ -167,6 +169,5 @@ async fn test_agent_functional_loop() {
     assert_eq!(tool_count, 1);
     assert!(final_text.contains("system check is complete"));
     
-    println!("✅ Functional Simulation Passed!
-");
+    println!("✅ Functional Simulation Passed!\n");
 }

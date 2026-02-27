@@ -12,7 +12,6 @@ use axum::{
 };
 use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
-use tokio::sync::RwLock;
 
 use crate::agent::config::{Config, Provider};
 use crate::agent::events::AgentEvent;
@@ -100,12 +99,6 @@ pub async fn stream(Query(params): Query<StreamQuery>) -> Sse<BoxedSseStream> {
     };
 
     let config = Arc::new(config);
-    let history = Arc::new(RwLock::new(Vec::new()));
-
-    {
-        let mut h = history.write().await;
-        h.push(Message::user(&params.message));
-    }
 
     match config.provider {
         Provider::Anthropic => {
@@ -115,7 +108,7 @@ pub async fn stream(Query(params): Query<StreamQuery>) -> Sse<BoxedSseStream> {
                 config.model.clone(),
             );
             let agent = Agent::new(client, config);
-            create_sse_stream(agent, history)
+            create_sse_stream(agent, &params.message).await
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -124,16 +117,22 @@ pub async fn stream(Query(params): Query<StreamQuery>) -> Sse<BoxedSseStream> {
                 config.model.clone(),
             );
             let agent = Agent::new(client, config);
-            create_sse_stream(agent, history)
+            create_sse_stream(agent, &params.message).await
         }
     }
 }
 
-fn create_sse_stream<C>(agent: Agent<C>, history: Arc<RwLock<Vec<Message>>>) -> Sse<BoxedSseStream>
+async fn create_sse_stream<C>(agent: Agent<C>, message: &str) -> Sse<BoxedSseStream>
 where
     C: crate::client::LLMClient + Clone + 'static,
 {
-    let stream = agent.run_stream(history);
+    // Add to history
+    {
+        let mut h = agent.history().write().await;
+        h.push(Message::user(message));
+    }
+
+    let stream = agent.run_stream();
 
     let sse_stream = stream.filter_map(|event| async move {
         match event {

@@ -10,56 +10,118 @@ use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
-use crate::error::Result;
+use crate::error::{AgentError, Result};
 use crate::tools::bash::BashTool;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 use crate::tools::registry::ToolRegistry;
 
+/// A builder for creating an Agent.
+pub struct AgentBuilder<C: LLMClient> {
+    client: C,
+    config: Arc<Config>,
+    tools: ToolRegistry,
+    history: Option<Arc<RwLock<Vec<Message>>>>,
+}
+
+impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
+    pub fn new(client: C, config: Arc<Config>) -> Self {
+        Self {
+            client,
+            config,
+            tools: ToolRegistry::new(),
+            history: None,
+        }
+    }
+
+    /// Add default tools (bash, file operations) to the agent.
+    pub fn with_default_tools(mut self) -> Self {
+        self.tools = self
+            .tools
+            .register(Box::new(BashTool::from_config(&self.config)))
+            .register(Box::new(ReadFileTool::new(FileTools::from_config(
+                &self.config,
+            ))))
+            .register(Box::new(WriteFileTool::new(FileTools::from_config(
+                &self.config,
+            ))))
+            .register(Box::new(EditFileTool::new(FileTools::from_config(
+                &self.config,
+            ))));
+        self
+    }
+
+    /// Register a custom tool.
+    pub fn register_tool(mut self, tool: Box<dyn crate::tools::tool_trait::Tool>) -> Self {
+        self.tools = self.tools.register(tool);
+        self
+    }
+
+    /// Set a custom tool registry.
+    pub fn with_tools(mut self, tools: ToolRegistry) -> Self {
+        self.tools = tools;
+        self
+    }
+
+    /// Set an initial conversation history.
+    pub fn with_history(mut self, history: Arc<RwLock<Vec<Message>>>) -> Self {
+        self.history = Some(history);
+        self
+    }
+
+    pub fn build(self) -> Agent<C> {
+        let history = self
+            .history
+            .unwrap_or_else(|| Arc::new(RwLock::new(Vec::new())));
+
+        Agent {
+            client: self.client,
+            tools: self.tools,
+            config: self.config,
+            history,
+        }
+    }
+}
+
+/// The main agent that orchestrates LLM interaction and tool usage.
 #[derive(Clone)]
 pub struct Agent<C: LLMClient> {
     client: C,
     tools: ToolRegistry,
     config: Arc<Config>,
+    history: Arc<RwLock<Vec<Message>>>,
 }
 
 impl<C: LLMClient + Clone + 'static> Agent<C> {
+    /// Create a new agent with default tools.
     pub fn new(client: C, config: Arc<Config>) -> Self {
-        let tools = ToolRegistry::new()
-            .register(Box::new(BashTool::from_config(&config)))
-            .register(Box::new(ReadFileTool::new(FileTools::from_config(&config))))
-            .register(Box::new(WriteFileTool::new(FileTools::from_config(
-                &config,
-            ))))
-            .register(Box::new(EditFileTool::new(FileTools::from_config(&config))));
+        AgentBuilder::new(client, config).with_default_tools().build()
+    }
 
-        info!(
-            model = %config.model,
-            workdir = %config.workdir.display(),
-            "Agent initialized"
-        );
-
-        Self {
-            client,
-            tools,
-            config,
-        }
+    /// Create an AgentBuilder for custom configuration.
+    pub fn builder(client: C, config: Arc<Config>) -> AgentBuilder<C> {
+        AgentBuilder::new(client, config)
     }
 
     pub fn registry(&self) -> &ToolRegistry {
         &self.tools
     }
 
-    #[instrument(skip(self, history), fields(prompt = %prompt))]
-    pub async fn run(&self, prompt: &str, history: Arc<RwLock<Vec<Message>>>) -> Result<RunResult> {
+    pub fn history(&self) -> Arc<RwLock<Vec<Message>>> {
+        Arc::clone(&self.history)
+    }
+
+    /// Run a single turn with a prompt and return the result.
+    #[instrument(skip(self), fields(prompt = %prompt))]
+    pub async fn run(&self, prompt: &str) -> Result<RunResult> {
         debug!("Starting agent run");
         let start = Instant::now();
 
         {
-            let mut history_guard = history.write().await;
+            let mut history_guard = self.history.write().await;
             history_guard.push(Message::user(prompt));
         }
 
-        let mut stream = self.run_stream(history.clone());
+        let mut stream = self.run_stream();
         while let Some(event) = stream.next().await {
             match event? {
                 AgentEvent::Done { result } => {
@@ -73,26 +135,25 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 }
                 AgentEvent::Error { message } => {
                     warn!(error = %message, "Agent run failed");
-                    return Err(crate::error::AgentError::Api(message));
+                    return Err(AgentError::Api(message));
                 }
                 _ => {}
             }
         }
-        Err(crate::error::AgentError::StreamEndedUnexpectedly)
+        Err(AgentError::StreamEndedUnexpectedly)
     }
 
-    pub fn run_stream(
-        &self,
-        history: Arc<RwLock<Vec<Message>>>,
-    ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
+    /// Run the agent loop as a stream of events.
+    pub fn run_stream(&self) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         let client = self.client.clone();
         let tools = self.tools.clone();
         let config = Arc::clone(&self.config);
+        let history = Arc::clone(&self.history);
         let system = config.system_prompt();
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
         Box::pin(async_stream::stream! {
-            let mut result = RunResult::default();
+            let mut total_result = RunResult::default();
             let mut should_continue = true;
 
             while should_continue {
@@ -110,7 +171,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 while let Some(event) = stream.next().await {
                     match event? {
                         StreamEvent::TextDelta(text) => {
-                            result.text.push_str(&text);
+                            total_result.text.push_str(&text);
                             yield Ok(AgentEvent::TextDelta { delta: text });
                         }
 
@@ -143,7 +204,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                                 let is_error = output.starts_with("Error:");
 
-                                info!(
+                                debug!(
                                     tool = %name,
                                     duration_ms = duration_ms,
                                     is_error = is_error,
@@ -158,7 +219,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     is_error,
                                 });
 
-                                result.tool_calls.push(ToolCall {
+                                total_result.tool_calls.push(ToolCall {
                                     name: name.clone(),
                                     input: input.clone(),
                                     output: output.clone(),
@@ -190,9 +251,9 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 if !tool_uses.is_empty() {
                     history_guard.push(Message::assistant(tool_uses));
                     history_guard.push(Message::tool_results(tool_results));
-                } else if !result.text.is_empty() {
+                } else if !total_result.text.is_empty() {
                     history_guard.push(Message::assistant(vec![ContentBlock::Text {
-                        text: result.text.clone(),
+                        text: total_result.text.clone(),
                     }]));
                     should_continue = false;
                 } else {
@@ -201,16 +262,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 drop(history_guard);
             }
 
-            yield Ok(AgentEvent::Done { result });
+            yield Ok(AgentEvent::Done { result: total_result });
         })
     }
 
-    pub async fn run_channel(
-        &self,
-        history: Arc<RwLock<Vec<Message>>>,
-    ) -> Result<mpsc::Receiver<AgentEvent>> {
+    /// Run the agent and return an mpsc::Receiver for events.
+    pub async fn run_channel(&self) -> Result<mpsc::Receiver<AgentEvent>> {
         let (tx, rx) = mpsc::channel(64);
-        let mut stream = self.run_stream(history);
+        let mut stream = self.run_stream();
 
         tokio::spawn(async move {
             while let Some(event) = stream.next().await {
