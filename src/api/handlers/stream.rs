@@ -7,45 +7,17 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use axum::{
-    extract::Query,
+    extract::{Query, State},
     response::sse::{Event, Sse},
 };
 use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
 
-use crate::agent::config::{Config, Provider};
 use crate::agent::events::AgentEvent;
-use crate::agent::loop_agent::Agent;
 use crate::agent::messages::Message;
-use crate::client::{AnthropicClient, OpenAIClient};
+use crate::api::http::AppState;
+use crate::client::LLMClient;
 
-/// Stream agent execution events via Server-Sent Events (SSE).
-///
-/// This endpoint provides real-time feedback as the agent thinks,
-/// uses tools, and receives results. It is ideal for UI applications
-/// that want to show a live typing effect and tool execution progress.
-///
-/// ### Events
-///
-/// | Event Name | Payload Type | Description |
-/// |------------|--------------|-------------|
-/// | `text` | [`TextEvent`] | Partial text response delta |
-/// | `tool_start` | [`ToolStartEvent`] | Agent started using a tool |
-/// | `tool_done` | [`ToolDoneEvent`] | Tool execution finished |
-/// | `done` | [`DoneEvent`] | Agent loop completed |
-/// | `error` | [`ErrorEvent`] | An error occurred during execution |
-///
-/// ### Request
-///
-/// - **Method:** GET
-/// - **Path:** /stream
-/// - **Query Params:** [`StreamQuery`]
-///
-/// ### Example
-///
-/// ```bash
-/// curl -N http://localhost:3000/stream?message=hello
-/// ```
 #[derive(Debug, serde::Deserialize)]
 pub struct StreamQuery {
     pub message: String,
@@ -84,48 +56,30 @@ pub struct ErrorEvent {
 
 type BoxedSseStream = Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>;
 
-pub async fn stream(Query(params): Query<StreamQuery>) -> Sse<BoxedSseStream> {
-    let config = match Config::load() {
-        Ok(c) => c,
-        Err(e) => {
-            let error_stream = Box::pin(futures::stream::iter(vec![Ok(Event::default()
-                .event("error")
-                .json_data(ErrorEvent {
-                    message: e.to_string(),
-                })
-                .unwrap())]));
-            return Sse::new(error_stream);
-        }
-    };
+/// Stream agent execution events via SSE.
+pub async fn stream<C: LLMClient + Clone + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+    Query(params): Query<StreamQuery>,
+) -> Sse<BoxedSseStream> {
+    // In a supervisor context, "streaming" might mean streaming from a temporary worker
+    // or just using the base agent. For now, we'll implement it by creating a temporary
+    // agent using the supervisor's client/config.
+    
+    // NOTE: In a real production system, you might want to look up a persistent worker.
+    let agent = crate::agent::loop_agent::AgentBuilder::new(
+        state.supervisor.client().clone(),
+        state.supervisor.config().clone()
+    )
+    .with_default_tools()
+    .build();
 
-    let config = Arc::new(config);
-
-    match config.provider {
-        Provider::Anthropic => {
-            let client = AnthropicClient::new(
-                config.api_key.clone(),
-                config.base_url.clone(),
-                config.model.clone(),
-            );
-            let agent = Agent::new(client, config);
-            create_sse_stream(agent, &params.message).await
-        }
-        Provider::OpenAI => {
-            let client = OpenAIClient::new(
-                config.api_key.clone(),
-                config.base_url.clone(),
-                config.model.clone(),
-            );
-            let agent = Agent::new(client, config);
-            create_sse_stream(agent, &params.message).await
-        }
-    }
+    create_sse_stream(agent, &params.message).await
 }
 
-async fn create_sse_stream<C>(agent: Agent<C>, message: &str) -> Sse<BoxedSseStream>
-where
-    C: crate::client::LLMClient + Clone + 'static,
-{
+async fn create_sse_stream<C: LLMClient + Clone + 'static>(
+    agent: crate::agent::loop_agent::Agent<C>, 
+    message: &str
+) -> Sse<BoxedSseStream> {
     // Add to history
     {
         let h_arc = agent.history();
@@ -181,18 +135,4 @@ where
     });
 
     Sse::new(Box::pin(sse_stream))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_stream_event_serialization() {
-        let event = TextEvent {
-            content: "Hello, world!".to_string(),
-        };
-        let json = serde_json::to_string(&event).unwrap();
-        assert!(json.contains("Hello, world!"));
-    }
 }

@@ -246,6 +246,39 @@ pub struct ExecuteResponse {
 
 /*
  * ============================================================================
+ * SUPERVISOR ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request body for the `/tasks` endpoint.
+///
+/// Dispatches a task to the multi-agent supervisor.
+#[derive(Debug, Deserialize)]
+pub struct TaskRequest {
+    /// Unique ID for the task.
+    pub id: String,
+    /// The prompt/instruction for the task.
+    pub prompt: String,
+    /// List of required capabilities for workers.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+/// Response body for the `/tasks` endpoint.
+///
+/// Contains the result of a multi-agent task execution.
+#[derive(Debug, Serialize)]
+pub struct TaskResponse {
+    pub task_id: String,
+    pub worker_id: String,
+    pub success: bool,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
+/*
+ * ============================================================================
  * HEALTH ENDPOINT TYPES
  * ============================================================================
  */

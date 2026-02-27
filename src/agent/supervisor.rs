@@ -105,6 +105,16 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
         Arc::clone(&self.lock_manager)
     }
 
+    /// Get the base LLM client.
+    pub fn client(&self) -> &C {
+        &self.client
+    }
+
+    /// Get the base SDK configuration.
+    pub fn config(&self) -> &Arc<Config> {
+        &self.sdk_config
+    }
+
     /// Spawn worker agents.
     pub async fn spawn(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
         self.spawn_with_client(configs, self.client.clone()).await

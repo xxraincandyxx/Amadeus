@@ -2,78 +2,92 @@
 //!
 //! Run with `cargo run` for TUI mode, or `cargo run -- --server` for HTTP mode.
 
-#[cfg(feature = "tui")]
 use std::sync::Arc;
-
 use anyhow::Result;
+use amadeus::agent::config::{Config, Provider};
+use amadeus::agent::supervisor::{Supervisor, SupervisorConfig};
+use amadeus::agent::worker::WorkerConfig;
+use amadeus::client::anthropic::AnthropicClient;
+use amadeus::client::openai::OpenAIClient;
 
 #[cfg(feature = "api")]
 use amadeus::api::http::run_server;
 
 #[cfg(feature = "tui")]
-use amadeus::{
-    agent::config::{Config, Provider},
-    agent::loop_agent::Agent,
-    client::anthropic::AnthropicClient,
-    client::openai::OpenAIClient,
-    ui::App,
-};
-
+use amadeus::ui::App;
 #[cfg(feature = "tui")]
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-#[cfg(feature = "tui")]
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .with(tracing_subscriber::fmt::layer())
-        .init();
-}
+use amadeus::agent::loop_agent::Agent;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    #[cfg(feature = "tui")]
-    init_tracing();
-
+    // 1. Initial Setup
+    let config = Arc::new(Config::load()?);
+    let sdk_config = Arc::clone(&config);
     let args: Vec<String> = std::env::args().collect();
 
+    // 2. Initialize Core LLM Client
+    let provider = match config.provider {
+        Provider::Anthropic => {
+            let client = AnthropicClient::new(
+                config.api_key.clone(),
+                config.base_url.clone(),
+                config.model.clone(),
+            );
+            ClientKind::Anthropic(client)
+        }
+        Provider::OpenAI => {
+            let client = OpenAIClient::new(
+                config.api_key.clone(),
+                config.base_url.clone(),
+                config.model.clone(),
+            );
+            ClientKind::OpenAI(client)
+        }
+    };
+
+    // 3. Mode Selection
     #[cfg(feature = "api")]
-    if args.len() > 1 && args[1] == "--server" {
-        let port = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(3000);
-        run_server(port).await?;
+    if args.contains(&"--server".to_string()) {
+        let port = args.iter().position(|r| r == "--server").and_then(|i| args.get(i+1)).and_then(|s| s.parse().ok()).unwrap_or(3000);
+        
+        match provider {
+            ClientKind::Anthropic(c) => {
+                let mut supervisor = Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                supervisor.spawn(vec![WorkerConfig::new("Main Coder").capability("bash")]).await?;
+                let supervisor = Arc::new(supervisor);
+                let s_clone = Arc::clone(&supervisor);
+                tokio::spawn(async move { s_clone.run().await });
+                run_server(port, supervisor).await?;
+            }
+            ClientKind::OpenAI(c) => {
+                let mut supervisor = Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                supervisor.spawn(vec![WorkerConfig::new("Main Coder").capability("bash")]).await?;
+                let supervisor = Arc::new(supervisor);
+                let s_clone = Arc::clone(&supervisor);
+                tokio::spawn(async move { s_clone.run().await });
+                run_server(port, supervisor).await?;
+            }
+        }
         return Ok(());
     }
 
     #[cfg(feature = "tui")]
     {
-        let config = Arc::new(Config::load()?);
         let workdir = config.workdir.clone();
         let model = config.model.clone();
 
-        match config.provider {
-            Provider::Anthropic => {
-                let client = AnthropicClient::new(
-                    config.api_key.clone(),
-                    config.base_url.clone(),
-                    config.model.clone(),
-                );
-                let agent = Agent::new(client, Arc::clone(&config));
+        match provider {
+            ClientKind::Anthropic(c) => {
+                let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
                 app.run().await?;
             }
-            Provider::OpenAI => {
-                let client = OpenAIClient::new(
-                    config.api_key.clone(),
-                    config.base_url.clone(),
-                    config.model.clone(),
-                );
-                let agent = Agent::new(client, Arc::clone(&config));
+            ClientKind::OpenAI(c) => {
+                let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
                 app.run().await?;
             }
-        };
+        }
         return Ok(());
     }
 
@@ -81,9 +95,13 @@ async fn main() -> Result<()> {
     {
         println!("Amadeus SDK - No features enabled.");
         println!("Enable 'tui' or 'api' feature to run.");
-        println!("\nUsage:");
-        println!("  cargo run --features tui          # TUI mode");
-        println!("  cargo run --features api -- --server  # HTTP server mode");
         Ok(())
     }
+
+    Ok(())
+}
+
+enum ClientKind {
+    Anthropic(AnthropicClient),
+    OpenAI(OpenAIClient),
 }

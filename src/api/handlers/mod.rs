@@ -29,6 +29,7 @@
 //! | `chat` | POST `/chat` | Send message to agent |
 //! | `execute` | POST `/execute` | Run bash command |
 //! | `stream` | GET `/stream` | SSE streaming chat |
+//! | `tasks` | POST `/tasks` | Multi-agent task execution |
 //!
 //! ## Error Handling
 //!
@@ -63,6 +64,9 @@ pub mod execute;
 /// GET endpoint for SSE streaming responses.
 pub mod stream;
 
+/// Tasks handler for multi-agent supervisor.
+pub mod tasks;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -72,7 +76,7 @@ pub mod stream;
 // Re-export handlers for convenient access
 //
 // Users can import handlers directly:
-//   use crate::api::handlers::{chat, execute, health, stream};
+//   use crate::api::handlers::{chat, execute, health, stream, tasks};
 //
 // Or access via the module:
 //   use crate::api::handlers::chat::chat;
@@ -80,3 +84,4 @@ pub use chat::chat;
 pub use execute::execute;
 pub use health::health;
 pub use stream::stream;
+pub use tasks::handle_task;
