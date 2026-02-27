@@ -2,7 +2,7 @@
 //!
 //! Manages a pool of worker agents with configurable dispatch strategies.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -64,6 +64,12 @@ struct WorkerEntry<C: LLMClient> {
     agent: Agent<C>,
 }
 
+/// Internal queue entry.
+struct QueueEntry {
+    task: Task,
+    response_tx: mpsc::Sender<Result<TaskResult>>,
+}
+
 /// Supervisor manages a pool of worker agents.
 pub struct Supervisor<C: LLMClient> {
     client: C,
@@ -74,6 +80,7 @@ pub struct Supervisor<C: LLMClient> {
     next_worker_idx: Arc<Mutex<usize>>,
     help_tx: mpsc::Sender<HelpRequest>,
     help_rx: Mutex<mpsc::Receiver<HelpRequest>>,
+    task_queue: Mutex<VecDeque<QueueEntry>>,
 }
 
 impl<C: LLMClient + Clone + 'static> Supervisor<C> {
@@ -89,6 +96,7 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
             next_worker_idx: Arc::new(Mutex::new(0)),
             help_tx,
             help_rx: Mutex::new(help_rx),
+            task_queue: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -163,54 +171,114 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
     /// Run the supervisor background loop to process help requests.
     pub async fn run(&self) -> Result<()> {
         info!("Supervisor loop started");
-        let mut help_rx = self.help_rx.lock().await;
-        while let Some(help_req) = help_rx.recv().await {
-            let workers_map = Arc::clone(&self.workers);
-            let strategy = self.config.strategy;
-            let timeout_dur = self.config.task_timeout;
-            let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+        
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        
+        loop {
+            tokio::select! {
+                // Handle help requests from peers
+                help_req_opt = async {
+                    let mut help_rx = self.help_rx.lock().await;
+                    help_rx.recv().await
+                } => {
+                    if let Some(help_req) = help_req_opt {
+                        let workers_map = Arc::clone(&self.workers);
+                        let strategy = self.config.strategy;
+                        let timeout_dur = self.config.task_timeout;
+                        let next_idx_mutex = Arc::clone(&self.next_worker_idx);
 
-            tokio::spawn(async move {
-                let worker_id = {
-                    let workers_guard = workers_map.read().await;
-                    Self::select_worker_internal(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
-                };
+                        tokio::spawn(async move {
+                            let worker_selection = {
+                                let workers_guard = workers_map.read().await;
+                                Self::select_worker_internal(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
+                            };
 
-                match worker_id {
-                    Ok(id) => {
-                        let workers_guard = workers_map.read().await;
-                        let entry = workers_guard.get(&id).unwrap();
-                        let result = Self::dispatch_internal(id, entry, help_req.task, timeout_dur).await;
-                        let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
-                            task_id: "error".to_string(),
-                            worker_id: id,
-                            success: false,
-                            output: None,
-                            error: Some(e.to_string()),
-                            duration_ms: 0,
-                            tool_calls: Vec::new(),
-                        }));
-                    }
-                    Err(e) => {
-                        warn!("Failed to find worker for help request: {}", e);
+                            match worker_selection {
+                                Ok(id) => {
+                                    let workers_guard = workers_map.read().await;
+                                    if let Some(entry) = workers_guard.get(&id) {
+                                        let result = Self::dispatch_internal(id, entry, help_req.task, timeout_dur).await;
+                                        let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
+                                            task_id: "error".to_string(),
+                                            worker_id: id,
+                                            success: false,
+                                            output: None,
+                                            error: Some(e.to_string()),
+                                            duration_ms: 0,
+                                            tool_calls: Vec::new(),
+                                        }));
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Failed to find worker for help request: {}", e);
+                                    let _ = help_req.response_tx.send(TaskResult {
+                                        task_id: help_req.task.id,
+                                        worker_id: AgentId::new(),
+                                        success: false,
+                                        output: None,
+                                        error: Some(format!("No available worker for help request: {}", e)),
+                                        duration_ms: 0,
+                                        tool_calls: Vec::new(),
+                                    });
+                                }
+                            }
+                        });
                     }
                 }
-            });
+
+                // Check queue periodically
+                _ = interval.tick() => {
+                    self.process_queue().await;
+                }
+            }
         }
-        Ok(())
     }
 
-    /// Execute a task (blocking version for external callers).
-    pub async fn execute(&self, task: Task) -> Result<TaskResult> {
-        let worker_id = {
-            let workers = self.workers.read().await;
-            Self::select_worker_internal(&workers, &task, self.config.strategy, Arc::clone(&self.next_worker_idx)).await?
-        };
+    async fn process_queue(&self) {
+        let mut queue = self.task_queue.lock().await;
+        if queue.is_empty() {
+            return;
+        }
 
-        let workers = self.workers.read().await;
-        let entry = workers.get(&worker_id).unwrap();
-        
-        Self::dispatch_internal(worker_id, entry, task, self.config.task_timeout).await
+        let mut next_queue = VecDeque::new();
+        while let Some(entry) = queue.pop_front() {
+            let workers_map = Arc::clone(&self.workers);
+            let strategy = self.config.strategy;
+            let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+            
+            let worker_selection = {
+                let workers_guard = workers_map.read().await;
+                Self::select_worker_internal(&workers_guard, &entry.task, strategy, next_idx_mutex).await
+            };
+
+            if let Ok(id) = worker_selection {
+                let timeout_dur = self.config.task_timeout;
+                tokio::spawn(async move {
+                    let workers_guard = workers_map.read().await;
+                    if let Some(worker_entry) = workers_guard.get(&id) {
+                        let result = Self::dispatch_internal(id, worker_entry, entry.task, timeout_dur).await;
+                        let _ = entry.response_tx.send(result).await;
+                    }
+                });
+            } else {
+                next_queue.push_back(entry);
+            }
+        }
+        *queue = next_queue;
+    }
+
+    /// Execute a task (buffered version).
+    pub async fn execute(&self, task: Task) -> Result<TaskResult> {
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut queue = self.task_queue.lock().await;
+            if queue.len() >= self.config.max_pending_tasks {
+                return Err(AgentError::Config("Task queue is full".to_string()));
+            }
+            queue.push_back(QueueEntry { task, response_tx: tx });
+        }
+
+        rx.recv().await.ok_or_else(|| AgentError::Command("Task response channel closed".to_string()))?
     }
 
     async fn select_worker_internal(
@@ -219,7 +287,6 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
         strategy: DispatchStrategy,
         next_idx_mutex: Arc<Mutex<usize>>,
     ) -> Result<AgentId> {
-        // Collect worker infos first to avoid holding locks during complex logic
         let mut candidates = Vec::new();
         for (id, entry) in workers {
             let info = entry.info.read().await;
