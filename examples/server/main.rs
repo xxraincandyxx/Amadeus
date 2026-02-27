@@ -1,21 +1,61 @@
-//! # HTTP Server Example - SDK Test Harness
+//! # Server Example - SDK-as-a-Service
 //!
-//! This is a test HTTP server for the Amadeus SDK.
-//! It demonstrates SDK usage via HTTP API.
+//! This example demonstrates how to run Amadeus as a standalone HTTP server.
 
 use anyhow::Result;
+use std::sync::Arc;
 
-use amadeus::api::http::run_server;
+use amadeus::{
+    agent::config::{Config, Provider},
+    agent::supervisor::{Supervisor, SupervisorConfig},
+    agent::worker::WorkerConfig,
+    api::http::run_server,
+    client::anthropic::AnthropicClient,
+    client::openai::OpenAIClient,
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let port = std::env::args()
-        .nth(1)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(3000);
+    let config = Arc::new(Config::load()?);
+    let sdk_config = Arc::clone(&config);
+    let port = 3000;
 
-    println!("Starting Amadeus SDK HTTP server on port {}...", port);
-    run_server(port).await?;
+    match config.provider {
+        Provider::Anthropic => {
+            let client = AnthropicClient::new(
+                config.api_key.clone(),
+                config.base_url.clone(),
+                config.model.clone(),
+            );
+            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config);
+            supervisor
+                .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
+                .await?;
+            let supervisor = Arc::new(supervisor);
+            let s_clone = Arc::clone(&supervisor);
+            tokio::spawn(async move {
+                let _ = s_clone.run().await;
+            });
+            run_server(port, supervisor).await?;
+        }
+        Provider::OpenAI => {
+            let client = OpenAIClient::new(
+                config.api_key.clone(),
+                config.base_url.clone(),
+                config.model.clone(),
+            );
+            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config);
+            supervisor
+                .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
+                .await?;
+            let supervisor = Arc::new(supervisor);
+            let s_clone = Arc::clone(&supervisor);
+            tokio::spawn(async move {
+                let _ = s_clone.run().await;
+            });
+            run_server(port, supervisor).await?;
+        }
+    }
 
     Ok(())
 }

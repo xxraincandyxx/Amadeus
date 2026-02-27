@@ -6,14 +6,11 @@ use amadeus::client::anthropic::AnthropicClient;
 
 fn create_test_config() -> Config {
     Config {
-        provider: amadeus::agent::config::Provider::Anthropic,
         api_key: "test-key".to_string(),
-        base_url: None,
         model: "test-model".to_string(),
         workdir: std::path::PathBuf::from("/tmp"),
         timeout_seconds: 30,
-        max_output_bytes: 50_000,
-        blocked_commands: vec!["rm -rf /".to_string()],
+        ..Config::default()
     }
 }
 

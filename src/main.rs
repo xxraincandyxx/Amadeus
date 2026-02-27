@@ -2,21 +2,21 @@
 //!
 //! Run with `cargo run` for TUI mode, or `cargo run -- --server` for HTTP mode.
 
-use std::sync::Arc;
-use anyhow::Result;
 use amadeus::agent::config::{Config, Provider};
 use amadeus::agent::supervisor::{Supervisor, SupervisorConfig};
 use amadeus::agent::worker::WorkerConfig;
 use amadeus::client::anthropic::AnthropicClient;
 use amadeus::client::openai::OpenAIClient;
+use anyhow::Result;
+use std::sync::Arc;
 
 #[cfg(feature = "api")]
 use amadeus::api::http::run_server;
 
 #[cfg(feature = "tui")]
-use amadeus::ui::App;
-#[cfg(feature = "tui")]
 use amadeus::agent::loop_agent::Agent;
+#[cfg(feature = "tui")]
+use amadeus::ui::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -46,31 +46,49 @@ async fn main() -> Result<()> {
     };
 
     // 3. Mode Selection
+
+    // --- SERVER MODE ---
     #[cfg(feature = "api")]
     if args.contains(&"--server".to_string()) {
-        let port = args.iter().position(|r| r == "--server").and_then(|i| args.get(i+1)).and_then(|s| s.parse().ok()).unwrap_or(3000);
-        
+        let port = args
+            .iter()
+            .position(|r| r == "--server")
+            .and_then(|i| args.get(i + 1))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(3000);
+
         match provider {
             ClientKind::Anthropic(c) => {
-                let mut supervisor = Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
-                supervisor.spawn(vec![WorkerConfig::new("Main Coder").capability("bash")]).await?;
+                let mut supervisor =
+                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                supervisor
+                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
+                    .await?;
                 let supervisor = Arc::new(supervisor);
                 let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move { s_clone.run().await });
+                tokio::spawn(async move {
+                    let _ = s_clone.run().await;
+                });
                 run_server(port, supervisor).await?;
             }
             ClientKind::OpenAI(c) => {
-                let mut supervisor = Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
-                supervisor.spawn(vec![WorkerConfig::new("Main Coder").capability("bash")]).await?;
+                let mut supervisor =
+                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                supervisor
+                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
+                    .await?;
                 let supervisor = Arc::new(supervisor);
                 let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move { s_clone.run().await });
+                tokio::spawn(async move {
+                    let _ = s_clone.run().await;
+                });
                 run_server(port, supervisor).await?;
             }
         }
         return Ok(());
     }
 
+    // --- TUI MODE ---
     #[cfg(feature = "tui")]
     {
         let workdir = config.workdir.clone();
@@ -91,14 +109,13 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    #[cfg(not(any(feature = "tui", feature = "api")))]
+    // --- NO FEATURE ENABLED ---
+    #[allow(unreachable_code)]
     {
         println!("Amadeus SDK - No features enabled.");
         println!("Enable 'tui' or 'api' feature to run.");
         Ok(())
     }
-
-    Ok(())
 }
 
 enum ClientKind {

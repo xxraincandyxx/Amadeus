@@ -1,11 +1,11 @@
+use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use serde_json::json;
 
 use amadeus::agent::config::Config;
-use amadeus::agent::supervisor::{Supervisor, SupervisorConfig, DispatchStrategy};
-use amadeus::agent::worker::{WorkerConfig, Task};
 use amadeus::agent::messages::{ContentBlock, Message};
+use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+use amadeus::agent::worker::{Task, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
 use async_trait::async_trait;
@@ -34,8 +34,12 @@ impl LLMClient for SimpleMockClient {
             return Ok(("end_turn".to_string(), vec![]));
         }
         let b = resps.remove(0);
-        println!("[{}] create_message: Returning {} blocks", self.name, b.len());
-        Ok(("end_turn".to_string(), b)) 
+        println!(
+            "[{}] create_message: Returning {} blocks",
+            self.name,
+            b.len()
+        );
+        Ok(("end_turn".to_string(), b))
     }
 
     async fn create_message_stream(
@@ -48,10 +52,17 @@ impl LLMClient for SimpleMockClient {
         let mut resps = self.responses.lock().await;
         let blocks = if !resps.is_empty() {
             let b = resps.remove(0);
-            println!("[{}] create_message_stream: Returning turn with {} blocks", self.name, b.len());
+            println!(
+                "[{}] create_message_stream: Returning turn with {} blocks",
+                self.name,
+                b.len()
+            );
             b
         } else {
-            println!("[{}] create_message_stream: No more mock responses, returning empty", self.name);
+            println!(
+                "[{}] create_message_stream: No more mock responses, returning empty",
+                self.name
+            );
             vec![]
         };
 
@@ -64,8 +75,13 @@ impl LLMClient for SimpleMockClient {
                 }
                 ContentBlock::ToolUse { id, name, input } => {
                     println!("[{}]   - Tool: {} ({})", self.name, name, id);
-                    events.push(Ok(StreamEvent::ToolCallStart { id: id.clone(), name }));
-                    events.push(Ok(StreamEvent::ToolCallDelta { arguments: serde_json::to_string(&input).unwrap() }));
+                    events.push(Ok(StreamEvent::ToolCallStart {
+                        id: id.clone(),
+                        name,
+                    }));
+                    events.push(Ok(StreamEvent::ToolCallDelta {
+                        arguments: serde_json::to_string(&input).unwrap(),
+                    }));
                     events.push(Ok(StreamEvent::ToolCallDone(id)));
                 }
                 _ => {}
@@ -78,14 +94,10 @@ impl LLMClient for SimpleMockClient {
 
 fn create_test_config() -> Arc<Config> {
     Arc::new(Config {
-        provider: amadeus::agent::config::Provider::OpenAI,
         api_key: "mock".to_string(),
-        base_url: None,
         model: "mock".to_string(),
         workdir: std::path::PathBuf::from("/tmp"),
-        timeout_seconds: 30,
-        max_output_bytes: 1000,
-        blocked_commands: vec![],
+        ..Config::default()
     })
 }
 
@@ -106,11 +118,9 @@ async fn test_p2p_delegation() {
         }],
     ];
 
-    let calculator_responses = vec![
-        vec![ContentBlock::Text {
-            text: "4".to_string(),
-        }],
-    ];
+    let calculator_responses = vec![vec![ContentBlock::Text {
+        text: "4".to_string(),
+    }]];
 
     let requester_client = SimpleMockClient {
         name: "Requester".to_string(),
@@ -124,16 +134,24 @@ async fn test_p2p_delegation() {
     // 2. Setup Supervisor
     let mut config = SupervisorConfig::default();
     config.strategy = DispatchStrategy::CapabilityMatch;
-    
-    let mut supervisor = Supervisor::new(requester_client.clone(), config, create_test_config());
-    
-    supervisor.spawn_with_client(vec![
-        WorkerConfig::new("Requester").capability("logic-capability")
-    ], requester_client).await.unwrap();
 
-    let calculator_id = supervisor.spawn_with_client(vec![
-        WorkerConfig::new("Calculator").capability("math-capability")
-    ], calculator_client).await.unwrap()[0];
+    let mut supervisor = Supervisor::new(requester_client.clone(), config, create_test_config());
+
+    supervisor
+        .spawn_with_client(
+            vec![WorkerConfig::new("Requester").capability("logic-capability")],
+            requester_client,
+        )
+        .await
+        .unwrap();
+
+    let calculator_id = supervisor
+        .spawn_with_client(
+            vec![WorkerConfig::new("Calculator").capability("math-capability")],
+            calculator_client,
+        )
+        .await
+        .unwrap()[0];
 
     // 3. Start supervisor loop in background
     let supervisor_arc = Arc::new(supervisor);
@@ -143,19 +161,26 @@ async fn test_p2p_delegation() {
     });
 
     // 4. Execute task
-    let task = Task::new("main-task", "Start logical flow")
-        .requires(vec!["logic-capability".to_string()]);
-    
+    let task =
+        Task::new("main-task", "Start logical flow").requires(vec!["logic-capability".to_string()]);
+
     println!("Executing main task...");
     let result = supervisor_arc.execute(task).await.unwrap();
 
-    println!("Task Result: Success={}, Output='{:?}', Error='{:?}'", result.success, result.output, result.error);
+    println!(
+        "Task Result: Success={}, Output='{:?}', Error='{:?}'",
+        result.success, result.output, result.error
+    );
 
-    assert!(result.success, "Task should succeed, but got error: {:?}", result.error);
+    assert!(
+        result.success,
+        "Task should succeed, but got error: {:?}",
+        result.error
+    );
     assert!(result.output.is_some(), "Output should not be None");
     let out = result.output.unwrap();
     assert!(out.contains("answer is 4"), "Output was: '{}'", out);
-    
+
     // Verify math worker was actually called
     let calculator_info = supervisor_arc.worker(calculator_id).await.unwrap();
     assert_eq!(calculator_info.completed_tasks, 1);

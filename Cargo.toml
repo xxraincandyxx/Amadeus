@@ -21,7 +21,7 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["axum", "tower", "tower-http", "tokio-util"]
+api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
 tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored"]
 
 # Concurrency & Multi-Agent

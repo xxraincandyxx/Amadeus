@@ -1,6 +1,5 @@
 use serde_json::json;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
@@ -98,14 +97,11 @@ impl LLMClient for StoryClient {
 
 fn create_test_config() -> Arc<Config> {
     Arc::new(Config {
-        provider: amadeus::agent::config::Provider::OpenAI,
         api_key: "e2e-test".into(),
-        base_url: None,
         model: "e2e-story-model".into(),
         workdir: std::path::PathBuf::from("/tmp"),
         timeout_seconds: 10,
-        max_output_bytes: 5000,
-        blocked_commands: vec![],
+        ..Config::default()
     })
 }
 

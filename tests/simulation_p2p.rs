@@ -1,12 +1,12 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use serde_json::json;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
-use amadeus::agent::supervisor::{Supervisor, SupervisorConfig, DispatchStrategy};
-use amadeus::agent::worker::{WorkerConfig, Task};
 use amadeus::agent::messages::{ContentBlock, Message};
+use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+use amadeus::agent::worker::{Task, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
 use async_trait::async_trait;
@@ -44,22 +44,29 @@ impl LLMClient for SimulationMockClient {
         *count += 1;
 
         let mut events = Vec::new();
-        
-        // Logic: 
+
+        // Logic:
         // If it's the first time and we roll the peer_chance, call a peer.
         // Otherwise, just return a result.
         let should_call_peer = *count == 1 && rand::random::<f64>() < self.peer_chance;
 
         if should_call_peer {
             let id = format!("call_{}", *count);
-            events.push(Ok(StreamEvent::ToolCallStart { id: id.clone(), name: "call_peer".to_string() }));
-            events.push(Ok(StreamEvent::ToolCallDelta { 
-                arguments: json!({"task": "Sub-task for peer", "capabilities": ["worker"]}).to_string() 
+            events.push(Ok(StreamEvent::ToolCallStart {
+                id: id.clone(),
+                name: "call_peer".to_string(),
+            }));
+            events.push(Ok(StreamEvent::ToolCallDelta {
+                arguments: json!({"task": "Sub-task for peer", "capabilities": ["worker"]})
+                    .to_string(),
             }));
             events.push(Ok(StreamEvent::ToolCallDone(id)));
             events.push(Ok(StreamEvent::StopReason("tool_use".to_string())));
         } else {
-            events.push(Ok(StreamEvent::TextDelta(format!("Processed by {}", self.name))));
+            events.push(Ok(StreamEvent::TextDelta(format!(
+                "Processed by {}",
+                self.name
+            ))));
             events.push(Ok(StreamEvent::StopReason("end_turn".to_string())));
         }
 
@@ -69,22 +76,19 @@ impl LLMClient for SimulationMockClient {
 
 fn create_test_config() -> Arc<Config> {
     Arc::new(Config {
-        provider: amadeus::agent::config::Provider::OpenAI,
         api_key: "mock".to_string(),
-        base_url: None,
         model: "mock".to_string(),
         workdir: std::path::PathBuf::from("/tmp"),
-        timeout_seconds: 2, // Short timeout
-        max_output_bytes: 1000,
-        blocked_commands: vec![],
+        timeout_seconds: 2,
+        ..Config::default()
     })
 }
 
 #[tokio::test]
 async fn test_high_concurrency_p2p() {
-    let num_workers = 5; 
+    let num_workers = 5;
     let num_tasks = 120; // More than the default queue limit (100)
-    
+
     let mut config = SupervisorConfig::default();
     config.strategy = DispatchStrategy::LeastLoaded;
     config.task_timeout = Duration::from_secs(10);
@@ -98,7 +102,7 @@ async fn test_high_concurrency_p2p() {
     };
 
     let mut supervisor = Supervisor::new(base_client.clone(), config, create_test_config());
-    
+
     // Spawn workers
     for i in 0..num_workers {
         let worker_client = SimulationMockClient {
@@ -106,9 +110,13 @@ async fn test_high_concurrency_p2p() {
             call_count: Arc::new(Mutex::new(0)),
             peer_chance: 0.5,
         };
-        supervisor.spawn_with_client(vec![
-            WorkerConfig::new(format!("Worker-{}", i)).capability("worker")
-        ], worker_client).await.unwrap();
+        supervisor
+            .spawn_with_client(
+                vec![WorkerConfig::new(format!("Worker-{}", i)).capability("worker")],
+                worker_client,
+            )
+            .await
+            .unwrap();
     }
 
     let supervisor = Arc::new(supervisor);
@@ -119,8 +127,11 @@ async fn test_high_concurrency_p2p() {
         }
     });
 
-    println!("🚀 Launching {} concurrent tasks (Buffering Test)...", num_tasks);
-    
+    println!(
+        "🚀 Launching {} concurrent tasks (Buffering Test)...",
+        num_tasks
+    );
+
     let mut handles = Vec::new();
     for i in 0..num_tasks {
         let s = Arc::clone(&supervisor);
@@ -159,7 +170,13 @@ async fn test_high_concurrency_p2p() {
     println!("   - Total Errors:      {}", error_count);
     println!("   - Queue Full Errors: {}", queue_full_count);
 
-    assert!(success_count > 0, "Should have successes thanks to buffering");
-    assert!(queue_full_count > 0, "Should have queue full errors due to high load");
+    assert!(
+        success_count > 0,
+        "Should have successes thanks to buffering"
+    );
+    assert!(
+        queue_full_count > 0,
+        "Should have queue full errors due to high load"
+    );
     println!("✅ Buffering and overflow protection verified.");
 }

@@ -184,6 +184,23 @@ pub struct Config {
  * ============================================================================
  */
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            provider: Provider::Anthropic,
+            api_key: String::new(),
+            base_url: None,
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            workdir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            timeout_seconds: 300,
+            max_output_bytes: 50_000,
+            blocked_commands: vec!["rm -rf /".to_string()],
+            session_log_dir: None,
+            session_log_compress: false,
+        }
+    }
+}
+
 impl Config {
     // -------------------------------------------------------------------------
     // LOAD METHOD
