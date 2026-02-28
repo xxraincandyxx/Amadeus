@@ -1,8 +1,15 @@
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
+use chrono::Local;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use futures::{Stream, StreamExt};
+use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, instrument, warn};
 
@@ -14,6 +21,23 @@ use crate::error::{AgentError, Result};
 use crate::tools::bash::BashTool;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 use crate::tools::registry::ToolRegistry;
+
+/// A log of a single conversation session.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SessionLog {
+    pub timestamp: String,
+    pub model: String,
+    pub system_prompt: String,
+    pub history: Vec<Message>,
+    pub stats: SessionStats,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct SessionStats {
+    pub total_tokens: u32,
+    pub tool_calls: usize,
+    pub duration_ms: u64,
+}
 
 /// A builder for creating an Agent.
 pub struct AgentBuilder<C: LLMClient> {
@@ -116,6 +140,49 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         Arc::clone(&self.config)
     }
 
+    /// Save the current session history to a log file.
+    pub async fn save_session(&self, stats: SessionStats) -> Result<Option<PathBuf>> {
+        let log_dir = match &self.config.session_log_dir {
+            Some(dir) => dir,
+            None => return Ok(None),
+        };
+
+        if !log_dir.exists() {
+            fs::create_dir_all(log_dir).map_err(AgentError::Io)?;
+        }
+
+        let timestamp = Local::now().format("%Y%m%d_%H%M%S").to_string();
+        let filename = format!("session_{}.json", timestamp);
+        let mut path = log_dir.join(&filename);
+
+        let history = self.history.read().await;
+        let session_log = SessionLog {
+            timestamp: Local::now().to_rfc3339(),
+            model: self.config.model.clone(),
+            system_prompt: self.config.system_prompt(),
+            history: history.clone(),
+            stats,
+        };
+
+        let json = serde_json::to_vec_pretty(&session_log).map_err(|e| {
+            AgentError::InvalidResponse(format!("Failed to serialize session log: {}", e))
+        })?;
+
+        if self.config.session_log_compress {
+            path.set_extension("json.gz");
+            let file = File::create(&path).map_err(AgentError::Io)?;
+            let mut encoder = GzEncoder::new(file, Compression::default());
+            encoder.write_all(&json).map_err(AgentError::Io)?;
+            encoder.finish().map_err(AgentError::Io)?;
+        } else {
+            let mut file = File::create(&path).map_err(AgentError::Io)?;
+            file.write_all(&json).map_err(AgentError::Io)?;
+        }
+
+        info!(path = %path.display(), "Session log saved");
+        Ok(Some(path))
+    }
+
     /// Run a single turn with a prompt and return the result.
     #[instrument(skip(self), fields(prompt = %prompt))]
     pub async fn run(&self, prompt: &str) -> Result<RunResult> {
@@ -131,12 +198,22 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         while let Some(event) = stream.next().await {
             match event? {
                 AgentEvent::Done { result } => {
+                    let duration_ms = start.elapsed().as_millis() as u64;
                     info!(
-                        duration_ms = start.elapsed().as_millis() as u64,
+                        duration_ms = duration_ms,
                         tool_calls = result.tool_calls.len(),
                         text_len = result.text.len(),
                         "Agent run completed"
                     );
+
+                    // Save session log if configured
+                    let stats = SessionStats {
+                        total_tokens: 0, // Token counting not yet implemented in all clients
+                        tool_calls: result.tool_calls.len(),
+                        duration_ms,
+                    };
+                    let _ = self.save_session(stats).await;
+
                     return Ok(result);
                 }
                 AgentEvent::Error { message } => {
@@ -151,6 +228,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     /// Run the agent loop as a stream of events.
     pub fn run_stream(&self) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
+        let agent = self.clone();
         let client = self.client.clone();
         let tools = self.tools.clone();
         let config = Arc::clone(&self.config);
@@ -159,6 +237,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
         Box::pin(async_stream::stream! {
+            let start = Instant::now();
             let mut total_result = RunResult::default();
             let mut should_continue = true;
             let mut turn_count = 0;
@@ -278,6 +357,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                     should_continue = false;
                 }
                 drop(history_guard);
+            }
+
+            // After turns complete, save session if logging is enabled
+            let stats = SessionStats {
+                total_tokens: 0,
+                tool_calls: total_result.tool_calls.len(),
+                duration_ms: start.elapsed().as_millis() as u64,
+            };
+            
+            if let Ok(Some(path)) = agent.save_session(stats).await {
+                yield Ok(AgentEvent::SessionSaved { path: path.display().to_string() });
             }
 
             debug!("Yielding Done event");

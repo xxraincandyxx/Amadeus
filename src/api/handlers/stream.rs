@@ -212,6 +212,9 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
             // Intermediate deltas (e.g. tool arguments) are suppressed for public API
             Ok(AgentEvent::ToolInputDelta { .. }) => None,
 
+            // New events like SessionSaved are suppressed for public API
+            Ok(_) => None,
+
             // Stream processing error
             Err(e) => Some(Ok(Event::default()
                 .event("error")

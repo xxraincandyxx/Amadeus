@@ -13,6 +13,7 @@ use ratatui::{
     Terminal,
 };
 use tokio::sync::mpsc;
+use tracing::info;
 
 use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
@@ -83,57 +84,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let res = self.run_loop(&mut terminal, &mut events).await;
 
-        // Save session log before exiting
-        if let Err(e) = self.save_session_log().await {
-            eprintln!("Failed to save session log: {}", e);
-        }
-
         disable_raw_mode()?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
         terminal.show_cursor()?;
 
         res
-    }
-
-    async fn save_session_log(&self) -> Result<()> {
-        let config = self.agent.config();
-        let log_dir: &std::path::PathBuf = match &config.session_log_dir {
-            Some(dir) => dir,
-            None => return Ok(()),
-        };
-
-        if !log_dir.exists() {
-            std::fs::create_dir_all(log_dir)?;
-        }
-
-        let history_arc = self.agent.history();
-        let history = history_arc.read().await;
-        if history.is_empty() {
-            return Ok(());
-        }
-
-        let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-        let json = serde_json::to_string_pretty(&*history)?;
-
-        if config.session_log_compress {
-            let filename = format!("session-{}.json.gz", timestamp);
-            let path = log_dir.join(filename);
-
-            use flate2::write::GzEncoder;
-            use flate2::Compression;
-            use std::io::Write;
-
-            let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
-            encoder.write_all(json.as_bytes())?;
-            let compressed = encoder.finish()?;
-            std::fs::write(&path, compressed)?;
-        } else {
-            let filename = format!("session-{}.json", timestamp);
-            let path = log_dir.join(filename);
-            std::fs::write(&path, json)?;
-        }
-
-        Ok(())
     }
 
     async fn run_loop(
@@ -269,6 +224,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.status.set_state(AppState::Error);
                 self.current_text.clear();
                 return true;
+            }
+
+            AgentEvent::SessionSaved { path } => {
+                info!(path = %path, "Session log saved to disk");
             }
 
             AgentEvent::ToolInputDelta { .. } => {}

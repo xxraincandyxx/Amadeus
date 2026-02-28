@@ -41,4 +41,7 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+    SessionSaved {
+        path: String,
+    },
 }
