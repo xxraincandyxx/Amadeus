@@ -2,7 +2,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::ui::colors::THEME;
 
@@ -214,48 +214,104 @@ fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
 }
 
 fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
-    let total_width: usize = spans.iter().map(|s| s.content.width()).sum();
-
-    if total_width <= width {
+    if spans.is_empty() || width == 0 {
         return vec![Line::from(spans)];
     }
 
     let mut lines = Vec::new();
-    let mut current_spans = Vec::new();
+    let mut current_line_spans = Vec::new();
     let mut current_width = 0;
 
     for span in spans {
-        let span_width = span.content.width();
+        let style = span.style;
+        let content = span.content.as_ref();
+        
+        // If the span contains spaces, we can wrap at those spaces
+        let words: Vec<&str> = if content.contains(' ') {
+            // We want to keep the spaces to account for their width
+            let mut parts = Vec::new();
+            let mut start = 0;
+            for (i, c) in content.char_indices() {
+                if c == ' ' {
+                    if i > start {
+                        parts.push(&content[start..i]);
+                    }
+                    parts.push(" ");
+                    start = i + 1;
+                }
+            }
+            if start < content.len() {
+                parts.push(&content[start..]);
+            }
+            parts
+        } else {
+            vec![content]
+        };
 
-        if current_width + span_width > width && !current_spans.is_empty() {
-            lines.push(Line::from(current_spans));
-            current_spans = Vec::new();
-            current_width = 0;
-        }
+        for word in words {
+            let word_width = word.width();
+            
+            if word == " " {
+                if current_width + 1 <= width {
+                    current_line_spans.push(Span::styled(" ", style));
+                    current_width += 1;
+                } else {
+                    // Space at end of line, just drop it and start new line
+                    if !current_line_spans.is_empty() {
+                        lines.push(Line::from(current_line_spans));
+                        current_line_spans = Vec::new();
+                        current_width = 0;
+                    }
+                }
+                continue;
+            }
 
-        if span_width > width {
-            let chars: Vec<char> = span.content.chars().collect();
-            for chunk in chars.chunks(width) {
-                let chunk_str: String = chunk.iter().collect();
-                let chunk_width = chunk_str.width();
-
-                if current_width + chunk_width > width && !current_spans.is_empty() {
-                    lines.push(Line::from(current_spans));
-                    current_spans = Vec::new();
+            if current_width + word_width > width {
+                // Word doesn't fit on current line
+                if !current_line_spans.is_empty() {
+                    lines.push(Line::from(current_line_spans));
+                    current_line_spans = Vec::new();
                     current_width = 0;
                 }
 
-                current_spans.push(Span::styled(chunk_str, span.style));
-                current_width += chunk_width;
+                if word_width > width {
+                    // Word is longer than the whole width, must break it
+                    let mut remaining = word;
+                    while !remaining.is_empty() {
+                        let mut take = 0;
+                        let mut w = 0;
+                        for c in remaining.chars() {
+                            let cw = c.width().unwrap_or(0);
+                            if w + cw > width && take > 0 {
+                                break;
+                            }
+                            w += cw;
+                            take += c.len_utf8();
+                        }
+                        
+                        let chunk = &remaining[..take];
+                        remaining = &remaining[take..];
+                        
+                        if remaining.is_empty() {
+                            current_line_spans.push(Span::styled(chunk.to_string(), style));
+                            current_width = w;
+                        } else {
+                            lines.push(Line::from(vec![Span::styled(chunk.to_string(), style)]));
+                        }
+                    }
+                } else {
+                    current_line_spans.push(Span::styled(word.to_string(), style));
+                    current_width = word_width;
+                }
+            } else {
+                current_line_spans.push(Span::styled(word.to_string(), style));
+                current_width += word_width;
             }
-        } else {
-            current_spans.push(span);
-            current_width += span_width;
         }
     }
 
-    if !current_spans.is_empty() {
-        lines.push(Line::from(current_spans));
+    if !current_line_spans.is_empty() {
+        lines.push(Line::from(current_line_spans));
     }
 
     lines

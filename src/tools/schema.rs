@@ -15,7 +15,7 @@ pub fn bash_tool() -> &'static Value {
         serde_json::json!({
             "name": "bash",
             "description": "Run a shell command. Use for: ls, find, grep, git, npm, python, etc.",
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
@@ -34,7 +34,7 @@ pub fn read_file_tool() -> &'static Value {
         serde_json::json!({
             "name": "read_file",
             "description": "Read file contents. Returns UTF-8 text. Use for understanding existing code.",
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
@@ -57,7 +57,7 @@ pub fn write_file_tool() -> &'static Value {
         serde_json::json!({
             "name": "write_file",
             "description": "Write content to a file. Creates parent directories if needed. Use for new files or complete rewrites.",
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {
@@ -80,7 +80,7 @@ pub fn edit_file_tool() -> &'static Value {
         serde_json::json!({
             "name": "edit_file",
             "description": "Replace exact text in a file. Use for surgical edits to existing files.",
-            "input_schema": {
+            "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {

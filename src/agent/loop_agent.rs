@@ -209,7 +209,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::ToolCallDone(_id) => {
                             if let Some((id, name, input_str)) = current_tool.take() {
                                 let input: serde_json::Value =
-                                    serde_json::from_str(&input_str).unwrap_or(serde_json::Value::Null);
+                                    serde_json::from_str(&input_str).unwrap_or_else(|_| serde_json::json!({}));
 
                                 let tool_start = Instant::now();
                                 let output = match tools.execute(&name, input.clone()).await {

@@ -163,9 +163,10 @@ impl OpenAIClient {
                         // .unwrap_or("") provides default if missing
                         "name": tool.get("name").and_then(|v| v.as_str()).unwrap_or(""),
                         "description": tool.get("description").and_then(|v| v.as_str()).unwrap_or(""),
-                        // OpenAI uses "parameters" instead of "input_schema"
-                        // .unwrap_or() provides default if missing
-                        "parameters": tool.get("input_schema").unwrap_or(&serde_json::json!({}))
+                        // Try "parameters" first (new standard), then "input_schema" (old Anthropic style)
+                        "parameters": tool.get("parameters")
+                            .or_else(|| tool.get("input_schema"))
+                            .unwrap_or(&serde_json::json!({}))
                     }
                 })
             })
@@ -223,7 +224,11 @@ impl OpenAIClient {
                             "type": "function",
                             "function": {
                                 "name": name,
-                                "arguments": serde_json::to_string(input).unwrap_or_default()
+                                "arguments": if input.is_null() {
+                                    "{}".to_string()
+                                } else {
+                                    serde_json::to_string(input).unwrap_or_else(|_| "{}".to_string())
+                                }
                             }
                         })),
                         _ => None,

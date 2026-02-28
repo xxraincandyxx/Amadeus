@@ -196,20 +196,17 @@ impl MessagesComponent {
         for item in self.items.iter() {
             match item {
                 HistoryItem::User { content, .. } => {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            " ❯ ",
-                            Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            "YOU",
-                            Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
-                        ),
-                    ]));
-
                     let content_lines = render_markdown(content, content_width);
-                    for content_line in content_lines {
-                        let mut spans = vec![Span::raw("   ")];
+                    for (i, content_line) in content_lines.into_iter().enumerate() {
+                        let mut spans = Vec::new();
+                        if i == 0 {
+                            spans.push(Span::styled(
+                                "> ",
+                                Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD),
+                            ));
+                        } else {
+                            spans.push(Span::raw("  "));
+                        }
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
                     }
@@ -217,22 +214,19 @@ impl MessagesComponent {
                 }
 
                 HistoryItem::Assistant { content, .. } => {
-                    lines.push(Line::from(vec![
-                        Span::styled(
-                            " ❯ ",
-                            Style::default()
-                                .fg(THEME.purple)
-                                .add_modifier(Modifier::BOLD),
-                        ),
-                        Span::styled(
-                            "AMADEUS",
-                            Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
-                        ),
-                    ]));
-
                     let content_lines = render_markdown(content, content_width);
-                    for content_line in content_lines {
-                        let mut spans = vec![Span::raw("   ")];
+                    for (i, content_line) in content_lines.into_iter().enumerate() {
+                        let mut spans = Vec::new();
+                        if i == 0 {
+                            spans.push(Span::styled(
+                                "✦ ",
+                                Style::default()
+                                    .fg(THEME.purple)
+                                    .add_modifier(Modifier::BOLD),
+                            ));
+                        } else {
+                            spans.push(Span::raw("  "));
+                        }
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
                     }
@@ -259,22 +253,19 @@ impl MessagesComponent {
         }
 
         if let Some(ref streaming) = self.streaming_text {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    " ❯ ",
-                    Style::default()
-                        .fg(THEME.purple)
-                        .add_modifier(Modifier::BOLD),
-                ),
-                Span::styled(
-                    "AMADEUS",
-                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
-                ),
-            ]));
-
             let content_lines = render_markdown(streaming, content_width);
-            for content_line in content_lines {
-                let mut spans = vec![Span::raw("   ")];
+            for (i, content_line) in content_lines.into_iter().enumerate() {
+                let mut spans = Vec::new();
+                if i == 0 {
+                    spans.push(Span::styled(
+                        "✦ ",
+                        Style::default()
+                            .fg(THEME.purple)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                } else {
+                    spans.push(Span::raw("  "));
+                }
                 spans.extend(content_line.spans.into_iter());
                 lines.push(Line::from(spans));
             }
