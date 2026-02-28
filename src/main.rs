@@ -3,6 +3,7 @@
 //! Run with `cargo run` for TUI mode, or `cargo run -- --server` for HTTP mode.
 
 use amadeus::agent::config::{Config, Provider};
+use amadeus::agent::mesh::MeshManager;
 use amadeus::agent::supervisor::{Supervisor, SupervisorConfig};
 use amadeus::agent::worker::WorkerConfig;
 use amadeus::client::anthropic::AnthropicClient;
@@ -24,6 +25,7 @@ async fn main() -> Result<()> {
     let config = Arc::new(Config::load()?);
     let sdk_config = Arc::clone(&config);
     let args: Vec<String> = std::env::args().collect();
+    let mesh_manager = MeshManager::new(config.workdir.clone());
 
     // 2. Initialize Core LLM Client
     let provider = match config.provider {
@@ -47,6 +49,9 @@ async fn main() -> Result<()> {
 
     // 3. Mode Selection
 
+    // --- MESH COORDINATION ---
+    let supervisor_info = mesh_manager.get_supervisor_info();
+
     // --- SERVER MODE ---
     #[cfg(feature = "api")]
     if args.contains(&"--server".to_string()) {
@@ -69,6 +74,7 @@ async fn main() -> Result<()> {
                 tokio::spawn(async move {
                     let _ = s_clone.run().await;
                 });
+                mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
                 run_server(port, supervisor).await?;
             }
             ClientKind::OpenAI(c) => {
@@ -82,9 +88,11 @@ async fn main() -> Result<()> {
                 tokio::spawn(async move {
                     let _ = s_clone.run().await;
                 });
+                mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
                 run_server(port, supervisor).await?;
             }
         }
+        mesh_manager.cleanup();
         return Ok(());
     }
 
@@ -98,11 +106,17 @@ async fn main() -> Result<()> {
             ClientKind::Anthropic(c) => {
                 let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
+                if let Some(info) = supervisor_info {
+                    app.set_mesh_mode(&info.supervisor_addr);
+                }
                 app.run().await?;
             }
             ClientKind::OpenAI(c) => {
                 let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
+                if let Some(info) = supervisor_info {
+                    app.set_mesh_mode(&info.supervisor_addr);
+                }
                 app.run().await?;
             }
         }

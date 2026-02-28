@@ -24,6 +24,7 @@ pub struct StatusBar {
     token_count: usize,
     model_name: String,
     spinner_frame: usize,
+    pub is_mesh: bool,
 }
 
 impl StatusBar {
@@ -34,6 +35,7 @@ impl StatusBar {
             token_count: 0,
             model_name,
             spinner_frame: 0,
+            is_mesh: false,
         }
     }
 
@@ -88,6 +90,17 @@ impl StatusBar {
             ),
             Span::raw(" "),
         ];
+
+        if self.is_mesh {
+            left_spans.push(Span::styled(
+                " MESH ",
+                Style::default()
+                    .fg(THEME.bg)
+                    .bg(THEME.purple)
+                    .add_modifier(Modifier::BOLD),
+            ));
+            left_spans.push(Span::raw(" "));
+        }
 
         if self.state == AppState::Processing {
             if let Some(start) = self.start_time {

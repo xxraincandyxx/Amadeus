@@ -3,6 +3,7 @@
 pub mod config;
 pub mod events;
 pub mod loop_agent;
+pub mod mesh;
 pub mod messages;
 
 #[cfg(feature = "supervisor")]

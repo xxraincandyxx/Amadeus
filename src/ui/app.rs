@@ -50,6 +50,7 @@ pub struct App<C: LLMClient> {
     current_text: String,
     messages_area: Rect,
     sidebar_area: Rect,
+    mesh_supervisor_addr: Option<String>,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -70,7 +71,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             current_text: String::new(),
             messages_area: Rect::default(),
             sidebar_area: Rect::default(),
+            mesh_supervisor_addr: None,
         }
+    }
+
+    pub fn set_mesh_mode(&mut self, addr: &str) {
+        self.mesh_supervisor_addr = Some(addr.to_string());
+        self.status.is_mesh = true;
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -416,6 +423,51 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.input.clear();
         self.current_text.clear();
         self.status.set_state(AppState::Processing);
+
+        // --- MESH DELEGATION ---
+        if let Some(addr) = self.mesh_supervisor_addr.clone() {
+            let prompt = trimmed.to_string();
+            let (tx, rx) = mpsc::channel(64);
+            
+            let handle = tokio::spawn(async move {
+                let client = reqwest::Client::new();
+                let url = format!("{}/tasks", addr);
+                
+                let body = serde_json::json!({
+                    "id": format!("tui-{}", uuid::Uuid::new_v4()),
+                    "prompt": prompt,
+                    "capabilities": ["bash"]
+                });
+
+                match client.post(&url).json(&body).send().await {
+                    Ok(resp) => {
+                        if resp.status().is_success() {
+                            if let Ok(result) = resp.json::<serde_json::Value>().await {
+                                let text = result["output"].as_str().unwrap_or("Done").to_string();
+                                let _ = tx.send(AgentEvent::Done { 
+                                    result: crate::agent::events::RunResult {
+                                        text,
+                                        tool_calls: Vec::new(),
+                                    }
+                                }).await;
+                            }
+                        } else {
+                            let error_body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                            let _ = tx.send(AgentEvent::Error { 
+                                message: format!("Supervisor error ({}): {}", addr, error_body) 
+                            }).await;
+                        }
+                    }
+                    Err(e) => {
+                        let _ = tx.send(AgentEvent::Error { message: format!("Connection failed to {}: {}", addr, e) }).await;
+                    }
+                }
+            });
+
+            self.stream_rx = Some(rx);
+            self.stream_abort = Some(handle);
+            return Ok(());
+        }
 
         let agent = self.agent.clone();
         let prompt = trimmed.to_string();
