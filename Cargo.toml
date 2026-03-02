@@ -63,6 +63,9 @@ tower = { version = "0.4", optional = true }
 tower-http = { version = "0.5", features = ["cors"], optional = true }
 tokio-util = { version = "0.7", features = ["io"], optional = true }
 walkdir = "2.5"
+glob = "0.3"
+regex = "1.10"
+url = "2.5"
 
 # Optional: TUI
 crossterm = { version = "0.27", features = ["event-stream"], optional = true }

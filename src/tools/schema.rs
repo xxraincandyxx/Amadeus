@@ -9,6 +9,9 @@ static BASH_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static READ_FILE_SCHEMA: OnceLock<Value> = OnceLock::new();
 static WRITE_FILE_SCHEMA: OnceLock<Value> = OnceLock::new();
 static EDIT_FILE_SCHEMA: OnceLock<Value> = OnceLock::new();
+static GLOB_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
+static GREP_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
+static WEB_FETCH_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 
 pub fn bash_tool() -> &'static Value {
     BASH_TOOL_SCHEMA.get_or_init(|| {
@@ -106,11 +109,108 @@ pub fn edit_file_tool() -> &'static Value {
     })
 }
 
+pub fn glob_tool() -> &'static Value {
+    GLOB_TOOL_SCHEMA.get_or_init(|| {
+        serde_json::json!({
+            "name": "glob",
+            "description": "Fast file pattern matching tool that works with any codebase size. Supports glob patterns like '**/*.js' or 'src/**/*.ts'. Returns matching file paths sorted by modification time. Use this tool to find files by name patterns.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The glob pattern to match files against (e.g., '**/*.js', 'src/**/*.ts')"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory to search in. If not specified, the current working directory will be used."
+                    }
+                },
+                "required": ["pattern"]
+            }
+        })
+    })
+}
+
+pub fn grep_tool() -> &'static Value {
+    GREP_TOOL_SCHEMA.get_or_init(|| {
+        serde_json::json!({
+            "name": "grep",
+            "description": "A powerful search tool built on ripgrep. Supports full regex syntax. Use this tool to search for patterns within file contents. Prefer this over glob when searching for content within files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "The regular expression pattern to search for in file contents"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "The directory or file to search in. Defaults to the current working directory if not specified."
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Glob pattern to filter files (e.g., '*.js', '*.rs')"
+                    },
+                    "case_sensitive": {
+                        "type": "boolean",
+                        "description": "Whether the search should be case sensitive. Default is false (case insensitive)."
+                    },
+                    "output_mode": {
+                        "type": "string",
+                        "enum": ["content", "files_with_matches"],
+                        "description": "Output mode. 'content' shows matching lines with context, 'files_with_matches' only shows file paths. Default is 'content'."
+                    },
+                    "head_limit": {
+                        "type": "integer",
+                        "description": "Limit the number of results returned. Default is 100."
+                    }
+                },
+                "required": ["pattern"]
+            }
+        })
+    })
+}
+
+pub fn web_fetch_tool() -> &'static Value {
+    WEB_FETCH_TOOL_SCHEMA.get_or_init(|| {
+        serde_json::json!({
+            "name": "web_fetch",
+            "description": "Fetch and convert URL content to LLM-friendly input. Use this tool to retrieve content from web URLs. Only supports HTTP/HTTPS protocols and text-based content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch content from (must be HTTP or HTTPS)"
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Desired format for the response (e.g., 'text', 'markdown'). Default is raw text."
+                    },
+                    "timeout_secs": {
+                        "type": "integer",
+                        "description": "Request timeout in seconds. Default is 20."
+                    },
+                    "max_bytes": {
+                        "type": "integer",
+                        "description": "Maximum bytes to read from response. Default is 50000."
+                    }
+                },
+                "required": ["url"]
+            }
+        })
+    })
+}
+
 pub fn all_tools() -> Vec<&'static Value> {
     vec![
         bash_tool(),
         read_file_tool(),
         write_file_tool(),
         edit_file_tool(),
+        glob_tool(),
+        grep_tool(),
+        web_fetch_tool(),
     ]
 }
