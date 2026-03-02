@@ -10,7 +10,7 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use walkdir::WalkDir;
 
-use crate::ui::colors::THEME;
+use crate::ui::get_colors;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SidebarKind {
@@ -105,6 +105,7 @@ impl FileSidebar {
             return;
         }
 
+        let colors = get_colors();
         let content_width = area.width.saturating_sub(2) as usize;
         let indent_str = "  ";
         let visible_count = area.height.saturating_sub(2) as usize;
@@ -141,16 +142,19 @@ impl FileSidebar {
 
                 let style = if actual_index == self.selected {
                     Style::default()
-                        .fg(THEME.cyan)
-                        .bg(THEME.selection)
+                        .fg(colors.text.link)
+                        .bg(colors.ui.dark)
                         .add_modifier(Modifier::BOLD)
                 } else {
-                    Style::default().fg(THEME.fg)
+                    Style::default().fg(colors.text.primary)
                 };
 
                 ListItem::new(Line::from(vec![
                     Span::styled(indent, style),
-                    Span::styled(format!(" {} ", icon), Style::default().fg(THEME.purple)),
+                    Span::styled(
+                        format!(" {} ", icon),
+                        Style::default().fg(colors.text.accent),
+                    ),
                     Span::styled(truncated_name, style),
                 ]))
             })
@@ -161,12 +165,12 @@ impl FileSidebar {
                 .title(" EXPLORER ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.comment)
+                        .fg(colors.ui.comment)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::RIGHT)
-                .border_style(Style::default().fg(THEME.border))
-                .style(Style::default().bg(THEME.bg)),
+                .border_style(Style::default().fg(colors.border.default))
+                .style(Style::default().bg(colors.background.primary)),
         );
 
         frame.render_widget(list, area);
@@ -185,61 +189,107 @@ impl HelpSidebar {
             return;
         }
 
+        let colors = get_colors();
+
         let lines = vec![
             Line::from(""),
             Line::from(vec![
-                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled(
                     "SHORTCUTS",
-                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   Enter ", Style::default().fg(THEME.cyan)),
-                Span::styled(" Send", Style::default().fg(THEME.comment)),
+                Span::styled("   Enter ", Style::default().fg(colors.text.link)),
+                Span::styled(" Send", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   A-Enter ", Style::default().fg(THEME.cyan)),
-                Span::styled(" New Line", Style::default().fg(THEME.comment)),
+                Span::styled("   A-Enter ", Style::default().fg(colors.text.link)),
+                Span::styled(" New Line", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   Up/Down ", Style::default().fg(THEME.cyan)),
-                Span::styled(" History", Style::default().fg(THEME.comment)),
+                Span::styled("   Up/Down ", Style::default().fg(colors.text.link)),
+                Span::styled(" History", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled(
                     "SIDEBAR",
-                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   ^B ", Style::default().fg(THEME.cyan)),
-                Span::styled(" Files", Style::default().fg(THEME.comment)),
+                Span::styled("   ^B ", Style::default().fg(colors.text.link)),
+                Span::styled(" Files", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   !H ", Style::default().fg(THEME.cyan)),
-                Span::styled(" Help", Style::default().fg(THEME.comment)),
+                Span::styled("   !H ", Style::default().fg(colors.text.link)),
+                Span::styled(" Help", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled(" ❯ ", Style::default().fg(THEME.purple)),
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
+                    "THEMES",
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   ^T ", Style::default().fg(colors.text.link)),
+                Span::styled(" Switch Theme", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
+                    "SCROLLING",
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   Shift+↑/↓ ", Style::default().fg(colors.text.link)),
+                Span::styled(" Line by Line", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   PgUp/PgDn ", Style::default().fg(colors.text.link)),
+                Span::styled(" Page Scroll", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   ^Home/^End ", Style::default().fg(colors.text.link)),
+                Span::styled(" Top/Bottom", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled(
                     "SYSTEM",
-                    Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   Esc ", Style::default().fg(THEME.cyan)),
-                Span::styled(" Collapse", Style::default().fg(THEME.comment)),
+                Span::styled("   Esc ", Style::default().fg(colors.text.link)),
+                Span::styled(" Collapse", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   ^C ", Style::default().fg(THEME.cyan)),
-                Span::styled(" Exit", Style::default().fg(THEME.comment)),
+                Span::styled("   ^C ", Style::default().fg(colors.text.link)),
+                Span::styled(" Exit", Style::default().fg(colors.ui.comment)),
             ]),
         ];
 
@@ -248,12 +298,12 @@ impl HelpSidebar {
                 .title(" COMMANDS ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.comment)
+                        .fg(colors.ui.comment)
                         .add_modifier(Modifier::BOLD),
                 )
                 .borders(Borders::RIGHT)
-                .border_style(Style::default().fg(THEME.border))
-                .style(Style::default().bg(THEME.bg)),
+                .border_style(Style::default().fg(colors.border.default))
+                .style(Style::default().bg(colors.background.primary)),
         );
 
         frame.render_widget(paragraph, area);

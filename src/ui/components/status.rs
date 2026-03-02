@@ -8,7 +8,7 @@ use ratatui::{
     Frame,
 };
 
-use crate::ui::colors::THEME;
+use crate::ui::get_colors;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AppState {
@@ -66,18 +66,24 @@ impl StatusBar {
             return;
         }
 
+        let colors = get_colors();
+
         let (status_icon, status_color, status_text) = match self.state {
-            AppState::Idle => (" ● ".to_string(), THEME.comment, "IDLE"),
-            AppState::Processing => (format!(" {} ", self.get_spinner()), THEME.cyan, "BUSY"),
-            AppState::Success => (" ✓ ".to_string(), THEME.green, "DONE"),
-            AppState::Error => (" ✗ ".to_string(), THEME.red, "ERR "),
+            AppState::Idle => (" ● ".to_string(), colors.ui.comment, "IDLE"),
+            AppState::Processing => (
+                format!(" {} ", self.get_spinner()),
+                colors.text.link,
+                "BUSY",
+            ),
+            AppState::Success => (" ✓ ".to_string(), colors.status.success, "DONE"),
+            AppState::Error => (" ✗ ".to_string(), colors.status.error, "ERR "),
         };
 
         let mut left_spans = vec![
             Span::styled(
                 status_icon,
                 Style::default()
-                    .fg(THEME.bg)
+                    .fg(colors.background.primary)
                     .bg(status_color)
                     .add_modifier(Modifier::BOLD),
             ),
@@ -85,7 +91,7 @@ impl StatusBar {
                 format!(" {} ", status_text),
                 Style::default()
                     .fg(status_color)
-                    .bg(THEME.current_line)
+                    .bg(colors.ui.dark)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::raw(" "),
@@ -95,8 +101,8 @@ impl StatusBar {
             left_spans.push(Span::styled(
                 " MESH ",
                 Style::default()
-                    .fg(THEME.bg)
-                    .bg(THEME.purple)
+                    .fg(colors.background.primary)
+                    .bg(colors.text.accent)
                     .add_modifier(Modifier::BOLD),
             ));
             left_spans.push(Span::raw(" "));
@@ -111,7 +117,7 @@ impl StatusBar {
                         elapsed.as_secs(),
                         elapsed.subsec_millis() / 100
                     ),
-                    Style::default().fg(THEME.comment),
+                    Style::default().fg(colors.ui.comment),
                 ));
             }
         }
@@ -120,7 +126,7 @@ impl StatusBar {
             left_spans.push(Span::styled(
                 format!(" {} tokens ", self.token_count),
                 Style::default()
-                    .fg(THEME.orange)
+                    .fg(colors.status.warning)
                     .add_modifier(Modifier::DIM),
             ));
         }
@@ -129,8 +135,8 @@ impl StatusBar {
         let right_span = Span::styled(
             &right_text,
             Style::default()
-                .fg(THEME.purple)
-                .bg(THEME.current_line)
+                .fg(colors.text.accent)
+                .bg(colors.ui.dark)
                 .add_modifier(Modifier::BOLD),
         );
 
@@ -144,7 +150,7 @@ impl StatusBar {
         left_spans.push(right_span);
 
         let line = Line::from(left_spans);
-        let paragraph = Paragraph::new(line).style(Style::default().bg(THEME.bg));
+        let paragraph = Paragraph::new(line).style(Style::default().bg(colors.background.primary));
 
         frame.render_widget(paragraph, area);
     }

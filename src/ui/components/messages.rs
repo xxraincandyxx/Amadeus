@@ -8,9 +8,10 @@ use ratatui::{
     Frame,
 };
 
-use crate::ui::colors::THEME;
 use crate::ui::components::markdown::render_markdown;
 use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
+use crate::ui::get_colors;
+use crate::ui::scroll::{AnimatedScrollbar, ScrollState};
 
 #[derive(Debug, Clone)]
 pub enum HistoryItem {
@@ -41,23 +42,20 @@ impl HistoryItem {
 
 pub struct MessagesComponent {
     items: Vec<HistoryItem>,
-    scroll_offset: usize,
-    auto_scroll: bool,
+    scroll_state: ScrollState,
+    scrollbar: AnimatedScrollbar,
     streaming_text: Option<String>,
-    total_lines: usize,
-    viewport_height: usize,
     pending_tool_group: Option<ToolGroup>,
 }
 
 impl MessagesComponent {
     pub fn new() -> Self {
+        let colors = get_colors();
         Self {
             items: Vec::new(),
-            scroll_offset: 0,
-            auto_scroll: true,
+            scroll_state: ScrollState::new(),
+            scrollbar: AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover),
             streaming_text: None,
-            total_lines: 0,
-            viewport_height: 0,
             pending_tool_group: None,
         }
     }
@@ -65,8 +63,9 @@ impl MessagesComponent {
     pub fn add_user(&mut self, content: String) {
         self.finalize_pending_tool_group();
         self.items.push(HistoryItem::user(content));
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -74,15 +73,17 @@ impl MessagesComponent {
         self.finalize_pending_tool_group();
         self.streaming_text = None;
         self.items.push(HistoryItem::assistant(content));
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
     pub fn update_streaming_text(&mut self, text: &str) {
         self.streaming_text = Some(text.to_string());
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -90,8 +91,9 @@ impl MessagesComponent {
         self.finalize_pending_tool_group();
         self.streaming_text = None;
         self.items.push(HistoryItem::assistant(text));
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -110,8 +112,9 @@ impl MessagesComponent {
             group.add_tool(tool);
         }
 
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -130,8 +133,9 @@ impl MessagesComponent {
                 }
             }
         }
-        if self.auto_scroll {
-            self.scroll_to_bottom();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -166,23 +170,48 @@ impl MessagesComponent {
     }
 
     pub fn scroll_up(&mut self, lines: usize) {
-        self.auto_scroll = false;
-        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.scroll_state.scroll_up(lines);
+        self.scrollbar.flash();
     }
 
     pub fn scroll_down(&mut self, lines: usize) {
-        self.scroll_offset = self.scroll_offset.saturating_add(lines);
+        self.scroll_state.scroll_down(lines);
+        self.scrollbar.flash();
+    }
+
+    pub fn scroll_page_up(&mut self) {
+        self.scroll_state.scroll_page_up();
+        self.scrollbar.flash();
+    }
+
+    pub fn scroll_page_down(&mut self) {
+        self.scroll_state.scroll_page_down();
+        self.scrollbar.flash();
+    }
+
+    pub fn scroll_to_top(&mut self) {
+        self.scroll_state.scroll_to_top();
+        self.scrollbar.flash();
     }
 
     pub fn scroll_to_bottom(&mut self) {
-        self.scroll_offset = usize::MAX;
-        self.auto_scroll = true;
+        self.scroll_state.scroll_to_bottom();
+        self.scrollbar.flash();
     }
 
     pub fn scroll_to_ratio(&mut self, ratio: f32) {
-        self.auto_scroll = false;
-        let max_scroll = self.total_lines.saturating_sub(self.viewport_height);
-        self.scroll_offset = ((ratio * max_scroll as f32) as usize).min(max_scroll);
+        self.scroll_state.scroll_to_ratio(ratio);
+        self.scrollbar.flash();
+    }
+
+    pub fn flash_scrollbar(&mut self) {
+        self.scrollbar.flash();
+    }
+
+    pub fn update_scrollbar_colors(&mut self) {
+        let colors = get_colors();
+        self.scrollbar =
+            AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover);
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
@@ -190,6 +219,9 @@ impl MessagesComponent {
             return;
         }
 
+        self.scrollbar.update();
+
+        let colors = get_colors();
         let mut lines: Vec<Line> = Vec::new();
         let content_width = area.width.saturating_sub(4) as usize;
 
@@ -202,7 +234,9 @@ impl MessagesComponent {
                         if i == 0 {
                             spans.push(Span::styled(
                                 "> ",
-                                Style::default().fg(THEME.cyan).add_modifier(Modifier::BOLD),
+                                Style::default()
+                                    .fg(colors.text.link)
+                                    .add_modifier(Modifier::BOLD),
                             ));
                         } else {
                             spans.push(Span::raw("  "));
@@ -221,7 +255,7 @@ impl MessagesComponent {
                             spans.push(Span::styled(
                                 "✦ ",
                                 Style::default()
-                                    .fg(THEME.purple)
+                                    .fg(colors.text.accent)
                                     .add_modifier(Modifier::BOLD),
                             ));
                         } else {
@@ -260,7 +294,7 @@ impl MessagesComponent {
                     spans.push(Span::styled(
                         "✦ ",
                         Style::default()
-                            .fg(THEME.purple)
+                            .fg(colors.text.accent)
                             .add_modifier(Modifier::BOLD),
                     ));
                 } else {
@@ -281,23 +315,21 @@ impl MessagesComponent {
                     Span::styled(
                         "Waiting for your instructions...",
                         Style::default()
-                            .fg(THEME.comment)
+                            .fg(colors.ui.comment)
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]),
             ];
             frame.render_widget(
-                Paragraph::new(empty_lines).style(Style::default().bg(THEME.bg)),
+                Paragraph::new(empty_lines).style(Style::default().bg(colors.background.primary)),
                 area,
             );
             return;
         }
 
         let visible_lines = area.height as usize;
-        self.viewport_height = visible_lines;
-        self.total_lines = total_lines;
-        let max_scroll = total_lines.saturating_sub(visible_lines);
-        let scroll_offset = self.scroll_offset.min(max_scroll);
+        self.scroll_state.update_content(total_lines, visible_lines);
+        let scroll_offset = self.scroll_state.effective_offset();
 
         let visible_lines_vec: Vec<Line> = lines
             .into_iter()
@@ -305,16 +337,21 @@ impl MessagesComponent {
             .take(visible_lines)
             .collect();
 
-        let paragraph = Paragraph::new(visible_lines_vec).style(Style::default().bg(THEME.bg));
+        let paragraph =
+            Paragraph::new(visible_lines_vec).style(Style::default().bg(colors.background.primary));
 
         frame.render_widget(paragraph, area);
 
         if total_lines > visible_lines {
+            let thumb_color = self.scrollbar.thumb_color();
+
             let scrollbar = Scrollbar::default()
                 .orientation(ScrollbarOrientation::VerticalRight)
                 .begin_symbol(None)
                 .end_symbol(None)
-                .style(Style::default().fg(THEME.border));
+                .thumb_symbol("▐")
+                .track_symbol(Some("│"))
+                .style(Style::default().fg(thumb_color));
 
             let mut scrollbar_state = ScrollbarState::new(total_lines)
                 .position(scroll_offset)

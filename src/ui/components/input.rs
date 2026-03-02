@@ -7,7 +7,7 @@ use ratatui::{
 use tui_textarea::{CursorMove, TextArea};
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::colors::THEME;
+use crate::ui::get_colors;
 
 pub struct InputComponent {
     textarea: TextArea<'static>,
@@ -19,26 +19,28 @@ pub struct InputComponent {
 impl InputComponent {
     pub fn new() -> Self {
         let mut textarea = TextArea::default();
+        let colors = get_colors();
+
         textarea.set_block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(THEME.border))
+                .border_style(Style::default().fg(colors.border.default))
                 .title(" ❯ PROMPT ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.purple)
+                        .fg(colors.text.accent)
                         .add_modifier(Modifier::BOLD),
                 ),
         );
-        textarea.set_style(Style::default().fg(THEME.fg));
+        textarea.set_style(Style::default().fg(colors.text.primary));
         textarea.set_cursor_style(
             Style::default()
-                .fg(THEME.cyan)
+                .fg(colors.text.link)
                 .add_modifier(Modifier::REVERSED),
         );
         textarea.set_placeholder_style(
             Style::default()
-                .fg(THEME.comment)
+                .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
         textarea.set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
@@ -67,26 +69,29 @@ impl InputComponent {
     }
 
     fn setup_textarea(&mut self) {
+        let colors = get_colors();
+
         self.textarea.set_block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(THEME.border))
+                .border_style(Style::default().fg(colors.border.default))
                 .title(" ❯ PROMPT ")
                 .title_style(
                     Style::default()
-                        .fg(THEME.purple)
+                        .fg(colors.text.accent)
                         .add_modifier(Modifier::BOLD),
                 ),
         );
-        self.textarea.set_style(Style::default().fg(THEME.fg));
+        self.textarea
+            .set_style(Style::default().fg(colors.text.primary));
         self.textarea.set_cursor_style(
             Style::default()
-                .fg(THEME.cyan)
+                .fg(colors.text.link)
                 .add_modifier(Modifier::REVERSED),
         );
         self.textarea.set_placeholder_style(
             Style::default()
-                .fg(THEME.comment)
+                .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
         self.textarea

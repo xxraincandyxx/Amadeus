@@ -225,7 +225,7 @@ fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
     for span in spans {
         let style = span.style;
         let content = span.content.as_ref();
-        
+
         // If the span contains spaces, we can wrap at those spaces
         let words: Vec<&str> = if content.contains(' ') {
             // We want to keep the spaces to account for their width
@@ -250,7 +250,7 @@ fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
 
         for word in words {
             let word_width = word.width();
-            
+
             if word == " " {
                 if current_width + 1 <= width {
                     current_line_spans.push(Span::styled(" ", style));
@@ -288,10 +288,10 @@ fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
                             w += cw;
                             take += c.len_utf8();
                         }
-                        
+
                         let chunk = &remaining[..take];
                         remaining = &remaining[take..];
-                        
+
                         if remaining.is_empty() {
                             current_line_spans.push(Span::styled(chunk.to_string(), style));
                             current_width = w;

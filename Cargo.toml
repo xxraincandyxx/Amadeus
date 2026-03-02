@@ -22,7 +22,7 @@ default = []
 
 # Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored"]
+tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
 
 # Concurrency & Multi-Agent
 concurrency = []
@@ -70,7 +70,10 @@ ratatui = { version = "0.28", optional = true }
 tui-textarea = { version = "0.6", optional = true }
 unicode-width = { version = "0.2", optional = true }
 colored = { version = "2.1", optional = true }
+lazy_static = { version = "1.4", optional = true }
 libc = "0.2.182"
+rand = "0.8"
+dirs = "5.0"
 
 [dev-dependencies]
 mockito = "1.4"

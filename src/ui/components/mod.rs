@@ -1,13 +1,21 @@
+mod footer;
 mod input;
+mod loading_indicator;
 mod markdown;
 mod messages;
+mod phrase_cycler;
 mod sidebar;
+mod spinner;
 mod status;
 mod tool_group;
 
+pub use footer::{Footer, FooterInfo, SandboxStatus};
 pub use input::InputComponent;
+pub use loading_indicator::{LoadingIndicator, StreamingState};
 pub use markdown::render_markdown;
 pub use messages::{HistoryItem, MessagesComponent};
+pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sidebar::{FileSidebar, HelpSidebar, Sidebar, SidebarKind};
+pub use spinner::GeminiSpinner;
 pub use status::{AppState, StatusBar};
 pub use tool_group::{ToolCall, ToolGroup, ToolStatus};

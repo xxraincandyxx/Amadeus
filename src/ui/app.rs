@@ -19,10 +19,10 @@ use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
 use crate::client::LLMClient;
 use crate::error::Result;
-use crate::ui::colors::THEME;
+use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    AppState, FileSidebar, HelpSidebar, InputComponent, MessagesComponent, Sidebar, SidebarKind,
-    StatusBar,
+    AppState, FileSidebar, Footer, HelpSidebar, InputComponent, LoadingIndicator,
+    MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 
@@ -42,6 +42,8 @@ pub struct App<C: LLMClient> {
     messages: MessagesComponent,
     input: InputComponent,
     status: StatusBar,
+    footer: Footer,
+    loading_indicator: LoadingIndicator,
     sidebar: Option<Sidebar>,
     should_quit: bool,
     workdir: PathBuf,
@@ -55,7 +57,9 @@ pub struct App<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
-        let status = StatusBar::new(model_name);
+        let status = StatusBar::new(model_name.clone());
+        let footer = Footer::new(model_name);
+        let loading_indicator = LoadingIndicator::new();
 
         Self {
             agent,
@@ -63,6 +67,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
             status,
+            footer,
+            loading_indicator,
             sidebar: None,
             should_quit: false,
             workdir,
@@ -78,6 +84,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn set_mesh_mode(&mut self, addr: &str) {
         self.mesh_supervisor_addr = Some(addr.to_string());
         self.status.is_mesh = true;
+        self.footer.set_mesh(true);
     }
 
     pub async fn run(&mut self) -> Result<()> {
@@ -144,6 +151,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {
                 self.status.tick();
+                self.loading_indicator.tick();
             }
         }
         Ok(())
@@ -217,6 +225,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AgentEvent::Done { result } => {
                 self.messages.finalize_assistant(result.text);
                 self.status.set_state(AppState::Success);
+                self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
             }
@@ -229,6 +238,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
                 self.status.set_state(AppState::Error);
+                self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
             }
@@ -260,6 +270,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::NONE, KeyCode::Char('i')) => {
                 self.mode = AppMode::Input;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('t')) => {
+                next_theme();
+                let theme_name = get_theme().name();
+                self.messages.update_scrollbar_colors();
+                info!("Switched to theme: {}", theme_name);
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 self.sidebar = None;
@@ -357,11 +373,29 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.input.move_cursor_line_end();
                 }
             }
+            (KeyModifiers::SHIFT, KeyCode::Up) => {
+                self.messages.scroll_up(1);
+            }
+            (KeyModifiers::SHIFT, KeyCode::Down) => {
+                self.messages.scroll_down(1);
+            }
             (KeyModifiers::NONE, KeyCode::PageUp) => {
-                self.messages.scroll_up(10);
+                self.messages.scroll_page_up();
             }
             (KeyModifiers::NONE, KeyCode::PageDown) => {
-                self.messages.scroll_down(10);
+                self.messages.scroll_page_down();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Home) => {
+                self.messages.scroll_to_top();
+            }
+            (KeyModifiers::SHIFT, KeyCode::Home) => {
+                self.messages.scroll_to_top();
+            }
+            (KeyModifiers::CONTROL, KeyCode::End) => {
+                self.messages.scroll_to_bottom();
+            }
+            (KeyModifiers::SHIFT, KeyCode::End) => {
+                self.messages.scroll_to_bottom();
             }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
@@ -388,6 +422,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.current_text.clear();
         self.status.set_state(AppState::Idle);
+        self.loading_indicator.set_streaming_state(StreamingState::Idle);
     }
 
     fn can_show_sidebar(&self, area: Rect) -> bool {
@@ -423,6 +458,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.input.clear();
         self.current_text.clear();
         self.status.set_state(AppState::Processing);
+        self.loading_indicator.set_streaming_state(StreamingState::Responding);
 
         // --- MESH DELEGATION ---
         if let Some(addr) = self.mesh_supervisor_addr.clone() {
@@ -510,9 +546,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
+        let colors = get_colors();
 
         let bg =
-            ratatui::widgets::Block::default().style(ratatui::style::Style::default().bg(THEME.bg));
+            ratatui::widgets::Block::default().style(ratatui::style::Style::default().bg(colors.background.primary));
         frame.render_widget(bg, size);
 
         let margin_area = Rect::new(
@@ -565,20 +602,29 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let input_height = self.input.height();
         let status_height = 1u16;
+        let footer_height = 1u16;
+        let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
+                Constraint::Length(footer_height),
                 Constraint::Length(status_height),
                 Constraint::Min(0),
+                Constraint::Length(loading_height),
                 Constraint::Length(input_height),
             ])
             .split(main_area);
 
-        self.status.render(frame, chunks[0]);
-        self.messages_area = chunks[1];
-        self.messages.render(frame, chunks[1]);
+        self.footer.render(frame, chunks[0]);
+        self.status.render(frame, chunks[1]);
+        self.messages_area = chunks[2];
+        self.messages.render(frame, chunks[2]);
 
-        self.input.render(frame, chunks[2]);
+        if loading_height > 0 {
+            self.loading_indicator.render(frame, chunks[3]);
+        }
+
+        self.input.render(frame, chunks[4]);
     }
 }
