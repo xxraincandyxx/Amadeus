@@ -101,6 +101,10 @@ pub mod prompts;
  * ============================================================================
  */
 
+/// Test utilities (only available with test-utils feature or in tests)
+#[cfg(any(test, feature = "test-utils"))]
+pub mod test_utils;
+
 /// HTTP API server (for testing SDK via HTTP)
 #[cfg(feature = "api")]
 pub mod api;

@@ -1,0 +1,65 @@
+[
+    {
+        "method": "generateContentStream",
+        "response": [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {
+                    "type": "tool_use",
+                    "id": "toolu_test123",
+                    "name": "bash",
+                    "input": {}
+                }
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": "{\"command\": \"ls -la\""
+                }
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "input_json_delta",
+                    "partial_json": "}"
+                }
+            },
+            {
+                "type": "content_block_stop",
+                "index": 0
+            },
+            {
+                "type": "message_stop"
+            }
+        ]
+    },
+    {
+        "method": "generateContentStream",
+        "response": [
+            {
+                "type": "content_block_start",
+                "index": 0,
+                "content_block": {"type": "text"}
+            },
+            {
+                "type": "content_block_delta",
+                "index": 0,
+                "delta": {
+                    "type": "text_delta",
+                    "text": "I found 5 files in the directory."
+                }
+            },
+            {
+                "type": "content_block_stop",
+                "index": 0
+            },
+            {
+                "type": "message_stop"
+            }
+        ]
+    }
+]

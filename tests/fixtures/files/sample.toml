@@ -1,0 +1,39 @@
+# Sample TOML Configuration
+# For testing TOML file parsing
+
+[general]
+name = "test-project"
+version = "1.0.0"
+debug = true
+
+[server]
+host = "localhost"
+port = 8080
+workers = 4
+
+[database]
+driver = "postgres"
+host = "localhost"
+port = 5432
+name = "testdb"
+pool_size = 10
+
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
+
+[features]
+enable_cache = true
+enable_metrics = true
+rate_limit = 1000
+
+[[plugins]]
+name = "auth"
+enabled = true
+priority = 1
+
+[[plugins]]
+name = "cors"
+enabled = true
+priority = 2

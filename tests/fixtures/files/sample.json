@@ -1,0 +1,16 @@
+{
+    "name": "test-project",
+    "version": "1.0.0",
+    "description": "A sample project for testing",
+    "main": "index.js",
+    "scripts": {
+        "test": "pytest",
+        "build": "python -m build"
+    },
+    "dependencies": {
+        "requests": "^2.28.0"
+    },
+    "devDependencies": {
+        "pytest": "^7.0.0"
+    }
+}

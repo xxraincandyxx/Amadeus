@@ -23,6 +23,7 @@ default = []
 # Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
 tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
+test-utils = ["tempfile"]
 
 # Concurrency & Multi-Agent
 concurrency = []
@@ -33,7 +34,7 @@ mesh = ["supervisor"]
 context = []
 
 # All features
-full = ["api", "tui", "concurrency", "supervisor", "mesh", "context"]
+full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
 # Core dependencies
@@ -77,6 +78,9 @@ lazy_static = { version = "1.4", optional = true }
 libc = "0.2.182"
 rand = "0.8"
 dirs = "5.0"
+
+# Optional: Test utilities
+tempfile = { version = "3.10", optional = true }
 
 [dev-dependencies]
 mockito = "1.4"
