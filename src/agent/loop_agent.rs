@@ -18,9 +18,14 @@ use crate::agent::events::{AgentEvent, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
+use crate::hooks::{HookAction, HookRegistry};
+use crate::policy::Policy;
 use crate::tools::bash::BashTool;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
+use crate::tools::glob::GlobTool;
+use crate::tools::grep::GrepTool;
 use crate::tools::registry::ToolRegistry;
+use crate::tools::web::WebFetchTool;
 
 /// A log of a single conversation session.
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,6 +50,8 @@ pub struct AgentBuilder<C: LLMClient> {
     config: Arc<Config>,
     tools: ToolRegistry,
     history: Option<Arc<RwLock<Vec<Message>>>>,
+    hooks: HookRegistry,
+    policy: Policy,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -54,10 +61,12 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             config,
             tools: ToolRegistry::new(),
             history: None,
+            hooks: HookRegistry::new(),
+            policy: Policy::default(),
         }
     }
 
-    /// Add default tools (bash, file operations) to the agent.
+    /// Add default tools (bash, file operations, glob, grep, web_fetch) to the agent.
     pub fn with_default_tools(mut self) -> Self {
         self.tools = self
             .tools
@@ -70,7 +79,10 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             ))))
             .register(Box::new(EditFileTool::new(FileTools::from_config(
                 &self.config,
-            ))));
+            ))))
+            .register(Box::new(GlobTool::from_config(&self.config)))
+            .register(Box::new(GrepTool::from_config(&self.config)))
+            .register(Box::new(WebFetchTool::from_config(&self.config)));
         self
     }
 
@@ -92,6 +104,18 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Set a hook registry for the agent.
+    pub fn with_hooks(mut self, hooks: HookRegistry) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
+    /// Set a policy for tool approval.
+    pub fn with_policy(mut self, policy: Policy) -> Self {
+        self.policy = policy;
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
         let history = self
             .history
@@ -102,6 +126,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             tools: self.tools,
             config: self.config,
             history,
+            hooks: self.hooks,
+            policy: self.policy,
         }
     }
 }
@@ -113,6 +139,8 @@ pub struct Agent<C: LLMClient> {
     tools: ToolRegistry,
     config: Arc<Config>,
     history: Arc<RwLock<Vec<Message>>>,
+    hooks: HookRegistry,
+    policy: Policy,
 }
 
 impl<C: LLMClient + Clone + 'static> Agent<C> {
@@ -138,6 +166,40 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     pub fn config(&self) -> Arc<Config> {
         Arc::clone(&self.config)
+    }
+
+    /// Run with a specific skill.
+    ///
+    /// The skill's prompt template will be rendered with the user input
+    /// as context, and if the skill has tool restrictions, only those
+    /// tools will be available.
+    pub async fn run_with_skill(
+        &self,
+        skill: &crate::skills::Skill,
+        user_input: &str,
+    ) -> Result<RunResult> {
+        let prompt = skill.render(user_input);
+
+        // If skill has tool restrictions, filter the tool registry
+        let original_tools = self.tools.clone();
+        let filtered_tools = if let Some(ref allowed) = skill.allowed_tools {
+            original_tools.filter_by_name(allowed)
+        } else {
+            original_tools
+        };
+
+        // Temporarily use filtered tools
+        let agent = Agent {
+            client: self.client.clone(),
+            tools: filtered_tools,
+            config: Arc::clone(&self.config),
+            history: Arc::clone(&self.history),
+            hooks: self.hooks.clone(),
+            policy: self.policy.clone(),
+        };
+
+        // Run with the rendered prompt
+        agent.run(&prompt).await
     }
 
     /// Save the current session history to a log file.
@@ -233,6 +295,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let tools = self.tools.clone();
         let config = Arc::clone(&self.config);
         let history = Arc::clone(&self.history);
+        let hooks = self.hooks.clone();
+        let policy = self.policy.clone();
         let system = config.system_prompt();
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
@@ -287,47 +351,122 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                         StreamEvent::ToolCallDone(_id) => {
                             if let Some((id, name, input_str)) = current_tool.take() {
-                                let input: serde_json::Value =
+                                let mut input: serde_json::Value =
                                     serde_json::from_str(&input_str).unwrap_or_else(|_| serde_json::json!({}));
 
-                                let tool_start = Instant::now();
-                                let output = match tools.execute(&name, input.clone()).await {
-                                    Ok(out) => out,
-                                    Err(e) => format!("Error: {}", e),
+                                // Run on_tool_start hooks
+                                let hook_action = hooks.on_tool_start(&name, &input).await;
+                                let blocked = match hook_action {
+                                    Ok(HookAction::Continue) => false,
+                                    Ok(HookAction::ModifyInput(new_input)) => {
+                                        debug!(tool = %name, "Hook modified input");
+                                        input = new_input;
+                                        false
+                                    }
+                                    Ok(HookAction::Block(reason)) => {
+                                        warn!(tool = %name, reason = %reason, "Hook blocked tool execution");
+                                        yield Ok(AgentEvent::Error { message: reason.clone() });
+                                        true
+                                    }
+                                    Err(e) => {
+                                        warn!(tool = %name, error = %e, "Hook error");
+                                        false
+                                    }
                                 };
-                                let duration_ms = tool_start.elapsed().as_millis() as u64;
 
-                                debug!(
-                                    tool = %name,
-                                    duration_ms = duration_ms,
-                                    "Tool executed"
-                                );
+                                // Check policy for approval
+                                let needs_approval = !blocked && policy.needs_approval(&name, &input);
 
-                                yield Ok(AgentEvent::ToolComplete {
-                                    id: id.clone(),
-                                    name: name.clone(),
-                                    input: input.clone(),
-                                    output: output.clone(),
-                                    is_error: output.starts_with("Error:"),
-                                });
+                                if !blocked && needs_approval {
+                                    // Emit approval required event
+                                    let approval_id = uuid::Uuid::new_v4().to_string();
+                                    let reason = policy.approval_reason(&name, &input);
 
-                                total_result.tool_calls.push(ToolCall {
-                                    name: name.clone(),
-                                    input: input.clone(),
-                                    output: output.clone(),
-                                    is_error: output.starts_with("Error:"),
-                                });
+                                    debug!(tool = %name, approval_id = %approval_id, "Tool requires approval");
 
-                                tool_uses.push(ContentBlock::ToolUse {
-                                    id: id.clone(),
-                                    name,
-                                    input,
-                                });
+                                    // For now, block execution with an error
+                                    // In a full implementation, this would pause and wait for user input
+                                    yield Ok(AgentEvent::ApprovalRequired {
+                                        id: approval_id.clone(),
+                                        tool: name.clone(),
+                                        input: input.clone(),
+                                        reason: reason.clone(),
+                                    });
 
-                                tool_results.push(ContentBlock::ToolResult {
-                                    tool_use_id: id,
-                                    content: output,
-                                });
+                                    // Auto-deny for now (TUI can implement proper approval flow)
+                                    warn!(tool = %name, "Tool blocked pending approval");
+                                    let output = format!("Tool execution blocked: {}", reason);
+
+                                    yield Ok(AgentEvent::ToolComplete {
+                                        id: id.clone(),
+                                        name: name.clone(),
+                                        input: input.clone(),
+                                        output: output.clone(),
+                                        is_error: true,
+                                    });
+
+                                    total_result.tool_calls.push(ToolCall {
+                                        name: name.clone(),
+                                        input: input.clone(),
+                                        output: output.clone(),
+                                        is_error: true,
+                                    });
+
+                                    tool_uses.push(ContentBlock::ToolUse {
+                                        id: id.clone(),
+                                        name,
+                                        input,
+                                    });
+
+                                    tool_results.push(ContentBlock::ToolResult {
+                                        tool_use_id: id,
+                                        content: output,
+                                    });
+                                } else if !blocked {
+                                    let tool_start = Instant::now();
+                                    let output = match tools.execute(&name, input.clone()).await {
+                                        Ok(out) => out,
+                                        Err(e) => format!("Error: {}", e),
+                                    };
+                                    let duration_ms = tool_start.elapsed().as_millis() as u64;
+
+                                    // Run on_tool_complete hooks
+                                    if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
+                                        warn!(tool = %name, error = %e, "Hook error on complete");
+                                    }
+
+                                    debug!(
+                                        tool = %name,
+                                        duration_ms = duration_ms,
+                                        "Tool executed"
+                                    );
+
+                                    yield Ok(AgentEvent::ToolComplete {
+                                        id: id.clone(),
+                                        name: name.clone(),
+                                        input: input.clone(),
+                                        output: output.clone(),
+                                        is_error: output.starts_with("Error:"),
+                                    });
+
+                                    total_result.tool_calls.push(ToolCall {
+                                        name: name.clone(),
+                                        input: input.clone(),
+                                        output: output.clone(),
+                                        is_error: output.starts_with("Error:"),
+                                    });
+
+                                    tool_uses.push(ContentBlock::ToolUse {
+                                        id: id.clone(),
+                                        name,
+                                        input,
+                                    });
+
+                                    tool_results.push(ContentBlock::ToolResult {
+                                        tool_use_id: id,
+                                        content: output,
+                                    });
+                                }
                             }
                         }
 

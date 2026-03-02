@@ -39,11 +39,13 @@ dependencies = [
  "dotenvy",
  "flate2",
  "futures",
+ "glob",
  "lazy_static",
  "libc",
  "mockito",
  "rand 0.8.5",
  "ratatui",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",
@@ -58,6 +60,7 @@ dependencies = [
  "tracing-subscriber",
  "tui-textarea",
  "unicode-width 0.2.2",
+ "url",
  "uuid",
  "walkdir",
  "wiremock",
@@ -660,6 +663,12 @@ dependencies = [
  "wasip2",
  "wasip3",
 ]
+
+[[package]]
+name = "glob"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "h2"

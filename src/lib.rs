@@ -74,6 +74,21 @@ pub mod client;
 /// Tool system (bash, file operations, registry)
 pub mod tools;
 
+/// Project context loading
+pub mod context;
+
+/// Hooks system for extensibility
+pub mod hooks;
+
+/// Policy/approval system
+pub mod policy;
+
+/// Skills system for reusable prompts
+pub mod skills;
+
+/// MCP (Model Context Protocol) support
+pub mod mcp;
+
 /// Error types
 pub mod error;
 
