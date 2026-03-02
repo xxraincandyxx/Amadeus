@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::time::{Duration, Instant};
 
 use ratatui::{
     layout::Rect,
@@ -9,6 +10,7 @@ use ratatui::{
 };
 
 use crate::ui::get_colors;
+use super::status::AppState;
 
 #[derive(Debug, Clone)]
 pub struct FooterInfo {
@@ -18,6 +20,10 @@ pub struct FooterInfo {
     pub model_name: String,
     pub context_percent: u8,
     pub is_mesh: bool,
+    // New fields from StatusBar
+    pub state: AppState,
+    pub elapsed: Option<Duration>,
+    pub token_count: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,6 +46,9 @@ pub struct Footer {
     hide_sandbox: bool,
     hide_model: bool,
     hide_context_percent: bool,
+    // For timing and animation
+    start_time: Option<Instant>,
+    spinner_frame: usize,
 }
 
 impl Footer {
@@ -59,11 +68,16 @@ impl Footer {
                 model_name,
                 context_percent: 0,
                 is_mesh: false,
+                state: AppState::Idle,
+                elapsed: None,
+                token_count: 0,
             },
             hide_cwd: false,
             hide_sandbox: false,
             hide_model: false,
             hide_context_percent: false,
+            start_time: None,
+            spinner_frame: 0,
         }
     }
 
@@ -148,12 +162,38 @@ impl Footer {
         self.info.is_mesh = is_mesh;
     }
 
+    pub fn set_state(&mut self, state: AppState) {
+        if state == AppState::Processing && self.start_time.is_none() {
+            self.start_time = Some(Instant::now());
+        } else if state != AppState::Processing {
+            self.start_time = None;
+        }
+        self.info.state = state;
+    }
+
+    pub fn set_token_count(&mut self, count: usize) {
+        self.info.token_count = count;
+    }
+
+    pub fn tick(&mut self) {
+        self.spinner_frame = (self.spinner_frame + 1) % 10;
+        // Update elapsed time if processing
+        if let Some(start) = self.start_time {
+            self.info.elapsed = Some(start.elapsed());
+        }
+    }
+
     pub fn refresh_git_branch(&mut self) {
         self.info.git_branch = Self::detect_git_branch();
     }
 
     pub fn info(&self) -> &FooterInfo {
         &self.info
+    }
+
+    fn get_spinner(&self) -> &'static str {
+        const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        SPINNER_FRAMES[self.spinner_frame]
     }
 
     pub fn render(&self, frame: &mut Frame, area: Rect) {
@@ -164,10 +204,65 @@ impl Footer {
         let colors = get_colors();
         let mut spans = Vec::new();
 
-        let path_len = ((area.width as usize) / 4).max(20).min(50);
+        // Status indicator (from StatusBar)
+        let (status_icon, status_color, status_text) = match self.info.state {
+            AppState::Idle => ("●".to_string(), colors.ui.comment, "IDLE"),
+            AppState::Processing => (
+                self.get_spinner().to_string(),
+                colors.text.link,
+                "BUSY",
+            ),
+            AppState::Success => ("✓".to_string(), colors.status.success, "DONE"),
+            AppState::Error => ("✗".to_string(), colors.status.error, "ERR"),
+        };
+
+        spans.push(Span::styled(
+            format!("{} ", status_icon),
+            Style::default().fg(status_color).add_modifier(Modifier::BOLD),
+        ));
+        spans.push(Span::styled(
+            format!("{} ", status_text),
+            Style::default().fg(status_color),
+        ));
+
+        // Elapsed time when processing
+        if self.info.state == AppState::Processing {
+            if let Some(elapsed) = self.info.elapsed {
+                spans.push(Span::styled(
+                    format!("{:.1}s ", elapsed.as_secs_f64()),
+                    Style::default().fg(colors.ui.comment),
+                ));
+            }
+        }
+
+        // Token count
+        if self.info.token_count > 0 {
+            spans.push(Span::styled(
+                format!("{}t ", self.info.token_count),
+                Style::default().fg(colors.status.warning),
+            ));
+        }
+
+        // MESH indicator
+        if self.info.is_mesh {
+            spans.push(Span::styled(
+                "MESH ",
+                Style::default()
+                    .fg(colors.background.primary)
+                    .bg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Separator
+        spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+
+        // CWD and git branch
+        let path_len = ((area.width as usize) / 4).max(15).min(40);
 
         if !self.hide_cwd {
             let display_path = Self::shorten_path(&self.info.cwd, path_len);
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 display_path,
                 Style::default().fg(colors.text.primary),
@@ -183,38 +278,33 @@ impl Footer {
         }
 
         if !self.hide_sandbox {
-            spans.push(Span::raw(" │ "));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
 
-            let (status_text, status_color) = match &self.info.sandbox_status {
+            let (sandbox_text, sandbox_color) = match &self.info.sandbox_status {
                 SandboxStatus::None => ("no sandbox".to_string(), colors.status.error),
                 SandboxStatus::Docker => ("docker".to_string(), colors.status.success),
                 SandboxStatus::Seatbelt(profile) => (
-                    format!("macOS Seatbelt ({})", profile),
+                    format!("seatbelt:{}", profile),
                     colors.status.warning,
                 ),
                 SandboxStatus::Other(name) => (name.clone(), colors.status.success),
             };
 
-            spans.push(Span::styled(status_text, Style::default().fg(status_color)));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(sandbox_text, Style::default().fg(sandbox_color)));
         }
 
+        // Right side: model and context
         let mut right_spans = Vec::new();
 
         if !self.hide_model {
-            if self.info.is_mesh {
-                right_spans.push(Span::styled(
-                    " MESH ",
-                    Style::default()
-                        .fg(colors.background.primary)
-                        .bg(colors.text.accent)
-                        .add_modifier(Modifier::BOLD),
-                ));
-                right_spans.push(Span::raw(" "));
-            }
-
+            right_spans.push(Span::raw(" "));
+            right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+            right_spans.push(Span::raw(" "));
             right_spans.push(Span::styled(
-                format!("/model {}", self.info.model_name),
-                Style::default().fg(colors.text.secondary),
+                self.info.model_name.clone(),
+                Style::default().fg(colors.text.accent),
             ));
 
             if !self.hide_context_percent && self.info.context_percent > 0 {

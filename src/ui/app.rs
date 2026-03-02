@@ -22,7 +22,7 @@ use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
     AppState, FileSidebar, Footer, HelpSidebar, InputComponent, LoadingIndicator,
-    MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
+    MessagesComponent, Sidebar, SidebarKind, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 
@@ -41,7 +41,6 @@ pub struct App<C: LLMClient> {
     mode: AppMode,
     messages: MessagesComponent,
     input: InputComponent,
-    status: StatusBar,
     footer: Footer,
     loading_indicator: LoadingIndicator,
     sidebar: Option<Sidebar>,
@@ -57,7 +56,6 @@ pub struct App<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
-        let status = StatusBar::new(model_name.clone());
         let footer = Footer::new(model_name);
         let loading_indicator = LoadingIndicator::new();
 
@@ -66,7 +64,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             mode: AppMode::Input,
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
-            status,
             footer,
             loading_indicator,
             sidebar: None,
@@ -83,7 +80,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     pub fn set_mesh_mode(&mut self, addr: &str) {
         self.mesh_supervisor_addr = Some(addr.to_string());
-        self.status.is_mesh = true;
         self.footer.set_mesh(true);
     }
 
@@ -150,7 +146,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {
-                self.status.tick();
+                self.footer.tick();
                 self.loading_indicator.tick();
             }
         }
@@ -200,7 +196,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             AgentEvent::ToolStart { id, name } => {
-                self.status.set_state(AppState::Processing);
+                self.footer.set_state(AppState::Processing);
                 self.messages.start_tool(id, name, None);
             }
 
@@ -224,7 +220,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             AgentEvent::Done { result } => {
                 self.messages.finalize_assistant(result.text);
-                self.status.set_state(AppState::Success);
+                self.footer.set_state(AppState::Success);
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
@@ -237,7 +233,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
-                self.status.set_state(AppState::Error);
+                self.footer.set_state(AppState::Error);
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
@@ -426,7 +422,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         self.current_text.clear();
-        self.status.set_state(AppState::Idle);
+        self.footer.set_state(AppState::Idle);
         self.loading_indicator.set_streaming_state(StreamingState::Idle);
     }
 
@@ -462,7 +458,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages.add_user(trimmed.to_string());
         self.input.clear();
         self.current_text.clear();
-        self.status.set_state(AppState::Processing);
+        self.footer.set_state(AppState::Processing);
         self.loading_indicator.set_streaming_state(StreamingState::Responding);
 
         // --- MESH DELEGATION ---
@@ -606,30 +602,28 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let input_height = self.input.height();
-        let status_height = 1u16;
         let footer_height = 1u16;
         let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
 
+        // Layout: Messages → Loading → Input → Footer (at bottom)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(footer_height),
-                Constraint::Length(status_height),
-                Constraint::Min(0),
+                Constraint::Min(0),  // Messages (maximized)
                 Constraint::Length(loading_height),
                 Constraint::Length(input_height),
+                Constraint::Length(footer_height),
             ])
             .split(main_area);
 
-        self.footer.render(frame, chunks[0]);
-        self.status.render(frame, chunks[1]);
-        self.messages_area = chunks[2];
-        self.messages.render(frame, chunks[2]);
+        self.messages_area = chunks[0];
+        self.messages.render(frame, chunks[0]);
 
         if loading_height > 0 {
-            self.loading_indicator.render(frame, chunks[3]);
+            self.loading_indicator.render(frame, chunks[1]);
         }
 
-        self.input.render(frame, chunks[4]);
+        self.input.render(frame, chunks[2]);
+        self.footer.render(frame, chunks[3]);
     }
 }
