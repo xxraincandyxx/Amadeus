@@ -417,3 +417,263 @@ impl ErrorResponse {
         }
     }
 }
+
+/*
+ * ============================================================================
+ * SESSION ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Response for the `/sessions` endpoint.
+///
+/// Lists all available conversation sessions.
+#[derive(Debug, Serialize)]
+pub struct SessionsResponse {
+    /// List of available sessions.
+    pub sessions: Vec<SessionSummary>,
+}
+
+/// Summary of a single session.
+#[derive(Debug, Serialize)]
+pub struct SessionSummary {
+    /// Unique session identifier (filename).
+    pub id: String,
+    /// ISO 8601 timestamp of when the session was created.
+    pub timestamp: String,
+    /// Model used for this session.
+    pub model: String,
+    /// Total tokens used in this session.
+    pub total_tokens: u32,
+    /// Number of tool calls made.
+    pub tool_calls: usize,
+    /// Duration of the session in milliseconds.
+    pub duration_ms: u64,
+    /// Number of messages in the conversation.
+    pub message_count: usize,
+}
+
+/// Response for the `/sessions/{id}` endpoint.
+///
+/// Full details of a specific session.
+#[derive(Debug, Serialize)]
+pub struct SessionDetailResponse {
+    /// Unique session identifier.
+    pub id: String,
+    /// ISO 8601 timestamp of when the session was created.
+    pub timestamp: String,
+    /// Model used for this session.
+    pub model: String,
+    /// System prompt used.
+    pub system_prompt: String,
+    /// Conversation history.
+    pub history: Vec<MessageSummary>,
+    /// Session statistics.
+    pub stats: SessionStatsResponse,
+}
+
+/// Statistics for a session.
+#[derive(Debug, Serialize)]
+pub struct SessionStatsResponse {
+    /// Total tokens used.
+    pub total_tokens: u32,
+    /// Number of tool calls made.
+    pub tool_calls: usize,
+    /// Duration in milliseconds.
+    pub duration_ms: u64,
+}
+
+/// Summary of a message in the conversation.
+#[derive(Debug, Serialize)]
+pub struct MessageSummary {
+    /// Role: "user", "assistant", or "system".
+    pub role: String,
+    /// Text content of the message.
+    pub content: String,
+}
+
+/// Request to restore a session.
+#[derive(Debug, Deserialize)]
+pub struct RestoreSessionRequest {
+    /// Whether to clear existing history before restoring.
+    #[serde(default)]
+    pub clear_history: bool,
+}
+
+/// Response for session restore.
+#[derive(Debug, Serialize)]
+pub struct RestoreSessionResponse {
+    /// Whether the restore was successful.
+    pub success: bool,
+    /// Number of messages restored.
+    pub message_count: usize,
+}
+
+/*
+ * ============================================================================
+ * CONFIG ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Response for the `/config` endpoint.
+///
+/// Current agent configuration.
+#[derive(Debug, Serialize)]
+pub struct ConfigResponse {
+    /// Working directory for the agent.
+    pub working_dir: String,
+    /// LLM model identifier.
+    pub model: String,
+    /// Maximum tokens for completions.
+    pub max_tokens: u32,
+    /// Context window size for the model.
+    pub context_window_size: u32,
+    /// Timeout for tool execution in seconds.
+    pub tool_timeout_secs: u64,
+    /// Whether approval is required for tools.
+    pub require_approval: bool,
+    /// Shell profile to use.
+    pub shell_profile: Option<String>,
+    /// Session log directory.
+    pub session_log_dir: Option<String>,
+}
+
+/// Request to update configuration.
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfigRequest {
+    /// New model to use.
+    #[serde(default)]
+    pub model: Option<String>,
+    /// New max tokens setting.
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    /// New context window size.
+    #[serde(default)]
+    pub context_window_size: Option<u32>,
+    /// New tool timeout.
+    #[serde(default)]
+    pub tool_timeout_secs: Option<u64>,
+    /// New approval requirement.
+    #[serde(default)]
+    pub require_approval: Option<bool>,
+}
+
+/// Response after updating configuration.
+#[derive(Debug, Serialize)]
+pub struct UpdateConfigResponse {
+    /// Whether the update was successful.
+    pub success: bool,
+    /// Updated configuration.
+    pub config: ConfigResponse,
+}
+
+/*
+ * ============================================================================
+ * HISTORY ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Response for the `/history` endpoint.
+///
+/// Current conversation history.
+#[derive(Debug, Serialize)]
+pub struct HistoryResponse {
+    /// List of messages in the conversation.
+    pub messages: Vec<MessageSummary>,
+    /// Total number of messages.
+    pub total: usize,
+}
+
+/*
+ * ============================================================================
+ * SKILLS ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Response for the `/skills` endpoint.
+///
+/// List of available skills/prompt templates.
+#[derive(Debug, Serialize)]
+pub struct SkillsResponse {
+    /// List of available skills.
+    pub skills: Vec<SkillSummary>,
+}
+
+/// Summary of a skill.
+#[derive(Debug, Serialize)]
+pub struct SkillSummary {
+    /// Name of the skill.
+    pub name: String,
+    /// Description of what the skill does.
+    pub description: String,
+}
+
+/*
+ * ============================================================================
+ * APPROVAL ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request to submit an approval decision.
+#[derive(Debug, Deserialize)]
+pub struct ApprovalRequest {
+    /// The approval decision: "approve", "deny", or "modify".
+    pub decision: String,
+    /// Modified command (only for "modify" decision).
+    #[serde(default)]
+    pub modified_command: Option<String>,
+    /// Reason for denial (optional).
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Response for approval submission.
+#[derive(Debug, Serialize)]
+pub struct ApprovalResponse {
+    /// Whether the decision was recorded.
+    pub success: bool,
+    /// The decision that was made.
+    pub decision: String,
+}
+
+/*
+ * ============================================================================
+ * SSE EVENT TYPES (for documentation)
+ * ============================================================================
+ */
+
+/// Token usage event payload (SSE event: "token_usage").
+#[derive(Debug, Serialize)]
+pub struct TokenUsageEvent {
+    /// Input/prompt tokens.
+    pub input_tokens: u32,
+    /// Output/completion tokens.
+    pub output_tokens: u32,
+    /// Total tokens used.
+    pub total_tokens: u32,
+    /// Context window usage percentage.
+    pub context_percent: u8,
+}
+
+/// Approval request event payload (SSE event: "approval_request").
+#[derive(Debug, Serialize)]
+pub struct ApprovalRequestEvent {
+    /// Unique ID for this approval request.
+    pub id: String,
+    /// Tool name requiring approval.
+    pub tool: String,
+    /// Human-readable description of the action.
+    pub action: String,
+    /// The command or input to be executed.
+    pub input: serde_json::Value,
+}
+
+/// Tool progress event payload (SSE event: "tool_progress").
+#[derive(Debug, Serialize)]
+pub struct ToolProgressEvent {
+    /// Tool call ID.
+    pub id: String,
+    /// Progress message.
+    pub message: String,
+    /// Progress percentage (0-100) if available.
+    pub percent: Option<u8>,
+}

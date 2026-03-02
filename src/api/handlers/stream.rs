@@ -18,6 +18,9 @@
 //! | `text` | [`TextEvent`] | A chunk of generated text |
 //! | `tool_start` | [`ToolStartEvent`] | Notification that a tool is starting |
 //! | `tool_done` | [`ToolDoneEvent`] | Results of a tool execution |
+//! | `tool_progress` | [`ToolProgressEvent`] | Progress update for a running tool |
+//! | `token_usage` | [`TokenUsageEvent`] | Token usage and context percentage |
+//! | `approval_request` | [`ApprovalRequestEvent`] | Request for tool approval |
 //! | `done` | [`DoneEvent`] | Final termination reason |
 //! | `error` | [`ErrorEvent`] | Critical failure notification |
 
@@ -106,6 +109,43 @@ pub struct ErrorEvent {
     pub message: String,
 }
 
+/// Payload for the `token_usage` event.
+#[derive(Debug, Serialize)]
+pub struct TokenUsageEvent {
+    /// Input/prompt tokens.
+    pub input_tokens: u32,
+    /// Output/completion tokens.
+    pub output_tokens: u32,
+    /// Total tokens used.
+    pub total_tokens: u32,
+    /// Context window usage percentage.
+    pub context_percent: u8,
+}
+
+/// Payload for the `approval_request` event.
+#[derive(Debug, Serialize)]
+pub struct ApprovalRequestEvent {
+    /// Unique ID for this approval request.
+    pub id: String,
+    /// Tool name requiring approval.
+    pub tool: String,
+    /// Human-readable description of the action.
+    pub action: String,
+    /// The command or input to be executed.
+    pub input: serde_json::Value,
+}
+
+/// Payload for the `tool_progress` event.
+#[derive(Debug, Serialize)]
+pub struct ToolProgressEvent {
+    /// Tool call ID.
+    pub id: String,
+    /// Progress message.
+    pub message: String,
+    /// Progress percentage (0-100) if available.
+    pub percent: Option<u8>,
+}
+
 /// Type alias for the complex SSE stream return type.
 type BoxedSseStream = Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>;
 
@@ -153,6 +193,9 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
     agent: crate::agent::loop_agent::Agent<C>,
     message: &str,
 ) -> Sse<BoxedSseStream> {
+    // Get context window size for percentage calculation
+    let context_window_size = agent.config().context_window_size;
+
     // 1. Inject initial user message into history
     {
         let h_arc = agent.history();
@@ -164,64 +207,113 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
     let stream = agent.run_stream();
 
     // 3. Map SDK events to SSE events
-    let sse_stream = stream.filter_map(|event| async move {
-        match event {
-            // Text delta received from LLM
-            Ok(AgentEvent::TextDelta { delta }) => Some(Ok(Event::default()
-                .event("text")
-                .json_data(TextEvent { content: delta })
-                .unwrap())),
+    let sse_stream = stream.filter_map(move |event| {
+        let context_window_size = context_window_size;
+        async move {
+            match event {
+                // Text delta received from LLM
+                Ok(AgentEvent::TextDelta { delta }) => Some(Ok(Event::default()
+                    .event("text")
+                    .json_data(TextEvent { content: delta })
+                    .unwrap())),
 
-            // Tool execution initiated
-            Ok(AgentEvent::ToolStart { id, name }) => Some(Ok(Event::default()
-                .event("tool_start")
-                .json_data(ToolStartEvent { id, name })
-                .unwrap())),
+                // Tool execution initiated
+                Ok(AgentEvent::ToolStart { id, name }) => Some(Ok(Event::default()
+                    .event("tool_start")
+                    .json_data(ToolStartEvent { id, name })
+                    .unwrap())),
 
-            // Tool execution completed
-            Ok(AgentEvent::ToolComplete {
-                id,
-                name,
-                output,
-                is_error,
-                ..
-            }) => Some(Ok(Event::default()
-                .event("tool_done")
-                .json_data(ToolDoneEvent {
+                // Tool execution completed
+                Ok(AgentEvent::ToolComplete {
                     id,
                     name,
                     output,
                     is_error,
-                })
-                .unwrap())),
+                    ..
+                }) => Some(Ok(Event::default()
+                    .event("tool_done")
+                    .json_data(ToolDoneEvent {
+                        id,
+                        name,
+                        output,
+                        is_error,
+                    })
+                    .unwrap())),
 
-            // Agent loop finished successfully
-            Ok(AgentEvent::Done { .. }) => Some(Ok(Event::default()
-                .event("done")
-                .json_data(DoneEvent {
-                    stop_reason: "end_turn".to_string(),
-                })
-                .unwrap())),
+                // Tool progress update
+                Ok(AgentEvent::ToolProgress { id, message, percent }) => Some(Ok(Event::default()
+                    .event("tool_progress")
+                    .json_data(ToolProgressEvent {
+                        id,
+                        message,
+                        percent,
+                    })
+                    .unwrap())),
 
-            // Critical agent error
-            Ok(AgentEvent::Error { message }) => Some(Ok(Event::default()
-                .event("error")
-                .json_data(ErrorEvent { message })
-                .unwrap())),
+                // Token usage update
+                Ok(AgentEvent::TokenUsage {
+                    input_tokens,
+                    output_tokens,
+                    total_tokens,
+                }) => {
+                    let context_percent = if context_window_size > 0 {
+                        ((total_tokens as f32 / context_window_size as f32) * 100.0).min(100.0) as u8
+                    } else {
+                        0
+                    };
+                    Some(Ok(Event::default()
+                        .event("token_usage")
+                        .json_data(TokenUsageEvent {
+                            input_tokens,
+                            output_tokens,
+                            total_tokens,
+                            context_percent,
+                        })
+                        .unwrap()))
+                }
 
-            // Intermediate deltas (e.g. tool arguments) are suppressed for public API
-            Ok(AgentEvent::ToolInputDelta { .. }) => None,
+                // Approval required
+                Ok(AgentEvent::ApprovalRequired { request }) => Some(Ok(Event::default()
+                    .event("approval_request")
+                    .json_data(ApprovalRequestEvent {
+                        id: request.id,
+                        tool: request.tool,
+                        action: request.reason,
+                        input: request.input,
+                    })
+                    .unwrap())),
 
-            // New events like SessionSaved are suppressed for public API
-            Ok(_) => None,
+                // Agent loop finished successfully
+                Ok(AgentEvent::Done { .. }) => Some(Ok(Event::default()
+                    .event("done")
+                    .json_data(DoneEvent {
+                        stop_reason: "end_turn".to_string(),
+                    })
+                    .unwrap())),
 
-            // Stream processing error
-            Err(e) => Some(Ok(Event::default()
-                .event("error")
-                .json_data(ErrorEvent {
-                    message: e.to_string(),
-                })
-                .unwrap())),
+                // Critical agent error
+                Ok(AgentEvent::Error { message }) => Some(Ok(Event::default()
+                    .event("error")
+                    .json_data(ErrorEvent { message })
+                    .unwrap())),
+
+                // Intermediate deltas (e.g. tool arguments) are suppressed for public API
+                Ok(AgentEvent::ToolInputDelta { .. }) => None,
+
+                // Session saved event - informational only
+                Ok(AgentEvent::SessionSaved { path }) => Some(Ok(Event::default()
+                    .event("session_saved")
+                    .json_data(serde_json::json!({ "path": path }))
+                    .unwrap())),
+
+                // Stream processing error
+                Err(e) => Some(Ok(Event::default()
+                    .event("error")
+                    .json_data(ErrorEvent {
+                        message: e.to_string(),
+                    })
+                    .unwrap())),
+            }
         }
     });
 
