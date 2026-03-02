@@ -1,5 +1,6 @@
 //! Agent system for the SDK
 
+pub mod compaction;
 pub mod config;
 pub mod events;
 pub mod loop_agent;
@@ -12,6 +13,7 @@ pub mod supervisor;
 #[cfg(feature = "supervisor")]
 pub mod worker;
 
+pub use compaction::{CompactionConfig, CompactionEvent, CompactionResult, ContextCompactor};
 pub use config::{Config, Provider};
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 pub use loop_agent::{Agent, SessionLog, SessionStats};

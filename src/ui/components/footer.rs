@@ -24,6 +24,8 @@ pub struct FooterInfo {
     pub state: AppState,
     pub elapsed: Option<Duration>,
     pub token_count: usize,
+    /// Temporary status message (shown for a short time)
+    pub status_message: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,6 +51,8 @@ pub struct Footer {
     // For timing and animation
     start_time: Option<Instant>,
     spinner_frame: usize,
+    // Status message expiry
+    status_message_expiry: Option<Instant>,
 }
 
 impl Footer {
@@ -71,6 +75,7 @@ impl Footer {
                 state: AppState::Idle,
                 elapsed: None,
                 token_count: 0,
+                status_message: None,
             },
             hide_cwd: false,
             hide_sandbox: false,
@@ -78,6 +83,7 @@ impl Footer {
             hide_context_percent: false,
             start_time: None,
             spinner_frame: 0,
+            status_message_expiry: None,
         }
     }
 
@@ -175,11 +181,30 @@ impl Footer {
         self.info.token_count = count;
     }
 
+    /// Set a temporary status message that will be displayed for a few seconds.
+    pub fn set_status_message(&mut self, message: impl Into<String>) {
+        self.info.status_message = Some(message.into());
+        self.status_message_expiry = Some(Instant::now() + Duration::from_secs(3));
+    }
+
+    /// Clear the status message immediately.
+    pub fn clear_status_message(&mut self) {
+        self.info.status_message = None;
+        self.status_message_expiry = None;
+    }
+
     pub fn tick(&mut self) {
         self.spinner_frame = (self.spinner_frame + 1) % 10;
         // Update elapsed time if processing
         if let Some(start) = self.start_time {
             self.info.elapsed = Some(start.elapsed());
+        }
+        // Expire status message if time has passed
+        if let Some(expiry) = self.status_message_expiry {
+            if Instant::now() >= expiry {
+                self.info.status_message = None;
+                self.status_message_expiry = None;
+            }
         }
     }
 
@@ -251,6 +276,14 @@ impl Footer {
                     .fg(colors.background.primary)
                     .bg(colors.text.accent)
                     .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Status message (temporary notification)
+        if let Some(ref message) = self.info.status_message {
+            spans.push(Span::styled(
+                format!("{} ", message),
+                Style::default().fg(colors.text.accent),
             ));
         }
 

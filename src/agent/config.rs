@@ -187,6 +187,33 @@ pub struct Config {
     /// Default: 200,000 (Claude's context window)
     /// Common values: 128000 (GPT-4), 200000 (Claude), 1000000 (Gemini 1.5)
     pub context_window_size: u32,
+
+    // -------------------------------------------------------------------------
+    // Compaction Settings
+    // -------------------------------------------------------------------------
+
+    /// Enable automatic context compaction when approaching context limits.
+    ///
+    /// When enabled, the agent will automatically summarize older messages
+    /// when the conversation approaches the context window limit.
+    ///
+    /// Default: true
+    pub auto_compact: bool,
+
+    /// Threshold percentage of context window to trigger compaction.
+    ///
+    /// When the conversation reaches this percentage of the context window,
+    /// compaction will be triggered.
+    ///
+    /// Default: 75
+    pub compact_threshold_percent: u8,
+
+    /// Number of recent messages to preserve during compaction.
+    ///
+    /// These messages will not be summarized and will be kept as-is.
+    ///
+    /// Default: 6 (typically 3 turns)
+    pub compact_preserve_recent: usize,
 }
 
 /*
@@ -209,6 +236,9 @@ impl Default for Config {
             session_log_dir: None,
             session_log_compress: false,
             context_window_size: 200_000,
+            auto_compact: true,
+            compact_threshold_percent: 75,
+            compact_preserve_recent: 6,
         }
     }
 }
@@ -435,6 +465,28 @@ impl Config {
             .unwrap_or(200_000);
 
         // ---------------------------------------------------------------------
+        // PARSE COMPACTION SETTINGS
+        // ---------------------------------------------------------------------
+
+        // Enable/disable automatic compaction
+        let auto_compact = env::var("AUTO_COMPACT")
+            .ok()
+            .and_then(|s| s.parse::<bool>().ok())
+            .unwrap_or(true);
+
+        // Threshold percentage for compaction trigger
+        let compact_threshold_percent = env::var("COMPACT_THRESHOLD_PERCENT")
+            .ok()
+            .and_then(|s| s.parse::<u8>().ok())
+            .unwrap_or(75);
+
+        // Number of recent messages to preserve
+        let compact_preserve_recent = env::var("COMPACT_PRESERVE_RECENT")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(6);
+
+        // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG
         // ---------------------------------------------------------------------
 
@@ -470,6 +522,11 @@ impl Config {
 
             // Context window management
             context_window_size,
+
+            // Compaction settings
+            auto_compact,
+            compact_threshold_percent,
+            compact_preserve_recent,
         })
     }
 
@@ -684,6 +741,21 @@ impl Config {
             } else {
                 self.context_window_size
             },
+            auto_compact: if other.auto_compact != true {
+                other.auto_compact
+            } else {
+                self.auto_compact
+            },
+            compact_threshold_percent: if other.compact_threshold_percent != 75 {
+                other.compact_threshold_percent
+            } else {
+                self.compact_threshold_percent
+            },
+            compact_preserve_recent: if other.compact_preserve_recent != 6 {
+                other.compact_preserve_recent
+            } else {
+                self.compact_preserve_recent
+            },
         }
     }
 
@@ -760,6 +832,38 @@ impl Config {
             }
         }
 
+        // Compaction settings
+        if let Ok(auto_compact) = env::var("AUTO_COMPACT") {
+            if let Ok(b) = auto_compact.parse::<bool>() {
+                self.auto_compact = b;
+            }
+        }
+
+        if let Ok(threshold) = env::var("COMPACT_THRESHOLD_PERCENT") {
+            if let Ok(p) = threshold.parse::<u8>() {
+                self.compact_threshold_percent = p;
+            }
+        }
+
+        if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
+            if let Ok(n) = preserve.parse::<usize>() {
+                self.compact_preserve_recent = n;
+            }
+        }
+
         self
+    }
+
+    /// Create a CompactionConfig from this Config.
+    pub fn to_compaction_config(&self) -> super::compaction::CompactionConfig {
+        super::compaction::CompactionConfig {
+            threshold_percent: self.compact_threshold_percent,
+            target_percent: 40, // Target 40% after compaction
+            preserve_recent: self.compact_preserve_recent,
+            use_llm_summary: true,
+            max_summary_chars: 2000,
+            min_messages: 10,
+            max_tool_result_chars: 5000,
+        }
     }
 }

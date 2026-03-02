@@ -15,6 +15,7 @@ use ratatui::{
 use tokio::sync::mpsc;
 use tracing::info;
 
+use crate::agent::compaction::ContextCompactor;
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
@@ -292,6 +293,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 // Update tool progress in messages component
                 self.messages.update_tool_progress(&id, message, percent);
             }
+
+            AgentEvent::Compaction { original_count, compacted_count, tokens_saved, messages_summarized } => {
+                info!(
+                    original = original_count,
+                    compacted = compacted_count,
+                    tokens_saved = tokens_saved,
+                    messages_summarized = messages_summarized,
+                    "Context compaction performed"
+                );
+                // Note: Compaction happens automatically to manage context window
+                // The user is informed via the footer context percentage indicator
+            }
         }
 
         false
@@ -413,6 +426,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.messages.update_scrollbar_colors();
                 info!("Switched to theme: {}", theme_name);
             }
+            (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
+                // Manual context compaction
+                self.perform_compaction().await;
+            }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 self.sidebar = None;
                 self.messages.collapse_all_tools();
@@ -431,6 +448,59 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             _ => {}
         }
         Ok(())
+    }
+
+    /// Perform manual context compaction.
+    async fn perform_compaction(&mut self) {
+        let config = self.agent.config();
+        let compaction_config = config.to_compaction_config();
+        let preserve_recent = compaction_config.preserve_recent;
+        let compactor = ContextCompactor::new(compaction_config);
+        let context_window_size = config.context_window_size;
+
+        // Get current history state
+        let history = self.agent.history();
+        let history_guard = history.read().await;
+        let current_count = history_guard.len();
+        let current_tokens = compactor.estimate_tokens(&history_guard);
+        let context_percent = compactor.context_usage_percent(&history_guard, context_window_size);
+        drop(history_guard);
+
+        info!(
+            messages = current_count,
+            tokens = current_tokens,
+            context_percent = context_percent,
+            "Manual compaction triggered"
+        );
+
+        // Check if there's enough history to compact
+        if current_count <= preserve_recent {
+            self.footer.set_status_message("Not enough history to compact");
+            return;
+        }
+
+        // Perform compaction
+        let mut history_guard = history.write().await;
+        let client = self.agent.client();
+
+        match compactor.compact(&mut history_guard, &client, context_window_size).await {
+            Ok(result) => {
+                info!(
+                    original = result.original_count,
+                    compacted = result.compacted_count,
+                    tokens_saved = result.tokens_saved,
+                    "Manual compaction complete"
+                );
+                self.footer.set_status_message(format!(
+                    "Compacted: {} → {} messages (saved ~{} tokens)",
+                    result.original_count, result.compacted_count, result.tokens_saved
+                ));
+            }
+            Err(e) => {
+                info!(error = %e, "Manual compaction failed");
+                self.footer.set_status_message(format!("Compaction failed: {}", e));
+            }
+        }
     }
 
     async fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
@@ -474,6 +544,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
                 self.should_quit = true;
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
+                // Manual context compaction (also available in input mode)
+                self.perform_compaction().await;
             }
             (KeyModifiers::NONE, KeyCode::Char('q')) => {
                 if self.input.get_input().trim().is_empty() && self.stream_rx.is_none() {
@@ -601,6 +675,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             self.input.clear();
             return Ok(());
+        }
+
+        // --- SLASH COMMANDS ---
+        if trimmed.starts_with('/') {
+            let command = trimmed.to_lowercase();
+            if command == "/compact" || command == "/compress" {
+                self.input.clear();
+                self.perform_compaction().await;
+                return Ok(());
+            }
+            // Add other slash commands here in the future
         }
 
         self.messages.add_user(trimmed.to_string());

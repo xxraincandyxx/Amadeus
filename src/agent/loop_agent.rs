@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, instrument, warn};
 
+use crate::agent::compaction::ContextCompactor;
 use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
@@ -199,6 +200,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     pub fn config(&self) -> Arc<Config> {
         Arc::clone(&self.config)
+    }
+
+    /// Get a clone of the LLM client.
+    pub fn client(&self) -> C {
+        self.client.clone()
     }
 
     /// Get a clone of the policy for reading.
@@ -443,9 +449,51 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             let mut should_continue = true;
             let mut turn_count = 0;
 
+            // Create compactor if auto_compact is enabled
+            let compactor = if config.auto_compact {
+                Some(ContextCompactor::new(config.to_compaction_config()))
+            } else {
+                None
+            };
+
             while should_continue {
                 turn_count += 1;
                 debug!(turn = turn_count, "Starting agent turn");
+
+                // Check if compaction is needed before each turn
+                if let Some(ref compactor) = compactor {
+                    let history_guard = history.read().await;
+                    if compactor.needs_compaction(&history_guard, config.context_window_size) {
+                        let context_usage = compactor.context_usage_percent(&history_guard, config.context_window_size);
+                        drop(history_guard);
+
+                        info!(
+                            context_usage = context_usage,
+                            "Context threshold reached, performing compaction"
+                        );
+
+                        let mut history_guard = history.write().await;
+                        match compactor.compact(&mut history_guard, &client, config.context_window_size).await {
+                            Ok(result) => {
+                                debug!(
+                                    original = result.original_count,
+                                    compacted = result.compacted_count,
+                                    tokens_saved = result.tokens_saved,
+                                    "Compaction complete"
+                                );
+                                yield Ok(AgentEvent::Compaction {
+                                    original_count: result.original_count,
+                                    compacted_count: result.compacted_count,
+                                    tokens_saved: result.tokens_saved,
+                                    messages_summarized: result.messages_summarized,
+                                });
+                            }
+                            Err(e) => {
+                                warn!(error = %e, "Compaction failed, continuing with full history");
+                            }
+                        }
+                    }
+                }
 
                 let mut stream = {
                     let history_guard = history.read().await;

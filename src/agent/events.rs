@@ -77,6 +77,17 @@ pub enum AgentEvent {
         message: String,
         percent: Option<u8>,
     },
+    /// Context compaction occurred to manage context window.
+    Compaction {
+        /// Original message count.
+        original_count: usize,
+        /// Message count after compaction.
+        compacted_count: usize,
+        /// Estimated tokens saved.
+        tokens_saved: usize,
+        /// Number of messages summarized.
+        messages_summarized: usize,
+    },
     Done {
         result: RunResult,
     },

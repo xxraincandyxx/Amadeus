@@ -306,6 +306,17 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .json_data(serde_json::json!({ "path": path }))
                     .unwrap())),
 
+                // Context compaction event
+                Ok(AgentEvent::Compaction { original_count, compacted_count, tokens_saved, messages_summarized }) => Some(Ok(Event::default()
+                    .event("compaction")
+                    .json_data(serde_json::json!({
+                        "original_count": original_count,
+                        "compacted_count": compacted_count,
+                        "tokens_saved": tokens_saved,
+                        "messages_summarized": messages_summarized
+                    }))
+                    .unwrap())),
+
                 // Stream processing error
                 Err(e) => Some(Ok(Event::default()
                     .event("error")

@@ -256,6 +256,25 @@ impl HelpSidebar {
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled(
+                    "CONTEXT",
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   ^K ", Style::default().fg(colors.text.link)),
+                Span::styled(" Compact History", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   /compact ", Style::default().fg(colors.text.link)),
+                Span::styled(" Compact via command", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
                     "SCROLLING",
                     Style::default()
                         .fg(colors.text.primary)
