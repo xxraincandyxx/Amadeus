@@ -143,6 +143,17 @@ pub enum StreamEvent {
     /// - "end_turn" - LLM finished its response
     /// - "tool_use" - LLM is waiting for tool execution
     StopReason(String),
+
+    /// Token usage information received from the API
+    ///
+    /// This is typically sent at the start and end of the message
+    /// to provide input/output token counts.
+    TokenUsage {
+        /// Number of tokens in the input/prompt
+        input_tokens: u32,
+        /// Number of tokens in the output/completion
+        output_tokens: u32,
+    },
 }
 
 /*

@@ -471,6 +471,43 @@ impl AnthropicClient {
                         }
                     }
 
+                    // -----------------------------------------------------
+                    // MESSAGE START - contains initial token usage
+                    // -----------------------------------------------------
+                    Some("message_start") => {
+                        if let Some(usage) = json["message"]["usage"].as_object() {
+                            let input_tokens = usage
+                                .get("input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            let output_tokens = usage
+                                .get("output_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            events.push(StreamEvent::TokenUsage {
+                                input_tokens,
+                                output_tokens,
+                            });
+                        }
+                    }
+
+                    // -----------------------------------------------------
+                    // MESSAGE DELTA - contains updated output token usage
+                    // -----------------------------------------------------
+                    Some("message_delta") => {
+                        if let Some(usage) = json["usage"].as_object() {
+                            let output_tokens = usage
+                                .get("output_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0) as u32;
+                            // Input tokens are not provided in message_delta
+                            events.push(StreamEvent::TokenUsage {
+                                input_tokens: 0,
+                                output_tokens,
+                            });
+                        }
+                    }
+
                     // Ignore other event types
                     _ => {}
                 }
