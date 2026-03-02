@@ -14,7 +14,7 @@ use tokio::sync::{mpsc, RwLock};
 use tracing::{debug, info, instrument, warn};
 
 use crate::agent::config::Config;
-use crate::agent::events::{AgentEvent, RunResult, ToolCall};
+use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
@@ -127,7 +127,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             config: self.config,
             history,
             hooks: self.hooks,
-            policy: self.policy,
+            policy: Arc::new(RwLock::new(self.policy)),
         }
     }
 }
@@ -140,7 +140,40 @@ pub struct Agent<C: LLMClient> {
     config: Arc<Config>,
     history: Arc<RwLock<Vec<Message>>>,
     hooks: HookRegistry,
-    policy: Policy,
+    policy: Arc<RwLock<Policy>>,
+}
+
+/// Approval channels for bidirectional communication with UI.
+pub struct ApprovalChannels {
+    /// Channel to send approval requests to UI
+    pub request_tx: mpsc::Sender<ApprovalRequest>,
+    /// Channel to receive approval decisions from UI
+    pub decision_rx: mpsc::Receiver<(String, ApprovalDecision)>,
+}
+
+/// Handle for UI to communicate with agent approval system.
+pub struct ApprovalHandle {
+    /// Channel to receive approval requests from agent
+    pub request_rx: mpsc::Receiver<ApprovalRequest>,
+    /// Channel to send approval decisions to agent
+    pub decision_tx: mpsc::Sender<(String, ApprovalDecision)>,
+}
+
+/// Create a pair of approval channels for agent-ui communication.
+pub fn create_approval_channels() -> (ApprovalChannels, ApprovalHandle) {
+    let (req_tx, req_rx) = mpsc::channel(8);
+    let (dec_tx, dec_rx) = mpsc::channel(8);
+
+    (
+        ApprovalChannels {
+            request_tx: req_tx,
+            decision_rx: dec_rx,
+        },
+        ApprovalHandle {
+            request_rx: req_rx,
+            decision_tx: dec_tx,
+        },
+    )
 }
 
 impl<C: LLMClient + Clone + 'static> Agent<C> {
@@ -166,6 +199,27 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     pub fn config(&self) -> Arc<Config> {
         Arc::clone(&self.config)
+    }
+
+    /// Get a clone of the policy for reading.
+    pub fn policy(&self) -> Policy {
+        let policy = self.policy.blocking_read();
+        policy.clone()
+    }
+
+    /// Update the policy at runtime.
+    pub async fn update_policy<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Policy),
+    {
+        let mut policy = self.policy.write().await;
+        f(&mut policy);
+    }
+
+    /// Add a tool to the auto-approve list.
+    pub async fn auto_approve_tool(&self, tool: &str) {
+        let mut policy = self.policy.write().await;
+        policy.add_auto_approve(tool);
     }
 
     /// Run with a specific skill.
@@ -195,7 +249,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             config: Arc::clone(&self.config),
             history: Arc::clone(&self.history),
             hooks: self.hooks.clone(),
-            policy: self.policy.clone(),
+            policy: Arc::clone(&self.policy),
         };
 
         // Run with the rendered prompt
@@ -245,6 +299,76 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         Ok(Some(path))
     }
 
+    /// List available session logs in the log directory.
+    pub fn list_sessions(&self) -> Result<Vec<(PathBuf, SessionLog)>> {
+        let log_dir = match &self.config.session_log_dir {
+            Some(dir) => dir.clone(),
+            None => return Ok(Vec::new()),
+        };
+
+        if !log_dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut sessions = Vec::new();
+        let entries = fs::read_dir(&log_dir).map_err(AgentError::Io)?;
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let extension = path.extension().and_then(|e| e.to_str());
+
+            let content = if extension == Some("gz") {
+                // Decompress gzipped file
+                use flate2::read::GzDecoder;
+                use std::io::Read;
+                let file = File::open(&path).map_err(AgentError::Io)?;
+                let mut decoder = GzDecoder::new(file);
+                let mut json = String::new();
+                decoder.read_to_string(&mut json).map_err(AgentError::Io)?;
+                json
+            } else if extension == Some("json") {
+                fs::read_to_string(&path).map_err(AgentError::Io)?
+            } else {
+                continue;
+            };
+
+            if let Ok(session) = serde_json::from_str::<SessionLog>(&content) {
+                sessions.push((path, session));
+            }
+        }
+
+        // Sort by timestamp (newest first)
+        sessions.sort_by(|a, b| b.1.timestamp.cmp(&a.1.timestamp));
+        Ok(sessions)
+    }
+
+    /// Load a session log from a file.
+    pub fn load_session(path: &PathBuf) -> Result<SessionLog> {
+        let extension = path.extension().and_then(|e| e.to_str());
+
+        let content = if extension == Some("gz") {
+            use flate2::read::GzDecoder;
+            use std::io::Read;
+            let file = File::open(path).map_err(AgentError::Io)?;
+            let mut decoder = GzDecoder::new(file);
+            let mut json = String::new();
+            decoder.read_to_string(&mut json).map_err(AgentError::Io)?;
+            json
+        } else {
+            fs::read_to_string(path).map_err(AgentError::Io)?
+        };
+
+        serde_json::from_str(&content)
+            .map_err(|e| AgentError::InvalidResponse(format!("Failed to parse session log: {}", e)))
+    }
+
+    /// Restore history from a session log.
+    pub async fn restore_session(&self, session: &SessionLog) {
+        let mut history = self.history.write().await;
+        *history = session.history.clone();
+        info!(messages = history.len(), "Session restored");
+    }
+
     /// Run a single turn with a prompt and return the result.
     #[instrument(skip(self), fields(prompt = %prompt))]
     pub async fn run(&self, prompt: &str) -> Result<RunResult> {
@@ -289,14 +413,27 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     }
 
     /// Run the agent loop as a stream of events.
+    /// Note: This version auto-denies any tool that requires approval.
+    /// Use `run_stream_with_approval()` for interactive approval flow.
     pub fn run_stream(&self) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
+        // Run without approval channels - will auto-deny approvals
+        self.run_stream_with_approval(None)
+    }
+
+    /// Run the agent loop with optional approval channels.
+    /// If channels are provided, approval requests will be sent through them.
+    /// If not provided, tools requiring approval will be auto-denied.
+    pub fn run_stream_with_approval(
+        &self,
+        mut approval_channels: Option<ApprovalChannels>,
+    ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         let agent = self.clone();
         let client = self.client.clone();
         let tools = self.tools.clone();
         let config = Arc::clone(&self.config);
         let history = Arc::clone(&self.history);
         let hooks = self.hooks.clone();
-        let policy = self.policy.clone();
+        let policy = Arc::clone(&self.policy);
         let system = config.system_prompt();
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
@@ -375,41 +512,143 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 };
 
                                 // Check policy for approval
-                                let needs_approval = !blocked && policy.needs_approval(&name, &input);
+                                let (needs_approval, reason) = if !blocked {
+                                    let policy_guard = policy.read().await;
+                                    let needs = policy_guard.needs_approval(&name, &input);
+                                    let reason = if needs {
+                                        policy_guard.approval_reason(&name, &input)
+                                    } else {
+                                        String::new()
+                                    };
+                                    (needs, reason)
+                                } else {
+                                    (false, String::new())
+                                };
 
                                 if !blocked && needs_approval {
-                                    // Emit approval required event
+                                    // Create approval request
                                     let approval_id = uuid::Uuid::new_v4().to_string();
-                                    let reason = policy.approval_reason(&name, &input);
-
-                                    debug!(tool = %name, approval_id = %approval_id, "Tool requires approval");
-
-                                    // For now, block execution with an error
-                                    // In a full implementation, this would pause and wait for user input
-                                    yield Ok(AgentEvent::ApprovalRequired {
+                                    let request = ApprovalRequest {
                                         id: approval_id.clone(),
                                         tool: name.clone(),
                                         input: input.clone(),
                                         reason: reason.clone(),
+                                    };
+
+                                    debug!(tool = %name, approval_id = %approval_id, "Tool requires approval");
+
+                                    // Emit approval required event
+                                    yield Ok(AgentEvent::ApprovalRequired {
+                                        request: request.clone(),
                                     });
 
-                                    // Auto-deny for now (TUI can implement proper approval flow)
-                                    warn!(tool = %name, "Tool blocked pending approval");
-                                    let output = format!("Tool execution blocked: {}", reason);
+                                    // Try to get approval decision from channels if available
+                                    let decision = if let Some(ref mut channels) = approval_channels {
+                                        // Send request to UI
+                                        if channels.request_tx.send(request.clone()).await.is_ok() {
+                                            // Wait for decision from UI with timeout
+                                            match tokio::time::timeout(
+                                                std::time::Duration::from_secs(300),
+                                                channels.decision_rx.recv()
+                                            ).await {
+                                                Ok(Some((resp_id, dec))) if resp_id == approval_id => {
+                                                    Some(dec)
+                                                }
+                                                _ => None,
+                                            }
+                                        } else {
+                                            None
+                                        }
+                                    } else {
+                                        // No approval channels - auto-deny
+                                        debug!(tool = %name, "No approval channels, auto-denying");
+                                        None
+                                    };
+
+                                    match decision {
+                                        Some(ApprovalDecision::Approve) => {
+                                            debug!(tool = %name, "Tool approved, executing");
+                                            // Fall through to execute
+                                        }
+                                        Some(ApprovalDecision::AlwaysApprove) => {
+                                            debug!(tool = %name, "Tool approved with remember, executing");
+                                            // Add to auto-approve list
+                                            {
+                                                let mut policy_guard = policy.write().await;
+                                                policy_guard.add_auto_approve(&name);
+                                            }
+                                            // Fall through to execute
+                                        }
+                                        Some(ApprovalDecision::Deny) | None => {
+                                            // Denied or timeout/no channels
+                                            warn!(tool = %name, "Tool denied or approval timeout");
+                                            let output = match decision {
+                                                Some(ApprovalDecision::Deny) => format!("Tool execution denied by user: {}", reason),
+                                                None => format!("Tool execution requires approval but no approval handler available: {}", reason),
+                                                _ => unreachable!(),
+                                            };
+
+                                            yield Ok(AgentEvent::ToolComplete {
+                                                id: id.clone(),
+                                                name: name.clone(),
+                                                input: input.clone(),
+                                                output: output.clone(),
+                                                is_error: true,
+                                            });
+
+                                            total_result.tool_calls.push(ToolCall {
+                                                name: name.clone(),
+                                                input: input.clone(),
+                                                output: output.clone(),
+                                                is_error: true,
+                                            });
+
+                                            tool_uses.push(ContentBlock::ToolUse {
+                                                id: id.clone(),
+                                                name,
+                                                input,
+                                            });
+
+                                            tool_results.push(ContentBlock::ToolResult {
+                                                tool_use_id: id,
+                                                content: output,
+                                            });
+                                            continue; // Skip execution
+                                        }
+                                    }
+
+                                    // If approved, execute the tool
+                                    let tool_start = Instant::now();
+                                    let output = match tools.execute(&name, input.clone()).await {
+                                        Ok(out) => out,
+                                        Err(e) => format!("Error: {}", e),
+                                    };
+                                    let duration_ms = tool_start.elapsed().as_millis() as u64;
+
+                                    // Run on_tool_complete hooks
+                                    if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
+                                        warn!(tool = %name, error = %e, "Hook error on complete");
+                                    }
+
+                                    debug!(
+                                        tool = %name,
+                                        duration_ms = duration_ms,
+                                        "Tool executed (after approval)"
+                                    );
 
                                     yield Ok(AgentEvent::ToolComplete {
                                         id: id.clone(),
                                         name: name.clone(),
                                         input: input.clone(),
                                         output: output.clone(),
-                                        is_error: true,
+                                        is_error: output.starts_with("Error:"),
                                     });
 
                                     total_result.tool_calls.push(ToolCall {
                                         name: name.clone(),
                                         input: input.clone(),
                                         output: output.clone(),
-                                        is_error: true,
+                                        is_error: output.starts_with("Error:"),
                                     });
 
                                     tool_uses.push(ContentBlock::ToolUse {
@@ -473,6 +712,22 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::StopReason(reason) => {
                             debug!(turn = turn_count, reason = %reason, "Stream stopped");
                             turn_stop_reason = reason;
+                        }
+
+                        StreamEvent::TokenUsage { input_tokens, output_tokens } => {
+                            let total = input_tokens + output_tokens;
+                            debug!(
+                                turn = turn_count,
+                                input = input_tokens,
+                                output = output_tokens,
+                                total = total,
+                                "Token usage"
+                            );
+                            yield Ok(AgentEvent::TokenUsage {
+                                input_tokens,
+                                output_tokens,
+                                total_tokens: total,
+                            });
                         }
                     }
                 }

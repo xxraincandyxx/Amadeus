@@ -13,8 +13,8 @@ pub mod supervisor;
 pub mod worker;
 
 pub use config::{Config, Provider};
-pub use events::{AgentEvent, RunResult, ToolCall};
-pub use loop_agent::Agent;
+pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
+pub use loop_agent::{Agent, SessionLog, SessionStats};
 pub use messages::{ContentBlock, Message};
 
 #[cfg(feature = "supervisor")]

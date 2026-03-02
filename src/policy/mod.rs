@@ -214,6 +214,26 @@ impl Policy {
             ApprovalMode::Strict => "strict",
         })
     }
+
+    /// Add a tool to the auto-approve list.
+    pub fn add_auto_approve(&mut self, tool: &str) {
+        if !self.auto_approve.iter().any(|t| t == tool) {
+            self.auto_approve.push(tool.to_string());
+        }
+    }
+
+    /// Add a tool pattern to the auto-approve list.
+    /// Format: "tool" or "tool:pattern"
+    pub fn add_auto_approve_pattern(&mut self, pattern: &str) {
+        if !self.auto_approve.iter().any(|t| t == pattern) {
+            self.auto_approve.push(pattern.to_string());
+        }
+    }
+
+    /// Set the approval mode.
+    pub fn set_mode(&mut self, mode: ApprovalMode) {
+        self.mode = mode;
+    }
 }
 
 #[cfg(test)]
