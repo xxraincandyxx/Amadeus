@@ -90,6 +90,11 @@ impl SkillRegistry {
     pub fn is_empty(&self) -> bool {
         self.skills.is_empty()
     }
+
+    /// Consume the registry and return all skills.
+    pub fn into_skills(self) -> Vec<Skill> {
+        self.skills.into_values().collect()
+    }
 }
 
 #[cfg(test)]
