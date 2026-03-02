@@ -63,10 +63,6 @@ use crate::error::{AgentError, Result};
 // async_trait - enables async methods in trait implementations
 use async_trait::async_trait;
 
-// Bytes - a container for contiguous byte data
-// Used for parsing streaming responses
-use bytes::Bytes;
-
 // Pin - pins a value in memory (needed for streams)
 use std::pin::Pin;
 
@@ -373,149 +369,115 @@ impl LLMClient for AnthropicClient {
 
 impl AnthropicClient {
     /// Parse the SSE byte stream into a stream of StreamEvents.
-    ///
-    /// SSE = Server-Sent Events
-    /// A format where the server sends events like:
-    ///   data: {"type": "content_block_delta", ...}
-    ///   data: {"type": "message_stop", ...}
     fn parse_sse_stream(
-        // The input stream of bytes
-        // impl Stream means "any type that implements Stream"
-        // + Unpin: the stream can be moved safely
-        // + 'static: the stream has no borrowed references
-        stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
+        mut stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
     ) -> impl Stream<Item = Result<StreamEvent>> {
-        // -----------------------------------------------------------------
-        // USE UNFOLD TO CREATE THE OUTPUT STREAM
-        // -----------------------------------------------------------------
+        use async_stream::stream;
 
-        // futures::stream::unfold creates a stream from a state and a closure
-        //
-        // It's like a while loop that yields values:
-        //
-        //   let mut state = initial_state;
-        //   loop {
-        //       let (item, new_state) = closure(state).await;
-        //       match item {
-        //           Some(value) => yield value,
-        //           None => break,  // End the stream
-        //       }
-        //       state = new_state;
-        //   }
-        //
-        // Parameters:
-        // - stream: the initial state (our byte stream)
-        // - |mut s| async move { ... }: the closure that produces values
+        stream! {
+            let mut buffer = String::new();
 
-        futures::stream::unfold(stream, |mut s| async move {
-            // Get the next chunk of bytes
-            // .next() returns Option<...> from the stream
-            let result = s.next().await;
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(bytes) => {
+                        // Append new bytes to buffer
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
 
-            match result {
-                // Got a chunk of bytes
-                Some(Ok(bytes)) => {
-                    // Try to parse it as an SSE event
-                    if let Some(event) = Self::parse_sse_line(bytes) {
-                        // Return the event and keep the stream
-                        // Some((value, new_state)) yields value and continues
-                        Some((Ok(event), s))
-                    } else {
-                        // No valid event - return empty text and continue
-                        // This handles empty lines, comments, etc.
-                        Some((Ok(StreamEvent::TextDelta(String::new())), s))
+                        // Process all complete lines in the buffer
+                        while let Some(newline_idx) = buffer.find('\n') {
+                            let line = buffer[..newline_idx].trim().to_string();
+                            // Remove the processed line (including the newline)
+                            buffer.drain(..=newline_idx);
+
+                            if line.is_empty() {
+                                continue;
+                            }
+
+                            for event in Self::parse_sse_line(&line) {
+                                yield Ok(event);
+                            }
+                        }
                     }
+                    Err(e) => yield Err(AgentError::Api(e.to_string())),
                 }
-
-                // Error from the byte stream
-                Some(Err(e)) => Some((Err(AgentError::Api(e.to_string())), s)),
-
-                // Stream ended (None from .next())
-                None => None, // None ends the unfold stream
             }
-        })
+        }
     }
 
-    /// Parse a single SSE line into a StreamEvent.
+    /// Parse a single SSE line into a stream of StreamEvents.
     ///
-    /// SSE format: `data: <json>\n`
-    fn parse_sse_line(bytes: Bytes) -> Option<StreamEvent> {
-        // Convert bytes to string (lossy - replace invalid UTF-8)
-        let text = String::from_utf8_lossy(&bytes);
+    /// SSE format: `data: <json>`
+    fn parse_sse_line(line: &str) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
 
-        // Process each line
-        for line in text.lines() {
-            // SSE data lines start with "data: "
-            if let Some(json_str) = line.strip_prefix("data: ") {
-                // Extract the JSON part (skip "data: ")
-                // &line[6..] is string slicing: skip first 6 characters
-                // Check for end-of-stream marker
-                if json_str == "[DONE]" {
-                    return None; // Signal end of stream
-                }
+        // SSE data lines start with "data: "
+        if let Some(json_str) = line.strip_prefix("data: ") {
+            // Check for end-of-stream marker
+            if json_str == "[DONE]" {
+                return events; // Signal end of stream
+            }
 
-                // Try to parse the JSON
-                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                    // Check the event type
-                    match json["type"].as_str() {
-                        // -----------------------------------------------------
-                        // TEXT DELTA
-                        // -----------------------------------------------------
-                        Some("content_block_delta") => {
-                            // Extract text from delta
-                            if let Some(text) = json["delta"]["text"].as_str() {
-                                return Some(StreamEvent::TextDelta(text.to_string()));
-                            }
+            // Try to parse the JSON
+            if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                // Check the event type
+                match json["type"].as_str() {
+                    // -----------------------------------------------------
+                    // TEXT DELTA
+                    // -----------------------------------------------------
+                    Some("content_block_delta") => {
+                        // Extract text from delta
+                        if let Some(text) = json["delta"]["text"].as_str() {
+                            events.push(StreamEvent::TextDelta(text.to_string()));
                         }
-
-                        // -----------------------------------------------------
-                        // TOOL CALL START
-                        // -----------------------------------------------------
-                        Some("content_block_start") => {
-                            // Check if it's a tool_use block
-                            if let Some(block) = json["content_block"].as_object() {
-                                if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                                    // Extract tool ID and name
-                                    return Some(StreamEvent::ToolCallStart {
-                                        // .unwrap() is safe here because Anthropic
-                                        // guarantees these fields exist for tool_use
-                                        id: block["id"].as_str().unwrap().to_string(),
-                                        name: block["name"].as_str().unwrap().to_string(),
-                                    });
-                                }
-                            }
-                        }
-
-                        // -----------------------------------------------------
-                        // TOOL CALL DONE
-                        // -----------------------------------------------------
-                        Some("content_block_stop") => {
-                            if let Some(block) = json["content_block"].as_object() {
-                                if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                                    if let Some(id) = block["id"].as_str() {
-                                        return Some(StreamEvent::ToolCallDone(id.to_string()));
-                                    }
-                                }
-                            }
-                        }
-
-                        // -----------------------------------------------------
-                        // MESSAGE STOP
-                        // -----------------------------------------------------
-                        Some("message_stop") => {
-                            if let Some(reason) = json["stop_reason"].as_str() {
-                                return Some(StreamEvent::StopReason(reason.to_string()));
-                            }
-                        }
-
-                        // Ignore other event types
-                        _ => {}
                     }
+
+                    // -----------------------------------------------------
+                    // TOOL CALL START
+                    // -----------------------------------------------------
+                    Some("content_block_start") => {
+                        // Check if it's a tool_use block
+                        if let Some(block) = json["content_block"].as_object() {
+                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                                // Extract tool ID and name
+                                events.push(StreamEvent::ToolCallStart {
+                                    // .unwrap() is safe here because Anthropic
+                                    // guarantees these fields exist for tool_use
+                                    id: block["id"].as_str().unwrap().to_string(),
+                                    name: block["name"].as_str().unwrap().to_string(),
+                                });
+                            }
+                        }
+                    }
+
+                    // -----------------------------------------------------
+                    // TOOL CALL DONE
+                    // -----------------------------------------------------
+                    Some("content_block_stop") => {
+                        if let Some(block) = json["content_block"].as_object() {
+                            if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
+                                if let Some(id) = block["id"].as_str() {
+                                    events.push(StreamEvent::ToolCallDone(id.to_string()));
+                                }
+                            }
+                        }
+                    }
+
+                    // -----------------------------------------------------
+                    // MESSAGE STOP
+                    // -----------------------------------------------------
+                    Some("message_stop") => {
+                        if let Some(reason) = json["stop_reason"].as_str() {
+                            events.push(StreamEvent::StopReason(reason.to_string()));
+                        }
+                    }
+
+                    // Ignore other event types
+                    _ => {}
                 }
             }
         }
 
-        // No valid event found
-        None
+        // Return all collected events
+        events
     }
 }

@@ -52,7 +52,6 @@ use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
 
 use async_trait::async_trait;
-use bytes::Bytes;
 use futures::{Stream, StreamExt};
 use std::pin::Pin;
 
@@ -560,116 +559,117 @@ impl LLMClient for OpenAIClient {
 impl OpenAIClient {
     /// Parse the SSE byte stream into a stream of StreamEvents.
     fn parse_sse_stream(
-        stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
+        mut stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
     ) -> impl Stream<Item = Result<StreamEvent>> {
-        futures::stream::unfold(stream, |mut s| async move {
-            let result = s.next().await;
-            match result {
-                Some(Ok(bytes)) => {
-                    if let Some(event) = Self::parse_sse_line(bytes) {
-                        Some((Ok(event), s))
-                    } else {
-                        Some((Ok(StreamEvent::TextDelta(String::new())), s))
+        use async_stream::stream;
+
+        stream! {
+            let mut buffer = String::new();
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(bytes) => {
+                        // Append new bytes to buffer
+                        // Note: from_utf8_lossy might be problematic if a multi-byte char
+                        // is split across chunks, but it's better than dropping events.
+                        buffer.push_str(&String::from_utf8_lossy(&bytes));
+
+                        // Process all complete lines in the buffer
+                        while let Some(newline_idx) = buffer.find('\n') {
+                            let line = buffer[..newline_idx].trim().to_string();
+                            // Remove the processed line (including the newline)
+                            buffer.drain(..=newline_idx);
+
+                            if line.is_empty() {
+                                continue;
+                            }
+
+                            for event in Self::parse_sse_line(&line) {
+                                yield Ok(event);
+                            }
+                        }
                     }
+                    Err(e) => yield Err(AgentError::Api(e.to_string())),
                 }
-                Some(Err(e)) => Some((Err(AgentError::Api(e.to_string())), s)),
-                None => None,
             }
-        })
+        }
     }
 
-    /// Parse a single SSE line into a StreamEvent.
+    /// Parse a single SSE line into a stream of StreamEvents.
     ///
-    /// OpenAI's SSE format differs from Anthropic's.
-    fn parse_sse_line(bytes: Bytes) -> Option<StreamEvent> {
-        let text = String::from_utf8_lossy(&bytes);
-        if text.is_empty() {
-            return None;
-        }
+    /// OpenAI's SSE format: `data: <json>`
+    fn parse_sse_line(line: &str) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
 
-        for line in text.lines() {
-            if let Some(json_str) = line.strip_prefix("data: ") {
-                if json_str == "[DONE]" {
-                    return None;
-                }
+        if let Some(json_str) = line.strip_prefix("data: ") {
+            if json_str == "[DONE]" {
+                return events;
+            }
 
-                if let Ok(json) = serde_json::from_str::<Value>(json_str) {
-                    // OpenAI structure: choices[0].delta contains the updates
-                    if let Some(choices) = json.get("choices").and_then(|v| v.as_array()) {
-                        if choices.is_empty() {
-                            break;
-                        }
+            if let Ok(json) = serde_json::from_str::<Value>(json_str) {
+                // OpenAI structure: choices[0].delta contains the updates
+                if let Some(choices) = json.get("choices").and_then(|v| v.as_array()) {
+                    if !choices.is_empty() {
                         let choice = &choices[0];
 
                         // Delta contains incremental updates
                         if let Some(delta) = choice.get("delta").and_then(|v| v.as_object()) {
                             // Text content delta
                             if let Some(content) = delta.get("content").and_then(|v| v.as_str()) {
-                                return Some(StreamEvent::TextDelta(content.to_string()));
+                                events.push(StreamEvent::TextDelta(content.to_string()));
                             }
 
-                            // Tool call start (has ID and name)
+                            // Tool call details (can have start and delta in same chunk)
                             if let Some(tool_calls) =
                                 delta.get("tool_calls").and_then(|v| v.as_array())
                             {
-                                if tool_calls.is_empty() {
-                                    continue;
-                                }
-                                let call = &tool_calls[0];
+                                if !tool_calls.is_empty() {
+                                    let call = &tool_calls[0];
 
-                                // New tool call (has ID)
-                                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                                    if let Some(func) =
-                                        call.get("function").and_then(|v| v.as_object())
-                                    {
-                                        if let Some(name) =
-                                            func.get("name").and_then(|v| v.as_str())
+                                    // New tool call (has ID)
+                                    if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                                        if let Some(func) =
+                                            call.get("function").and_then(|v| v.as_object())
                                         {
-                                            return Some(StreamEvent::ToolCallStart {
-                                                id: id.to_string(),
-                                                name: name.to_string(),
+                                            if let Some(name) =
+                                                func.get("name").and_then(|v| v.as_str())
+                                            {
+                                                events.push(StreamEvent::ToolCallStart {
+                                                    id: id.to_string(),
+                                                    name: name.to_string(),
+                                                });
+                                            }
+                                        }
+                                    }
+
+                                    // Tool call arguments delta
+                                    if let Some(func) = call.get("function").and_then(|v| v.as_object())
+                                    {
+                                        if let Some(args) =
+                                            func.get("arguments").and_then(|v| v.as_str())
+                                        {
+                                            events.push(StreamEvent::ToolCallDelta {
+                                                arguments: args.to_string(),
                                             });
                                         }
                                     }
                                 }
                             }
+                        }
 
-                            // Tool call arguments delta
-                            if let Some(tool_calls) =
-                                delta.get("tool_calls").and_then(|v| v.as_array())
-                            {
-                                if tool_calls.is_empty() {
-                                    continue;
-                                }
-                                let call = &tool_calls[0];
-
-                                if let Some(func) = call.get("function").and_then(|v| v.as_object())
-                                {
-                                    if let Some(args) =
-                                        func.get("arguments").and_then(|v| v.as_str())
-                                    {
-                                        return Some(StreamEvent::ToolCallDelta {
-                                            arguments: args.to_string(),
-                                        });
-                                    }
-                                }
+                        // Finish reason - emit ToolCallDone before StopReason for tool_calls
+                        if let Some(finish_reason) =
+                            choice.get("finish_reason").and_then(|v| v.as_str())
+                        {
+                            if finish_reason == "tool_calls" {
+                                events.push(StreamEvent::ToolCallDone(String::new()));
                             }
-
-                            // Finish reason - emit ToolCallDone before StopReason for tool_calls
-                            if let Some(finish_reason) =
-                                choice.get("finish_reason").and_then(|v| v.as_str())
-                            {
-                                if finish_reason == "tool_calls" {
-                                    // Signal tool call completion before stop reason
-                                    return Some(StreamEvent::ToolCallDone(String::new()));
-                                }
-                                return Some(StreamEvent::StopReason(finish_reason.to_string()));
-                            }
+                            events.push(StreamEvent::StopReason(finish_reason.to_string()));
                         }
                     }
                 }
             }
         }
-        None
+        events
     }
 }
