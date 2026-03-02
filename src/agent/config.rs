@@ -457,10 +457,277 @@ impl Config {
     /// - Where it is (the working directory)
     /// - How to behave (use tools, spawn subagents)
     ///
+    /// If a project context file exists, it will be appended to the system prompt.
+    ///
     /// # Returns
     ///
     /// A formatted system prompt string.
     pub fn system_prompt(&self) -> String {
-        crate::prompts::render_system_prompt(&self.workdir.display().to_string())
+        let mut prompt = crate::prompts::render_system_prompt(&self.workdir.display().to_string());
+
+        // Append project context if available
+        if let Some(ctx) = crate::context::ProjectContext::load(&self.workdir) {
+            prompt.push_str(&ctx.to_prompt_section());
+        }
+
+        prompt
+    }
+
+    // -------------------------------------------------------------------------
+    // FILE LOADING METHODS (Phase 2)
+    // -------------------------------------------------------------------------
+
+    /// Load configuration from a JSON file.
+    ///
+    /// The file should contain a JSON object with any subset of Config fields.
+    /// Fields not present in the file will use their default values.
+    ///
+    /// # Example file format
+    ///
+    /// ```json
+    /// {
+    ///   "model": "claude-sonnet-4-5-20250929",
+    ///   "timeout_seconds": 120,
+    ///   "max_output_bytes": 100000
+    /// }
+    /// ```
+    pub fn load_from_file(path: &std::path::Path) -> Result<Self> {
+        if !path.exists() {
+            return Err(AgentError::Config(format!(
+                "Config file not found: {}",
+                path.display()
+            )));
+        }
+
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            AgentError::Config(format!("Failed to read config file {}: {}", path.display(), e))
+        })?;
+
+        let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
+            AgentError::Config(format!("Invalid JSON in config file {}: {}", path.display(), e))
+        })?;
+
+        // Start with defaults and overlay the file values
+        let mut config = Config::default();
+
+        if let Some(provider) = json.get("provider").and_then(|v| v.as_str()) {
+            config.provider = match provider.to_lowercase().as_str() {
+                "openai" => Provider::OpenAI,
+                _ => Provider::Anthropic,
+            };
+        }
+
+        if let Some(api_key) = json.get("api_key").and_then(|v| v.as_str()) {
+            config.api_key = api_key.to_string();
+        }
+
+        if let Some(base_url) = json.get("base_url").and_then(|v| v.as_str()) {
+            config.base_url = Some(base_url.to_string());
+        }
+
+        if let Some(model) = json.get("model").and_then(|v| v.as_str()) {
+            config.model = model.to_string();
+        }
+
+        if let Some(workdir) = json.get("workdir").and_then(|v| v.as_str()) {
+            config.workdir = PathBuf::from(workdir);
+        }
+
+        if let Some(timeout) = json.get("timeout_seconds").and_then(|v| v.as_u64()) {
+            config.timeout_seconds = timeout;
+        }
+
+        if let Some(max_bytes) = json.get("max_output_bytes").and_then(|v| v.as_u64()) {
+            config.max_output_bytes = max_bytes as usize;
+        }
+
+        if let Some(blocked) = json.get("blocked_commands").and_then(|v| v.as_array()) {
+            config.blocked_commands = blocked
+                .iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect();
+        }
+
+        if let Some(log_dir) = json.get("session_log_dir").and_then(|v| v.as_str()) {
+            config.session_log_dir = Some(PathBuf::from(log_dir));
+        }
+
+        if let Some(compress) = json.get("session_log_compress").and_then(|v| v.as_bool()) {
+            config.session_log_compress = compress;
+        }
+
+        Ok(config)
+    }
+
+    /// Load configuration with a hierarchy of sources.
+    ///
+    /// Priority order (highest to lowest):
+    /// 1. Environment variables
+    /// 2. Project settings (.amadeus/settings.json in workdir)
+    /// 3. User global settings (~/.amadeus/settings.json)
+    /// 4. Default values
+    ///
+    /// # Arguments
+    ///
+    /// * `workdir` - The working directory to use for project settings
+    ///
+    /// # Returns
+    ///
+    /// A merged Config with values from all applicable sources.
+    pub fn load_with_hierarchy(workdir: &std::path::Path) -> Result<Self> {
+        // Start with defaults
+        let mut config = Config::default();
+        config.workdir = workdir.to_path_buf();
+
+        // 1. Load user global settings (~/.amadeus/settings.json)
+        if let Some(home_dir) = dirs::home_dir() {
+            let user_config_path = home_dir.join(".amadeus/settings.json");
+            if user_config_path.exists() {
+                if let Ok(user_config) = Self::load_from_file(&user_config_path) {
+                    config = config.merge(user_config);
+                }
+            }
+        }
+
+        // 2. Load project settings (<workdir>/.amadeus/settings.json)
+        let project_config_path = workdir.join(".amadeus/settings.json");
+        if project_config_path.exists() {
+            if let Ok(project_config) = Self::load_from_file(&project_config_path) {
+                config = config.merge(project_config);
+            }
+        }
+
+        // 3. Environment variables (highest priority)
+        config = config.merge_env();
+
+        // Ensure workdir is set correctly
+        config.workdir = workdir.to_path_buf();
+
+        Ok(config)
+    }
+
+    /// Merge another config into this one.
+    ///
+    /// Values from `other` that are non-empty/non-None will override
+    /// values in `self`.
+    pub fn merge(self, other: Self) -> Self {
+        Self {
+            provider: if other.provider != Provider::Anthropic || other.api_key != self.api_key {
+                other.provider
+            } else {
+                self.provider
+            },
+            api_key: if !other.api_key.is_empty() {
+                other.api_key
+            } else {
+                self.api_key
+            },
+            base_url: other.base_url.or(self.base_url),
+            model: if other.model != "claude-sonnet-4-5-20250929" || self.model.is_empty() {
+                other.model
+            } else {
+                self.model
+            },
+            workdir: if other.workdir != PathBuf::from(".") && other.workdir != std::env::current_dir().unwrap_or_default() {
+                other.workdir
+            } else {
+                self.workdir
+            },
+            timeout_seconds: if other.timeout_seconds != 300 {
+                other.timeout_seconds
+            } else {
+                self.timeout_seconds
+            },
+            max_output_bytes: if other.max_output_bytes != 50_000 {
+                other.max_output_bytes
+            } else {
+                self.max_output_bytes
+            },
+            blocked_commands: if !other.blocked_commands.is_empty()
+                && other.blocked_commands != vec!["rm -rf /".to_string()]
+            {
+                other.blocked_commands
+            } else {
+                self.blocked_commands
+            },
+            session_log_dir: other.session_log_dir.or(self.session_log_dir),
+            session_log_compress: other.session_log_compress || self.session_log_compress,
+        }
+    }
+
+    /// Merge environment variables into this config.
+    ///
+    /// Environment variables take highest priority.
+    pub fn merge_env(mut self) -> Self {
+        // Load .env file if present
+        dotenvy::dotenv().ok();
+
+        // Provider
+        if let Ok(provider) = env::var("PROVIDER") {
+            self.provider = match provider.to_lowercase().as_str() {
+                "openai" => Provider::OpenAI,
+                _ => Provider::Anthropic,
+            };
+        }
+
+        // API keys
+        match &self.provider {
+            Provider::Anthropic => {
+                if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
+                    self.api_key = key;
+                }
+                if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
+                    self.base_url = Some(url);
+                }
+            }
+            Provider::OpenAI => {
+                if let Ok(key) = env::var("OPENAI_API_KEY") {
+                    self.api_key = key;
+                }
+                if let Ok(url) = env::var("OPENAI_BASE_URL") {
+                    self.base_url = Some(url);
+                }
+            }
+        }
+
+        // Model
+        if let Ok(model) = env::var("MODEL_ID") {
+            self.model = model;
+        }
+
+        // Tool settings
+        if let Ok(max_bytes) = env::var("MAX_OUTPUT_BYTES") {
+            if let Ok(bytes) = max_bytes.parse::<usize>() {
+                self.max_output_bytes = bytes;
+            }
+        }
+
+        if let Ok(blocked) = env::var("BLOCKED_COMMANDS") {
+            self.blocked_commands = blocked
+                .split(',')
+                .map(|cmd| cmd.trim().to_string())
+                .filter(|cmd| !cmd.is_empty())
+                .collect();
+        }
+
+        // Logging settings
+        if let Ok(log_dir) = env::var("SESSION_LOG_DIR") {
+            self.session_log_dir = Some(PathBuf::from(log_dir));
+        }
+
+        if let Ok(compress) = env::var("SESSION_LOG_COMPRESS") {
+            if let Ok(b) = compress.parse::<bool>() {
+                self.session_log_compress = b;
+            }
+        }
+
+        // Timeout
+        if let Ok(timeout) = env::var("TIMEOUT_SECONDS") {
+            if let Ok(secs) = timeout.parse::<u64>() {
+                self.timeout_seconds = secs;
+            }
+        }
+
+        self
     }
 }
