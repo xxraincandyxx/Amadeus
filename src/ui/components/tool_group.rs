@@ -23,6 +23,10 @@ pub struct ToolCall {
     pub output: String,
     pub status: ToolStatus,
     pub is_collapsed: bool,
+    /// Progress message for long-running operations.
+    pub progress_message: Option<String>,
+    /// Progress percentage (0-100).
+    pub progress_percent: Option<u8>,
 }
 
 impl ToolCall {
@@ -34,6 +38,8 @@ impl ToolCall {
             output: String::new(),
             status: ToolStatus::Pending,
             is_collapsed: false,
+            progress_message: None,
+            progress_percent: None,
         }
     }
 
@@ -50,6 +56,8 @@ impl ToolCall {
             ToolStatus::Success
         };
         self.is_collapsed = false;
+        self.progress_message = None;
+        self.progress_percent = None;
         self
     }
 }
@@ -159,15 +167,33 @@ pub fn render_tool_group_with_limit(
         ]));
 
         if tool.status == ToolStatus::Pending && tool.output.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled("   │ ", Style::default().fg(THEME.border)),
-                Span::styled(
-                    "Running...",
-                    Style::default()
-                        .fg(THEME.comment)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]));
+            // Show progress information if available
+            if let Some(ref msg) = tool.progress_message {
+                let progress_text = if let Some(percent) = tool.progress_percent {
+                    format!("{} [{}%]", msg, percent)
+                } else {
+                    msg.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled("   │ ", Style::default().fg(THEME.border)),
+                    Span::styled(
+                        progress_text,
+                        Style::default()
+                            .fg(THEME.cyan)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]));
+            } else {
+                lines.push(Line::from(vec![
+                    Span::styled("   │ ", Style::default().fg(THEME.border)),
+                    Span::styled(
+                        "Running...",
+                        Style::default()
+                            .fg(THEME.comment)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                ]));
+            }
         } else if !tool.is_collapsed {
             if let Some(cmd) = &tool.command {
                 lines.push(Line::from(vec![

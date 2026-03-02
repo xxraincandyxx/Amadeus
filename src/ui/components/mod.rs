@@ -21,7 +21,7 @@ pub use markdown::render_markdown;
 pub use messages::{HistoryItem, MessagesComponent};
 pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sessions::{SessionBrowser, SessionMetadata};
-pub use sidebar::{FileSidebar, HelpSidebar, Sidebar, SidebarKind};
+pub use sidebar::{FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar};
 pub use spinner::GeminiSpinner;
 pub use status::{AppState, StatusBar};
 pub use tool_group::{ToolCall, ToolGroup, ToolStatus};

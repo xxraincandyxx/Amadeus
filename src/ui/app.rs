@@ -15,14 +15,14 @@ use ratatui::{
 use tokio::sync::mpsc;
 use tracing::info;
 
-use crate::agent::events::AgentEvent;
-use crate::agent::loop_agent::Agent;
+use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
+use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    AppState, FileSidebar, Footer, HelpSidebar, InputComponent, LoadingIndicator,
-    MessagesComponent, Sidebar, SidebarKind, StreamingState,
+    ApprovalDialog, ApprovalResponse, AppState, FileSidebar, Footer, HelpSidebar,
+    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 
@@ -34,6 +34,7 @@ const MIN_SIDEBAR_WIDTH: u16 = 15;
 pub enum AppMode {
     Normal,
     Input,
+    Approval,
 }
 
 pub struct App<C: LLMClient> {
@@ -52,6 +53,12 @@ pub struct App<C: LLMClient> {
     messages_area: Rect,
     sidebar_area: Rect,
     mesh_supervisor_addr: Option<String>,
+    /// Approval dialog state
+    approval_dialog: Option<ApprovalDialog>,
+    /// Channel to send approval decisions back to agent (for current stream)
+    approval_dec_tx: Option<mpsc::Sender<(String, ApprovalDecision)>>,
+    /// Channel to receive approval requests from agent (for current stream)
+    approval_req_rx: Option<mpsc::Receiver<ApprovalRequest>>,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -75,6 +82,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             messages_area: Rect::default(),
             sidebar_area: Rect::default(),
             mesh_supervisor_addr: None,
+            approval_dialog: None,
+            approval_dec_tx: None,
+            approval_req_rx: None,
         }
     }
 
@@ -132,6 +142,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     } else {
                         self.stream_rx = None;
                         self.stream_abort = None;
+                    }
+                }
+
+                // Poll for approval requests from agent
+                approval_request = async {
+                    match &mut self.approval_req_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(request) = approval_request {
+                        self.show_approval_dialog(request);
                     }
                 }
             }
@@ -245,9 +267,30 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             AgentEvent::ToolInputDelta { .. } => {}
 
-            AgentEvent::ApprovalRequired { tool, reason, .. } => {
-                info!(tool = %tool, reason = %reason, "Approval required for tool execution");
-                // TODO: Show approval dialog and collect user response
+            AgentEvent::ApprovalRequired { request } => {
+                // This event is just for logging/notification.
+                // The actual approval dialog is triggered via the approval channel
+                // which is polled in the main select! loop.
+                info!(tool = %request.tool, reason = %request.reason, "Approval required for tool execution");
+            }
+
+            AgentEvent::TokenUsage { input_tokens, output_tokens, total_tokens } => {
+                self.footer.set_token_count(total_tokens as usize);
+
+                // Calculate context window percentage
+                let context_size = self.agent.config().context_window_size;
+                if context_size > 0 {
+                    let percent = ((total_tokens as f32 / context_size as f32) * 100.0).min(100.0) as u8;
+                    self.footer.set_context_percent(percent);
+                }
+
+                info!(input = input_tokens, output = output_tokens, total = total_tokens, "Token usage");
+            }
+
+            AgentEvent::ToolProgress { id, message, percent } => {
+                info!(id = %id, message = %message, percent = ?percent, "Tool progress");
+                // Update tool progress in messages component
+                self.messages.update_tool_progress(&id, message, percent);
             }
         }
 
@@ -258,7 +301,99 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         match self.mode {
             AppMode::Normal => self.handle_normal_key(key).await,
             AppMode::Input => self.handle_input_key(key).await,
+            AppMode::Approval => self.handle_approval_key(key).await,
         }
+    }
+
+    async fn handle_approval_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Up) => {
+                if let Some(ref mut dialog) = self.approval_dialog {
+                    dialog.select_previous();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Down) => {
+                if let Some(ref mut dialog) = self.approval_dialog {
+                    dialog.select_next();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Enter) => {
+                self.submit_approval().await;
+            }
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                // Cancel/deny on escape
+                self.deny_approval().await;
+            }
+            (KeyModifiers::NONE, KeyCode::Char('y')) => {
+                // Quick approve
+                if let Some(ref mut dialog) = self.approval_dialog {
+                    dialog.selected = 0; // Approve
+                }
+                self.submit_approval().await;
+            }
+            (KeyModifiers::NONE, KeyCode::Char('n')) => {
+                // Quick deny
+                self.deny_approval().await;
+            }
+            (KeyModifiers::NONE, KeyCode::Char('a')) => {
+                // Quick always approve
+                if let Some(ref mut dialog) = self.approval_dialog {
+                    dialog.selected = 2; // Always Approve
+                }
+                self.submit_approval().await;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn submit_approval(&mut self) {
+        if let Some(dialog) = self.approval_dialog.take() {
+            let request_id = dialog.request_id.clone();
+            let response = dialog.get_response();
+            let decision = match response {
+                ApprovalResponse::Approve => ApprovalDecision::Approve,
+                ApprovalResponse::Deny => ApprovalDecision::Deny,
+                ApprovalResponse::AlwaysApprove => ApprovalDecision::AlwaysApprove,
+            };
+
+            info!(request_id = %request_id, decision = ?decision, "Sending approval decision");
+
+            // Send decision back to agent with the matching request ID
+            if let Some(ref tx) = self.approval_dec_tx {
+                let _ = tx.send((request_id, decision)).await;
+            }
+
+            // Return to input mode
+            self.mode = AppMode::Input;
+        }
+    }
+
+    async fn deny_approval(&mut self) {
+        if let Some(dialog) = self.approval_dialog.take() {
+            let request_id = dialog.request_id.clone();
+
+            info!(request_id = %request_id, "Denying approval request");
+
+            // Send denial back to agent
+            if let Some(ref tx) = self.approval_dec_tx {
+                let _ = tx.send((request_id, ApprovalDecision::Deny)).await;
+            }
+        }
+        self.mode = AppMode::Input;
+    }
+
+    /// Show an approval dialog for a tool execution request.
+    fn show_approval_dialog(&mut self, request: ApprovalRequest) {
+        info!(tool = %request.tool, request_id = %request.id, "Showing approval dialog");
+
+        self.approval_dialog = Some(ApprovalDialog::with_id(
+            request.id,
+            &request.tool,
+            &request.input,
+            &request.reason,
+        ));
+        self.mode = AppMode::Approval;
     }
 
     async fn handle_normal_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
@@ -333,6 +468,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::ALT, KeyCode::Char('b')) => {
                 self.toggle_sidebar(SidebarKind::Help);
+            }
+            (KeyModifiers::ALT, KeyCode::Char('s')) => {
+                self.toggle_sidebar(SidebarKind::Skills);
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
                 self.should_quit = true;
@@ -434,8 +572,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.sidebar = match (&self.sidebar, kind) {
             (Some(Sidebar::Files(_)), SidebarKind::Files) => None,
             (Some(Sidebar::Help(_)), SidebarKind::Help) => None,
+            (Some(Sidebar::Skills(_)), SidebarKind::Skills) => None,
             (_, SidebarKind::Files) => Some(Sidebar::Files(FileSidebar::new(self.workdir.clone()))),
             (_, SidebarKind::Help) => Some(Sidebar::Help(HelpSidebar::new())),
+            (_, SidebarKind::Skills) => {
+                // Load skills from the skills registry
+                let skills = crate::skills::registry::SkillRegistry::load_from_dir(
+                    &self.workdir.join(".amadeus/skills")
+                ).unwrap_or_default();
+                Some(Sidebar::Skills(crate::ui::components::SkillSidebar::new(
+                    skills.into_skills(),
+                )))
+            }
         };
     }
 
@@ -509,6 +657,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let agent = self.agent.clone();
         let prompt = trimmed.to_string();
 
+        // Create approval channels for this stream
+        let (channels, approval_handle) = create_approval_channels();
+        self.approval_dec_tx = Some(approval_handle.decision_tx);
+        self.approval_req_rx = Some(approval_handle.request_rx);
+
         let (tx, rx) = mpsc::channel(64);
         let handle = tokio::spawn(async move {
             // Add to history first
@@ -518,7 +671,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 history.push(crate::agent::messages::Message::user(&prompt));
             }
 
-            let mut stream = agent.run_stream();
+            let mut stream = agent.run_stream_with_approval(Some(channels));
             while let Some(event) = stream.next().await {
                 match event {
                     Ok(e) => {
@@ -597,6 +750,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 match sidebar {
                     Sidebar::Files(fs) => fs.render(frame, sidebar_area),
                     Sidebar::Help(hs) => hs.render(frame, sidebar_area),
+                    Sidebar::Skills(ss) => ss.render(frame, sidebar_area),
                 }
             }
         }
@@ -625,5 +779,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.input.render(frame, chunks[2]);
         self.footer.render(frame, chunks[3]);
+
+        // Render approval dialog on top if active
+        if let Some(ref dialog) = self.approval_dialog {
+            dialog.render(frame, size);
+        }
     }
 }

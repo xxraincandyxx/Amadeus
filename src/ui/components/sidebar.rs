@@ -10,17 +10,20 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use walkdir::WalkDir;
 
+use crate::skills::Skill;
 use crate::ui::get_colors;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SidebarKind {
     Files,
     Help,
+    Skills,
 }
 
 pub enum Sidebar {
     Files(FileSidebar),
     Help(HelpSidebar),
+    Skills(SkillSidebar),
 }
 
 pub struct FileSidebar {
@@ -313,5 +316,165 @@ impl HelpSidebar {
 impl Default for HelpSidebar {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Sidebar for selecting skills/prompt templates.
+pub struct SkillSidebar {
+    skills: Vec<Skill>,
+    selected: usize,
+    scroll_offset: usize,
+}
+
+impl SkillSidebar {
+    /// Create a new skill sidebar with the given skills.
+    pub fn new(skills: Vec<Skill>) -> Self {
+        Self {
+            skills,
+            selected: 0,
+            scroll_offset: 0,
+        }
+    }
+
+    /// Get the number of skills.
+    pub fn len(&self) -> usize {
+        self.skills.len()
+    }
+
+    /// Check if there are no skills.
+    pub fn is_empty(&self) -> bool {
+        self.skills.is_empty()
+    }
+
+    /// Move selection up.
+    pub fn select_up(&mut self) {
+        if self.selected > 0 {
+            self.selected -= 1;
+            self.ensure_selected_visible(0);
+        }
+    }
+
+    /// Move selection down.
+    pub fn select_down(&mut self, visible_count: usize) {
+        if self.selected < self.skills.len().saturating_sub(1) {
+            self.selected += 1;
+            self.ensure_selected_visible(visible_count);
+        }
+    }
+
+    fn ensure_selected_visible(&mut self, visible_count: usize) {
+        if self.selected < self.scroll_offset {
+            self.scroll_offset = self.selected;
+        } else if self.selected >= self.scroll_offset + visible_count && visible_count > 0 {
+            self.scroll_offset = self.selected - visible_count + 1;
+        }
+    }
+
+    /// Get the currently selected skill.
+    pub fn selected_skill(&self) -> Option<&Skill> {
+        self.skills.get(self.selected)
+    }
+
+    /// Render the skill sidebar.
+    pub fn render(&self, frame: &mut Frame, area: Rect) {
+        if area.width < 10 {
+            return;
+        }
+
+        let colors = get_colors();
+        let visible_count = area.height.saturating_sub(4) as usize;
+
+        let mut lines = vec![
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
+                    "SKILLS",
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+        ];
+
+        if self.skills.is_empty() {
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "   No skills available",
+                    Style::default().fg(colors.ui.comment).add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "   Add .md files to",
+                    Style::default().fg(colors.ui.comment),
+                ),
+            ]));
+            lines.push(Line::from(vec![
+                Span::styled(
+                    "   .amadeus/skills/",
+                    Style::default().fg(colors.text.link),
+                ),
+            ]));
+        } else {
+            for (i, skill) in self
+                .skills
+                .iter()
+                .skip(self.scroll_offset)
+                .take(visible_count)
+                .enumerate()
+            {
+                let actual_index = i + self.scroll_offset;
+                let is_selected = actual_index == self.selected;
+
+                let style = if is_selected {
+                    Style::default()
+                        .fg(colors.text.link)
+                        .bg(colors.ui.dark)
+                        .add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(colors.text.primary)
+                };
+
+                let prefix = if is_selected { " ▸ " } else { "   " };
+
+                // Skill name line
+                lines.push(Line::from(vec![
+                    Span::styled(prefix, Style::default().fg(colors.text.accent)),
+                    Span::styled(&skill.name, style),
+                ]));
+
+                // Description line (truncated)
+                let max_desc_len = (area.width as usize).saturating_sub(6);
+                let desc = if skill.description.len() > max_desc_len {
+                    format!("{}...", &skill.description[..max_desc_len.saturating_sub(3)])
+                } else {
+                    skill.description.clone()
+                };
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("     {}", desc),
+                        Style::default().fg(colors.ui.comment),
+                    ),
+                ]));
+            }
+        }
+
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .title(" SKILLS ")
+                .title_style(
+                    Style::default()
+                        .fg(colors.ui.comment)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .borders(Borders::RIGHT)
+                .border_style(Style::default().fg(colors.border.default))
+                .style(Style::default().bg(colors.background.primary)),
+        );
+
+        frame.render_widget(paragraph, area);
     }
 }

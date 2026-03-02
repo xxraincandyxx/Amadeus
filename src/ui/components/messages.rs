@@ -139,6 +139,19 @@ impl MessagesComponent {
         }
     }
 
+    /// Update progress for a running tool.
+    pub fn update_tool_progress(&mut self, tool_id: &str, message: String, percent: Option<u8>) {
+        if let Some(ref mut group) = self.pending_tool_group {
+            if let Some(tool) = group.tools.iter_mut().find(|t| t.id == tool_id) {
+                tool.progress_message = Some(message);
+                tool.progress_percent = percent;
+            }
+        }
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+        }
+    }
+
     fn finalize_pending_tool_group(&mut self) {
         if let Some(group) = self.pending_tool_group.take() {
             if !group.is_empty() {
