@@ -15,6 +15,30 @@ pub struct ToolCall {
     pub is_error: bool,
 }
 
+/// Decision from approval request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalDecision {
+    /// Approve this single execution.
+    Approve,
+    /// Deny this execution.
+    Deny,
+    /// Approve and add to auto-approve list for future executions.
+    AlwaysApprove,
+}
+
+/// Request for tool approval (serializable for logging/display).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApprovalRequest {
+    /// Unique ID for this approval request.
+    pub id: String,
+    /// Tool name that requires approval.
+    pub tool: String,
+    /// Tool input that will be executed if approved.
+    pub input: Value,
+    /// Reason why approval is needed.
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AgentEvent {
     TextDelta {
@@ -36,16 +60,22 @@ pub enum AgentEvent {
         is_error: bool,
     },
     /// Approval is required before tool execution.
-    /// The consumer (TUI/Platform) must respond with approval decision.
+    /// The consumer (TUI/Platform) must respond via Agent::send_approval_decision().
     ApprovalRequired {
-        /// Unique ID for this approval request.
+        /// The approval request details.
+        request: ApprovalRequest,
+    },
+    /// Token usage update from the LLM.
+    TokenUsage {
+        input_tokens: u32,
+        output_tokens: u32,
+        total_tokens: u32,
+    },
+    /// Progress update for a long-running tool.
+    ToolProgress {
         id: String,
-        /// Tool name that requires approval.
-        tool: String,
-        /// Tool input that will be executed if approved.
-        input: Value,
-        /// Reason why approval is needed.
-        reason: String,
+        message: String,
+        percent: Option<u8>,
     },
     Done {
         result: RunResult,
