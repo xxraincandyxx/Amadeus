@@ -248,6 +248,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             AgentEvent::ToolInputDelta { .. } => {}
+
+            AgentEvent::ApprovalRequired { tool, reason, .. } => {
+                info!(tool = %tool, reason = %reason, "Approval required for tool execution");
+                // TODO: Show approval dialog and collect user response
+            }
         }
 
         false
