@@ -35,6 +35,18 @@ pub enum AgentEvent {
         output: String,
         is_error: bool,
     },
+    /// Approval is required before tool execution.
+    /// The consumer (TUI/Platform) must respond with approval decision.
+    ApprovalRequired {
+        /// Unique ID for this approval request.
+        id: String,
+        /// Tool name that requires approval.
+        tool: String,
+        /// Tool input that will be executed if approved.
+        input: Value,
+        /// Reason why approval is needed.
+        reason: String,
+    },
     Done {
         result: RunResult,
     },
