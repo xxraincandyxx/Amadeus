@@ -176,6 +176,17 @@ pub struct Config {
 
     /// Whether to compress session logs using Gzip.
     pub session_log_compress: bool,
+
+    // -------------------------------------------------------------------------
+    // Context Window Settings
+    // -------------------------------------------------------------------------
+
+    /// Maximum context window size in tokens for the model.
+    /// Used to calculate context usage percentage.
+    ///
+    /// Default: 200,000 (Claude's context window)
+    /// Common values: 128000 (GPT-4), 200000 (Claude), 1000000 (Gemini 1.5)
+    pub context_window_size: u32,
 }
 
 /*
@@ -197,6 +208,7 @@ impl Default for Config {
             blocked_commands: vec!["rm -rf /".to_string()],
             session_log_dir: None,
             session_log_compress: false,
+            context_window_size: 200_000,
         }
     }
 }
@@ -411,6 +423,18 @@ impl Config {
             .unwrap_or(false);
 
         // ---------------------------------------------------------------------
+        // PARSE CONTEXT WINDOW SIZE
+        // ---------------------------------------------------------------------
+
+        // Get CONTEXT_WINDOW_SIZE environment variable
+        // Default to 200,000 tokens (Claude's context window)
+        // Common values: 128000 (GPT-4), 200000 (Claude), 1000000 (Gemini 1.5)
+        let context_window_size = env::var("CONTEXT_WINDOW_SIZE")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(200_000);
+
+        // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG
         // ---------------------------------------------------------------------
 
@@ -443,6 +467,9 @@ impl Config {
 
             session_log_dir,
             session_log_compress,
+
+            // Context window management
+            context_window_size,
         })
     }
 
@@ -652,6 +679,11 @@ impl Config {
             },
             session_log_dir: other.session_log_dir.or(self.session_log_dir),
             session_log_compress: other.session_log_compress || self.session_log_compress,
+            context_window_size: if other.context_window_size != 200_000 {
+                other.context_window_size
+            } else {
+                self.context_window_size
+            },
         }
     }
 
