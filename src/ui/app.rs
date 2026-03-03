@@ -22,7 +22,7 @@ use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
     ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
-    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StreamingState,
+    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 
@@ -44,6 +44,7 @@ pub struct App<C: LLMClient> {
     input: InputComponent,
     footer: Footer,
     loading_indicator: LoadingIndicator,
+    status_bar: StatusBar,
     sidebar: Option<Sidebar>,
     should_quit: bool,
     workdir: PathBuf,
@@ -67,6 +68,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
         let footer = Footer::new(model_name);
         let loading_indicator = LoadingIndicator::new();
+        let status_bar = StatusBar::new();
 
         Self {
             agent,
@@ -75,6 +77,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             input: InputComponent::new(),
             footer,
             loading_indicator,
+            status_bar,
             sidebar: None,
             should_quit: false,
             workdir,
@@ -174,6 +177,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.footer.tick();
                 self.loading_indicator.tick();
                 self.messages.tick();
+                self.status_bar.tick();
                 // Poll for compaction result (non-blocking)
                 self.poll_compaction_result();
             }
@@ -219,11 +223,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     fn handle_agent_event(&mut self, event: AgentEvent) -> bool {
         match event {
             AgentEvent::TextDelta { delta } => {
+                if !self.status_bar.is_active() {
+                    self.status_bar.start();
+                }
+                self.status_bar.set_thinking(false);
+                self.status_bar.update_text(&delta);
                 self.current_text.push_str(&delta);
                 self.messages.update_streaming_text(&self.current_text);
             }
 
             AgentEvent::ToolStart { id, name } => {
+                self.status_bar.set_thinking(true);
                 self.messages.start_tool(id, name, None);
             }
 
@@ -249,6 +259,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.messages.finalize_assistant(result.text);
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
+                self.status_bar.stop();
                 return true;
             }
 
@@ -261,6 +272,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 }
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
+                self.status_bar.stop();
                 return true;
             }
 
@@ -268,7 +280,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 info!(path = %path, "Session log saved to disk");
             }
 
-            AgentEvent::ToolInputDelta { .. } => {}
+            AgentEvent::ToolInputDelta { .. } => {
+                self.status_bar.set_thinking(true);
+            }
 
             AgentEvent::ApprovalRequired { request } => {
                 // This event is just for logging/notification.
@@ -278,6 +292,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             AgentEvent::TokenUsage { input_tokens, output_tokens, total_tokens } => {
+                // Only update input tokens from API - output tokens tracked from text deltas
+                self.status_bar.update_input_tokens(input_tokens);
+
                 // Calculate context window percentage
                 let context_size = self.agent.config().context_window_size;
                 if context_size > 0 {
@@ -689,6 +706,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.current_text.clear();
         self.loading_indicator.set_streaming_state(StreamingState::Idle);
+        self.status_bar.stop();
     }
 
     fn can_show_sidebar(&self, area: Rect) -> bool {
@@ -892,17 +910,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
         }
 
-        let input_height = self.input.height();
         let footer_height = 1u16;
         let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
+        let input_height = self.input.height();
+        let status_height = 1u16; // Always reserve 1 line to prevent layout jump
 
-        // Layout: Messages → Loading → Input → Footer (at bottom)
+        // Layout: Messages → Loading → Input → Status Bar → Footer (at bottom)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Min(0),  // Messages (maximized)
                 Constraint::Length(loading_height),
-                Constraint::Length(input_height),
+                Constraint::Length(input_height),  // Input (fixed height)
+                Constraint::Length(status_height), // Status bar (always 1 line)
                 Constraint::Length(footer_height),
             ])
             .split(main_area);
@@ -915,7 +935,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         self.input.render(frame, chunks[2]);
-        self.footer.render(frame, chunks[3]);
+
+        // Always render status bar area, but content only shows when active
+        self.status_bar.render(frame, chunks[3]);
+
+        self.footer.render(frame, chunks[4]);
 
         // Render approval dialog on top if active
         if let Some(ref dialog) = self.approval_dialog {
