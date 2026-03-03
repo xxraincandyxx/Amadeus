@@ -575,7 +575,7 @@ impl MessagesComponent {
                         let mut spans = Vec::new();
                         if i == 0 {
                             spans.push(Span::styled(
-                                format!("» [{}] ", turn),
+                                format!("✦ [{}] ", turn),
                                 Style::default()
                                     .fg(colors.text.accent)
                                     .add_modifier(Modifier::BOLD),
