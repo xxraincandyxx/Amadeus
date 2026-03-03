@@ -45,7 +45,16 @@ pub struct Footer {
     hide_context_percent: bool,
     // Status message expiry
     status_message_expiry: Option<Instant>,
+    // Session start time for duration tracking
+    session_start: Instant,
 }
+
+// Icons for footer elements
+const ICON_FOLDER: &str = "📁";
+const ICON_GIT: &str = "🔗";
+const ICON_SANDBOX: &str = "🛡";
+const ICON_CLOCK: &str = "⏱";
+const ICON_MODEL: &str = "🤖";
 
 impl Footer {
     pub fn new(model_name: String) -> Self {
@@ -71,6 +80,7 @@ impl Footer {
             hide_model: false,
             hide_context_percent: false,
             status_message_expiry: None,
+            session_start: Instant::now(),
         }
     }
 
@@ -185,6 +195,15 @@ impl Footer {
         &self.info
     }
 
+    /// Format session duration as MM:SS
+    fn format_duration(&self) -> String {
+        let elapsed = self.session_start.elapsed();
+        let total_secs = elapsed.as_secs();
+        let mins = total_secs / 60;
+        let secs = total_secs % 60;
+        format!("{:02}:{:02}", mins, secs)
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if area.width < 3 {
             return;
@@ -215,11 +234,12 @@ impl Footer {
         // Separator
         spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
 
-        // CWD and git branch
+        // CWD and git branch with icons
         let path_len = ((area.width as usize) / 4).max(15).min(40);
 
         if !self.hide_cwd {
             let display_path = Self::shorten_path(&self.info.cwd, path_len);
+            spans.push(Span::styled(ICON_FOLDER, Style::default().fg(colors.text.secondary)));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 display_path,
@@ -228,9 +248,10 @@ impl Footer {
 
             if let Some(ref branch) = self.info.git_branch {
                 spans.push(Span::raw(" "));
+                spans.push(Span::styled(ICON_GIT, Style::default().fg(colors.text.secondary)));
                 spans.push(Span::styled(
-                    format!("({}*)", branch),
-                    Style::default().fg(colors.text.secondary),
+                    format!(" {}", branch),
+                    Style::default().fg(colors.text.accent),
                 ));
             }
         }
@@ -250,15 +271,29 @@ impl Footer {
             };
 
             spans.push(Span::raw(" "));
+            spans.push(Span::styled(ICON_SANDBOX, Style::default().fg(sandbox_color)));
+            spans.push(Span::raw(" "));
             spans.push(Span::styled(sandbox_text, Style::default().fg(sandbox_color)));
         }
 
-        // Right side: model and context
+        // Right side: session duration, model, and context
         let mut right_spans = Vec::new();
+
+        // Session duration
+        right_spans.push(Span::raw(" "));
+        right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+        right_spans.push(Span::raw(" "));
+        right_spans.push(Span::styled(ICON_CLOCK, Style::default().fg(colors.text.secondary)));
+        right_spans.push(Span::styled(
+            format!(" {}", self.format_duration()),
+            Style::default().fg(colors.text.secondary),
+        ));
 
         if !self.hide_model {
             right_spans.push(Span::raw(" "));
             right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+            right_spans.push(Span::raw(" "));
+            right_spans.push(Span::styled(ICON_MODEL, Style::default().fg(colors.text.accent)));
             right_spans.push(Span::raw(" "));
             right_spans.push(Span::styled(
                 self.info.model_name.clone(),
@@ -266,14 +301,22 @@ impl Footer {
             ));
 
             if !self.hide_context_percent && self.info.context_percent > 0 {
-                let percent_color = if self.info.context_percent >= 90 {
-                    colors.status.error
+                let (bar_color, percent_color) = if self.info.context_percent >= 90 {
+                    (colors.status.error, colors.status.error)
                 } else if self.info.context_percent >= 70 {
-                    colors.status.warning
+                    (colors.status.warning, colors.status.warning)
                 } else {
-                    colors.text.secondary
+                    (colors.status.success, colors.text.secondary)
                 };
 
+                // Visual progress bar [████░░░░] 45%
+                let bar_width = 8;
+                let filled = ((self.info.context_percent as usize) * bar_width) / 100;
+                let empty = bar_width - filled;
+                let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
+
+                right_spans.push(Span::raw(" "));
+                right_spans.push(Span::styled(bar, Style::default().fg(bar_color)));
                 right_spans.push(Span::styled(
                     format!(" {}%", self.info.context_percent),
                     Style::default().fg(percent_color),
@@ -301,5 +344,133 @@ impl Footer {
 impl Default for Footer {
     fn default() -> Self {
         Self::new("claude-3-sonnet".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_footer_new() {
+        let footer = Footer::new("test-model".to_string());
+        assert_eq!(footer.info.model_name, "test-model");
+        assert_eq!(footer.info.context_percent, 0);
+        assert!(!footer.info.is_mesh);
+    }
+
+    #[test]
+    fn test_footer_set_context_percent() {
+        let mut footer = Footer::new("test".to_string());
+
+        footer.set_context_percent(50);
+        assert_eq!(footer.info.context_percent, 50);
+
+        footer.set_context_percent(100);
+        assert_eq!(footer.info.context_percent, 100);
+
+        // Should clamp to 100
+        footer.set_context_percent(150);
+        assert_eq!(footer.info.context_percent, 100);
+    }
+
+    #[test]
+    fn test_footer_set_model_name() {
+        let mut footer = Footer::new("old-model".to_string());
+        footer.set_model_name("new-model".to_string());
+        assert_eq!(footer.info.model_name, "new-model");
+    }
+
+    #[test]
+    fn test_footer_set_mesh() {
+        let mut footer = Footer::new("test".to_string());
+        assert!(!footer.info.is_mesh);
+
+        footer.set_mesh(true);
+        assert!(footer.info.is_mesh);
+
+        footer.set_mesh(false);
+        assert!(!footer.info.is_mesh);
+    }
+
+    #[test]
+    fn test_footer_status_message() {
+        let mut footer = Footer::new("test".to_string());
+
+        footer.set_status_message("Test message");
+        assert_eq!(footer.info.status_message, Some("Test message".to_string()));
+        assert!(footer.status_message_expiry.is_some());
+
+        footer.clear_status_message();
+        assert!(footer.info.status_message.is_none());
+        assert!(footer.status_message_expiry.is_none());
+    }
+
+    #[test]
+    fn test_footer_format_duration() {
+        let footer = Footer::new("test".to_string());
+        let duration = footer.format_duration();
+
+        // Duration should be in MM:SS format
+        assert!(duration.contains(':'));
+        assert_eq!(duration.len(), 5); // "00:00" format
+    }
+
+    #[test]
+    fn test_sandbox_status_default() {
+        let status = SandboxStatus::default();
+        assert_eq!(status, SandboxStatus::None);
+    }
+
+    #[test]
+    fn test_sandbox_status_variants() {
+        let none = SandboxStatus::None;
+        let docker = SandboxStatus::Docker;
+        let seatbelt = SandboxStatus::Seatbelt("default".to_string());
+        let other = SandboxStatus::Other("custom".to_string());
+
+        assert_ne!(none, docker);
+        assert_ne!(docker, seatbelt);
+        assert_ne!(seatbelt, other);
+    }
+
+    #[test]
+    fn test_footer_info_clone() {
+        let info = FooterInfo {
+            cwd: "/test/path".to_string(),
+            git_branch: Some("main".to_string()),
+            sandbox_status: SandboxStatus::Docker,
+            model_name: "test-model".to_string(),
+            context_percent: 50,
+            is_mesh: true,
+            status_message: Some("test".to_string()),
+        };
+
+        let cloned = info.clone();
+        assert_eq!(info.cwd, cloned.cwd);
+        assert_eq!(info.git_branch, cloned.git_branch);
+        assert_eq!(info.context_percent, cloned.context_percent);
+    }
+
+    #[test]
+    fn test_footer_default() {
+        let footer = Footer::default();
+        assert_eq!(footer.info.model_name, "claude-3-sonnet");
+    }
+
+    #[test]
+    fn test_context_percent_clamping() {
+        let mut footer = Footer::new("test".to_string());
+
+        // Test boundary values
+        footer.set_context_percent(0);
+        assert_eq!(footer.info.context_percent, 0);
+
+        footer.set_context_percent(100);
+        assert_eq!(footer.info.context_percent, 100);
+
+        // Test over-max clamping
+        footer.set_context_percent(255);
+        assert_eq!(footer.info.context_percent, 100);
     }
 }

@@ -21,7 +21,7 @@ use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
+    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, Header, HelpSidebar,
     InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
@@ -43,6 +43,7 @@ pub struct App<C: LLMClient> {
     messages: MessagesComponent,
     input: InputComponent,
     footer: Footer,
+    header: Header,
     loading_indicator: LoadingIndicator,
     status_bar: StatusBar,
     sidebar: Option<Sidebar>,
@@ -66,9 +67,11 @@ pub struct App<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
-        let footer = Footer::new(model_name);
+        let footer = Footer::new(model_name.clone());
         let loading_indicator = LoadingIndicator::new();
         let status_bar = StatusBar::new();
+        let mut header = Header::new();
+        header.set_session_name(&model_name);
 
         Self {
             agent,
@@ -76,6 +79,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
             footer,
+            header,
             loading_indicator,
             status_bar,
             sidebar: None,
@@ -230,6 +234,22 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.status_bar.update_text(&delta);
                 self.current_text.push_str(&delta);
                 self.messages.update_streaming_text(&self.current_text);
+            }
+
+            AgentEvent::ThinkingDelta { delta } => {
+                if !self.status_bar.is_active() {
+                    self.status_bar.start();
+                }
+                self.status_bar.set_thinking(true);
+                self.messages.update_thinking(&delta);
+            }
+
+            AgentEvent::ThinkingComplete { thinking } => {
+                // Finalize the thinking block
+                if !thinking.is_empty() {
+                    self.messages.update_thinking(&thinking);
+                }
+                self.messages.finalize_thinking();
             }
 
             AgentEvent::ToolStart { id, name } => {
@@ -910,36 +930,47 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
         }
 
+        let header_height = 1u16;
         let footer_height = 1u16;
         let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
         let input_height = self.input.height();
         let status_height = 1u16; // Always reserve 1 line to prevent layout jump
 
-        // Layout: Messages → Loading → Input → Status Bar → Footer (at bottom)
+        // Layout: Header → Messages → Loading → Input → Status Bar → Footer (at bottom)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),  // Messages (maximized)
+                Constraint::Length(header_height),  // Header (new)
+                Constraint::Min(0),                 // Messages (maximized)
                 Constraint::Length(loading_height),
-                Constraint::Length(input_height),  // Input (fixed height)
-                Constraint::Length(status_height), // Status bar (always 1 line)
+                Constraint::Length(input_height),   // Input (fixed height)
+                Constraint::Length(status_height),  // Status bar (always 1 line)
                 Constraint::Length(footer_height),
             ])
             .split(main_area);
 
-        self.messages_area = chunks[0];
-        self.messages.render(frame, chunks[0]);
+        // Header
+        let mode_str = match self.mode {
+            AppMode::Normal => "Normal",
+            AppMode::Input => "Input",
+            AppMode::Approval => "Approval",
+        };
+        self.header.set_mode(mode_str);
+        self.header.render(frame, chunks[0]);
+
+        self.messages_area = chunks[1];
+        self.messages.render(frame, chunks[1]);
 
         if loading_height > 0 {
-            self.loading_indicator.render(frame, chunks[1]);
+            self.loading_indicator.render(frame, chunks[2]);
         }
 
-        self.input.render(frame, chunks[2]);
+        self.input.render(frame, chunks[3]);
 
         // Always render status bar area, but content only shows when active
-        self.status_bar.render(frame, chunks[3]);
+        self.status_bar.render(frame, chunks[4]);
 
-        self.footer.render(frame, chunks[4]);
+        self.footer.render(frame, chunks[5]);
 
         // Render approval dialog on top if active
         if let Some(ref dialog) = self.approval_dialog {

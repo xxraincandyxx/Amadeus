@@ -93,30 +93,18 @@ impl CompressionItem {
 
 #[derive(Debug, Clone)]
 pub enum HistoryItem {
-    User { content: String, timestamp: Instant },
-    Assistant { content: String, timestamp: Instant },
-    ToolGroup { group: ToolGroup },
+    User { content: String, timestamp: Instant, turn: usize },
+    Assistant { content: String, timestamp: Instant, turn: usize },
+    /// Extended thinking/reasoning content from the model
+    Thinking { content: String, timestamp: Instant, turn: usize, is_collapsed: bool },
+    ToolGroup { group: ToolGroup, turn: usize },
     /// Compression/compaction operation (gemini-cli style)
     Compression { compression: CompressionItem },
 }
 
 impl HistoryItem {
-    pub fn user(content: String) -> Self {
-        Self::User {
-            content,
-            timestamp: Instant::now(),
-        }
-    }
-
-    pub fn assistant(content: String) -> Self {
-        Self::Assistant {
-            content,
-            timestamp: Instant::now(),
-        }
-    }
-
-    pub fn tool_group(group: ToolGroup) -> Self {
-        Self::ToolGroup { group }
+    pub fn tool_group(group: ToolGroup, turn: usize) -> Self {
+        Self::ToolGroup { group, turn }
     }
 
     pub fn compression(compression: CompressionItem) -> Self {
@@ -129,11 +117,17 @@ pub struct MessagesComponent {
     scroll_state: ScrollState,
     scrollbar: AnimatedScrollbar,
     streaming_text: Option<String>,
+    /// Streaming thinking content
+    streaming_thinking: Option<String>,
     pending_tool_group: Option<ToolGroup>,
     /// Pending compression item with animated spinner (gemini-cli style)
     pending_compression: Option<CompressionItem>,
     /// Spinner for pending compression animation
     compression_spinner: GeminiSpinner,
+    /// Turn counter for conversation tracking
+    turn_counter: usize,
+    /// Current streaming turn (for assistant responses)
+    current_turn: usize,
 }
 
 impl MessagesComponent {
@@ -144,15 +138,30 @@ impl MessagesComponent {
             scroll_state: ScrollState::new(),
             scrollbar: AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover),
             streaming_text: None,
+            streaming_thinking: None,
             pending_tool_group: None,
             pending_compression: None,
             compression_spinner: GeminiSpinner::new(),
+            turn_counter: 0,
+            current_turn: 0,
         }
+    }
+
+    /// Get the current turn number
+    fn next_turn(&mut self) -> usize {
+        self.turn_counter += 1;
+        self.turn_counter
     }
 
     pub fn add_user(&mut self, content: String) {
         self.finalize_pending_tool_group();
-        self.items.push(HistoryItem::user(content));
+        let turn = self.next_turn();
+        self.current_turn = turn;
+        self.items.push(HistoryItem::User {
+            content,
+            timestamp: Instant::now(),
+            turn,
+        });
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -162,7 +171,12 @@ impl MessagesComponent {
     pub fn add_assistant(&mut self, content: String) {
         self.finalize_pending_tool_group();
         self.streaming_text = None;
-        self.items.push(HistoryItem::assistant(content));
+        let turn = self.current_turn;
+        self.items.push(HistoryItem::Assistant {
+            content,
+            timestamp: Instant::now(),
+            turn,
+        });
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -180,10 +194,49 @@ impl MessagesComponent {
     pub fn finalize_assistant(&mut self, text: String) {
         self.finalize_pending_tool_group();
         self.streaming_text = None;
-        self.items.push(HistoryItem::assistant(text));
+        // Finalize any pending thinking
+        self.finalize_thinking();
+        let turn = self.current_turn;
+        self.items.push(HistoryItem::Assistant {
+            content: text,
+            timestamp: Instant::now(),
+            turn,
+        });
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
+        }
+    }
+
+    /// Update streaming thinking content
+    pub fn update_thinking(&mut self, thinking: &str) {
+        if let Some(ref mut existing) = self.streaming_thinking {
+            existing.push_str(thinking);
+        } else {
+            self.streaming_thinking = Some(thinking.to_string());
+        }
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Finalize the pending thinking block
+    pub fn finalize_thinking(&mut self) {
+        if let Some(thinking) = self.streaming_thinking.take() {
+            if !thinking.is_empty() {
+                let turn = self.current_turn;
+                self.items.push(HistoryItem::Thinking {
+                    content: thinking,
+                    timestamp: Instant::now(),
+                    turn,
+                    is_collapsed: false,
+                });
+                if self.scroll_state.auto_scroll {
+                    self.scroll_state.scroll_to_bottom();
+                    self.scrollbar.flash();
+                }
+            }
         }
     }
 
@@ -271,6 +324,15 @@ impl MessagesComponent {
         }
     }
 
+    /// Finalize the pending tool group with a turn number
+    fn finalize_pending_tool_group_with_turn(&mut self, turn: usize) {
+        if let Some(group) = self.pending_tool_group.take() {
+            if !group.is_empty() {
+                self.items.push(HistoryItem::ToolGroup { group, turn });
+            }
+        }
+    }
+
     pub fn complete_tool(
         &mut self,
         tool_id: &str,
@@ -306,16 +368,13 @@ impl MessagesComponent {
     }
 
     fn finalize_pending_tool_group(&mut self) {
-        if let Some(group) = self.pending_tool_group.take() {
-            if !group.is_empty() {
-                self.items.push(HistoryItem::tool_group(group));
-            }
-        }
+        let turn = self.current_turn;
+        self.finalize_pending_tool_group_with_turn(turn);
     }
 
     pub fn collapse_all_tools(&mut self) {
         for item in &mut self.items {
-            if let HistoryItem::ToolGroup { group } = item {
+            if let HistoryItem::ToolGroup { group, .. } = item {
                 group.collapse_all();
             }
         }
@@ -326,7 +385,7 @@ impl MessagesComponent {
 
     pub fn expand_all_tools(&mut self) {
         for item in &mut self.items {
-            if let HistoryItem::ToolGroup { group } = item {
+            if let HistoryItem::ToolGroup { group, .. } = item {
                 group.expand_all();
             }
         }
@@ -387,6 +446,18 @@ impl MessagesComponent {
         }
     }
 
+    /// Render a turn separator line
+    fn render_turn_separator(turn: usize, colors: &crate::ui::SemanticColors) -> Line<'static> {
+        Line::from(vec![
+            Span::styled("─".repeat(8), Style::default().fg(colors.ui.dark)),
+            Span::styled(
+                format!(" turn {} ", turn),
+                Style::default().fg(colors.ui.comment),
+            ),
+            Span::styled("─".repeat(8), Style::default().fg(colors.ui.dark)),
+        ])
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.width < 3 || area.height < 1 {
             return;
@@ -397,22 +468,45 @@ impl MessagesComponent {
         let colors = get_colors();
         let mut lines: Vec<Line> = Vec::new();
         let content_width = area.width.saturating_sub(4) as usize;
+        let mut last_turn: Option<usize> = None;
 
         for item in self.items.iter() {
+            // Get the turn number for this item
+            let item_turn = match item {
+                HistoryItem::User { turn, .. } => Some(*turn),
+                HistoryItem::Assistant { turn, .. } => Some(*turn),
+                HistoryItem::Thinking { turn, .. } => Some(*turn),
+                HistoryItem::ToolGroup { turn, .. } => Some(*turn),
+                HistoryItem::Compression { .. } => None,
+            };
+
+            // Add turn separator if this is a new turn
+            if let Some(turn) = item_turn {
+                if last_turn.map_or(true, |lt| lt != turn) {
+                    // Turn separator line
+                    if last_turn.is_some() {
+                        lines.push(Line::from(""));
+                    }
+                    lines.push(Self::render_turn_separator(turn, &colors));
+                    lines.push(Line::from(""));
+                    last_turn = Some(turn);
+                }
+            }
+
             match item {
-                HistoryItem::User { content, .. } => {
+                HistoryItem::User { content, turn, .. } => {
                     let content_lines = render_markdown(content, content_width);
                     for (i, content_line) in content_lines.into_iter().enumerate() {
                         let mut spans = Vec::new();
                         if i == 0 {
                             spans.push(Span::styled(
-                                "> ",
+                                format!("> [{}] ", turn),
                                 Style::default()
                                     .fg(colors.text.link)
                                     .add_modifier(Modifier::BOLD),
                             ));
                         } else {
-                            spans.push(Span::raw("  "));
+                            spans.push(Span::raw("    "));
                         }
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
@@ -420,19 +514,19 @@ impl MessagesComponent {
                     lines.push(Line::from(""));
                 }
 
-                HistoryItem::Assistant { content, .. } => {
+                HistoryItem::Assistant { content, turn, .. } => {
                     let content_lines = render_markdown(content, content_width);
                     for (i, content_line) in content_lines.into_iter().enumerate() {
                         let mut spans = Vec::new();
                         if i == 0 {
                             spans.push(Span::styled(
-                                "✦ ",
+                                format!("✦ [{}] ", turn),
                                 Style::default()
                                     .fg(colors.text.accent)
                                     .add_modifier(Modifier::BOLD),
                             ));
                         } else {
-                            spans.push(Span::raw("  "));
+                            spans.push(Span::raw("    "));
                         }
                         spans.extend(content_line.spans.into_iter());
                         lines.push(Line::from(spans));
@@ -440,7 +534,7 @@ impl MessagesComponent {
                     lines.push(Line::from(""));
                 }
 
-                HistoryItem::ToolGroup { group } => {
+                HistoryItem::ToolGroup { group, .. } => {
                     let tool_lines =
                         render_tool_group_with_limit(group, area, area.height as usize);
                     for line in tool_lines {
@@ -465,6 +559,41 @@ impl MessagesComponent {
                     ]));
                     lines.push(Line::from(""));
                 }
+
+                HistoryItem::Thinking { content, is_collapsed, .. } => {
+                    // Thinking block header
+                    let collapse_icon = if *is_collapsed { "+" } else { "-" };
+                    lines.push(Line::from(vec![
+                        Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
+                        Span::styled("[", Style::default().fg(colors.ui.dark)),
+                        Span::styled(collapse_icon, Style::default().fg(colors.text.accent)),
+                        Span::styled("] ", Style::default().fg(colors.ui.dark)),
+                        Span::styled("thinking", Style::default()
+                            .fg(colors.text.secondary)
+                            .add_modifier(Modifier::ITALIC)),
+                        Span::styled(" ─", Style::default().fg(colors.text.secondary)),
+                        Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
+                    ]));
+
+                    // Thinking content (if not collapsed)
+                    if !is_collapsed {
+                        for thinking_line in content.lines() {
+                            lines.push(Line::from(vec![
+                                Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                                Span::styled(thinking_line.to_string(), Style::default()
+                                    .fg(colors.text.secondary)
+                                    .add_modifier(Modifier::ITALIC)),
+                            ]));
+                        }
+                    }
+
+                    // Thinking block footer
+                    lines.push(Line::from(vec![
+                        Span::styled("└", Style::default().fg(colors.text.secondary)),
+                        Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
+                    ]));
+                    lines.push(Line::from(""));
+                }
             }
         }
 
@@ -486,6 +615,16 @@ impl MessagesComponent {
         }
 
         if let Some(ref group) = self.pending_tool_group {
+            // Add turn separator for pending tools if needed
+            if last_turn.map_or(true, |lt| lt != self.current_turn) {
+                if last_turn.is_some() {
+                    lines.push(Line::from(""));
+                }
+                lines.push(Self::render_turn_separator(self.current_turn, &colors));
+                lines.push(Line::from(""));
+                last_turn = Some(self.current_turn);
+            }
+
             let tool_lines = render_tool_group_with_limit(group, area, area.height as usize);
             for line in tool_lines {
                 lines.push(line);
@@ -493,19 +632,55 @@ impl MessagesComponent {
             lines.push(Line::from(""));
         }
 
+        // Render streaming thinking (if any)
+        if let Some(ref thinking) = self.streaming_thinking {
+            lines.push(Line::from(vec![
+                Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
+                Span::styled("thinking", Style::default()
+                    .fg(colors.text.secondary)
+                    .add_modifier(Modifier::ITALIC)),
+                Span::styled(" ─", Style::default().fg(colors.text.secondary)),
+                Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
+            ]));
+
+            for thinking_line in thinking.lines() {
+                lines.push(Line::from(vec![
+                    Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(thinking_line.to_string(), Style::default()
+                        .fg(colors.text.secondary)
+                        .add_modifier(Modifier::ITALIC)),
+                ]));
+            }
+
+            lines.push(Line::from(vec![
+                Span::styled("└", Style::default().fg(colors.text.secondary)),
+                Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
+            ]));
+            lines.push(Line::from(""));
+        }
+
         if let Some(ref streaming) = self.streaming_text {
+            // Add turn separator for streaming if needed
+            if last_turn.map_or(true, |lt| lt != self.current_turn) {
+                if last_turn.is_some() {
+                    lines.push(Line::from(""));
+                }
+                lines.push(Self::render_turn_separator(self.current_turn, &colors));
+                lines.push(Line::from(""));
+            }
+
             let content_lines = render_markdown(streaming, content_width);
             for (i, content_line) in content_lines.into_iter().enumerate() {
                 let mut spans = Vec::new();
                 if i == 0 {
                     spans.push(Span::styled(
-                        "✦ ",
+                        format!("✦ [{}] ", self.current_turn),
                         Style::default()
                             .fg(colors.text.accent)
                             .add_modifier(Modifier::BOLD),
                     ));
                 } else {
-                    spans.push(Span::raw("  "));
+                    spans.push(Span::raw("    "));
                 }
                 spans.extend(content_line.spans.into_iter());
                 lines.push(Line::from(spans));
@@ -621,5 +796,244 @@ impl MessagesComponent {
 impl Default for MessagesComponent {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_messages_new() {
+        let messages = MessagesComponent::new();
+        assert!(messages.is_empty());
+        assert_eq!(messages.len(), 0);
+        assert_eq!(messages.turn_counter, 0);
+    }
+
+    #[test]
+    fn test_add_user_message() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages.turn_counter, 1);
+    }
+
+    #[test]
+    fn test_add_assistant_message() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+        messages.add_assistant("Hi there!".to_string());
+
+        assert_eq!(messages.len(), 2);
+        // Turn counter should still be 1 (same turn)
+        assert_eq!(messages.turn_counter, 1);
+    }
+
+    #[test]
+    fn test_turn_counter_increments() {
+        let mut messages = MessagesComponent::new();
+
+        // First turn
+        messages.add_user("Q1".to_string());
+        assert_eq!(messages.turn_counter, 1);
+
+        messages.add_assistant("A1".to_string());
+
+        // Second turn
+        messages.add_user("Q2".to_string());
+        assert_eq!(messages.turn_counter, 2);
+
+        messages.add_assistant("A2".to_string());
+    }
+
+    #[test]
+    fn test_update_streaming_text() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        messages.update_streaming_text("Partial response");
+        assert!(messages.streaming_text.is_some());
+
+        messages.finalize_assistant("Full response".to_string());
+        assert!(messages.streaming_text.is_none());
+    }
+
+    #[test]
+    fn test_thinking_delta() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        messages.update_thinking("Thinking about this...");
+        assert!(messages.streaming_thinking.is_some());
+
+        messages.update_thinking(" Still thinking...");
+        let thinking = messages.streaming_thinking.as_ref().unwrap();
+        assert!(thinking.contains("Thinking"));
+        assert!(thinking.contains("Still"));
+    }
+
+    #[test]
+    fn test_finalize_thinking() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        messages.update_thinking("My reasoning process");
+        messages.finalize_thinking();
+
+        assert!(messages.streaming_thinking.is_none());
+        assert_eq!(messages.len(), 2); // User + Thinking
+    }
+
+    #[test]
+    fn test_compression_item_pending() {
+        let compression = CompressionItem::pending();
+        assert!(compression.is_pending);
+        assert_eq!(compression.status, CompressionStatus::Pending);
+    }
+
+    #[test]
+    fn test_compression_item_completed() {
+        let compression = CompressionItem::completed(1000, 500);
+        assert!(!compression.is_pending);
+        assert_eq!(compression.status, CompressionStatus::Compressed);
+        assert_eq!(compression.original_token_count, Some(1000));
+        assert_eq!(compression.new_token_count, Some(500));
+    }
+
+    #[test]
+    fn test_compression_item_not_beneficial() {
+        let compression = CompressionItem::not_beneficial(100);
+        assert!(!compression.is_pending);
+        assert_eq!(compression.status, CompressionStatus::NotBeneficial);
+    }
+
+    #[test]
+    fn test_compression_item_failed() {
+        let compression = CompressionItem::failed("Test error".to_string());
+        assert!(!compression.is_pending);
+        assert_eq!(compression.status, CompressionStatus::Failed);
+        assert_eq!(compression.error_message, Some("Test error".to_string()));
+    }
+
+    #[test]
+    fn test_compression_item_noop() {
+        let compression = CompressionItem::noop();
+        assert!(!compression.is_pending);
+        assert_eq!(compression.status, CompressionStatus::Noop);
+    }
+
+    #[test]
+    fn test_start_compression() {
+        let mut messages = MessagesComponent::new();
+        messages.start_compression();
+
+        assert!(messages.pending_compression.is_some());
+        assert!(messages.is_compression_pending());
+    }
+
+    #[test]
+    fn test_complete_compression() {
+        let mut messages = MessagesComponent::new();
+        messages.start_compression();
+        messages.complete_compression(1000, 500);
+
+        assert!(messages.pending_compression.is_none());
+        assert!(!messages.is_compression_pending());
+        assert_eq!(messages.len(), 1); // One compression item added
+    }
+
+    #[test]
+    fn test_get_compression_text_compressed() {
+        let compression = CompressionItem::completed(1000, 500);
+        let text = MessagesComponent::get_compression_text(&compression);
+
+        assert!(text.contains("1000"));
+        assert!(text.contains("500"));
+        assert!(text.contains("50%")); // 500/1000 = 50% saved
+    }
+
+    #[test]
+    fn test_get_compression_text_failed() {
+        let compression = CompressionItem::failed("Network error".to_string());
+        let text = MessagesComponent::get_compression_text(&compression);
+
+        assert!(text.contains("failed"));
+        assert!(text.contains("Network error"));
+    }
+
+    #[test]
+    fn test_tool_tracking() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Test".to_string());
+
+        messages.start_tool("tool_1".to_string(), "bash".to_string(), None);
+        assert!(messages.pending_tool_group.is_some());
+
+        messages.complete_tool("tool_1", "output".to_string(), false, None);
+    }
+
+    #[test]
+    fn test_scroll_methods() {
+        let mut messages = MessagesComponent::new();
+
+        // Add some content
+        for i in 0..100 {
+            messages.add_user(format!("Message {}", i));
+        }
+
+        messages.scroll_up(5);
+        messages.scroll_down(3);
+        messages.scroll_to_top();
+        messages.scroll_to_bottom();
+        messages.scroll_page_up();
+        messages.scroll_page_down();
+        // Just verify these don't panic
+    }
+
+    #[test]
+    fn test_collapse_expand_tools() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Test".to_string());
+        messages.start_tool("t1".to_string(), "bash".to_string(), None);
+        messages.complete_tool("t1", "output".to_string(), false, None);
+        messages.finalize_pending_tool_group();
+
+        // These should not panic
+        messages.collapse_all_tools();
+        messages.expand_all_tools();
+    }
+
+    #[test]
+    fn test_history_item_turn_tracking() {
+        let mut messages = MessagesComponent::new();
+
+        messages.add_user("Q1".to_string());
+        messages.add_assistant("A1".to_string());
+        messages.add_user("Q2".to_string());
+        messages.add_assistant("A2".to_string());
+
+        // Check turn numbers
+        match &messages.items[0] {
+            HistoryItem::User { turn, .. } => assert_eq!(*turn, 1),
+            _ => panic!("Expected user message"),
+        }
+
+        match &messages.items[1] {
+            HistoryItem::Assistant { turn, .. } => assert_eq!(*turn, 1),
+            _ => panic!("Expected assistant message"),
+        }
+
+        match &messages.items[2] {
+            HistoryItem::User { turn, .. } => assert_eq!(*turn, 2),
+            _ => panic!("Expected user message"),
+        }
+    }
+
+    #[test]
+    fn test_messages_default() {
+        let messages = MessagesComponent::default();
+        assert!(messages.is_empty());
     }
 }

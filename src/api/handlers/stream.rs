@@ -217,6 +217,18 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .json_data(TextEvent { content: delta })
                     .unwrap())),
 
+                // Thinking/reasoning delta from extended thinking
+                Ok(AgentEvent::ThinkingDelta { delta }) => Some(Ok(Event::default()
+                    .event("thinking")
+                    .json_data(serde_json::json!({ "delta": delta }))
+                    .unwrap())),
+
+                // Thinking complete
+                Ok(AgentEvent::ThinkingComplete { thinking }) => Some(Ok(Event::default()
+                    .event("thinking_complete")
+                    .json_data(serde_json::json!({ "thinking": thinking }))
+                    .unwrap())),
+
                 // Tool execution initiated
                 Ok(AgentEvent::ToolStart { id, name }) => Some(Ok(Event::default()
                     .event("tool_start")

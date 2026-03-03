@@ -517,6 +517,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             yield Ok(AgentEvent::TextDelta { delta: text });
                         }
 
+                        StreamEvent::ThinkingDelta(thinking) => {
+                            debug!(turn = turn_count, thinking_len = thinking.len(), "Received ThinkingDelta");
+                            has_activity_in_turn = true;
+                            yield Ok(AgentEvent::ThinkingDelta { delta: thinking });
+                        }
+
                         StreamEvent::ToolCallStart { id, name } => {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;

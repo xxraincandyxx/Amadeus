@@ -429,6 +429,10 @@ impl AnthropicClient {
                         if let Some(text) = json["delta"]["text"].as_str() {
                             events.push(StreamEvent::TextDelta(text.to_string()));
                         }
+                        // Extract thinking from delta (extended thinking feature)
+                        if let Some(thinking) = json["delta"]["thinking"].as_str() {
+                            events.push(StreamEvent::ThinkingDelta(thinking.to_string()));
+                        }
                     }
 
                     // -----------------------------------------------------

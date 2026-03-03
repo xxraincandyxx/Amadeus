@@ -109,6 +109,12 @@ pub enum StreamEvent {
     /// You'd receive two TextDelta events: "Hello, " and "world!"
     TextDelta(String),
 
+    /// Extended thinking/reasoning content from the model
+    ///
+    /// This is the model's internal reasoning process, shown to provide
+    /// insight into how the model is thinking about the problem.
+    ThinkingDelta(String),
+
     /// A tool call is starting (provides tool ID and name)
     ///
     /// This event fires when the LLM decides to call a tool

@@ -172,6 +172,31 @@ impl InputComponent {
         if area.height < 3 {
             return;
         }
+
+        // Update title with stats
+        let colors = get_colors();
+        let (chars, lines) = self.get_stats();
+        let multi_indicator = if lines > 1 { " [multi]" } else { "" };
+        let title = format!(
+            " ❯ PROMPT [{} chars, {} line{}]{} ",
+            chars,
+            lines,
+            if lines == 1 { "" } else { "s" },
+            multi_indicator
+        );
+
+        self.textarea.set_block(
+            Block::default()
+                .borders(Borders::TOP)
+                .border_style(Style::default().fg(colors.border.default))
+                .title(title)
+                .title_style(
+                    Style::default()
+                        .fg(colors.text.accent)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        );
+
         frame.render_widget(&self.textarea, area);
     }
 
@@ -185,10 +210,191 @@ impl InputComponent {
 
         (height_by_lines.max(height_by_width) as u16).clamp(4, 12)
     }
+
+    /// Get input statistics: (character count, line count)
+    pub fn get_stats(&self) -> (usize, usize) {
+        let lines = self.textarea.lines();
+        let line_count = lines.len();
+        let char_count: usize = lines.iter().map(|l| l.chars().count()).sum();
+        (char_count, line_count)
+    }
 }
 
 impl Default for InputComponent {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_input_new() {
+        let input = InputComponent::new();
+        assert!(input.get_input().is_empty());
+        assert!(input.history.is_empty());
+    }
+
+    #[test]
+    fn test_input_handle_char() {
+        let mut input = InputComponent::new();
+        input.handle_char('a');
+        input.handle_char('b');
+        input.handle_char('c');
+        assert_eq!(input.get_input(), "abc");
+    }
+
+    #[test]
+    fn test_input_backspace() {
+        let mut input = InputComponent::new();
+        input.handle_char('a');
+        input.handle_char('b');
+        input.handle_backspace();
+        assert_eq!(input.get_input(), "a");
+    }
+
+    #[test]
+    fn test_input_clear() {
+        let mut input = InputComponent::new();
+        input.handle_char('t');
+        input.handle_char('e');
+        input.handle_char('s');
+        input.handle_char('t');
+        input.clear();
+        assert!(input.get_input().is_empty());
+        assert_eq!(input.history.len(), 1);
+    }
+
+    #[test]
+    fn test_input_multiline() {
+        let mut input = InputComponent::new();
+        input.handle_char('a');
+        input.insert_newline();
+        input.handle_char('b');
+        assert_eq!(input.get_input(), "a\nb");
+    }
+
+    #[test]
+    fn test_get_stats_empty() {
+        let input = InputComponent::new();
+        let (chars, lines) = input.get_stats();
+        assert_eq!(chars, 0);
+        assert_eq!(lines, 1); // Empty textarea has 1 line
+    }
+
+    #[test]
+    fn test_get_stats_single_line() {
+        let mut input = InputComponent::new();
+        for c in "hello world".chars() {
+            input.handle_char(c);
+        }
+        let (chars, lines) = input.get_stats();
+        assert_eq!(chars, 11);
+        assert_eq!(lines, 1);
+    }
+
+    #[test]
+    fn test_get_stats_multiline() {
+        let mut input = InputComponent::new();
+        input.handle_char('a');
+        input.insert_newline();
+        input.handle_char('b');
+        input.insert_newline();
+        input.handle_char('c');
+        let (chars, lines) = input.get_stats();
+        assert_eq!(chars, 3);
+        assert_eq!(lines, 3);
+    }
+
+    #[test]
+    fn test_get_stats_unicode() {
+        let mut input = InputComponent::new();
+        for c in "你好世界".chars() {
+            input.handle_char(c);
+        }
+        let (chars, lines) = input.get_stats();
+        assert_eq!(chars, 4);
+        assert_eq!(lines, 1);
+    }
+
+    #[test]
+    fn test_height_minimum() {
+        let input = InputComponent::new();
+        assert!(input.height() >= 4);
+    }
+
+    #[test]
+    fn test_height_grows_with_lines() {
+        let mut input = InputComponent::new();
+        let initial_height = input.height();
+
+        for _ in 0..10 {
+            input.insert_newline();
+        }
+
+        assert!(input.height() > initial_height);
+    }
+
+    #[test]
+    fn test_history_navigation() {
+        let mut input = InputComponent::new();
+
+        // Add some history
+        input.handle_char('1');
+        input.clear();
+        input.handle_char('2');
+        input.clear();
+        input.handle_char('3');
+        input.clear();
+
+        assert_eq!(input.history.len(), 3);
+
+        // Navigate up
+        input.history_up();
+        assert_eq!(input.get_input(), "3");
+
+        input.history_up();
+        assert_eq!(input.get_input(), "2");
+
+        input.history_up();
+        assert_eq!(input.get_input(), "1");
+
+        // Navigate down
+        input.history_down();
+        assert_eq!(input.get_input(), "2");
+
+        input.history_down();
+        assert_eq!(input.get_input(), "3");
+
+        input.history_down();
+        // Should return to draft (empty)
+        assert!(input.get_input().is_empty() || input.get_input() == "");
+    }
+
+    #[test]
+    fn test_cursor_movement() {
+        let mut input = InputComponent::new();
+        input.handle_char('a');
+        input.handle_char('b');
+        input.handle_char('c');
+
+        input.move_cursor_left();
+        input.handle_char('x');
+
+        // Should have inserted 'x' before 'c'
+        assert!(input.get_input().contains('x'));
+    }
+
+    #[test]
+    fn test_clear_empty_doesnt_add_to_history() {
+        let mut input = InputComponent::new();
+        input.clear(); // Clear empty input
+        assert!(input.history.is_empty());
+
+        input.handle_char(' ');
+        input.clear(); // Clear whitespace-only
+        assert!(input.history.is_empty());
     }
 }
