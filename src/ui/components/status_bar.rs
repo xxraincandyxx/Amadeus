@@ -160,11 +160,11 @@ impl StatusBar {
             Style::default().fg(colors.text.secondary),
         ));
 
-        // Thinking indicator (lightning bolt)
+        // Thinking indicator
         if self.thinking {
             spans.push(Span::styled(" • ", Style::default().fg(colors.ui.dark)));
             spans.push(Span::styled(
-                "⚡",
+                "⟡",
                 Style::default().fg(colors.text.accent).add_modifier(Modifier::BOLD),
             ));
         }

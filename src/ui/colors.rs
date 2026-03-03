@@ -81,15 +81,15 @@ impl Palette {
     }
 
     pub fn tool_result() -> String {
-        "✓".to_string()
+        "√".to_string()
     }
 
     pub fn error(msg: &str) -> String {
-        format!("✗ {}", msg)
+        format!("× {}", msg)
     }
 
     pub fn info(msg: &str) -> String {
-        format!("ℹ {}", msg)
+        format!("→ {}", msg)
     }
 }
 

@@ -53,12 +53,12 @@ pub struct Footer {
     is_background: bool,
 }
 
-// Icons for footer elements
-const ICON_FOLDER: &str = "📁";
-const ICON_GIT: &str = "🔗";
-const ICON_SANDBOX: &str = "🛡";
-const ICON_CLOCK: &str = "⏱";
-const ICON_MODEL: &str = "🤖";
+// Icons for footer elements (Unicode, no emojis)
+const ICON_FOLDER: &str = "📂";
+const ICON_GIT: &str = "⎇";
+const ICON_SANDBOX: &str = "◫";
+const ICON_CLOCK: &str = "◷";
+const ICON_MODEL: &str = "◈";
 
 impl Footer {
     pub fn new(model_name: String) -> Self {
