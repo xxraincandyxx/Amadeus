@@ -1,7 +1,6 @@
 mod approval;
 mod diff;
 mod footer;
-mod header;
 mod input;
 mod loading_indicator;
 mod markdown;
@@ -17,7 +16,6 @@ mod tool_group;
 pub use approval::{ApprovalDialog, ApprovalResponse};
 pub use diff::{DiffLine, DiffView, DiffView as DiffRenderer};
 pub use footer::{Footer, FooterInfo, SandboxStatus};
-pub use header::{ConnectionStatus, Header};
 pub use input::InputComponent;
 pub use loading_indicator::{LoadingIndicator, StreamingState};
 pub use markdown::render_markdown;

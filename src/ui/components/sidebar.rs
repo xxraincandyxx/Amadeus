@@ -230,12 +230,31 @@ impl HelpSidebar {
             ]),
             Line::from(""),
             Line::from(vec![
-                Span::styled("   ^B ", Style::default().fg(colors.text.link)),
+                Span::styled("   ^[Shift]B ", Style::default().fg(colors.text.link)),
                 Span::styled(" Files", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   !H ", Style::default().fg(colors.text.link)),
+                Span::styled("   !B ", Style::default().fg(colors.text.link)),
                 Span::styled(" Help", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
+                    "TOOLS",
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   ^O ", Style::default().fg(colors.text.link)),
+                Span::styled(" Expand Tools", Style::default().fg(colors.ui.comment)),
+            ]),
+            Line::from(vec![
+                Span::styled("   ^[Alt]B ", Style::default().fg(colors.text.link)),
+                Span::styled(" Background", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(""),
             Line::from(vec![

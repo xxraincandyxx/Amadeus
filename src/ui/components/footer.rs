@@ -21,6 +21,8 @@ pub struct FooterInfo {
     pub is_mesh: bool,
     /// Temporary status message (shown for a short time)
     pub status_message: Option<String>,
+    /// Whether a background task is running
+    pub is_background: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +49,8 @@ pub struct Footer {
     status_message_expiry: Option<Instant>,
     // Session start time for duration tracking
     session_start: Instant,
+    // Background mode indicator
+    is_background: bool,
 }
 
 // Icons for footer elements
@@ -74,6 +78,7 @@ impl Footer {
                 context_percent: 0,
                 is_mesh: false,
                 status_message: None,
+                is_background: false,
             },
             hide_cwd: false,
             hide_sandbox: false,
@@ -81,6 +86,7 @@ impl Footer {
             hide_context_percent: false,
             status_message_expiry: None,
             session_start: Instant::now(),
+            is_background: false,
         }
     }
 
@@ -165,6 +171,12 @@ impl Footer {
         self.info.is_mesh = is_mesh;
     }
 
+    /// Set background mode indicator
+    pub fn set_background(&mut self, is_background: bool) {
+        self.is_background = is_background;
+        self.info.is_background = is_background;
+    }
+
     /// Set a temporary status message that will be displayed for a few seconds.
     pub fn set_status_message(&mut self, message: impl Into<String>) {
         self.info.status_message = Some(message.into());
@@ -219,6 +231,17 @@ impl Footer {
                 Style::default()
                     .fg(colors.background.primary)
                     .bg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Background mode indicator
+        if self.is_background {
+            spans.push(Span::styled(
+                "⏳ BG ",
+                Style::default()
+                    .fg(colors.background.primary)
+                    .bg(colors.status.warning)
                     .add_modifier(Modifier::BOLD),
             ));
         }
@@ -444,12 +467,14 @@ mod tests {
             context_percent: 50,
             is_mesh: true,
             status_message: Some("test".to_string()),
+            is_background: false,
         };
 
         let cloned = info.clone();
         assert_eq!(info.cwd, cloned.cwd);
         assert_eq!(info.git_branch, cloned.git_branch);
         assert_eq!(info.context_percent, cloned.context_percent);
+        assert_eq!(info.is_background, cloned.is_background);
     }
 
     #[test]

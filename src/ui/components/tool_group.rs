@@ -62,10 +62,17 @@ impl ToolCall {
     }
 }
 
+/// Default number of tools to show before collapsing
+const DEFAULT_COLLAPSE_THRESHOLD: usize = 5;
+
 #[derive(Debug, Clone)]
 pub struct ToolGroup {
     pub tools: Vec<ToolCall>,
     pub timestamp: Instant,
+    /// Whether the group is expanded (showing all tools)
+    pub is_expanded: bool,
+    /// Number of tools to show before collapsing (0 = no collapsing)
+    pub collapse_threshold: usize,
 }
 
 impl ToolGroup {
@@ -73,7 +80,33 @@ impl ToolGroup {
         Self {
             tools: Vec::new(),
             timestamp: Instant::now(),
+            is_expanded: false,
+            collapse_threshold: DEFAULT_COLLAPSE_THRESHOLD,
         }
+    }
+
+    /// Returns an iterator over the visible tools based on expansion state
+    pub fn visible_tools(&self) -> impl Iterator<Item = &ToolCall> {
+        let count = if self.is_expanded || self.collapse_threshold == 0 {
+            self.tools.len()
+        } else {
+            self.collapse_threshold.min(self.tools.len())
+        };
+        self.tools.iter().take(count)
+    }
+
+    /// Returns the number of tools hidden by collapsing
+    pub fn hidden_count(&self) -> usize {
+        if self.is_expanded || self.collapse_threshold == 0 {
+            0
+        } else {
+            self.tools.len().saturating_sub(self.collapse_threshold)
+        }
+    }
+
+    /// Toggle expansion state
+    pub fn toggle_expand(&mut self) {
+        self.is_expanded = !self.is_expanded;
     }
 
     pub fn add_tool(&mut self, tool: ToolCall) {
@@ -122,6 +155,15 @@ impl Default for ToolGroup {
     }
 }
 
+/// Truncate a string to a maximum length with ellipsis
+fn truncate(s: &str, max_len: usize) -> String {
+    if s.len() <= max_len {
+        s.to_string()
+    } else {
+        format!("{}...", &s[..max_len.saturating_sub(3)])
+    }
+}
+
 pub fn render_tool_group_with_limit(
     group: &ToolGroup,
     _area: Rect,
@@ -132,8 +174,9 @@ pub fn render_tool_group_with_limit(
     }
 
     let mut lines = Vec::new();
+    let hidden_count = group.hidden_count();
 
-    for tool in &group.tools {
+    for tool in group.visible_tools() {
         if lines.len() >= max_total_lines {
             break;
         }
@@ -144,26 +187,42 @@ pub fn render_tool_group_with_limit(
             ToolStatus::Error => THEME.red,
         };
 
-        let status_icon = match tool.status {
-            ToolStatus::Pending => "◐",
-            ToolStatus::Success => "✓",
-            ToolStatus::Error => "✗",
+        // Hierarchical icon: filled for pending, empty for completed
+        let icon = match tool.status {
+            ToolStatus::Pending => "◉",
+            ToolStatus::Success => "○",
+            ToolStatus::Error => "○",
         };
 
-        // Header line
+        // Truncate command/args for preview
+        let args_preview = tool
+            .command
+            .as_ref()
+            .map(|c| truncate(c, 40))
+            .unwrap_or_default();
+
+        // Header line with hierarchical display
         lines.push(Line::from(vec![
-            Span::styled("   ", Style::default()),
+            Span::styled("  ", Style::default()),
             Span::styled(
-                format!("{} ", status_icon),
+                icon,
                 Style::default()
                     .fg(status_color)
                     .add_modifier(Modifier::BOLD),
             ),
+            Span::styled(" ", Style::default()),
             Span::styled(
-                tool.name.to_uppercase(),
+                tool.name.clone(),
                 Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
             ),
-            Span::styled(" tool", Style::default().fg(THEME.comment)),
+            if !args_preview.is_empty() {
+                Span::styled(
+                    format!("({})", args_preview),
+                    Style::default().fg(THEME.comment),
+                )
+            } else {
+                Span::raw("")
+            },
         ]));
 
         if tool.status == ToolStatus::Pending && tool.output.is_empty() {
@@ -175,7 +234,7 @@ pub fn render_tool_group_with_limit(
                     msg.clone()
                 };
                 lines.push(Line::from(vec![
-                    Span::styled("   │ ", Style::default().fg(THEME.border)),
+                    Span::styled("    │ ", Style::default().fg(THEME.border)),
                     Span::styled(
                         progress_text,
                         Style::default()
@@ -185,7 +244,7 @@ pub fn render_tool_group_with_limit(
                 ]));
             } else {
                 lines.push(Line::from(vec![
-                    Span::styled("   │ ", Style::default().fg(THEME.border)),
+                    Span::styled("    │ ", Style::default().fg(THEME.border)),
                     Span::styled(
                         "Running...",
                         Style::default()
@@ -197,7 +256,7 @@ pub fn render_tool_group_with_limit(
         } else if !tool.is_collapsed {
             if let Some(cmd) = &tool.command {
                 lines.push(Line::from(vec![
-                    Span::styled("   │ ", Style::default().fg(THEME.border)),
+                    Span::styled("    │ ", Style::default().fg(THEME.border)),
                     Span::styled("$ ", Style::default().fg(THEME.purple)),
                     Span::styled(cmd.clone(), Style::default().fg(THEME.cyan)),
                 ]));
@@ -212,14 +271,14 @@ pub fn render_tool_group_with_limit(
                         break;
                     }
                     lines.push(Line::from(vec![
-                        Span::styled("   │ ", Style::default().fg(THEME.border)),
+                        Span::styled("    │ ", Style::default().fg(THEME.border)),
                         Span::styled(line_content.to_string(), Style::default().fg(THEME.comment)),
                     ]));
                 }
 
                 if total_output_lines > 10 {
                     lines.push(Line::from(vec![
-                        Span::styled("   │ ", Style::default().fg(THEME.border)),
+                        Span::styled("    │ ", Style::default().fg(THEME.border)),
                         Span::styled(
                             format!("... ({} more lines)", total_output_lines - 10),
                             Style::default()
@@ -234,5 +293,214 @@ pub fn render_tool_group_with_limit(
         lines.push(Line::from(""));
     }
 
+    // Add summary line if there are hidden tools
+    if hidden_count > 0 {
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("+{} more tool uses ", hidden_count),
+                Style::default().fg(THEME.comment),
+            ),
+            Span::styled("(ctrl+o to expand)", Style::default().fg(THEME.cyan)),
+        ]));
+    }
+
     lines
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tool_group_new() {
+        let group = ToolGroup::new();
+        assert!(group.tools.is_empty());
+        assert!(!group.is_expanded);
+        assert_eq!(group.collapse_threshold, 5);
+    }
+
+    #[test]
+    fn test_tool_group_hidden_count() {
+        let mut group = ToolGroup::new();
+
+        // No tools = no hidden
+        assert_eq!(group.hidden_count(), 0);
+
+        // Add 3 tools (below threshold)
+        for i in 0..3 {
+            group.add_tool(ToolCall::new(format!("tool_{}", i), "test".to_string()));
+        }
+        assert_eq!(group.hidden_count(), 0);
+
+        // Add more tools (above threshold)
+        for i in 3..8 {
+            group.add_tool(ToolCall::new(format!("tool_{}", i), "test".to_string()));
+        }
+        // 8 tools, threshold 5 = 3 hidden
+        assert_eq!(group.hidden_count(), 3);
+
+        // When expanded, no hidden
+        group.is_expanded = true;
+        assert_eq!(group.hidden_count(), 0);
+    }
+
+    #[test]
+    fn test_tool_group_visible_tools() {
+        let mut group = ToolGroup::new();
+
+        // Add 7 tools
+        for i in 0..7 {
+            group.add_tool(ToolCall::new(format!("tool_{}", i), "test".to_string()));
+        }
+
+        // Not expanded: should see only 5 (threshold)
+        let visible: Vec<_> = group.visible_tools().collect();
+        assert_eq!(visible.len(), 5);
+
+        // Expanded: should see all 7
+        group.is_expanded = true;
+        let visible: Vec<_> = group.visible_tools().collect();
+        assert_eq!(visible.len(), 7);
+    }
+
+    #[test]
+    fn test_tool_group_toggle_expand() {
+        let mut group = ToolGroup::new();
+        assert!(!group.is_expanded);
+
+        group.toggle_expand();
+        assert!(group.is_expanded);
+
+        group.toggle_expand();
+        assert!(!group.is_expanded);
+    }
+
+    #[test]
+    fn test_tool_group_zero_threshold() {
+        let mut group = ToolGroup::new();
+        group.collapse_threshold = 0;
+
+        // Add tools
+        for i in 0..10 {
+            group.add_tool(ToolCall::new(format!("tool_{}", i), "test".to_string()));
+        }
+
+        // With threshold 0, all tools should be visible even when not expanded
+        assert_eq!(group.hidden_count(), 0);
+        let visible: Vec<_> = group.visible_tools().collect();
+        assert_eq!(visible.len(), 10);
+    }
+
+    #[test]
+    fn test_tool_call_new() {
+        let tool = ToolCall::new("id123".to_string(), "bash".to_string());
+        assert_eq!(tool.id, "id123");
+        assert_eq!(tool.name, "bash");
+        assert_eq!(tool.status, ToolStatus::Pending);
+        assert!(!tool.is_collapsed);
+        assert!(tool.command.is_none());
+        assert!(tool.output.is_empty());
+    }
+
+    #[test]
+    fn test_tool_call_with_command() {
+        let tool = ToolCall::new("id".to_string(), "bash".to_string())
+            .with_command("ls -la".to_string());
+        assert_eq!(tool.command, Some("ls -la".to_string()));
+    }
+
+    #[test]
+    fn test_tool_call_complete() {
+        let tool = ToolCall::new("id".to_string(), "bash".to_string())
+            .with_command("ls".to_string())
+            .complete("file1\nfile2".to_string(), false);
+
+        assert_eq!(tool.output, "file1\nfile2");
+        assert_eq!(tool.status, ToolStatus::Success);
+        assert!(!tool.is_collapsed);
+    }
+
+    #[test]
+    fn test_tool_call_complete_error() {
+        let tool = ToolCall::new("id".to_string(), "bash".to_string())
+            .complete("command failed".to_string(), true);
+
+        assert_eq!(tool.status, ToolStatus::Error);
+    }
+
+    #[test]
+    fn test_tool_status_variants() {
+        assert_ne!(ToolStatus::Pending, ToolStatus::Success);
+        assert_ne!(ToolStatus::Success, ToolStatus::Error);
+        assert_ne!(ToolStatus::Pending, ToolStatus::Error);
+    }
+
+    #[test]
+    fn test_truncate() {
+        assert_eq!(truncate("short", 10), "short");
+        assert_eq!(truncate("exactly10!", 10), "exactly10!");
+        assert_eq!(truncate("this is a very long string", 10), "this is...");
+    }
+
+    #[test]
+    fn test_render_tool_group_empty() {
+        let group = ToolGroup::new();
+        let lines = render_tool_group_with_limit(&group, Rect::default(), 100);
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn test_render_tool_group_with_tools() {
+        let mut group = ToolGroup::new();
+        group.add_tool(
+            ToolCall::new("t1".to_string(), "bash".to_string())
+                .with_command("ls".to_string())
+                .complete("file1\nfile2".to_string(), false),
+        );
+
+        let lines = render_tool_group_with_limit(&group, Rect::default(), 100);
+        assert!(!lines.is_empty());
+    }
+
+    #[test]
+    fn test_render_tool_group_with_hidden() {
+        let mut group = ToolGroup::new();
+        // Add 7 tools (threshold 5 = 2 hidden)
+        for i in 0..7 {
+            group.add_tool(
+                ToolCall::new(format!("t{}", i), "test".to_string())
+                    .complete(format!("output {}", i), false),
+            );
+        }
+
+        let lines = render_tool_group_with_limit(&group, Rect::default(), 100);
+
+        // Should include summary line with "+2 more tool uses"
+        let has_summary = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("+2 more tool uses"))
+        });
+        assert!(has_summary);
+    }
+
+    #[test]
+    fn test_render_tool_group_expanded() {
+        let mut group = ToolGroup::new();
+        group.is_expanded = true;
+
+        // Add 7 tools
+        for i in 0..7 {
+            group.add_tool(
+                ToolCall::new(format!("t{}", i), "test".to_string())
+                    .complete(format!("output {}", i), false),
+            );
+        }
+
+        let lines = render_tool_group_with_limit(&group, Rect::default(), 100);
+
+        // Should NOT include summary line when expanded
+        let has_summary = lines.iter().any(|line| {
+            line.spans.iter().any(|span| span.content.contains("more tool uses"))
+        });
+        assert!(!has_summary);
+    }
 }

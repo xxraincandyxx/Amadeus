@@ -21,7 +21,7 @@ use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, Header, HelpSidebar,
+    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
     InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
@@ -43,7 +43,6 @@ pub struct App<C: LLMClient> {
     messages: MessagesComponent,
     input: InputComponent,
     footer: Footer,
-    header: Header,
     loading_indicator: LoadingIndicator,
     status_bar: StatusBar,
     sidebar: Option<Sidebar>,
@@ -63,6 +62,8 @@ pub struct App<C: LLMClient> {
     approval_req_rx: Option<mpsc::Receiver<ApprovalRequest>>,
     /// Channel to receive compaction results from background task
     compaction_result_rx: Option<mpsc::Receiver<std::result::Result<crate::agent::compaction::CompactionResult, crate::error::AgentError>>>,
+    /// Whether the current stream is running in background
+    is_background: bool,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -70,8 +71,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let footer = Footer::new(model_name.clone());
         let loading_indicator = LoadingIndicator::new();
         let status_bar = StatusBar::new();
-        let mut header = Header::new();
-        header.set_session_name(&model_name);
 
         Self {
             agent,
@@ -79,7 +78,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             messages: MessagesComponent::new(),
             input: InputComponent::new(),
             footer,
-            header,
             loading_indicator,
             status_bar,
             sidebar: None,
@@ -95,6 +93,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             approval_dec_tx: None,
             approval_req_rx: None,
             compaction_result_rx: None,
+            is_background: false,
         }
     }
 
@@ -280,6 +279,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
+                if self.is_background {
+                    self.is_background = false;
+                    self.footer.set_background(false);
+                    self.footer.set_status_message("Background task completed");
+                }
                 return true;
             }
 
@@ -293,6 +297,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
+                if self.is_background {
+                    self.is_background = false;
+                    self.footer.set_background(false);
+                    self.footer.set_status_message("Background task failed");
+                }
                 return true;
             }
 
@@ -621,14 +630,33 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.input.history_down();
                 }
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('b')) => {
-                self.toggle_sidebar(SidebarKind::Files);
+            // Ctrl+O: Toggle tool expansion
+            (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
+                self.messages.toggle_tool_expansion();
             }
-            (KeyModifiers::SUPER, KeyCode::Char('b')) => {
-                self.toggle_sidebar(SidebarKind::Files);
-            }
-            (KeyModifiers::ALT, KeyCode::Char('b')) => {
-                self.toggle_sidebar(SidebarKind::Help);
+            // Handle 'B' key with various modifier combinations
+            (_, KeyCode::Char('b') | KeyCode::Char('B')) => {
+                let mods = key.modifiers;
+                // Ctrl+Alt+B or Cmd+Alt+B: Run in background
+                if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::ALT)) ||
+                   (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::ALT)) {
+                    if self.stream_rx.is_some() {
+                        self.run_in_background();
+                    }
+                }
+                // Ctrl+Shift+B or Cmd+Shift+B: Toggle Files sidebar
+                else if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::SHIFT)) ||
+                        (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::SHIFT)) {
+                    self.toggle_sidebar(SidebarKind::Files);
+                }
+                // Ctrl+B or Cmd+B: Toggle Files sidebar (legacy)
+                else if mods.contains(KeyModifiers::CONTROL) || mods.contains(KeyModifiers::SUPER) {
+                    self.toggle_sidebar(SidebarKind::Files);
+                }
+                // Alt+B: Toggle Help sidebar
+                else if mods.contains(KeyModifiers::ALT) {
+                    self.toggle_sidebar(SidebarKind::Help);
+                }
             }
             (KeyModifiers::ALT, KeyCode::Char('s')) => {
                 self.toggle_sidebar(SidebarKind::Skills);
@@ -727,6 +755,15 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.current_text.clear();
         self.loading_indicator.set_streaming_state(StreamingState::Idle);
         self.status_bar.stop();
+    }
+
+    /// Move the current stream to background mode, allowing user to continue interacting
+    fn run_in_background(&mut self) {
+        if self.stream_rx.is_some() {
+            self.is_background = true;
+            self.mode = AppMode::Normal;
+            self.footer.set_background(true);
+        }
     }
 
     fn can_show_sidebar(&self, area: Rect) -> bool {
@@ -930,17 +967,15 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
         }
 
-        let header_height = 1u16;
         let footer_height = 1u16;
         let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
         let input_height = self.input.height();
         let status_height = 1u16; // Always reserve 1 line to prevent layout jump
 
-        // Layout: Header → Messages → Loading → Input → Status Bar → Footer (at bottom)
+        // Layout: Messages → Loading → Input → Status Bar → Footer (at bottom)
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(header_height),  // Header (new)
                 Constraint::Min(0),                 // Messages (maximized)
                 Constraint::Length(loading_height),
                 Constraint::Length(input_height),   // Input (fixed height)
@@ -949,28 +984,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             ])
             .split(main_area);
 
-        // Header
-        let mode_str = match self.mode {
-            AppMode::Normal => "Normal",
-            AppMode::Input => "Input",
-            AppMode::Approval => "Approval",
-        };
-        self.header.set_mode(mode_str);
-        self.header.render(frame, chunks[0]);
-
-        self.messages_area = chunks[1];
-        self.messages.render(frame, chunks[1]);
+        self.messages_area = chunks[0];
+        self.messages.render(frame, chunks[0]);
 
         if loading_height > 0 {
-            self.loading_indicator.render(frame, chunks[2]);
+            self.loading_indicator.render(frame, chunks[1]);
         }
 
-        self.input.render(frame, chunks[3]);
+        self.input.render(frame, chunks[2]);
 
         // Always render status bar area, but content only shows when active
-        self.status_bar.render(frame, chunks[4]);
+        self.status_bar.render(frame, chunks[3]);
 
-        self.footer.render(frame, chunks[5]);
+        self.footer.render(frame, chunks[4]);
 
         // Render approval dialog on top if active
         if let Some(ref dialog) = self.approval_dialog {

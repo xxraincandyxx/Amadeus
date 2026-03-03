@@ -128,6 +128,8 @@ pub struct MessagesComponent {
     turn_counter: usize,
     /// Current streaming turn (for assistant responses)
     current_turn: usize,
+    /// Whether tool groups are expanded (showing all tools)
+    tool_expansion_enabled: bool,
 }
 
 impl MessagesComponent {
@@ -144,6 +146,7 @@ impl MessagesComponent {
             compression_spinner: GeminiSpinner::new(),
             turn_counter: 0,
             current_turn: 0,
+            tool_expansion_enabled: false,
         }
     }
 
@@ -391,6 +394,34 @@ impl MessagesComponent {
         }
         if let Some(ref mut group) = self.pending_tool_group {
             group.expand_all();
+        }
+    }
+
+    /// Toggle tool expansion state for all tool groups
+    /// When expanded, all tools are shown; when collapsed, only threshold number shown
+    pub fn toggle_tool_expansion(&mut self) {
+        self.tool_expansion_enabled = !self.tool_expansion_enabled;
+
+        // Apply to all tool groups in history
+        for item in &mut self.items {
+            if let HistoryItem::ToolGroup { group, .. } = item {
+                group.is_expanded = self.tool_expansion_enabled;
+                if self.tool_expansion_enabled {
+                    group.expand_all();
+                } else {
+                    group.collapse_all();
+                }
+            }
+        }
+
+        // Also apply to pending tool group
+        if let Some(ref mut group) = self.pending_tool_group {
+            group.is_expanded = self.tool_expansion_enabled;
+            if self.tool_expansion_enabled {
+                group.expand_all();
+            } else {
+                group.collapse_all();
+            }
         }
     }
 
