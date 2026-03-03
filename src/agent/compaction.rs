@@ -100,6 +100,12 @@ pub struct CompactionResult {
     /// Message count after compaction.
     pub compacted_count: usize,
 
+    /// Estimated original token count before compaction.
+    pub original_tokens: usize,
+
+    /// Estimated token count after compaction.
+    pub new_tokens: usize,
+
     /// Estimated tokens saved by compaction.
     pub tokens_saved: usize,
 
@@ -196,6 +202,8 @@ impl ContextCompactor {
             return Ok(CompactionResult {
                 original_count,
                 compacted_count: original_count,
+                original_tokens,
+                new_tokens: original_tokens,
                 tokens_saved: 0,
                 summary: None,
                 messages_summarized: 0,
@@ -260,6 +268,8 @@ impl ContextCompactor {
         Ok(CompactionResult {
             original_count,
             compacted_count,
+            original_tokens,
+            new_tokens,
             tokens_saved,
             summary,
             messages_summarized,

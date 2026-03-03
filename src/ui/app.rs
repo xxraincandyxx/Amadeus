@@ -567,15 +567,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             match rx.try_recv() {
                 Ok(Ok(result)) => {
                     info!(
-                        original = result.original_count,
-                        compacted = result.compacted_count,
+                        original_messages = result.original_count,
+                        compacted_messages = result.compacted_count,
+                        original_tokens = result.original_tokens,
+                        new_tokens = result.new_tokens,
                         tokens_saved = result.tokens_saved,
                         "Manual compaction complete"
                     );
 
-                    // Estimate token counts from message counts
-                    let original_tokens = result.original_count * 200;
-                    let final_tokens = result.compacted_count * 200;
+                    // Use actual estimated token counts from compaction
+                    let original_tokens = result.original_tokens;
+                    let final_tokens = result.new_tokens;
 
                     // Check if compaction was beneficial
                     if result.tokens_saved > 0 {
