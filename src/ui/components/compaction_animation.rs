@@ -177,40 +177,35 @@ impl CompactionAnimator {
             return;
         }
 
-        // If showing result, check if we should transition
-        if self.should_transition_to_history() {
-            self.state = CompactionState::Idle;
-            return;
-        }
-
         // Only advance spinner/progress if running
-        if self.state != CompactionState::Running {
-            return;
+        if self.state == CompactionState::Running {
+            // Advance spinner frame
+            self.frame = (self.frame + 1) % SPINNER_FRAMES.len();
+
+            // Simulate progress (slowly increasing, max 95% until complete)
+            let elapsed = self.last_progress_update.elapsed();
+            if elapsed.as_millis() > 150 && self.progress < 95 {
+                // Progress slows down as it approaches 95%
+                let increment = if self.progress < 50 {
+                    3
+                } else if self.progress < 80 {
+                    2
+                } else {
+                    1
+                };
+                self.progress = (self.progress + increment).min(95);
+                self.last_progress_update = Instant::now();
+            }
+
+            // Cycle message every ~1.5 seconds
+            let msg_elapsed = self.start_time.elapsed().as_millis();
+            let msg_interval = 1500u128;
+            self.message_index = ((msg_elapsed / msg_interval) % COMPACTION_MESSAGES.len() as u128)
+                as usize;
         }
 
-        // Advance spinner frame
-        self.frame = (self.frame + 1) % SPINNER_FRAMES.len();
-
-        // Simulate progress (slowly increasing, max 95% until complete)
-        let elapsed = self.last_progress_update.elapsed();
-        if elapsed.as_millis() > 150 && self.progress < 95 {
-            // Progress slows down as it approaches 95%
-            let increment = if self.progress < 50 {
-                3
-            } else if self.progress < 80 {
-                2
-            } else {
-                1
-            };
-            self.progress = (self.progress + increment).min(95);
-            self.last_progress_update = Instant::now();
-        }
-
-        // Cycle message every ~1.5 seconds
-        let msg_elapsed = self.start_time.elapsed().as_millis();
-        let msg_interval = 1500u128;
-        self.message_index = ((msg_elapsed / msg_interval) % COMPACTION_MESSAGES.len() as u128)
-            as usize;
+        // Note: We don't auto-transition here. The MessagesComponent handles
+        // the transition by checking should_transition_to_history() separately.
     }
 
     /// Get the current spinner frame
@@ -515,5 +510,27 @@ mod tests {
         assert_ne!(CompactionState::Idle, CompactionState::Running);
         assert_ne!(CompactionState::Running, CompactionState::Completed);
         assert_ne!(CompactionState::Completed, CompactionState::Failed);
+    }
+
+    #[test]
+    fn test_compaction_animator_complete_state_persists() {
+        let mut animator = CompactionAnimator::new();
+        animator.start();
+        animator.complete(1000, 500);
+
+        // Verify state is Completed, not Idle
+        assert_eq!(animator.state(), CompactionState::Completed);
+        assert!(animator.is_showing_result());
+
+        // Tick should not immediately clear state
+        animator.tick();
+        assert_eq!(animator.state(), CompactionState::Completed);
+        assert!(animator.is_showing_result());
+
+        // Multiple ticks should still not clear state (time-based transition only)
+        for _ in 0..10 {
+            animator.tick();
+        }
+        assert_eq!(animator.state(), CompactionState::Completed);
     }
 }

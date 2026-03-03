@@ -267,10 +267,8 @@ impl MessagesComponent {
 
     /// Complete compression with "not beneficial" result
     pub fn complete_compression_not_beneficial(&mut self, original_tokens: usize) {
-        self.compaction_animator.stop();
-        let completed = CompressionItem::not_beneficial(original_tokens);
-        self.items.push(HistoryItem::compression(completed));
-        self.pending_compression = None;
+        // Treat as a "no change" completion - show result briefly
+        self.compaction_animator.complete(original_tokens, original_tokens);
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -290,10 +288,8 @@ impl MessagesComponent {
 
     /// Complete compression with nothing to compress
     pub fn complete_compression_noop(&mut self) {
-        self.compaction_animator.stop();
-        let completed = CompressionItem::noop();
-        self.items.push(HistoryItem::compression(completed));
-        self.pending_compression = None;
+        // Show a brief "nothing to do" completion
+        self.compaction_animator.complete(0, 0);
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
