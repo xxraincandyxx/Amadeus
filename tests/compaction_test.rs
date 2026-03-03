@@ -104,9 +104,9 @@ async fn test_context_usage_percent() {
     assert!(percent < 10);
 }
 
-/// Test history too short to compact.
+/// Test detection of short history (compaction allowed with warning).
 #[tokio::test]
-async fn test_history_too_short() {
+async fn test_short_history_detection() {
     let config = CompactionConfig {
         preserve_recent: 6,
         ..Default::default()
@@ -119,9 +119,8 @@ async fn test_history_too_short() {
         .map(|_| Message::user("Test"))
         .collect();
 
-    // Attempt to compact - should return early
-    // Note: compact() requires a client, but we can test the logic separately
-    // by checking the length <= preserve_recent
+    // Short history is detected (len <= preserve_recent)
+    // Note: Compaction is now allowed for short history with a warning
     assert!(messages.len() <= preserve_recent);
     // Compactor created successfully (unused but confirms construction works)
     let _ = compactor;

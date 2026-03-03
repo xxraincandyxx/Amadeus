@@ -13,7 +13,7 @@ use ratatui::{
     Terminal,
 };
 use tokio::sync::mpsc;
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent};
@@ -476,19 +476,23 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             "Manual compaction triggered"
         );
 
-        // Check if there's enough history to compact
-        if current_count <= preserve_recent {
-            self.messages.complete_compression_noop();
-            self.footer.set_status_message("Not enough history to compact");
-            return;
+        // Warn if history is short, but still allow compaction
+        let is_short_history = current_count <= preserve_recent;
+        if is_short_history {
+            warn!(
+                messages = current_count,
+                preserve_recent = preserve_recent,
+                "Compacting short history"
+            );
+            self.footer.set_status_message(format!(
+                "⚠ Warning: Only {} messages (recommended: {}+)",
+                current_count, preserve_recent
+            ));
         }
 
         // Start pending compression animation (gemini-cli style)
         self.messages.start_compression();
         self.footer.set_state(AppState::Compaction);
-
-        // Force a UI update to show the pending animation
-        // (The tick loop will handle the animation frames)
 
         // Perform compaction
         let mut history_guard = history.write().await;
