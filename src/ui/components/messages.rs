@@ -8,8 +8,8 @@ use ratatui::{
     Frame,
 };
 
+use crate::ui::components::compaction_animation::CompactionAnimator;
 use crate::ui::components::markdown::render_markdown;
-use crate::ui::components::spinner::GeminiSpinner;
 use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
 use crate::ui::get_colors;
 use crate::ui::scroll::{AnimatedScrollbar, ScrollState};
@@ -120,10 +120,10 @@ pub struct MessagesComponent {
     /// Streaming thinking content
     streaming_thinking: Option<String>,
     pending_tool_group: Option<ToolGroup>,
-    /// Pending compression item with animated spinner (gemini-cli style)
+    /// Pending compression item with animated display
     pending_compression: Option<CompressionItem>,
-    /// Spinner for pending compression animation
-    compression_spinner: GeminiSpinner,
+    /// Beautiful animated compaction display
+    compaction_animator: CompactionAnimator,
     /// Turn counter for conversation tracking
     turn_counter: usize,
     /// Current streaming turn (for assistant responses)
@@ -143,7 +143,7 @@ impl MessagesComponent {
             streaming_thinking: None,
             pending_tool_group: None,
             pending_compression: None,
-            compression_spinner: GeminiSpinner::new(),
+            compaction_animator: CompactionAnimator::new(),
             turn_counter: 0,
             current_turn: 0,
             tool_expansion_enabled: false,
@@ -243,10 +243,10 @@ impl MessagesComponent {
         }
     }
 
-    /// Start a pending compression operation (shows animated spinner)
+    /// Start a pending compression operation (shows animated display)
     pub fn start_compression(&mut self) {
         self.pending_compression = Some(CompressionItem::pending());
-        self.compression_spinner.start();
+        self.compaction_animator.start();
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -255,7 +255,7 @@ impl MessagesComponent {
 
     /// Complete the pending compression with results
     pub fn complete_compression(&mut self, original_tokens: usize, new_tokens: usize) {
-        self.compression_spinner.stop();
+        self.compaction_animator.stop();
         let completed = CompressionItem::completed(original_tokens, new_tokens);
         self.items.push(HistoryItem::compression(completed));
         self.pending_compression = None;
@@ -267,7 +267,7 @@ impl MessagesComponent {
 
     /// Complete compression with "not beneficial" result
     pub fn complete_compression_not_beneficial(&mut self, original_tokens: usize) {
-        self.compression_spinner.stop();
+        self.compaction_animator.stop();
         let completed = CompressionItem::not_beneficial(original_tokens);
         self.items.push(HistoryItem::compression(completed));
         self.pending_compression = None;
@@ -279,7 +279,7 @@ impl MessagesComponent {
 
     /// Complete compression with error
     pub fn complete_compression_failed(&mut self, error: String) {
-        self.compression_spinner.stop();
+        self.compaction_animator.stop();
         let completed = CompressionItem::failed(error);
         self.items.push(HistoryItem::compression(completed));
         self.pending_compression = None;
@@ -291,7 +291,7 @@ impl MessagesComponent {
 
     /// Complete compression with nothing to compress
     pub fn complete_compression_noop(&mut self) {
-        self.compression_spinner.stop();
+        self.compaction_animator.stop();
         let completed = CompressionItem::noop();
         self.items.push(HistoryItem::compression(completed));
         self.pending_compression = None;
@@ -470,10 +470,10 @@ impl MessagesComponent {
             AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover);
     }
 
-    /// Tick for animation updates (compression spinner, etc.)
+    /// Tick for animation updates (compaction animator, etc.)
     pub fn tick(&mut self) {
         if self.pending_compression.is_some() {
-            self.compression_spinner.tick();
+            self.compaction_animator.tick();
         }
     }
 
@@ -628,19 +628,53 @@ impl MessagesComponent {
             }
         }
 
-        // Render pending compression with animated spinner (gemini-cli style)
+        // Render pending compression with beautiful animated display
         if let Some(ref _compression) = self.pending_compression {
-            let spinner_text = self.compression_spinner.get_frame();
-            let spinner_color = self.compression_spinner.get_current_color();
+            let spinner = self.compaction_animator.spinner_frame();
+            let animated_color = self.compaction_animator.get_animated_color();
+            let progress_color = self.compaction_animator.get_progress_color();
+            let message = self.compaction_animator.current_message();
+            let progress = self.compaction_animator.progress();
+            let progress_bar = self.compaction_animator.render_progress_bar_smooth(20);
+            let elapsed = self.compaction_animator.elapsed_string();
 
+            // Top border with spinner
             lines.push(Line::from(vec![
-                Span::styled(format!("{} ", spinner_text), Style::default().fg(spinner_color)),
+                Span::styled("╭─", Style::default().fg(colors.ui.dark)),
+                Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+            ]));
+
+            // Main message line with animated spinner
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                Span::styled(format!("{} ", spinner), Style::default().fg(animated_color)),
                 Span::styled(
-                    "Compacting chat history...",
+                    format!("{}...", message),
                     Style::default()
-                        .fg(colors.text.accent)
-                        .add_modifier(Modifier::ITALIC),
+                        .fg(colors.text.primary)
+                        .add_modifier(Modifier::BOLD),
                 ),
+            ]));
+
+            // Progress bar line
+            lines.push(Line::from(vec![
+                Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                Span::styled("   ", Style::default()),
+                Span::styled(progress_bar, Style::default().fg(progress_color)),
+                Span::styled(
+                    format!(" {:>3}%", progress),
+                    Style::default().fg(colors.text.secondary),
+                ),
+                Span::styled(
+                    format!("  {}", elapsed),
+                    Style::default().fg(colors.ui.comment),
+                ),
+            ]));
+
+            // Bottom border
+            lines.push(Line::from(vec![
+                Span::styled("╰─", Style::default().fg(colors.ui.dark)),
+                Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
             ]));
             lines.push(Line::from(""));
         }

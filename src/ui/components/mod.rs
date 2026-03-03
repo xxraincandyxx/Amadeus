@@ -1,4 +1,5 @@
 mod approval;
+mod compaction_animation;
 mod diff;
 mod footer;
 mod input;
@@ -14,6 +15,7 @@ mod status_bar;
 mod tool_group;
 
 pub use approval::{ApprovalDialog, ApprovalResponse};
+pub use compaction_animation::CompactionAnimator;
 pub use diff::{DiffLine, DiffView, DiffView as DiffRenderer};
 pub use footer::{Footer, FooterInfo, SandboxStatus};
 pub use input::InputComponent;
