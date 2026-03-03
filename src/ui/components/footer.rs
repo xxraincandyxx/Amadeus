@@ -239,6 +239,11 @@ impl Footer {
             ),
             AppState::Success => ("✓".to_string(), colors.status.success, "DONE"),
             AppState::Error => ("✗".to_string(), colors.status.error, "ERR"),
+            AppState::Compaction => (
+                self.get_spinner().to_string(),
+                colors.text.accent,
+                "COMPACTING",
+            ),
         };
 
         spans.push(Span::styled(

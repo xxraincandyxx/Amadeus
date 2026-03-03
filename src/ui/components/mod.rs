@@ -6,10 +6,10 @@ mod loading_indicator;
 mod markdown;
 mod messages;
 mod phrase_cycler;
-mod sessions;
+pub mod sessions;
 mod sidebar;
 mod spinner;
-mod status;
+pub mod status;
 mod tool_group;
 
 pub use approval::{ApprovalDialog, ApprovalResponse};

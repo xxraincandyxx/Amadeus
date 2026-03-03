@@ -16,6 +16,7 @@ pub enum AppState {
     Processing,
     Success,
     Error,
+    Compaction,
 }
 
 pub struct StatusBar {
@@ -77,6 +78,11 @@ impl StatusBar {
             ),
             AppState::Success => (" ✓ ".to_string(), colors.status.success, "DONE"),
             AppState::Error => (" ✗ ".to_string(), colors.status.error, "ERR "),
+            AppState::Compaction => (
+                format!(" {} ", self.get_spinner()),
+                colors.text.accent,
+                "COMPACTING",
+            ),
         };
 
         let mut left_spans = vec![
