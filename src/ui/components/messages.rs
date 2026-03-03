@@ -254,11 +254,11 @@ impl MessagesComponent {
     }
 
     /// Complete the pending compression with results
+    /// Shows completion result in the animation box before transitioning to history
     pub fn complete_compression(&mut self, original_tokens: usize, new_tokens: usize) {
-        self.compaction_animator.stop();
-        let completed = CompressionItem::completed(original_tokens, new_tokens);
-        self.items.push(HistoryItem::compression(completed));
-        self.pending_compression = None;
+        // Set animator to completed state (shows result in animation box)
+        self.compaction_animator.complete(original_tokens, new_tokens);
+        // Keep pending_compression for rendering, will be cleared after display duration
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -279,10 +279,9 @@ impl MessagesComponent {
 
     /// Complete compression with error
     pub fn complete_compression_failed(&mut self, error: String) {
-        self.compaction_animator.stop();
-        let completed = CompressionItem::failed(error);
-        self.items.push(HistoryItem::compression(completed));
-        self.pending_compression = None;
+        // Set animator to failed state
+        self.compaction_animator.fail(error.clone());
+        // Keep pending_compression for rendering
         if self.scroll_state.auto_scroll {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
@@ -474,6 +473,35 @@ impl MessagesComponent {
     pub fn tick(&mut self) {
         if self.pending_compression.is_some() {
             self.compaction_animator.tick();
+
+            // Check if we should transition completed result to history
+            if self.compaction_animator.should_transition_to_history() {
+                self.transition_compression_to_history();
+            }
+        }
+    }
+
+    /// Transition the completed compression result to history
+    fn transition_compression_to_history(&mut self) {
+        if let Some(result) = self.compaction_animator.result() {
+            if let Some(ref error) = result.error_message {
+                // Failed compaction
+                let completed = CompressionItem::failed(error.clone());
+                self.items.push(HistoryItem::compression(completed));
+            } else if result.original_tokens > 0 {
+                // Successful compaction
+                let completed =
+                    CompressionItem::completed(result.original_tokens, result.new_tokens);
+                self.items.push(HistoryItem::compression(completed));
+            }
+        }
+
+        self.pending_compression = None;
+        self.compaction_animator.stop();
+
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
         }
     }
 
@@ -630,52 +658,155 @@ impl MessagesComponent {
 
         // Render pending compression with beautiful animated display
         if let Some(ref _compression) = self.pending_compression {
-            let spinner = self.compaction_animator.spinner_frame();
-            let animated_color = self.compaction_animator.get_animated_color();
-            let progress_color = self.compaction_animator.get_progress_color();
-            let message = self.compaction_animator.current_message();
-            let progress = self.compaction_animator.progress();
-            let progress_bar = self.compaction_animator.render_progress_bar_smooth(20);
-            let elapsed = self.compaction_animator.elapsed_string();
+            use crate::ui::components::compaction_animation::CompactionState;
 
-            // Top border with spinner
-            lines.push(Line::from(vec![
-                Span::styled("╭─", Style::default().fg(colors.ui.dark)),
-                Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
-            ]));
+            let state = self.compaction_animator.state();
 
-            // Main message line with animated spinner
-            lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                Span::styled(format!("{} ", spinner), Style::default().fg(animated_color)),
-                Span::styled(
-                    format!("{}...", message),
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
-            ]));
+            match state {
+                CompactionState::Running => {
+                    // Running animation
+                    let spinner = self.compaction_animator.spinner_frame();
+                    let animated_color = self.compaction_animator.get_animated_color();
+                    let progress_color = self.compaction_animator.get_progress_color();
+                    let message = self.compaction_animator.current_message();
+                    let progress = self.compaction_animator.progress();
+                    let progress_bar = self.compaction_animator.render_progress_bar_smooth(20);
+                    let elapsed = self.compaction_animator.elapsed_string();
 
-            // Progress bar line
-            lines.push(Line::from(vec![
-                Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                Span::styled("   ", Style::default()),
-                Span::styled(progress_bar, Style::default().fg(progress_color)),
-                Span::styled(
-                    format!(" {:>3}%", progress),
-                    Style::default().fg(colors.text.secondary),
-                ),
-                Span::styled(
-                    format!("  {}", elapsed),
-                    Style::default().fg(colors.ui.comment),
-                ),
-            ]));
+                    // Top border with spinner
+                    lines.push(Line::from(vec![
+                        Span::styled("╭─", Style::default().fg(colors.ui.dark)),
+                        Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                    ]));
 
-            // Bottom border
-            lines.push(Line::from(vec![
-                Span::styled("╰─", Style::default().fg(colors.ui.dark)),
-                Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
-            ]));
+                    // Main message line with animated spinner
+                    lines.push(Line::from(vec![
+                        Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                        Span::styled(format!("{} ", spinner), Style::default().fg(animated_color)),
+                        Span::styled(
+                            format!("{}...", message),
+                            Style::default()
+                                .fg(colors.text.primary)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
+
+                    // Progress bar line
+                    lines.push(Line::from(vec![
+                        Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                        Span::styled("   ", Style::default()),
+                        Span::styled(progress_bar, Style::default().fg(progress_color)),
+                        Span::styled(
+                            format!(" {:>3}%", progress),
+                            Style::default().fg(colors.text.secondary),
+                        ),
+                        Span::styled(
+                            format!("  {}", elapsed),
+                            Style::default().fg(colors.ui.comment),
+                        ),
+                    ]));
+
+                    // Bottom border
+                    lines.push(Line::from(vec![
+                        Span::styled("╰─", Style::default().fg(colors.ui.dark)),
+                        Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                    ]));
+                }
+                CompactionState::Completed => {
+                    // Show completion result
+                    if let Some(result) = self.compaction_animator.result() {
+                        let success_color = self.compaction_animator.get_success_color();
+                        let saved = result.original_tokens.saturating_sub(result.new_tokens);
+                        let percent = if result.original_tokens > 0 {
+                            saved * 100 / result.original_tokens
+                        } else {
+                            0
+                        };
+
+                        // Success box
+                        lines.push(Line::from(vec![
+                            Span::styled("╭─", Style::default().fg(success_color)),
+                            Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                        ]));
+
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                            Span::styled("✓ ", Style::default().fg(success_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                "Chat history compacted",
+                                Style::default()
+                                    .fg(colors.text.primary)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ]));
+
+                        // Token reduction line
+                        let bar = self.compaction_animator.render_completion_bar(16);
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                            Span::styled("   ", Style::default()),
+                            Span::styled(bar, Style::default().fg(success_color)),
+                            Span::styled(
+                                format!("  {} → {} tokens", result.original_tokens, result.new_tokens),
+                                Style::default().fg(colors.text.secondary),
+                            ),
+                        ]));
+
+                        // Saved line
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                            Span::styled(
+                                format!("   Saved {}% (~{} tokens)", percent, saved),
+                                Style::default().fg(success_color),
+                            ),
+                        ]));
+
+                        lines.push(Line::from(vec![
+                            Span::styled("╰─", Style::default().fg(success_color)),
+                            Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                        ]));
+                    }
+                }
+                CompactionState::Failed => {
+                    // Show error result
+                    if let Some(result) = self.compaction_animator.result() {
+                        let error_color = self.compaction_animator.get_error_color();
+                        let error_msg = result.error_message.as_deref().unwrap_or("Unknown error");
+
+                        lines.push(Line::from(vec![
+                            Span::styled("╭─", Style::default().fg(error_color)),
+                            Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                        ]));
+
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                            Span::styled("✗ ", Style::default().fg(error_color).add_modifier(Modifier::BOLD)),
+                            Span::styled(
+                                "Compaction failed",
+                                Style::default()
+                                    .fg(colors.text.primary)
+                                    .add_modifier(Modifier::BOLD),
+                            ),
+                        ]));
+
+                        lines.push(Line::from(vec![
+                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                            Span::styled(
+                                format!("   {}", error_msg),
+                                Style::default().fg(error_color),
+                            ),
+                        ]));
+
+                        lines.push(Line::from(vec![
+                            Span::styled("╰─", Style::default().fg(error_color)),
+                            Span::styled("─".repeat(40), Style::default().fg(colors.ui.dark)),
+                        ]));
+                    }
+                }
+                CompactionState::Idle => {
+                    // Should not happen when pending_compression is Some
+                }
+            }
             lines.push(Line::from(""));
         }
 
@@ -1004,9 +1135,15 @@ mod tests {
         messages.start_compression();
         messages.complete_compression(1000, 500);
 
-        assert!(messages.pending_compression.is_none());
-        assert!(!messages.is_compression_pending());
-        assert_eq!(messages.len(), 1); // One compression item added
+        // After completion, pending_compression is still set (showing result)
+        // until the transition timeout (1.5 seconds in real time)
+        assert!(messages.pending_compression.is_some());
+        assert!(messages.compaction_animator.is_showing_result());
+
+        // Verify the result is stored correctly
+        let result = messages.compaction_animator.result().unwrap();
+        assert_eq!(result.original_tokens, 1000);
+        assert_eq!(result.new_tokens, 500);
     }
 
     #[test]
