@@ -122,7 +122,7 @@ impl FileSidebar {
             .map(|(i, entry)| {
                 let actual_index = i + self.scroll_offset;
                 let indent = indent_str.repeat(entry.depth);
-                let icon = if entry.is_dir { "📂" } else { "☐" };
+                let icon = if entry.is_dir { "📂" } else { "📄" };
                 let name = entry.path.split('/').next_back().unwrap_or(&entry.path);
 
                 let available_width =

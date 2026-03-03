@@ -609,7 +609,7 @@ impl MessagesComponent {
                     };
 
                     lines.push(Line::from(vec![
-                        Span::styled("» ", Style::default().fg(color)),
+                        Span::styled("✦ ", Style::default().fg(color)),
                         Span::styled(text, Style::default().fg(color)),
                     ]));
                     lines.push(Line::from(""));
@@ -727,7 +727,7 @@ impl MessagesComponent {
 
                         lines.push(Line::from(vec![
                             Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                            Span::styled("√ ", Style::default().fg(success_color).add_modifier(Modifier::BOLD)),
+                            Span::styled("✓ ", Style::default().fg(success_color).add_modifier(Modifier::BOLD)),
                             Span::styled(
                                 "Chat history compacted",
                                 Style::default()
@@ -776,7 +776,7 @@ impl MessagesComponent {
 
                         lines.push(Line::from(vec![
                             Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                            Span::styled("× ", Style::default().fg(error_color).add_modifier(Modifier::BOLD)),
+                            Span::styled("✗ ", Style::default().fg(error_color).add_modifier(Modifier::BOLD)),
                             Span::styled(
                                 "Compaction failed",
                                 Style::default()
@@ -866,7 +866,7 @@ impl MessagesComponent {
                 let mut spans = Vec::new();
                 if i == 0 {
                     spans.push(Span::styled(
-                        format!("» [{}] ", self.current_turn),
+                        format!("✦ [{}] ", self.current_turn),
                         Style::default()
                             .fg(colors.text.accent)
                             .add_modifier(Modifier::BOLD),

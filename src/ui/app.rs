@@ -538,7 +538,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 "Compacting short history"
             );
             self.footer.set_status_message(format!(
-                "[!] Warning: Only {} messages (recommended: {}+)",
+                "⚠ Warning: Only {} messages (recommended: {}+)",
                 current_count, preserve_recent
             ));
         }
