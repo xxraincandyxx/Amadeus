@@ -10,7 +10,6 @@ use ratatui::{
 };
 
 use crate::ui::get_colors;
-use super::status::AppState;
 
 #[derive(Debug, Clone)]
 pub struct FooterInfo {
@@ -20,10 +19,6 @@ pub struct FooterInfo {
     pub model_name: String,
     pub context_percent: u8,
     pub is_mesh: bool,
-    // New fields from StatusBar
-    pub state: AppState,
-    pub elapsed: Option<Duration>,
-    pub token_count: usize,
     /// Temporary status message (shown for a short time)
     pub status_message: Option<String>,
 }
@@ -48,9 +43,6 @@ pub struct Footer {
     hide_sandbox: bool,
     hide_model: bool,
     hide_context_percent: bool,
-    // For timing and animation
-    start_time: Option<Instant>,
-    spinner_frame: usize,
     // Status message expiry
     status_message_expiry: Option<Instant>,
 }
@@ -72,17 +64,12 @@ impl Footer {
                 model_name,
                 context_percent: 0,
                 is_mesh: false,
-                state: AppState::Idle,
-                elapsed: None,
-                token_count: 0,
                 status_message: None,
             },
             hide_cwd: false,
             hide_sandbox: false,
             hide_model: false,
             hide_context_percent: false,
-            start_time: None,
-            spinner_frame: 0,
             status_message_expiry: None,
         }
     }
@@ -168,19 +155,6 @@ impl Footer {
         self.info.is_mesh = is_mesh;
     }
 
-    pub fn set_state(&mut self, state: AppState) {
-        if state == AppState::Processing && self.start_time.is_none() {
-            self.start_time = Some(Instant::now());
-        } else if state != AppState::Processing {
-            self.start_time = None;
-        }
-        self.info.state = state;
-    }
-
-    pub fn set_token_count(&mut self, count: usize) {
-        self.info.token_count = count;
-    }
-
     /// Set a temporary status message that will be displayed for a few seconds.
     pub fn set_status_message(&mut self, message: impl Into<String>) {
         self.info.status_message = Some(message.into());
@@ -194,11 +168,6 @@ impl Footer {
     }
 
     pub fn tick(&mut self) {
-        self.spinner_frame = (self.spinner_frame + 1) % 10;
-        // Update elapsed time if processing
-        if let Some(start) = self.start_time {
-            self.info.elapsed = Some(start.elapsed());
-        }
         // Expire status message if time has passed
         if let Some(expiry) = self.status_message_expiry {
             if Instant::now() >= expiry {
@@ -216,11 +185,6 @@ impl Footer {
         &self.info
     }
 
-    fn get_spinner(&self) -> &'static str {
-        const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-        SPINNER_FRAMES[self.spinner_frame]
-    }
-
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         if area.width < 3 {
             return;
@@ -228,50 +192,6 @@ impl Footer {
 
         let colors = get_colors();
         let mut spans = Vec::new();
-
-        // Status indicator (from StatusBar)
-        let (status_icon, status_color, status_text) = match self.info.state {
-            AppState::Idle => ("●".to_string(), colors.ui.comment, "IDLE"),
-            AppState::Processing => (
-                self.get_spinner().to_string(),
-                colors.text.link,
-                "BUSY",
-            ),
-            AppState::Success => ("✓".to_string(), colors.status.success, "DONE"),
-            AppState::Error => ("✗".to_string(), colors.status.error, "ERR"),
-            AppState::Compaction => (
-                self.get_spinner().to_string(),
-                colors.text.accent,
-                "COMPACTING",
-            ),
-        };
-
-        spans.push(Span::styled(
-            format!("{} ", status_icon),
-            Style::default().fg(status_color).add_modifier(Modifier::BOLD),
-        ));
-        spans.push(Span::styled(
-            format!("{} ", status_text),
-            Style::default().fg(status_color),
-        ));
-
-        // Elapsed time when processing
-        if self.info.state == AppState::Processing {
-            if let Some(elapsed) = self.info.elapsed {
-                spans.push(Span::styled(
-                    format!("{:.1}s ", elapsed.as_secs_f64()),
-                    Style::default().fg(colors.ui.comment),
-                ));
-            }
-        }
-
-        // Token count
-        if self.info.token_count > 0 {
-            spans.push(Span::styled(
-                format!("{}t ", self.info.token_count),
-                Style::default().fg(colors.status.warning),
-            ));
-        }
 
         // MESH indicator
         if self.info.is_mesh {

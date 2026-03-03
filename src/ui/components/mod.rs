@@ -9,7 +9,7 @@ mod phrase_cycler;
 pub mod sessions;
 mod sidebar;
 mod spinner;
-pub mod status;
+mod status;
 mod tool_group;
 
 pub use approval::{ApprovalDialog, ApprovalResponse};
@@ -23,5 +23,4 @@ pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sessions::{SessionBrowser, SessionMetadata};
 pub use sidebar::{FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar};
 pub use spinner::GeminiSpinner;
-pub use status::{AppState, StatusBar};
 pub use tool_group::{ToolCall, ToolGroup, ToolStatus};

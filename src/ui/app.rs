@@ -21,7 +21,7 @@ use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    ApprovalDialog, ApprovalResponse, AppState, FileSidebar, Footer, HelpSidebar,
+    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
     InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
@@ -224,7 +224,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             AgentEvent::ToolStart { id, name } => {
-                self.footer.set_state(AppState::Processing);
                 self.messages.start_tool(id, name, None);
             }
 
@@ -248,7 +247,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             AgentEvent::Done { result } => {
                 self.messages.finalize_assistant(result.text);
-                self.footer.set_state(AppState::Success);
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
@@ -261,7 +259,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
-                self.footer.set_state(AppState::Error);
                 self.loading_indicator.set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 return true;
@@ -281,8 +278,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             AgentEvent::TokenUsage { input_tokens, output_tokens, total_tokens } => {
-                self.footer.set_token_count(total_tokens as usize);
-
                 // Calculate context window percentage
                 let context_size = self.agent.config().context_window_size;
                 if context_size > 0 {
@@ -459,7 +454,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     /// Returns immediately after setting pending state, allowing UI to animate.
     fn start_compaction(&mut self) {
         use crate::agent::compaction::ContextCompactor;
-        use crate::ui::components::status::AppState;
 
         // Don't start if already compacting
         if self.compaction_result_rx.is_some() {
@@ -505,7 +499,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         // Start pending compression animation immediately (gemini-cli style)
         self.messages.start_compression();
-        self.footer.set_state(AppState::Compaction);
 
         // Create channel for result
         let (tx, rx) = mpsc::channel(1);
@@ -524,8 +517,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     /// Poll for compaction result and update UI when complete.
     fn poll_compaction_result(&mut self) {
-        use crate::ui::components::status::AppState;
-
         if let Some(ref mut rx) = self.compaction_result_rx {
             match rx.try_recv() {
                 Ok(Ok(result)) => {
@@ -543,10 +534,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     // Check if compaction was beneficial
                     if result.tokens_saved > 0 {
                         self.messages.complete_compression(original_tokens, final_tokens);
-                        self.footer.set_state(AppState::Success);
                     } else {
                         self.messages.complete_compression_not_beneficial(original_tokens);
-                        self.footer.set_state(AppState::Idle);
                     }
 
                     self.compaction_result_rx = None;
@@ -554,7 +543,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 Ok(Err(e)) => {
                     info!(error = %e, "Manual compaction failed");
                     self.messages.complete_compression_failed(e.to_string());
-                    self.footer.set_state(AppState::Error);
                     self.compaction_result_rx = None;
                 }
                 Err(mpsc::error::TryRecvError::Empty) => {
@@ -563,7 +551,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     // Task failed without sending result
                     self.messages.complete_compression_failed("Compaction task crashed".to_string());
-                    self.footer.set_state(AppState::Error);
                     self.compaction_result_rx = None;
                 }
             }
@@ -701,7 +688,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         self.current_text.clear();
-        self.footer.set_state(AppState::Idle);
         self.loading_indicator.set_streaming_state(StreamingState::Idle);
     }
 
@@ -758,7 +744,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages.add_user(trimmed.to_string());
         self.input.clear();
         self.current_text.clear();
-        self.footer.set_state(AppState::Processing);
         self.loading_indicator.set_streaming_state(StreamingState::Responding);
 
         // --- MESH DELEGATION ---
