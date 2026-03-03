@@ -59,6 +59,8 @@ pub struct App<C: LLMClient> {
     approval_dec_tx: Option<mpsc::Sender<(String, ApprovalDecision)>>,
     /// Channel to receive approval requests from agent (for current stream)
     approval_req_rx: Option<mpsc::Receiver<ApprovalRequest>>,
+    /// Channel to receive compaction results from background task
+    compaction_result_rx: Option<mpsc::Receiver<std::result::Result<crate::agent::compaction::CompactionResult, crate::error::AgentError>>>,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -85,6 +87,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             approval_dialog: None,
             approval_dec_tx: None,
             approval_req_rx: None,
+            compaction_result_rx: None,
         }
     }
 
@@ -171,6 +174,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.footer.tick();
                 self.loading_indicator.tick();
                 self.messages.tick();
+                // Poll for compaction result (non-blocking)
+                self.poll_compaction_result();
             }
         }
         Ok(())
@@ -428,7 +433,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
                 // Manual context compaction
-                self.perform_compaction().await;
+                self.start_compaction();
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 self.sidebar = None;
@@ -450,34 +455,42 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    /// Perform manual context compaction with animated feedback (gemini-cli style).
-    async fn perform_compaction(&mut self) {
+    /// Start manual context compaction as a background task (gemini-cli style).
+    /// Returns immediately after setting pending state, allowing UI to animate.
+    fn start_compaction(&mut self) {
         use crate::agent::compaction::ContextCompactor;
         use crate::ui::components::status::AppState;
+
+        // Don't start if already compacting
+        if self.compaction_result_rx.is_some() {
+            self.footer.set_status_message("Already compacting...");
+            return;
+        }
 
         let config = self.agent.config();
         let compaction_config = config.to_compaction_config();
         let preserve_recent = compaction_config.preserve_recent;
-        let compactor = ContextCompactor::new(compaction_config);
         let context_window_size = config.context_window_size;
-
-        // Get current history state
         let history = self.agent.history();
-        let history_guard = history.read().await;
-        let current_count = history_guard.len();
-        let current_tokens = compactor.estimate_tokens(&history_guard);
-        let context_percent = compactor.context_usage_percent(&history_guard, context_window_size);
-        drop(history_guard);
+        let client = self.agent.client();
+
+        // Get current history state (synchronously for UI feedback)
+        let history_arc = history.clone();
+        let (current_count, is_short_history) = tokio::task::block_in_place(|| {
+            let rt = tokio::runtime::Handle::current();
+            rt.block_on(async {
+                let guard = history_arc.read().await;
+                let count = guard.len();
+                (count, count <= preserve_recent)
+            })
+        });
 
         info!(
             messages = current_count,
-            tokens = current_tokens,
-            context_percent = context_percent,
             "Manual compaction triggered"
         );
 
         // Warn if history is short, but still allow compaction
-        let is_short_history = current_count <= preserve_recent;
         if is_short_history {
             warn!(
                 messages = current_count,
@@ -490,41 +503,69 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             ));
         }
 
-        // Start pending compression animation (gemini-cli style)
+        // Start pending compression animation immediately (gemini-cli style)
         self.messages.start_compression();
         self.footer.set_state(AppState::Compaction);
 
-        // Perform compaction
-        let mut history_guard = history.write().await;
-        let client = self.agent.client();
+        // Create channel for result
+        let (tx, rx) = mpsc::channel(1);
+        self.compaction_result_rx = Some(rx);
 
-        match compactor.compact(&mut history_guard, &client, context_window_size).await {
-            Ok(result) => {
-                info!(
-                    original = result.original_count,
-                    compacted = result.compacted_count,
-                    tokens_saved = result.tokens_saved,
-                    "Manual compaction complete"
-                );
+        // Spawn background task for compaction
+        let compactor = ContextCompactor::new(compaction_config);
+        tokio::spawn(async move {
+            let mut history_guard = history.write().await;
+            let result = compactor.compact(&mut history_guard, &client, context_window_size).await;
 
-                // Estimate token counts from message counts (rough approximation)
-                // Assume ~200 tokens per message on average
-                let original_tokens = result.original_count * 200;
-                let final_tokens = result.compacted_count * 200;
+            // Send result through channel (ignore error if receiver was dropped)
+            let _ = tx.send(result).await;
+        });
+    }
 
-                // Check if compaction was beneficial
-                if result.tokens_saved > 0 {
-                    self.messages.complete_compression(original_tokens, final_tokens);
-                    self.footer.set_state(AppState::Success);
-                } else {
-                    self.messages.complete_compression_not_beneficial(original_tokens);
-                    self.footer.set_state(AppState::Idle);
+    /// Poll for compaction result and update UI when complete.
+    fn poll_compaction_result(&mut self) {
+        use crate::ui::components::status::AppState;
+
+        if let Some(ref mut rx) = self.compaction_result_rx {
+            match rx.try_recv() {
+                Ok(Ok(result)) => {
+                    info!(
+                        original = result.original_count,
+                        compacted = result.compacted_count,
+                        tokens_saved = result.tokens_saved,
+                        "Manual compaction complete"
+                    );
+
+                    // Estimate token counts from message counts
+                    let original_tokens = result.original_count * 200;
+                    let final_tokens = result.compacted_count * 200;
+
+                    // Check if compaction was beneficial
+                    if result.tokens_saved > 0 {
+                        self.messages.complete_compression(original_tokens, final_tokens);
+                        self.footer.set_state(AppState::Success);
+                    } else {
+                        self.messages.complete_compression_not_beneficial(original_tokens);
+                        self.footer.set_state(AppState::Idle);
+                    }
+
+                    self.compaction_result_rx = None;
                 }
-            }
-            Err(e) => {
-                info!(error = %e, "Manual compaction failed");
-                self.messages.complete_compression_failed(e.to_string());
-                self.footer.set_state(AppState::Error);
+                Ok(Err(e)) => {
+                    info!(error = %e, "Manual compaction failed");
+                    self.messages.complete_compression_failed(e.to_string());
+                    self.footer.set_state(AppState::Error);
+                    self.compaction_result_rx = None;
+                }
+                Err(mpsc::error::TryRecvError::Empty) => {
+                    // Still in progress, continue animating
+                }
+                Err(mpsc::error::TryRecvError::Disconnected) => {
+                    // Task failed without sending result
+                    self.messages.complete_compression_failed("Compaction task crashed".to_string());
+                    self.footer.set_state(AppState::Error);
+                    self.compaction_result_rx = None;
+                }
             }
         }
     }
@@ -573,7 +614,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
                 // Manual context compaction (also available in input mode)
-                self.perform_compaction().await;
+                self.start_compaction();
             }
             (KeyModifiers::NONE, KeyCode::Char('q')) => {
                 if self.input.get_input().trim().is_empty() && self.stream_rx.is_none() {
@@ -708,7 +749,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             let command = trimmed.to_lowercase();
             if command == "/compact" || command == "/compress" {
                 self.input.clear();
-                self.perform_compaction().await;
+                self.start_compaction();
                 return Ok(());
             }
             // Add other slash commands here in the future
