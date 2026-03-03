@@ -9,15 +9,95 @@ use ratatui::{
 };
 
 use crate::ui::components::markdown::render_markdown;
+use crate::ui::components::spinner::GeminiSpinner;
 use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
 use crate::ui::get_colors;
 use crate::ui::scroll::{AnimatedScrollbar, ScrollState};
+
+/// Status of a compression operation
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CompressionStatus {
+    /// Compression is in progress
+    Pending,
+    /// Compression completed successfully
+    Compressed,
+    /// Compression did not reduce token count
+    NotBeneficial,
+    /// Compression failed with an error
+    Failed,
+    /// Nothing to compress
+    Noop,
+}
+
+/// Data for a compression history item
+#[derive(Debug, Clone)]
+pub struct CompressionItem {
+    pub is_pending: bool,
+    pub original_token_count: Option<usize>,
+    pub new_token_count: Option<usize>,
+    pub status: CompressionStatus,
+    pub error_message: Option<String>,
+}
+
+impl CompressionItem {
+    pub fn pending() -> Self {
+        Self {
+            is_pending: true,
+            original_token_count: None,
+            new_token_count: None,
+            status: CompressionStatus::Pending,
+            error_message: None,
+        }
+    }
+
+    pub fn completed(original: usize, new: usize) -> Self {
+        Self {
+            is_pending: false,
+            original_token_count: Some(original),
+            new_token_count: Some(new),
+            status: CompressionStatus::Compressed,
+            error_message: None,
+        }
+    }
+
+    pub fn not_beneficial(original: usize) -> Self {
+        Self {
+            is_pending: false,
+            original_token_count: Some(original),
+            new_token_count: Some(original),
+            status: CompressionStatus::NotBeneficial,
+            error_message: None,
+        }
+    }
+
+    pub fn failed(message: String) -> Self {
+        Self {
+            is_pending: false,
+            original_token_count: None,
+            new_token_count: None,
+            status: CompressionStatus::Failed,
+            error_message: Some(message),
+        }
+    }
+
+    pub fn noop() -> Self {
+        Self {
+            is_pending: false,
+            original_token_count: None,
+            new_token_count: None,
+            status: CompressionStatus::Noop,
+            error_message: None,
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 pub enum HistoryItem {
     User { content: String, timestamp: Instant },
     Assistant { content: String, timestamp: Instant },
     ToolGroup { group: ToolGroup },
+    /// Compression/compaction operation (gemini-cli style)
+    Compression { compression: CompressionItem },
 }
 
 impl HistoryItem {
@@ -38,6 +118,10 @@ impl HistoryItem {
     pub fn tool_group(group: ToolGroup) -> Self {
         Self::ToolGroup { group }
     }
+
+    pub fn compression(compression: CompressionItem) -> Self {
+        Self::Compression { compression }
+    }
 }
 
 pub struct MessagesComponent {
@@ -46,6 +130,10 @@ pub struct MessagesComponent {
     scrollbar: AnimatedScrollbar,
     streaming_text: Option<String>,
     pending_tool_group: Option<ToolGroup>,
+    /// Pending compression item with animated spinner (gemini-cli style)
+    pending_compression: Option<CompressionItem>,
+    /// Spinner for pending compression animation
+    compression_spinner: GeminiSpinner,
 }
 
 impl MessagesComponent {
@@ -57,6 +145,8 @@ impl MessagesComponent {
             scrollbar: AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover),
             streaming_text: None,
             pending_tool_group: None,
+            pending_compression: None,
+            compression_spinner: GeminiSpinner::new(),
         }
     }
 
@@ -95,6 +185,69 @@ impl MessagesComponent {
             self.scroll_state.scroll_to_bottom();
             self.scrollbar.flash();
         }
+    }
+
+    /// Start a pending compression operation (shows animated spinner)
+    pub fn start_compression(&mut self) {
+        self.pending_compression = Some(CompressionItem::pending());
+        self.compression_spinner.start();
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Complete the pending compression with results
+    pub fn complete_compression(&mut self, original_tokens: usize, new_tokens: usize) {
+        self.compression_spinner.stop();
+        let completed = CompressionItem::completed(original_tokens, new_tokens);
+        self.items.push(HistoryItem::compression(completed));
+        self.pending_compression = None;
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Complete compression with "not beneficial" result
+    pub fn complete_compression_not_beneficial(&mut self, original_tokens: usize) {
+        self.compression_spinner.stop();
+        let completed = CompressionItem::not_beneficial(original_tokens);
+        self.items.push(HistoryItem::compression(completed));
+        self.pending_compression = None;
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Complete compression with error
+    pub fn complete_compression_failed(&mut self, error: String) {
+        self.compression_spinner.stop();
+        let completed = CompressionItem::failed(error);
+        self.items.push(HistoryItem::compression(completed));
+        self.pending_compression = None;
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Complete compression with nothing to compress
+    pub fn complete_compression_noop(&mut self) {
+        self.compression_spinner.stop();
+        let completed = CompressionItem::noop();
+        self.items.push(HistoryItem::compression(completed));
+        self.pending_compression = None;
+        if self.scroll_state.auto_scroll {
+            self.scroll_state.scroll_to_bottom();
+            self.scrollbar.flash();
+        }
+    }
+
+    /// Check if compression is in progress
+    pub fn is_compression_pending(&self) -> bool {
+        self.pending_compression.is_some()
     }
 
     pub fn start_tool(&mut self, tool_id: String, tool_name: String, command: Option<String>) {
@@ -227,6 +380,13 @@ impl MessagesComponent {
             AnimatedScrollbar::new(colors.scrollbar.thumb, colors.scrollbar.thumb_hover);
     }
 
+    /// Tick for animation updates (compression spinner, etc.)
+    pub fn tick(&mut self) {
+        if self.pending_compression.is_some() {
+            self.compression_spinner.tick();
+        }
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.width < 3 || area.height < 1 {
             return;
@@ -288,7 +448,41 @@ impl MessagesComponent {
                     }
                     lines.push(Line::from(""));
                 }
+
+                HistoryItem::Compression { compression } => {
+                    let text = Self::get_compression_text(compression);
+                    let color = if compression.status == CompressionStatus::Failed {
+                        colors.status.error
+                    } else if compression.status == CompressionStatus::NotBeneficial {
+                        colors.status.warning
+                    } else {
+                        colors.status.success
+                    };
+
+                    lines.push(Line::from(vec![
+                        Span::styled("✦ ", Style::default().fg(color)),
+                        Span::styled(text, Style::default().fg(color)),
+                    ]));
+                    lines.push(Line::from(""));
+                }
             }
+        }
+
+        // Render pending compression with animated spinner (gemini-cli style)
+        if let Some(ref _compression) = self.pending_compression {
+            let spinner_text = self.compression_spinner.get_frame();
+            let spinner_color = self.compression_spinner.get_current_color();
+
+            lines.push(Line::from(vec![
+                Span::styled(format!("{} ", spinner_text), Style::default().fg(spinner_color)),
+                Span::styled(
+                    "Compacting chat history...",
+                    Style::default()
+                        .fg(colors.text.accent)
+                        .add_modifier(Modifier::ITALIC),
+                ),
+            ]));
+            lines.push(Line::from(""));
         }
 
         if let Some(ref group) = self.pending_tool_group {
@@ -371,6 +565,47 @@ impl MessagesComponent {
                 .viewport_content_length(visible_lines);
 
             frame.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
+        }
+    }
+
+    /// Get display text for a compression item (gemini-cli style)
+    fn get_compression_text(compression: &CompressionItem) -> String {
+        match compression.status {
+            CompressionStatus::Compressed => {
+                let original = compression.original_token_count.unwrap_or(0);
+                let new = compression.new_token_count.unwrap_or(0);
+                let saved = original.saturating_sub(new);
+                let percent = if original > 0 {
+                    saved * 100 / original
+                } else {
+                    0
+                };
+                format!(
+                    "Chat history compacted: {} → {} tokens (saved {}%, ~{} tokens)",
+                    original, new, percent, saved
+                )
+            }
+            CompressionStatus::NotBeneficial => {
+                let original = compression.original_token_count.unwrap_or(0);
+                if original < 50000 {
+                    "Compression was not beneficial for this history size.".to_string()
+                } else {
+                    "Compression did not reduce size. Try again with more context.".to_string()
+                }
+            }
+            CompressionStatus::Failed => {
+                if let Some(ref error) = compression.error_message {
+                    format!("Compression failed: {}", error)
+                } else {
+                    "Compression failed with an unknown error.".to_string()
+                }
+            }
+            CompressionStatus::Noop => {
+                "Nothing to compact - context is already minimal.".to_string()
+            }
+            CompressionStatus::Pending => {
+                "Compacting chat history...".to_string()
+            }
         }
     }
 

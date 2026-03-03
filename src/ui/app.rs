@@ -170,6 +170,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AppEvent::Tick => {
                 self.footer.tick();
                 self.loading_indicator.tick();
+                self.messages.tick();
             }
         }
         Ok(())
@@ -449,7 +450,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    /// Perform manual context compaction with animated feedback.
+    /// Perform manual context compaction with animated feedback (gemini-cli style).
     async fn perform_compaction(&mut self) {
         use crate::agent::compaction::ContextCompactor;
         use crate::ui::components::status::AppState;
@@ -477,23 +478,21 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         // Check if there's enough history to compact
         if current_count <= preserve_recent {
+            self.messages.complete_compression_noop();
             self.footer.set_status_message("Not enough history to compact");
             return;
         }
 
-        // Set compaction state for animation
+        // Start pending compression animation (gemini-cli style)
+        self.messages.start_compression();
         self.footer.set_state(AppState::Compaction);
-        self.footer.set_status_message(format!(
-            "Compacting {} messages ({}% context)...",
-            current_count, context_percent
-        ));
+
+        // Force a UI update to show the pending animation
+        // (The tick loop will handle the animation frames)
 
         // Perform compaction
         let mut history_guard = history.write().await;
         let client = self.agent.client();
-
-        // Update status to show we're summarizing
-        self.footer.set_status_message("Summarizing conversation history...");
 
         match compactor.compact(&mut history_guard, &client, context_window_size).await {
             Ok(result) => {
@@ -504,19 +503,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     "Manual compaction complete"
                 );
 
-                // Restore state and show success
-                self.footer.set_state(AppState::Success);
-                self.footer.set_status_message(format!(
-                    "✓ Compacted: {} → {} messages (saved ~{} tokens)",
-                    result.original_count, result.compacted_count, result.tokens_saved
-                ));
+                // Estimate token counts from message counts (rough approximation)
+                // Assume ~200 tokens per message on average
+                let original_tokens = result.original_count * 200;
+                let final_tokens = result.compacted_count * 200;
 
-                // Reset to idle after a short delay (will be handled by tick)
+                // Check if compaction was beneficial
+                if result.tokens_saved > 0 {
+                    self.messages.complete_compression(original_tokens, final_tokens);
+                    self.footer.set_state(AppState::Success);
+                } else {
+                    self.messages.complete_compression_not_beneficial(original_tokens);
+                    self.footer.set_state(AppState::Idle);
+                }
             }
             Err(e) => {
                 info!(error = %e, "Manual compaction failed");
+                self.messages.complete_compression_failed(e.to_string());
                 self.footer.set_state(AppState::Error);
-                self.footer.set_status_message(format!("Compaction failed: {}", e));
             }
         }
     }

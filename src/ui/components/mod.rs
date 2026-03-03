@@ -18,7 +18,7 @@ pub use footer::{Footer, FooterInfo, SandboxStatus};
 pub use input::InputComponent;
 pub use loading_indicator::{LoadingIndicator, StreamingState};
 pub use markdown::render_markdown;
-pub use messages::{HistoryItem, MessagesComponent};
+pub use messages::{CompressionItem, CompressionStatus, HistoryItem, MessagesComponent};
 pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sessions::{SessionBrowser, SessionMetadata};
 pub use sidebar::{FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar};
