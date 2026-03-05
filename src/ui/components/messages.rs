@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use ratatui::{
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -507,8 +507,7 @@ impl MessagesComponent {
             || self.streaming_thinking.is_some()
             || self.pending_tool_group.is_some();
 
-        if !has_history && !self.dashboard_rendered {
-            self.render_dashboard(frame, area);
+        if !has_history {
             return;
         }
 
@@ -625,7 +624,6 @@ impl MessagesComponent {
 
         let total_lines = lines.len();
         if total_lines == 0 {
-            self.render_dashboard(frame, area);
             return;
         }
 
@@ -937,185 +935,8 @@ impl MessagesComponent {
             "─".repeat(width),
             Style::default().fg(dark),
         )));
-        lines.push(Line::from(""));
 
         lines
-    }
-
-    fn render_dashboard(&self, frame: &mut Frame, area: Rect) {
-        let colors = get_colors();
-        let area = area.inner(ratatui::layout::Margin {
-            vertical: 1,
-            horizontal: 2,
-        });
-
-        // Main block with border
-        let block = ratatui::widgets::Block::default()
-            .borders(ratatui::widgets::Borders::ALL)
-            .border_style(Style::default().fg(colors.ui.dark))
-            .border_type(ratatui::widgets::BorderType::Rounded)
-            .title(Span::styled(
-                " Amadeus v0.1.0 ",
-                Style::default()
-                    .fg(colors.text.accent)
-                    .add_modifier(Modifier::BOLD),
-            ));
-
-        let inner_area = block.inner(area);
-        frame.render_widget(block, area);
-
-        if inner_area.height < 5 {
-            return;
-        }
-
-        let is_wide = inner_area.width > 70;
-
-        let layout = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(if is_wide {
-                [
-                    Constraint::Percentage(45),
-                    Constraint::Length(2),
-                    Constraint::Percentage(53),
-                ]
-            } else {
-                [
-                    Constraint::Percentage(100),
-                    Constraint::Length(0),
-                    Constraint::Length(0),
-                ]
-            })
-            .split(inner_area);
-
-        // --- Left Section: Mascot & Environment ---
-        let left_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1), // Welcome
-                Constraint::Length(7), // Mascot
-                Constraint::Length(4), // Info
-                Constraint::Min(0),
-            ])
-            .split(layout[0]);
-
-        // 1. Welcome Msg
-        let welcome = Paragraph::new(Line::from(vec![Span::styled(
-            "Welcome back!",
-            Style::default()
-                .fg(colors.text.primary)
-                .add_modifier(Modifier::BOLD),
-        )]))
-        .alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(welcome, left_chunks[0]);
-
-        // 2. Mascot
-        let mascot =
-            Paragraph::new(self.get_mascot(&colors)).alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(mascot, left_chunks[1]);
-
-        // 3. Environment Info
-        let cwd = std::env::current_dir().unwrap_or_default();
-        let cwd_str = cwd.to_string_lossy();
-        let info_lines = vec![
-            Line::from(vec![
-                Span::styled(" amadeus ", Style::default().fg(colors.text.secondary)),
-                Span::styled("◈", Style::default().fg(colors.ui.comment)),
-                Span::styled(
-                    " Premium CLI Coding Interface",
-                    Style::default().fg(colors.text.secondary),
-                ),
-            ]),
-            Line::from(vec![
-                Span::styled(" path ", Style::default().fg(colors.ui.comment)),
-                Span::styled(
-                    format!("~{}", cwd_str.split('/').last().unwrap_or("")),
-                    Style::default().fg(colors.text.link),
-                ),
-            ]),
-        ];
-        let info = Paragraph::new(info_lines).alignment(ratatui::layout::Alignment::Center);
-        frame.render_widget(info, left_chunks[2]);
-
-        // --- Separator ---
-        if is_wide {
-            let sep = Paragraph::new(vec![
-                Line::from(Span::styled(
-                    "│",
-                    Style::default().fg(colors.ui.dark)
-                ));
-                inner_area.height as usize
-            ]);
-            frame.render_widget(sep, layout[1]);
-        }
-
-        // --- Right Section: Tips & Activity ---
-        if is_wide {
-            let right_chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(1), // Header Tips
-                    Constraint::Length(2), // Tip 1
-                    Constraint::Length(1), // Separator
-                    Constraint::Length(1), // Header Recent
-                    Constraint::Min(0),    // Activity
-                ])
-                .split(layout[2]);
-
-            // Tips
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    " Tips for getting started ",
-                    Style::default()
-                        .fg(colors.text.secondary)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                right_chunks[0],
-            );
-            frame.render_widget(
-                Paragraph::new(vec![
-                    Line::from(vec![
-                        Span::raw("Try "),
-                        Span::styled("/help", Style::default().fg(colors.text.accent)),
-                        Span::raw(" to see available commands"),
-                    ]),
-                    Line::from(vec![
-                        Span::raw("Press "),
-                        Span::styled("Esc", Style::default().fg(colors.text.accent)),
-                        Span::raw(" to switch modes"),
-                    ]),
-                ]),
-                right_chunks[1],
-            );
-
-            // Sep
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    "─".repeat(layout[2].width as usize),
-                    Style::default().fg(colors.ui.dark),
-                )),
-                right_chunks[2],
-            );
-
-            // Recent
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    " Recent activity ",
-                    Style::default()
-                        .fg(colors.text.secondary)
-                        .add_modifier(Modifier::BOLD),
-                )),
-                right_chunks[3],
-            );
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    " No recent activity",
-                    Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::ITALIC),
-                )),
-                right_chunks[4],
-            );
-        }
     }
 
     pub fn len(&self) -> usize {
