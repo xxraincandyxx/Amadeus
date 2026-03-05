@@ -75,7 +75,10 @@ impl WebFetchTool {
             "http" | "https" => Ok(()),
             scheme => Err(AgentError::ToolInput {
                 tool: "web_fetch".to_string(),
-                reason: format!("Unsupported URL scheme: {}. Only http and https are allowed.", scheme),
+                reason: format!(
+                    "Unsupported URL scheme: {}. Only http and https are allowed.",
+                    scheme
+                ),
             }),
         }
     }
@@ -147,9 +150,10 @@ impl Tool for WebFetchTool {
             });
         }
 
-        let body = response.text().await.map_err(|e| {
-            AgentError::Api(format!("Failed to read response body: {}", e))
-        })?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| AgentError::Api(format!("Failed to read response body: {}", e)))?;
 
         // Truncate if needed
         let result = if body.len() > max_bytes {

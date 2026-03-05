@@ -31,7 +31,10 @@ pub struct GlobTool {
 
 impl GlobTool {
     pub fn new(workdir: std::path::PathBuf, max_results: usize) -> Self {
-        Self { workdir, max_results }
+        Self {
+            workdir,
+            max_results,
+        }
     }
 
     pub fn from_config(config: &crate::agent::config::Config) -> Self {
@@ -98,10 +101,7 @@ impl Tool for GlobTool {
         }
 
         if matches.len() == self.max_results {
-            output.push_str(&format!(
-                "\n(Limited to {} results)",
-                self.max_results
-            ));
+            output.push_str(&format!("\n(Limited to {} results)", self.max_results));
         }
 
         Ok(output)
