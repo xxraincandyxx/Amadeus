@@ -487,7 +487,8 @@ impl AnthropicClient {
                             let output_tokens = usage
                                 .get("output_tokens")
                                 .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
+                                .unwrap_or(0)
+                                as u32;
                             events.push(StreamEvent::TokenUsage {
                                 input_tokens,
                                 output_tokens,
@@ -503,7 +504,8 @@ impl AnthropicClient {
                             let output_tokens = usage
                                 .get("output_tokens")
                                 .and_then(|v| v.as_u64())
-                                .unwrap_or(0) as u32;
+                                .unwrap_or(0)
+                                as u32;
                             // Input tokens are not provided in message_delta
                             events.push(StreamEvent::TokenUsage {
                                 input_tokens: 0,

@@ -643,7 +643,8 @@ impl OpenAIClient {
                                     }
 
                                     // Tool call arguments delta
-                                    if let Some(func) = call.get("function").and_then(|v| v.as_object())
+                                    if let Some(func) =
+                                        call.get("function").and_then(|v| v.as_object())
                                     {
                                         if let Some(args) =
                                             func.get("arguments").and_then(|v| v.as_str())
