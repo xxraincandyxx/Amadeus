@@ -66,12 +66,11 @@ pub async fn list_sessions<C: LLMClient + Clone + 'static>(
                 })
                 .collect();
 
-            Ok(Json(SessionsResponse { sessions: summaries }))
+            Ok(Json(SessionsResponse {
+                sessions: summaries,
+            }))
         }
-        Err(e) => Err(Json(ErrorResponse::new(
-            "SessionListError",
-            e.to_string(),
-        ))),
+        Err(e) => Err(Json(ErrorResponse::new("SessionListError", e.to_string()))),
     }
 }
 
@@ -135,10 +134,7 @@ pub async fn get_session<C: LLMClient + Clone + 'static>(
                 },
             }))
         }
-        Err(e) => Err(Json(ErrorResponse::new(
-            "SessionLoadError",
-            e.to_string(),
-        ))),
+        Err(e) => Err(Json(ErrorResponse::new("SessionLoadError", e.to_string()))),
     }
 }
 
@@ -181,12 +177,7 @@ pub async fn restore_session<C: LLMClient + Clone + 'static>(
     // load_session is an associated function, not a method
     let session = match Agent::<C>::load_session(&path) {
         Ok(s) => s,
-        Err(e) => {
-            return Err(Json(ErrorResponse::new(
-                "SessionLoadError",
-                e.to_string(),
-            )))
-        }
+        Err(e) => return Err(Json(ErrorResponse::new("SessionLoadError", e.to_string()))),
     };
 
     let message_count = session.history.len();

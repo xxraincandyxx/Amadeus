@@ -23,12 +23,7 @@ pub async fn list_skills<C: LLMClient + Clone + 'static>(
 
     let registry = match SkillRegistry::load_from_dir(&skills_dir) {
         Ok(r) => r,
-        Err(e) => {
-            return Err(Json(ErrorResponse::new(
-                "SkillLoadError",
-                e.to_string(),
-            )))
-        }
+        Err(e) => return Err(Json(ErrorResponse::new("SkillLoadError", e.to_string()))),
     };
 
     let skills: Vec<SkillSummary> = registry

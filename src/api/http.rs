@@ -21,8 +21,8 @@
 //! │  ├── GET  /sessions       → sessions::list_sessions         │
 //! │  ├── GET  /sessions/:id   → sessions::get_session           │
 //! │  ├── POST /sessions/:id/restore → sessions::restore_session │
-//! │  ├── GET  /config         → config::get_config              │
-//! │  ├── PATCH /config        → config::update_config           │
+//! │  ├── GET  /config          → config::get_config                │
+//! │  ├── PATCH /config         → config::update_config             │
 //! │  ├── GET  /history        → history::get_history            │
 //! │  ├── GET  /skills         → skills::list_skills             │
 //! │  ├── GET  /approvals      → approvals::list_pending         │
@@ -76,8 +76,9 @@ use std::sync::Arc;
 // Internal dependencies
 use crate::agent::supervisor::Supervisor;
 use crate::api::handlers::{
-    chat, execute, get_config, get_history, get_session, handle_task, health, list_pending_approvals,
-    list_sessions, list_skills, restore_session, stream, submit_approval, update_config,
+    chat, execute, get_config, get_history, get_session, handle_task, health,
+    list_pending_approvals, list_sessions, list_skills, restore_session, stream, submit_approval,
+    update_config,
 };
 use crate::client::LLMClient;
 use crate::error::Result;

@@ -25,10 +25,7 @@ fn get_approval_channels(
 }
 
 /// Register an approval channel for a pending approval.
-pub async fn register_approval_channel(
-    approval_id: String,
-    tx: mpsc::Sender<ApprovalDecision>,
-) {
+pub async fn register_approval_channel(approval_id: String, tx: mpsc::Sender<ApprovalDecision>) {
     let mut channels = get_approval_channels().write().await;
     channels.insert(approval_id, tx);
 }
@@ -72,12 +69,10 @@ pub async fn submit_approval<C: LLMClient + Clone + 'static>(
     let channels = get_approval_channels().read().await;
     if let Some(tx) = channels.get(&approval_id) {
         match tx.send(decision).await {
-            Ok(_) => {
-                Ok(Json(ApprovalResponse {
-                    success: true,
-                    decision: request.decision,
-                }))
-            }
+            Ok(_) => Ok(Json(ApprovalResponse {
+                success: true,
+                decision: request.decision,
+            })),
             Err(_) => Err(Json(ErrorResponse::new(
                 "ChannelClosed",
                 "The approval request has expired or been cancelled",

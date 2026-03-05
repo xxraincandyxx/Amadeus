@@ -6,9 +6,7 @@ use axum::{extract::State, Json};
 use std::sync::Arc;
 
 use crate::api::http::AppState;
-use crate::api::types::{
-    ConfigResponse, ErrorResponse, UpdateConfigRequest, UpdateConfigResponse,
-};
+use crate::api::types::{ConfigResponse, ErrorResponse, UpdateConfigRequest, UpdateConfigResponse};
 use crate::client::LLMClient;
 
 /// GET /config
@@ -27,7 +25,10 @@ pub async fn get_config<C: LLMClient + Clone + 'static>(
         tool_timeout_secs: config.timeout_seconds,
         require_approval: false, // Not stored in config currently
         shell_profile: None,     // Not stored in config currently
-        session_log_dir: config.session_log_dir.as_ref().map(|p| p.display().to_string()),
+        session_log_dir: config
+            .session_log_dir
+            .as_ref()
+            .map(|p| p.display().to_string()),
     })
 }
 
@@ -57,7 +58,10 @@ pub async fn update_config<C: LLMClient + Clone + 'static>(
         tool_timeout_secs: request.tool_timeout_secs.unwrap_or(config.timeout_seconds),
         require_approval: request.require_approval.unwrap_or(false),
         shell_profile: None,
-        session_log_dir: config.session_log_dir.as_ref().map(|p| p.display().to_string()),
+        session_log_dir: config
+            .session_log_dir
+            .as_ref()
+            .map(|p| p.display().to_string()),
     };
 
     Ok(Json(UpdateConfigResponse {

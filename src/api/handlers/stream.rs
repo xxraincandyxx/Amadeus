@@ -253,7 +253,11 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .unwrap())),
 
                 // Tool progress update
-                Ok(AgentEvent::ToolProgress { id, message, percent }) => Some(Ok(Event::default()
+                Ok(AgentEvent::ToolProgress {
+                    id,
+                    message,
+                    percent,
+                }) => Some(Ok(Event::default()
                     .event("tool_progress")
                     .json_data(ToolProgressEvent {
                         id,
@@ -269,7 +273,8 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     total_tokens,
                 }) => {
                     let context_percent = if context_window_size > 0 {
-                        ((total_tokens as f32 / context_window_size as f32) * 100.0).min(100.0) as u8
+                        ((total_tokens as f32 / context_window_size as f32) * 100.0).min(100.0)
+                            as u8
                     } else {
                         0
                     };
@@ -319,7 +324,12 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .unwrap())),
 
                 // Context compaction event
-                Ok(AgentEvent::Compaction { original_count, compacted_count, tokens_saved, messages_summarized }) => Some(Ok(Event::default()
+                Ok(AgentEvent::Compaction {
+                    original_count,
+                    compacted_count,
+                    tokens_saved,
+                    messages_summarized,
+                }) => Some(Ok(Event::default()
                     .event("compaction")
                     .json_data(serde_json::json!({
                         "original_count": original_count,
