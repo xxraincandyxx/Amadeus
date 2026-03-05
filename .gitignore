@@ -6,3 +6,6 @@
 
 # Logging files
 /logs
+
+# Test binaries
+/test_ratatui
