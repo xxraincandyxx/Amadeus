@@ -7,6 +7,7 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
+use tracing::debug;
 
 use crate::ui::components::compaction_animation::CompactionAnimator;
 use crate::ui::components::markdown::render_markdown;
@@ -150,6 +151,8 @@ pub struct MessagesComponent {
     scroll_offset: usize,
     /// Whether the dashboard has been printed to static terminal history
     dashboard_rendered: bool,
+    /// Whether turn separator has been added for current streaming response
+    streaming_turn_separator_added: bool,
 }
 
 impl MessagesComponent {
@@ -167,6 +170,7 @@ impl MessagesComponent {
             last_rendered_index: 0,
             scroll_offset: 0,
             dashboard_rendered: false,
+            streaming_turn_separator_added: false,
         }
     }
 
@@ -215,10 +219,18 @@ impl MessagesComponent {
     }
 
     pub fn update_streaming_text(&mut self, text: &str) {
+        debug!(text_len = text.len(), "Updating streaming text");
         self.streaming_text = Some(text.to_string());
     }
 
+    pub fn flush_streaming_chunk(&mut self) {
+        // No-op - chunking removed, streaming text is set directly
+    }
+
     pub fn finalize_assistant(&mut self, text: String) {
+        debug!(text_len = text.len(), "Finalizing assistant response");
+        self.flush_streaming_chunk();
+        self.streaming_turn_separator_added = false;
         self.finalize_pending_tool_group();
         self.streaming_text = None;
         // Finalize any pending thinking
@@ -511,7 +523,8 @@ impl MessagesComponent {
             return;
         }
 
-        for item in self.items.iter() {
+        // Only render items that haven't been inserted into terminal scrollback
+        for item in self.items[self.last_rendered_index..].iter() {
             let item_turn = match item {
                 HistoryItem::User { turn, .. } => Some(*turn),
                 HistoryItem::Assistant { turn, .. } => Some(*turn),
@@ -595,12 +608,15 @@ impl MessagesComponent {
         }
 
         if let Some(ref streaming) = self.streaming_text {
-            if last_turn.map_or(true, |lt| lt != self.current_turn) {
+            if !self.streaming_turn_separator_added
+                && last_turn.map_or(true, |lt| lt != self.current_turn)
+            {
                 if last_turn.is_some() {
                     lines.push(Line::from(""));
                 }
                 lines.push(Self::render_turn_separator(self.current_turn, &colors));
                 lines.push(Line::from(""));
+                self.streaming_turn_separator_added = true;
             }
 
             let content_lines = render_markdown(streaming, content_width);
