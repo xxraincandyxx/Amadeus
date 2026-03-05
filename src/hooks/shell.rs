@@ -51,7 +51,11 @@ pub struct ShellHook {
 
 impl ShellHook {
     /// Create a new shell hook.
-    pub fn new(name: impl Into<String>, event: super::HookEvent, command: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        event: super::HookEvent,
+        command: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             event,
@@ -139,7 +143,13 @@ impl ShellHook {
     }
 
     /// Execute the shell command.
-    fn execute(&self, tool_name: &str, tool_input: &Value, tool_output: Option<&str>, duration_ms: Option<u64>) -> std::io::Result<(bool, String)> {
+    fn execute(
+        &self,
+        tool_name: &str,
+        tool_input: &Value,
+        tool_output: Option<&str>,
+        duration_ms: Option<u64>,
+    ) -> std::io::Result<(bool, String)> {
         let tool_input_str = serde_json::to_string(tool_input).unwrap_or_default();
 
         let output = Command::new("sh")
@@ -182,9 +192,9 @@ impl Hook for ShellHook {
             return Ok(HookAction::Continue);
         }
 
-        let (success, output) = self
-            .execute(tool_name, input, None, None)
-            .map_err(|e| crate::error::AgentError::Command(format!("Hook execution failed: {}", e)))?;
+        let (success, output) = self.execute(tool_name, input, None, None).map_err(|e| {
+            crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
+        })?;
 
         if !success && self.block_on_error {
             Ok(HookAction::Block(format!(
@@ -212,7 +222,9 @@ impl Hook for ShellHook {
         let input = serde_json::json!({});
         let (success, cmd_output) = self
             .execute(tool_name, &input, Some(output), Some(duration_ms))
-            .map_err(|e| crate::error::AgentError::Command(format!("Hook execution failed: {}", e)))?;
+            .map_err(|e| {
+                crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
+            })?;
 
         if !success {
             tracing::warn!(
@@ -267,7 +279,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_hook_execute() {
-        let hook = ShellHook::new("test", super::super::HookEvent::ToolStart, "echo $TOOL_NAME");
+        let hook = ShellHook::new(
+            "test",
+            super::super::HookEvent::ToolStart,
+            "echo $TOOL_NAME",
+        );
 
         let action = hook
             .on_tool_start("bash", &serde_json::json!({"command": "ls"}))

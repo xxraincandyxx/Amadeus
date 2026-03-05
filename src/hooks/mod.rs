@@ -83,12 +83,7 @@ pub trait Hook: Send + Sync {
     /// Called after a tool completes.
     ///
     /// Can be used for logging, notifications, or side effects.
-    async fn on_tool_complete(
-        &self,
-        name: &str,
-        output: &str,
-        duration_ms: u64,
-    ) -> Result<()> {
+    async fn on_tool_complete(&self, name: &str, output: &str, duration_ms: u64) -> Result<()> {
         let _ = (name, output, duration_ms);
         Ok(())
     }
