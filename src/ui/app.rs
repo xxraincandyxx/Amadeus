@@ -140,6 +140,20 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             let width = terminal.size()?.width;
 
+            // 0. Print dashboard to history if needed
+            if self.messages.should_render_dashboard_to_history() {
+                let dashboard_lines = self.messages.render_dashboard_lines(width);
+                if !dashboard_lines.is_empty() {
+                    let height = dashboard_lines.len() as u16;
+                    terminal.insert_before(height, |buf| {
+                        let area = Rect::new(0, 0, buf.area.width, height);
+                        let p = ratatui::widgets::Paragraph::new(dashboard_lines.clone());
+                        ratatui::widgets::Widget::render(p, area, buf);
+                    })?;
+                }
+                self.messages.mark_dashboard_rendered();
+            }
+
             // 1. Pull finalized items from MessagesComponent
             let unrendered_items = self.messages.take_unrendered_items();
             if !unrendered_items.is_empty() {

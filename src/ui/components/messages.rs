@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use ratatui::{
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -92,13 +92,31 @@ impl CompressionItem {
 
 #[derive(Debug, Clone)]
 pub enum HistoryItem {
-    User { content: String, timestamp: Instant, turn: usize },
-    Assistant { content: String, timestamp: Instant, turn: usize },
+    User {
+        content: String,
+        timestamp: Instant,
+        turn: usize,
+    },
+    Assistant {
+        content: String,
+        timestamp: Instant,
+        turn: usize,
+    },
     /// Extended thinking/reasoning content from the model
-    Thinking { content: String, timestamp: Instant, turn: usize, is_collapsed: bool },
-    ToolGroup { group: ToolGroup, turn: usize },
+    Thinking {
+        content: String,
+        timestamp: Instant,
+        turn: usize,
+        is_collapsed: bool,
+    },
+    ToolGroup {
+        group: ToolGroup,
+        turn: usize,
+    },
     /// Compression/compaction operation (gemini-cli style)
-    Compression { compression: CompressionItem },
+    Compression {
+        compression: CompressionItem,
+    },
 }
 
 impl HistoryItem {
@@ -130,6 +148,8 @@ pub struct MessagesComponent {
     last_rendered_index: usize,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
+    /// Whether the dashboard has been printed to static terminal history
+    dashboard_rendered: bool,
 }
 
 impl MessagesComponent {
@@ -146,6 +166,7 @@ impl MessagesComponent {
             tool_expansion_enabled: false,
             last_rendered_index: 0,
             scroll_offset: 0,
+            dashboard_rendered: false,
         }
     }
 
@@ -159,6 +180,16 @@ impl MessagesComponent {
         let items: Vec<HistoryItem> = self.items[self.last_rendered_index..].to_vec();
         self.last_rendered_index = self.items.len();
         items
+    }
+
+    /// Checks if the dashboard should be printed to the terminal scrollback
+    pub fn should_render_dashboard_to_history(&self) -> bool {
+        !self.dashboard_rendered && self.items.is_empty() && self.streaming_text.is_none()
+    }
+
+    /// Marks the dashboard as printed to the terminal scrollback
+    pub fn mark_dashboard_rendered(&mut self) {
+        self.dashboard_rendered = true;
     }
 
     pub fn add_user(&mut self, content: String) {
@@ -234,14 +265,16 @@ impl MessagesComponent {
     /// Shows completion result in the animation box before transitioning to history
     pub fn complete_compression(&mut self, original_tokens: usize, new_tokens: usize) {
         // Set animator to completed state (shows result in animation box)
-        self.compaction_animator.complete(original_tokens, new_tokens);
+        self.compaction_animator
+            .complete(original_tokens, new_tokens);
         // Keep pending_compression for rendering, will be cleared after display duration
     }
 
     /// Complete compression with "not beneficial" result
     pub fn complete_compression_not_beneficial(&mut self, original_tokens: usize) {
         // Treat as a "no change" completion - show result briefly
-        self.compaction_animator.complete(original_tokens, original_tokens);
+        self.compaction_animator
+            .complete(original_tokens, original_tokens);
     }
 
     /// Complete compression with error
@@ -469,6 +502,16 @@ impl MessagesComponent {
         let content_width = area.width.saturating_sub(4) as usize;
         let mut last_turn: Option<usize> = None;
 
+        let has_history = !self.items.is_empty()
+            || self.streaming_text.is_some()
+            || self.streaming_thinking.is_some()
+            || self.pending_tool_group.is_some();
+
+        if !has_history && !self.dashboard_rendered {
+            self.render_dashboard(frame, area);
+            return;
+        }
+
         for item in self.items.iter() {
             let item_turn = match item {
                 HistoryItem::User { turn, .. } => Some(*turn),
@@ -499,10 +542,13 @@ impl MessagesComponent {
                 CompressionStatus::Failed => colors.status.error,
                 CompressionStatus::Noop | CompressionStatus::NotBeneficial => colors.ui.comment,
             };
-            
+
             lines.push(Line::from(vec![
                 Span::styled("✦ ", Style::default().fg(color)),
-                Span::styled(Self::get_compression_text(compression), Style::default().fg(color)),
+                Span::styled(
+                    Self::get_compression_text(compression),
+                    Style::default().fg(color),
+                ),
             ]));
             lines.push(Line::from(""));
         }
@@ -520,18 +566,28 @@ impl MessagesComponent {
         if let Some(ref thinking) = self.streaming_thinking {
             lines.push(Line::from(vec![
                 Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
-                Span::styled("thinking", Style::default().fg(colors.text.secondary).add_modifier(Modifier::ITALIC)),
+                Span::styled(
+                    "thinking",
+                    Style::default()
+                        .fg(colors.text.secondary)
+                        .add_modifier(Modifier::ITALIC),
+                ),
                 Span::styled(" ─", Style::default().fg(colors.text.secondary)),
                 Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
             ]));
-            
+
             for thinking_line in thinking.lines() {
                 lines.push(Line::from(vec![
                     Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(thinking_line.to_string(), Style::default().fg(colors.text.secondary).add_modifier(Modifier::ITALIC)),
+                    Span::styled(
+                        thinking_line.to_string(),
+                        Style::default()
+                            .fg(colors.text.secondary)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
                 ]));
             }
-            
+
             lines.push(Line::from(vec![
                 Span::styled("└", Style::default().fg(colors.text.secondary)),
                 Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
@@ -554,7 +610,9 @@ impl MessagesComponent {
                 if i == 0 {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", self.current_turn),
-                        Style::default().fg(colors.text.accent).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(colors.text.accent)
+                            .add_modifier(Modifier::BOLD),
                     ));
                 } else {
                     spans.push(Span::raw("    "));
@@ -567,17 +625,7 @@ impl MessagesComponent {
 
         let total_lines = lines.len();
         if total_lines == 0 {
-            let empty_lines = vec![
-                Line::from(""),
-                Line::from(vec![
-                    Span::raw("   "),
-                    Span::styled(
-                        "Waiting for your instructions...",
-                        Style::default().fg(colors.ui.comment).add_modifier(Modifier::ITALIC),
-                    ),
-                ]),
-            ];
-            frame.render_widget(Paragraph::new(empty_lines).style(Style::default().bg(colors.background.primary)), area);
+            self.render_dashboard(frame, area);
             return;
         }
 
@@ -590,7 +638,10 @@ impl MessagesComponent {
         };
 
         let visible_lines: Vec<Line> = lines.into_iter().skip(start_idx).collect();
-        frame.render_widget(Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)), area);
+        frame.render_widget(
+            Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
+            area,
+        );
     }
 
     /// Renders a single history item statically.
@@ -607,7 +658,9 @@ impl MessagesComponent {
                     if i == 0 {
                         spans.push(Span::styled(
                             format!("> [{}] ", turn),
-                            Style::default().fg(colors.text.link).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(colors.text.link)
+                                .add_modifier(Modifier::BOLD),
                         ));
                     } else {
                         spans.push(Span::raw("   "));
@@ -625,7 +678,9 @@ impl MessagesComponent {
                     if i == 0 {
                         spans.push(Span::styled(
                             format!("✦ [{}] ", turn),
-                            Style::default().fg(colors.text.accent).add_modifier(Modifier::BOLD),
+                            Style::default()
+                                .fg(colors.text.accent)
+                                .add_modifier(Modifier::BOLD),
                         ));
                     } else {
                         spans.push(Span::raw("   "));
@@ -662,14 +717,23 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
-            HistoryItem::Thinking { content, is_collapsed, .. } => {
+            HistoryItem::Thinking {
+                content,
+                is_collapsed,
+                ..
+            } => {
                 let collapse_icon = if *is_collapsed { "+" } else { "-" };
                 lines.push(Line::from(vec![
                     Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
                     Span::styled("[", Style::default().fg(colors.ui.dark)),
                     Span::styled(collapse_icon, Style::default().fg(colors.text.accent)),
                     Span::styled("] ", Style::default().fg(colors.ui.dark)),
-                    Span::styled("thinking", Style::default().fg(colors.text.secondary).add_modifier(Modifier::ITALIC)),
+                    Span::styled(
+                        "thinking",
+                        Style::default()
+                            .fg(colors.text.secondary)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
                     Span::styled(" ─", Style::default().fg(colors.text.secondary)),
                     Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
                 ]));
@@ -678,7 +742,12 @@ impl MessagesComponent {
                     for thinking_line in content.lines() {
                         lines.push(Line::from(vec![
                             Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                            Span::styled(thinking_line.to_string(), Style::default().fg(colors.text.secondary).add_modifier(Modifier::ITALIC)),
+                            Span::styled(
+                                thinking_line.to_string(),
+                                Style::default()
+                                    .fg(colors.text.secondary)
+                                    .add_modifier(Modifier::ITALIC),
+                            ),
                         ]));
                     }
                 }
@@ -727,9 +796,325 @@ impl MessagesComponent {
             CompressionStatus::Noop => {
                 "Nothing to compact - context is already minimal.".to_string()
             }
-            CompressionStatus::Pending => {
-                "Compacting chat history...".to_string()
-            }
+            CompressionStatus::Pending => "Compacting chat history...".to_string(),
+        }
+    }
+    fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
+        let accent = colors.text.accent;
+        let dark = colors.ui.dark;
+        vec![
+            Line::from(vec![Span::styled(
+                "   ■   ■   ",
+                Style::default().fg(accent),
+            )]),
+            Line::from(vec![Span::styled(
+                "  ■■■■■■■  ",
+                Style::default().fg(accent),
+            )]),
+            Line::from(vec![
+                Span::styled("  ■ ", Style::default().fg(accent)),
+                Span::styled("●", Style::default().fg(dark)),
+                Span::styled("   ", Style::default().fg(accent)),
+                Span::styled("●", Style::default().fg(dark)),
+                Span::styled(" ■  ", Style::default().fg(accent)),
+            ]),
+            Line::from(vec![Span::styled(
+                "  ■■■■■■■  ",
+                Style::default().fg(accent),
+            )]),
+            Line::from(vec![Span::styled(
+                "    ■ ■    ",
+                Style::default().fg(accent),
+            )]),
+            Line::from(vec![Span::styled(
+                "    ■ ■    ",
+                Style::default().fg(accent),
+            )]),
+        ]
+    }
+
+    pub fn render_dashboard_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let mut lines = Vec::new();
+        let width = width as usize;
+
+        if width < 20 {
+            return lines;
+        }
+
+        let accent = colors.text.accent;
+        let dark = colors.ui.dark;
+        let primary = colors.text.primary;
+        let secondary = colors.text.secondary;
+        let comment = colors.ui.comment;
+        let link = colors.text.link;
+
+        // Header Title
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(
+                " Amadeus v0.1.0 ",
+                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "─".repeat(width.saturating_sub(18)),
+                Style::default().fg(dark),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        // Welcome
+        lines.push(
+            Line::from(vec![Span::styled(
+                "Welcome back!",
+                Style::default().fg(primary).add_modifier(Modifier::BOLD),
+            )])
+            .alignment(ratatui::layout::Alignment::Center),
+        );
+        lines.push(Line::from(""));
+
+        // Mascot
+        for line in self.get_mascot(&colors) {
+            lines.push(line.alignment(ratatui::layout::Alignment::Center));
+        }
+        lines.push(Line::from(""));
+
+        // Info
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let cwd_str = cwd.to_string_lossy();
+        let project_name = cwd_str.split('/').last().unwrap_or("");
+
+        lines.push(
+            Line::from(vec![
+                Span::styled(" amadeus ", Style::default().fg(secondary)),
+                Span::styled("◈", Style::default().fg(comment)),
+                Span::styled(
+                    " Premium CLI Coding Interface",
+                    Style::default().fg(secondary),
+                ),
+            ])
+            .alignment(ratatui::layout::Alignment::Center),
+        );
+
+        lines.push(
+            Line::from(vec![
+                Span::styled(" path ", Style::default().fg(comment)),
+                Span::styled(format!("~{}", project_name), Style::default().fg(link)),
+            ])
+            .alignment(ratatui::layout::Alignment::Center),
+        );
+        lines.push(Line::from(""));
+
+        // Tips
+        lines.push(Line::from(vec![
+            Span::styled(
+                " Tips for getting started ",
+                Style::default().fg(secondary).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "─".repeat(width.saturating_sub(28)),
+                Style::default().fg(dark),
+            ),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("  • Try ", Style::default().fg(secondary)),
+            Span::styled("/help", Style::default().fg(accent)),
+            Span::styled(" to see available commands", Style::default().fg(secondary)),
+        ]));
+
+        lines.push(Line::from(vec![
+            Span::styled("  • Press ", Style::default().fg(secondary)),
+            Span::styled("Esc", Style::default().fg(accent)),
+            Span::styled(
+                " to switch between Input and Normal modes",
+                Style::default().fg(secondary),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+        lines.push(Line::from(Span::styled(
+            "─".repeat(width),
+            Style::default().fg(dark),
+        )));
+        lines.push(Line::from(""));
+
+        lines
+    }
+
+    fn render_dashboard(&self, frame: &mut Frame, area: Rect) {
+        let colors = get_colors();
+        let area = area.inner(ratatui::layout::Margin {
+            vertical: 1,
+            horizontal: 2,
+        });
+
+        // Main block with border
+        let block = ratatui::widgets::Block::default()
+            .borders(ratatui::widgets::Borders::ALL)
+            .border_style(Style::default().fg(colors.ui.dark))
+            .border_type(ratatui::widgets::BorderType::Rounded)
+            .title(Span::styled(
+                " Amadeus v0.1.0 ",
+                Style::default()
+                    .fg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            ));
+
+        let inner_area = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner_area.height < 5 {
+            return;
+        }
+
+        let is_wide = inner_area.width > 70;
+
+        let layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(if is_wide {
+                [
+                    Constraint::Percentage(45),
+                    Constraint::Length(2),
+                    Constraint::Percentage(53),
+                ]
+            } else {
+                [
+                    Constraint::Percentage(100),
+                    Constraint::Length(0),
+                    Constraint::Length(0),
+                ]
+            })
+            .split(inner_area);
+
+        // --- Left Section: Mascot & Environment ---
+        let left_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(1), // Welcome
+                Constraint::Length(7), // Mascot
+                Constraint::Length(4), // Info
+                Constraint::Min(0),
+            ])
+            .split(layout[0]);
+
+        // 1. Welcome Msg
+        let welcome = Paragraph::new(Line::from(vec![Span::styled(
+            "Welcome back!",
+            Style::default()
+                .fg(colors.text.primary)
+                .add_modifier(Modifier::BOLD),
+        )]))
+        .alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(welcome, left_chunks[0]);
+
+        // 2. Mascot
+        let mascot =
+            Paragraph::new(self.get_mascot(&colors)).alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(mascot, left_chunks[1]);
+
+        // 3. Environment Info
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let cwd_str = cwd.to_string_lossy();
+        let info_lines = vec![
+            Line::from(vec![
+                Span::styled(" amadeus ", Style::default().fg(colors.text.secondary)),
+                Span::styled("◈", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    " Premium CLI Coding Interface",
+                    Style::default().fg(colors.text.secondary),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(" path ", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    format!("~{}", cwd_str.split('/').last().unwrap_or("")),
+                    Style::default().fg(colors.text.link),
+                ),
+            ]),
+        ];
+        let info = Paragraph::new(info_lines).alignment(ratatui::layout::Alignment::Center);
+        frame.render_widget(info, left_chunks[2]);
+
+        // --- Separator ---
+        if is_wide {
+            let sep = Paragraph::new(vec![
+                Line::from(Span::styled(
+                    "│",
+                    Style::default().fg(colors.ui.dark)
+                ));
+                inner_area.height as usize
+            ]);
+            frame.render_widget(sep, layout[1]);
+        }
+
+        // --- Right Section: Tips & Activity ---
+        if is_wide {
+            let right_chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1), // Header Tips
+                    Constraint::Length(2), // Tip 1
+                    Constraint::Length(1), // Separator
+                    Constraint::Length(1), // Header Recent
+                    Constraint::Min(0),    // Activity
+                ])
+                .split(layout[2]);
+
+            // Tips
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    " Tips for getting started ",
+                    Style::default()
+                        .fg(colors.text.secondary)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                right_chunks[0],
+            );
+            frame.render_widget(
+                Paragraph::new(vec![
+                    Line::from(vec![
+                        Span::raw("Try "),
+                        Span::styled("/help", Style::default().fg(colors.text.accent)),
+                        Span::raw(" to see available commands"),
+                    ]),
+                    Line::from(vec![
+                        Span::raw("Press "),
+                        Span::styled("Esc", Style::default().fg(colors.text.accent)),
+                        Span::raw(" to switch modes"),
+                    ]),
+                ]),
+                right_chunks[1],
+            );
+
+            // Sep
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    "─".repeat(layout[2].width as usize),
+                    Style::default().fg(colors.ui.dark),
+                )),
+                right_chunks[2],
+            );
+
+            // Recent
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    " Recent activity ",
+                    Style::default()
+                        .fg(colors.text.secondary)
+                        .add_modifier(Modifier::BOLD),
+                )),
+                right_chunks[3],
+            );
+            frame.render_widget(
+                Paragraph::new(Span::styled(
+                    " No recent activity",
+                    Style::default()
+                        .fg(colors.ui.comment)
+                        .add_modifier(Modifier::ITALIC),
+                )),
+                right_chunks[4],
+            );
         }
     }
 
@@ -929,7 +1314,6 @@ mod tests {
         messages.complete_tool("tool_1", "output".to_string(), false, None);
     }
 
-    
     #[test]
     fn test_collapse_expand_tools() {
         let mut messages = MessagesComponent::new();
