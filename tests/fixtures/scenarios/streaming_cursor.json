@@ -1,0 +1,48 @@
+{
+  "name": "streaming_cursor",
+  "description": "Test streaming buffer and cursor positioning",
+  "steps": [
+    {
+      "delay_ms": 100,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "This is a longer streaming response to test buffer accumulation and cursor positioning. "
+        },
+        {
+          "type": "stop_reason",
+          "reason": "continue"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": 150,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "We continue streaming more content to verify that the buffer properly accumulates text across multiple flushes. "
+        },
+        {
+          "type": "stop_reason",
+          "reason": "continue"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": 200,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "Finally, this is the last chunk of streaming text. The entire response should appear as one continuous block with correct cursor positioning throughout."
+        },
+        {
+          "type": "stop_reason",
+          "reason": "end_turn"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

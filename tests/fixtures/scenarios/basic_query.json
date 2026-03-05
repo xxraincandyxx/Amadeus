@@ -1,0 +1,20 @@
+{
+  "name": "basic_query",
+  "description": "Simple question and answer scenario",
+  "steps": [
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "Rust is a systems programming language focused on safety, speed, and concurrency."
+        },
+        {
+          "type": "stop_reason",
+          "reason": "end_turn"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

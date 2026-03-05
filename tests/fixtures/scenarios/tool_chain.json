@@ -1,0 +1,101 @@
+{
+  "name": "tool_chain",
+  "description": "Agent reads file, edits it, and runs build",
+  "steps": [
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "I'll read the file first."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "tool_1",
+          "name": "read_file"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"path\":\"main.rs\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "tool_1"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": 50,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "Now I'll fix the error."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "tool_2",
+          "name": "edit_file"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"path\":\"main.rs\",\"old_text\":\"panic!()\",\"new_text\":\"println!(\\\"Hello\\\")\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "tool_2"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": 100,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "Running build to verify..."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "tool_3",
+          "name": "bash"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"command\":\"cargo build\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "tool_3"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "Build succeeded! The fix is complete."
+        },
+        {
+          "type": "stop_reason",
+          "reason": "end_turn"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "name": "long_conversation",
+  "description": "Multi-turn conversation to trigger context compaction",
+  "steps": [
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 1: Let me explain the first concept. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 2: Now building on that, here's the second concept. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 3: The third concept relates to the previous two. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 4: Expanding further with more details. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 5: We're halfway through our explanation. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 6: Continuing the detailed explanation. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 7: Approaching the final concepts. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 8: Almost done with the complete overview. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 9: Final points to consider. "},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {"type": "text_delta", "text": "Turn 10: That concludes the comprehensive explanation!"},
+        {"type": "stop_reason", "reason": "end_turn"}
+      ],
+      "error": null
+    }
+  ]
+}
