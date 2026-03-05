@@ -11,7 +11,8 @@ fn main() -> Result<()> {
     let mut stdout = std::io::stdout();
     stdout.execute(Clear(ClearType::All))?;
     let (_, rows) = terminal::size()?;
-    stdout.execute(cursor::MoveTo(0, rows.saturating_sub(1)))?;
+    let rows_u16: u16 = rows;
+    stdout.execute(cursor::MoveTo(0, rows_u16.saturating_sub(1)))?;
 
     let backend = CrosstermBackend::new(stdout);
 

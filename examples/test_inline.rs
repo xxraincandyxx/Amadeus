@@ -14,7 +14,7 @@ fn main() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
 
     // We compute the fixed rect at the bottom
-    let height = 10;
+    let height: u16 = 10;
     let mut term = Terminal::with_options(
         backend,
         TerminalOptions {
@@ -22,7 +22,7 @@ fn main() -> Result<()> {
         },
     )?;
 
-    term.draw(|f| {
+    term.draw(|f: &mut ratatui::Frame| {
         let size = f.area();
         f.render_widget(
             ratatui::widgets::Block::default()
