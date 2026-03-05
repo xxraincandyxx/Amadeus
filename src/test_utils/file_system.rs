@@ -12,10 +12,7 @@ use tokio::fs;
 #[derive(Debug, Clone)]
 pub enum FileSystemStructure {
     /// A file with content
-    File {
-        name: String,
-        content: String,
-    },
+    File { name: String, content: String },
     /// A directory with children
     Dir {
         name: String,
@@ -68,7 +65,7 @@ impl FileSystemStructure {
         match self {
             Self::File { name, .. } => name,
             Self::Dir { name, .. } => name,
-            }
+        }
     }
 
     /// Count total files in this structure.
@@ -83,9 +80,7 @@ impl FileSystemStructure {
     pub fn dir_count(&self) -> usize {
         match self {
             Self::File { .. } => 0,
-            Self::Dir { children, .. } => {
-                1 + children.iter().map(|c| c.dir_count()).sum::<usize>()
-            }
+            Self::Dir { children, .. } => 1 + children.iter().map(|c| c.dir_count()).sum::<usize>(),
         }
     }
 }
@@ -113,9 +108,7 @@ impl TmpDirBuilder {
 
     /// Build the temporary directory.
     pub async fn build(self) -> std::io::Result<TmpDirWithStructure> {
-        let temp_dir = tempfile::Builder::new()
-            .prefix(&self.prefix)
-            .tempdir()?;
+        let temp_dir = tempfile::Builder::new().prefix(&self.prefix).tempdir()?;
 
         if let Some(structure) = &self.structure {
             structure.create_at(temp_dir.path()).await?;
@@ -192,7 +185,9 @@ impl Drop for TmpDirWithStructure {
 }
 
 /// Create a simple temporary directory with files.
-pub async fn create_tmp_dir(files: &HashMap<String, String>) -> std::io::Result<TmpDirWithStructure> {
+pub async fn create_tmp_dir(
+    files: &HashMap<String, String>,
+) -> std::io::Result<TmpDirWithStructure> {
     let mut builder = TmpDirBuilder::new("test");
 
     // Convert flat file map to directory structure
@@ -231,28 +226,40 @@ pub async fn assert_file_contains(path: &Path, text: &str) -> std::io::Result<()
     assert!(
         content.contains(text),
         "File {:?} does not contain {:?}\nActual content:\n{}",
-        path, text, content
+        path,
+        text,
+        content
     );
     Ok(())
 }
 
 /// Create a sample project structure for testing.
 pub fn sample_rust_project() -> FileSystemStructure {
-    FileSystemStructure::dir("project", vec![
-        FileSystemStructure::file("Cargo.toml", r#"
+    FileSystemStructure::dir(
+        "project",
+        vec![
+            FileSystemStructure::file(
+                "Cargo.toml",
+                r#"
 [package]
 name = "sample"
 version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-"#),
-        FileSystemStructure::dir("src", vec![
-            FileSystemStructure::file("main.rs", r#"
+"#,
+            ),
+            FileSystemStructure::dir(
+                "src",
+                vec![FileSystemStructure::file(
+                    "main.rs",
+                    r#"
 fn main() {
     println!("Hello, world!");
 }
-"#),
-        ]),
-    ])
+"#,
+                )],
+            ),
+        ],
+    )
 }

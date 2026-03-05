@@ -51,7 +51,9 @@ pub async fn assert_file_contains(path: &std::path::Path, expected: &str) {
     assert!(
         content.contains(expected),
         "File {:?} does not contain expected content.\nExpected: {}\nActual:\n{}",
-        path, expected, content
+        path,
+        expected,
+        content
     );
 }
 
@@ -62,7 +64,8 @@ pub fn assert_json_contains_keys(value: &serde_json::Value, keys: &[&str]) {
             assert!(
                 map.contains_key(*key),
                 "JSON object does not contain key '{}'\nActual: {}",
-                key, value
+                key,
+                value
             );
         }
     } else {
@@ -85,6 +88,7 @@ pub fn assert_matches_regex(text: &str, pattern: &str) {
     assert!(
         re.is_match(text),
         "Text does not match pattern '{}'\nActual: {}",
-        pattern, text
+        pattern,
+        text
     );
 }
