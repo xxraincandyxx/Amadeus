@@ -226,16 +226,18 @@ Located in `tests/` directory:
 - `p2p_test.rs` - Basic delegation verification
 - `simulation_p2p.rs` - High-concurrency stress tests
 - `e2e_product_flow.rs` - Narrative-driven product development simulation
+- `agent_integration_test.rs` - Full agent lifecycle tests
 - `compaction_test.rs` - Context compaction behavior
 - `agent_test.rs` - Agent creation and configuration
 - `bash_test.rs` - Bash tool behavior
 - `config_test.rs` - Configuration loading
 - `messages_test.rs` - Message serialization/deserialization
+- `mock_functional_test.rs` - Mock LLM functional tests
 
 ### Mock Utilities
 - `mockito` - HTTP mocking for LLM client tests
 - `wiremock` - Alternative HTTP mocking
-- `mock_llm.rs` - Mock LLM client for integration tests
+- `tests/mock_llm.rs` - Mock LLM client for integration tests
 
 ## Code Style
 
