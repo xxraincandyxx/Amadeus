@@ -2,11 +2,11 @@
 //!
 //! Coordination logic for multiple Amadeus instances in the same workspace.
 
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
-use tracing::warn;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tracing::warn;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeshInfo {
@@ -37,7 +37,10 @@ impl MeshManager {
 
         // Check if process is still alive (simple check for same OS)
         if !self.is_pid_alive(info.supervisor_pid) {
-            warn!("Stale supervisor lock found (PID {}), cleaning up", info.supervisor_pid);
+            warn!(
+                "Stale supervisor lock found (PID {}), cleaning up",
+                info.supervisor_pid
+            );
             let _ = fs::remove_file(&self.lock_path);
             return None;
         }

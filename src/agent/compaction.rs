@@ -147,7 +147,8 @@ impl ContextCompactor {
         }
 
         let estimated_tokens = self.estimate_tokens(history);
-        let threshold = (context_window_size as f64 * self.config.threshold_percent as f64 / 100.0) as u32;
+        let threshold =
+            (context_window_size as f64 * self.config.threshold_percent as f64 / 100.0) as u32;
 
         estimated_tokens > threshold as usize
     }
@@ -158,19 +159,28 @@ impl ContextCompactor {
     /// This is a rough approximation that works reasonably well for English text.
     pub fn estimate_tokens(&self, history: &[Message]) -> usize {
         let total_chars: usize = history.iter().map(|m| self.message_chars(m)).sum();
+        let tokens = (total_chars + 3) / 4;
+        debug!(
+            message_count = history.len(),
+            total_chars = total_chars,
+            estimated_tokens = tokens,
+            "Token estimation"
+        );
         // Rough estimate: ~4 chars per token (works for English, conservative for code)
-        (total_chars + 3) / 4
+        tokens
     }
 
     /// Count characters in a message (including all content blocks).
     fn message_chars(&self, message: &Message) -> usize {
-        message.content.iter().map(|block| match block {
-            ContentBlock::Text { text } => text.len(),
-            ContentBlock::ToolUse { name, input, .. } => {
-                name.len() + input.to_string().len()
-            }
-            ContentBlock::ToolResult { content, .. } => content.len(),
-        }).sum()
+        message
+            .content
+            .iter()
+            .map(|block| match block {
+                ContentBlock::Text { text } => text.len(),
+                ContentBlock::ToolUse { name, input, .. } => name.len() + input.to_string().len(),
+                ContentBlock::ToolResult { content, .. } => content.len(),
+            })
+            .sum()
     }
 
     /// Calculate context usage percentage.
@@ -178,6 +188,125 @@ impl ContextCompactor {
         let tokens = self.estimate_tokens(history);
         let percent = (tokens as f64 / context_window_size as f64 * 100.0) as u8;
         percent.min(100)
+    }
+
+    /// Validate that an LLM-generated summary is reasonable.
+    ///
+    /// Checks:
+    /// 1. Minimum length (at least 50 characters)
+    /// 2. Contains some technical terms from the original messages
+    /// 3. Doesn't contain obvious hallucination patterns
+    fn is_valid_summary(&self, summary: &str, original_messages: &[Message]) -> bool {
+        // Check minimum length
+        if summary.len() < 50 {
+            debug!("Summary too short: {} chars", summary.len());
+            return false;
+        }
+
+        // Extract key terms from original messages (files, tools, etc.)
+        let original_terms = self.extract_technical_terms(original_messages);
+
+        // Check if summary contains at least some of these terms
+        let summary_lower = summary.to_lowercase();
+        let matching_terms: Vec<_> = original_terms
+            .iter()
+            .filter(|term| summary_lower.contains(&term.to_lowercase()))
+            .collect();
+
+        // Require at least 1 matching technical term
+        if matching_terms.is_empty() {
+            debug!("Summary contains no technical terms from original messages");
+            return false;
+        }
+
+        // Check for obvious hallucination patterns
+        let hallucination_indicators = [
+            "once upon a time",
+            "in a galaxy far far away",
+            "chapter 1",
+            "the end",
+            "to be continued",
+            "part 1",
+        ];
+
+        for indicator in &hallucination_indicators {
+            if summary_lower.contains(indicator) {
+                debug!("Summary contains hallucination indicator: {}", indicator);
+                return false;
+            }
+        }
+
+        true
+    }
+
+    /// Extract technical terms from messages for validation.
+    fn extract_technical_terms(&self, messages: &[Message]) -> Vec<String> {
+        let mut terms = std::collections::HashSet::new();
+
+        for message in messages {
+            for block in &message.content {
+                match block {
+                    ContentBlock::Text { text } => {
+                        // Extract file extensions and paths
+                        for word in text.split_whitespace() {
+                            let word_lower = word.to_lowercase();
+                            // Check for file extensions
+                            if word_lower.ends_with(".rs")
+                                || word_lower.ends_with(".ts")
+                                || word_lower.ends_with(".js")
+                                || word_lower.ends_with(".py")
+                                || word_lower.ends_with(".json")
+                                || word_lower.ends_with(".toml")
+                                || word_lower.ends_with(".md")
+                            {
+                                let cleaned = word.trim_matches(|c: char| {
+                                    c == '`'
+                                        || c == '"'
+                                        || c == '\''
+                                        || c == ','
+                                        || c == '.'
+                                        || c == '('
+                                        || c == ')'
+                                        || c == '\\'
+                                });
+                                if cleaned.len() > 3 {
+                                    terms.insert(cleaned.to_string());
+                                }
+                            }
+                            // Check for paths
+                            if word.contains('/') && word.len() > 5 {
+                                let cleaned = word.trim_matches(|c: char| {
+                                    c == '`'
+                                        || c == '"'
+                                        || c == '\''
+                                        || c == ','
+                                        || c == '.'
+                                        || c == '('
+                                        || c == ')'
+                                        || c == '\\'
+                                });
+                                if cleaned.len() > 5 {
+                                    terms.insert(cleaned.to_string());
+                                }
+                            }
+                        }
+                    }
+                    ContentBlock::ToolUse { name, input, .. } => {
+                        terms.insert(name.clone());
+                        // Extract paths from input
+                        if let Some(path) = input.get("file_path").and_then(|v| v.as_str()) {
+                            terms.insert(path.to_string());
+                        }
+                        if let Some(path) = input.get("path").and_then(|v| v.as_str()) {
+                            terms.insert(path.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        terms.into_iter().collect()
     }
 
     /// Perform compaction on history.
@@ -195,7 +324,8 @@ impl ContextCompactor {
     ) -> Result<CompactionResult> {
         let original_count = history.len();
         let original_tokens = self.estimate_tokens(history);
-        let target_tokens = (context_window_size as f64 * self.config.target_percent as f64 / 100.0) as usize;
+        let target_tokens =
+            (context_window_size as f64 * self.config.target_percent as f64 / 100.0) as usize;
 
         if original_count <= self.config.preserve_recent {
             debug!("History too short to compact");
@@ -225,7 +355,15 @@ impl ContextCompactor {
         // Generate summary if enabled
         let summary = if self.config.use_llm_summary && !to_summarize.is_empty() {
             match self.summarize_messages(&to_summarize, client).await {
-                Ok(s) => Some(s),
+                Ok(s) => {
+                    // Validate summary is reasonable, fallback if not
+                    if self.is_valid_summary(&s, &to_summarize) {
+                        Some(s)
+                    } else {
+                        warn!("LLM summary failed validation, using extract-based compaction");
+                        Some(self.extract_key_points(&to_summarize))
+                    }
+                }
                 Err(e) => {
                     warn!(error = %e, "Failed to generate summary, using extract-based compaction");
                     Some(self.extract_key_points(&to_summarize))
@@ -348,7 +486,8 @@ Conversation to summarize:
     /// This is a fallback when LLM summarization fails or is disabled.
     fn extract_key_points(&self, messages: &[Message]) -> String {
         let mut points: Vec<String> = Vec::new();
-        let mut files_mentioned: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut files_mentioned: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
         let mut tools_used: std::collections::HashSet<String> = std::collections::HashSet::new();
 
         for message in messages {
@@ -357,9 +496,13 @@ Conversation to summarize:
                     ContentBlock::Text { text } => {
                         // Extract file paths
                         for word in text.split_whitespace() {
-                            if word.contains('/') || word.contains(".rs") || word.contains(".ts")
-                                || word.contains(".js") || word.contains(".py")
-                                || word.contains(".json") || word.contains(".toml")
+                            if word.contains('/')
+                                || word.contains(".rs")
+                                || word.contains(".ts")
+                                || word.contains(".js")
+                                || word.contains(".py")
+                                || word.contains(".json")
+                                || word.contains(".toml")
                             {
                                 let cleaned = word.trim_matches(|c: char| {
                                     c == '`' || c == '"' || c == '\'' || c == ',' || c == '.'
@@ -383,8 +526,10 @@ Conversation to summarize:
                     ContentBlock::ToolResult { content, .. } => {
                         // Check for errors in results
                         if content.contains("error") || content.contains("Error") {
-                            points.push(format!("Error encountered: {}",
-                                content.chars().take(200).collect::<String>()));
+                            points.push(format!(
+                                "Error encountered: {}",
+                                content.chars().take(200).collect::<String>()
+                            ));
                         }
                     }
                 }
@@ -394,7 +539,10 @@ Conversation to summarize:
         let mut summary = String::new();
 
         if !tools_used.is_empty() {
-            summary.push_str(&format!("Tools used: {}\n", tools_used.iter().cloned().collect::<Vec<_>>().join(", ")));
+            summary.push_str(&format!(
+                "Tools used: {}\n",
+                tools_used.iter().cloned().collect::<Vec<_>>().join(", ")
+            ));
         }
 
         if !files_mentioned.is_empty() {
@@ -410,8 +558,11 @@ Conversation to summarize:
         }
 
         if summary.is_empty() {
-            summary = format!("{} messages compacted ({} estimated tokens)",
-                messages.len(), self.estimate_tokens(messages));
+            summary = format!(
+                "{} messages compacted ({} estimated tokens)",
+                messages.len(),
+                self.estimate_tokens(messages)
+            );
         }
 
         summary
@@ -495,17 +646,11 @@ pub enum CompactionEvent {
         estimated_tokens: usize,
     },
     /// Progress update during compaction.
-    Progress {
-        stage: String,
-    },
+    Progress { stage: String },
     /// Compaction completed.
-    Completed {
-        result: CompactionResult,
-    },
+    Completed { result: CompactionResult },
     /// Compaction failed.
-    Failed {
-        error: String,
-    },
+    Failed { error: String },
 }
 
 #[cfg(test)]
@@ -554,9 +699,7 @@ mod tests {
 
         // Create 5 large messages (below min_messages but would exceed threshold)
         let large_text = "x".repeat(100_000);
-        let messages: Vec<Message> = (0..5)
-            .map(|_| Message::user(&large_text))
-            .collect();
+        let messages: Vec<Message> = (0..5).map(|_| Message::user(&large_text)).collect();
 
         // Should not trigger because below min_messages
         assert!(!compactor.needs_compaction(&messages, 200_000));
@@ -566,9 +709,7 @@ mod tests {
     fn test_context_usage_percent() {
         let compactor = ContextCompactor::with_defaults();
 
-        let messages = vec![
-            Message::user("Hello world"),
-        ];
+        let messages = vec![Message::user("Hello world")];
 
         let percent = compactor.context_usage_percent(&messages, 100);
         // Small message should be < 100% of 100 token window
@@ -606,12 +747,10 @@ mod tests {
         };
         let compactor = ContextCompactor::new(config);
 
-        let mut messages = vec![
-            Message::tool_results(vec![ContentBlock::ToolResult {
-                tool_use_id: "1".to_string(),
-                content: "x".repeat(500),
-            }]),
-        ];
+        let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
+            tool_use_id: "1".to_string(),
+            content: "x".repeat(500),
+        }])];
 
         compactor.truncate_tool_results(&mut messages);
 

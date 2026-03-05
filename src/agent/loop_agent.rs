@@ -813,7 +813,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 tool_calls: total_result.tool_calls.len(),
                 duration_ms: start.elapsed().as_millis() as u64,
             };
-            
+
             if let Ok(Some(path)) = agent.save_session(stats).await {
                 yield Ok(AgentEvent::SessionSaved { path: path.display().to_string() });
             }

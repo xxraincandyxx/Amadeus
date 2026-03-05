@@ -180,7 +180,6 @@ pub struct Config {
     // -------------------------------------------------------------------------
     // Context Window Settings
     // -------------------------------------------------------------------------
-
     /// Maximum context window size in tokens for the model.
     /// Used to calculate context usage percentage.
     ///
@@ -191,7 +190,6 @@ pub struct Config {
     // -------------------------------------------------------------------------
     // Compaction Settings
     // -------------------------------------------------------------------------
-
     /// Enable automatic context compaction when approaching context limits.
     ///
     /// When enabled, the agent will automatically summarize older messages
@@ -584,11 +582,19 @@ impl Config {
         }
 
         let content = std::fs::read_to_string(path).map_err(|e| {
-            AgentError::Config(format!("Failed to read config file {}: {}", path.display(), e))
+            AgentError::Config(format!(
+                "Failed to read config file {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         let json: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-            AgentError::Config(format!("Invalid JSON in config file {}: {}", path.display(), e))
+            AgentError::Config(format!(
+                "Invalid JSON in config file {}: {}",
+                path.display(),
+                e
+            ))
         })?;
 
         // Start with defaults and overlay the file values
@@ -712,7 +718,9 @@ impl Config {
             } else {
                 self.model
             },
-            workdir: if other.workdir != PathBuf::from(".") && other.workdir != std::env::current_dir().unwrap_or_default() {
+            workdir: if other.workdir != PathBuf::from(".")
+                && other.workdir != std::env::current_dir().unwrap_or_default()
+            {
                 other.workdir
             } else {
                 self.workdir
