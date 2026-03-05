@@ -9,3 +9,6 @@
 
 # Test binaries
 /test_ratatui
+
+# Test output files
+test_*.txt
