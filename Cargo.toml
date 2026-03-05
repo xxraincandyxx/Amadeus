@@ -98,3 +98,8 @@ required-features = ["tui"]
 name = "server"
 path = "examples/server/main.rs"
 required-features = ["api"]
+
+[[test]]
+name = "agent_integration_test"
+path = "tests/agent_integration_test.rs"
+required-features = ["test-utils"]
