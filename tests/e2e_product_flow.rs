@@ -5,8 +5,9 @@ use tokio::sync::Mutex;
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, WorkerConfig};
+use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
+use amadeus::core::AgentId;
 use amadeus::error::Result;
 use async_trait::async_trait;
 use futures::Stream;
@@ -127,7 +128,7 @@ async fn test_e2e_product_development_flow() {
     // 1. Setup the Team
     println!("👥 Spawning the product team...");
 
-    supervisor
+    let _: Vec<AgentId> = supervisor
         .spawn_with_client(
             vec![WorkerConfig::new("Alice (PM)").capability("product")],
             StoryClient {
@@ -136,9 +137,9 @@ async fn test_e2e_product_development_flow() {
             },
         )
         .await
-        .unwrap();
+        .expect("Failed to spawn PM");
 
-    supervisor
+    let _: Vec<AgentId> = supervisor
         .spawn_with_client(
             vec![WorkerConfig::new("Bob (Coder)").capability("code")],
             StoryClient {
@@ -147,9 +148,9 @@ async fn test_e2e_product_development_flow() {
             },
         )
         .await
-        .unwrap();
+        .expect("Failed to spawn Coder");
 
-    supervisor
+    let _: Vec<AgentId> = supervisor
         .spawn_with_client(
             vec![WorkerConfig::new("Charlie (Reviewer)").capability("review")],
             StoryClient {
@@ -158,7 +159,7 @@ async fn test_e2e_product_development_flow() {
             },
         )
         .await
-        .unwrap();
+        .expect("Failed to spawn Reviewer");
 
     let supervisor = Arc::new(supervisor);
     let supervisor_clone: Arc<Supervisor<StoryClient>> = Arc::clone(&supervisor);
@@ -175,7 +176,10 @@ async fn test_e2e_product_development_flow() {
     );
     let plan_task =
         Task::new("plan-1", "Design the Calculator feature").requires(vec!["product".into()]);
-    let plan_res = supervisor.execute(plan_task).await.unwrap();
+    let plan_res: TaskResult = supervisor
+        .execute(plan_task)
+        .await
+        .expect("Failed to execute plan task");
     println!("   PM Response: {}", plan_res.output.as_ref().unwrap());
 
     // Turn B: Coder Implements (includes a P2P call back to PM)
@@ -185,7 +189,10 @@ async fn test_e2e_product_development_flow() {
     );
     let code_task = Task::new("code-1", "Implement the Calculator as per the PM's plan")
         .requires(vec!["code".into()]);
-    let code_res = supervisor.execute(code_task).await.unwrap();
+    let code_res: TaskResult = supervisor
+        .execute(code_task)
+        .await
+        .expect("Failed to execute code task");
     println!("   Coder Result: {}", code_res.output.as_ref().unwrap());
 
     // Turn C: Reviewer Verifies
@@ -195,7 +202,10 @@ async fn test_e2e_product_development_flow() {
     );
     let review_task = Task::new("review-1", "Verify the Calculator implementation")
         .requires(vec!["review".into()]);
-    let review_res = supervisor.execute(review_task).await.unwrap();
+    let review_res: TaskResult = supervisor
+        .execute(review_task)
+        .await
+        .expect("Failed to execute review task");
     println!(
         "   Reviewer Result: {}",
         review_res.output.as_ref().unwrap()

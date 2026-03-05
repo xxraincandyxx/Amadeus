@@ -6,8 +6,9 @@ use tokio::sync::Mutex;
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, WorkerConfig};
+use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
+use amadeus::core::AgentId;
 use amadeus::error::Result;
 use async_trait::async_trait;
 use futures::Stream;
@@ -110,13 +111,13 @@ async fn test_high_concurrency_p2p() {
             call_count: Arc::new(Mutex::new(0)),
             peer_chance: 0.5,
         };
-        supervisor
+        let _: Vec<AgentId> = supervisor
             .spawn_with_client(
                 vec![WorkerConfig::new(format!("Worker-{}", i)).capability("worker")],
                 worker_client,
             )
             .await
-            .unwrap();
+            .expect("Failed to spawn worker");
     }
 
     let supervisor = Arc::new(supervisor);
@@ -132,7 +133,7 @@ async fn test_high_concurrency_p2p() {
         num_tasks
     );
 
-    let mut handles = Vec::new();
+    let mut handles: Vec<tokio::task::JoinHandle<amadeus::Result<TaskResult>>> = Vec::new();
     for i in 0..num_tasks {
         let s: Arc<Supervisor<SimulationMockClient>> = Arc::clone(&supervisor);
         handles.push(tokio::spawn(async move {

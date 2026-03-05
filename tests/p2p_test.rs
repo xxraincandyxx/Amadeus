@@ -5,8 +5,9 @@ use tokio::sync::Mutex;
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, WorkerConfig};
+use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
 use amadeus::client::{LLMClient, StreamEvent};
+use amadeus::core::AgentId;
 use amadeus::error::Result;
 use async_trait::async_trait;
 use futures::Stream;
@@ -137,21 +138,22 @@ async fn test_p2p_delegation() {
 
     let mut supervisor = Supervisor::new(requester_client.clone(), config, create_test_config());
 
-    supervisor
+    let _: Vec<AgentId> = supervisor
         .spawn_with_client(
             vec![WorkerConfig::new("Requester").capability("logic-capability")],
             requester_client,
         )
         .await
-        .unwrap();
+        .expect("Failed to spawn requester");
 
-    let calculator_id = supervisor
+    let calc_ids: Vec<AgentId> = supervisor
         .spawn_with_client(
             vec![WorkerConfig::new("Calculator").capability("math-capability")],
             calculator_client,
         )
         .await
-        .unwrap()[0];
+        .expect("Failed to spawn calculator");
+    let calculator_id = &calc_ids[0];
 
     // 3. Start supervisor loop in background
     let supervisor_arc: Arc<Supervisor<SimpleMockClient>> = Arc::new(supervisor);
@@ -165,7 +167,11 @@ async fn test_p2p_delegation() {
         Task::new("main-task", "Start logical flow").requires(vec!["logic-capability".to_string()]);
 
     println!("Executing main task...");
-    let result = supervisor_arc.execute(task).await.unwrap();
+    let res: TaskResult = supervisor_arc
+        .execute(task)
+        .await
+        .expect("Failed to execute task");
+    let result = &res;
 
     println!(
         "Task Result: Success={}, Output='{:?}', Error='{:?}'",
@@ -178,10 +184,10 @@ async fn test_p2p_delegation() {
         result.error
     );
     assert!(result.output.is_some(), "Output should not be None");
-    let out = result.output.unwrap();
+    let out = result.output.as_ref().unwrap();
     assert!(out.contains("answer is 4"), "Output was: '{}'", out);
 
     // Verify math worker was actually called
-    let calculator_info = supervisor_arc.worker(calculator_id).await.unwrap();
+    let calculator_info = supervisor_arc.worker(*calculator_id).await.unwrap();
     assert_eq!(calculator_info.completed_tasks, 1);
 }
