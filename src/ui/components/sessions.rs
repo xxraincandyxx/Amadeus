@@ -49,7 +49,11 @@ impl SessionBrowser {
         for entry_result in std::fs::read_dir(log_dir)? {
             let entry = entry_result?;
             let path = entry.path();
-            if path.extension().map(|e| e == "json" || e == "gz").unwrap_or(false) {
+            if path
+                .extension()
+                .map(|e| e == "json" || e == "gz")
+                .unwrap_or(false)
+            {
                 if let Some(meta) = self.read_metadata(&path).ok().flatten() {
                     sessions.push(meta);
                 }
@@ -84,7 +88,11 @@ impl SessionBrowser {
             .unwrap_or("unknown")
             .to_string();
 
-        let history = json.get("history").and_then(|h| h.as_array()).map(|a| a.len()).unwrap_or(0);
+        let history = json
+            .get("history")
+            .and_then(|h| h.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0);
 
         Ok(Some(SessionMetadata {
             path: path.clone(),

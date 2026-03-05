@@ -149,10 +149,7 @@ impl ApprovalDialog {
                         .add_modifier(Modifier::BOLD),
                 )
             } else {
-                (
-                    "  ",
-                    Style::default().fg(colors.text.secondary),
-                )
+                ("  ", Style::default().fg(colors.text.secondary))
             };
             lines.push(Line::from(Span::styled(
                 format!("{}{}", prefix, option),
@@ -203,11 +200,7 @@ impl ApprovalDialog {
         lines.push(String::new());
 
         for (i, option) in self.options().iter().enumerate() {
-            let line = format!(
-                "{} {}",
-                if i == self.selected { ">" } else { " " },
-                option
-            );
+            let line = format!("{} {}", if i == self.selected { ">" } else { " " }, option);
             lines.push(line);
         }
 

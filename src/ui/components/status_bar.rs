@@ -151,10 +151,7 @@ impl StatusBar {
         spans.push(Span::styled(" • ", Style::default().fg(colors.ui.dark)));
 
         // Download tokens (output)
-        spans.push(Span::styled(
-            "▼",
-            Style::default().fg(colors.text.accent),
-        ));
+        spans.push(Span::styled("▼", Style::default().fg(colors.text.accent)));
         spans.push(Span::styled(
             format!(" {}", Self::format_tokens(self.output_tokens)),
             Style::default().fg(colors.text.secondary),
@@ -165,7 +162,9 @@ impl StatusBar {
             spans.push(Span::styled(" • ", Style::default().fg(colors.ui.dark)));
             spans.push(Span::styled(
                 "⟡",
-                Style::default().fg(colors.text.accent).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 

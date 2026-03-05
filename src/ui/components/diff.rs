@@ -104,24 +104,18 @@ impl DiffView {
 
         for line in &self.lines {
             let styled_span = match line.status {
-                DiffStatus::Added => {
-                    Span::styled(
-                        format!("+ {:4}{}\n", line.new_line_num.unwrap_or(0), line.content),
-                        Style::default().fg(Color::Green),
-                    )
-                }
-                DiffStatus::Removed => {
-                    Span::styled(
-                        format!("- {:4}{}\n", line.old_line_num.unwrap_or(0), line.content),
-                        Style::default().fg(Color::Red),
-                    )
-                }
-                DiffStatus::Unchanged => {
-                    Span::styled(
-                        format!("  {:4}{}\n", line.new_line_num.unwrap_or(0), line.content),
-                        Style::default(),
-                    )
-                }
+                DiffStatus::Added => Span::styled(
+                    format!("+ {:4}{}\n", line.new_line_num.unwrap_or(0), line.content),
+                    Style::default().fg(Color::Green),
+                ),
+                DiffStatus::Removed => Span::styled(
+                    format!("- {:4}{}\n", line.old_line_num.unwrap_or(0), line.content),
+                    Style::default().fg(Color::Red),
+                ),
+                DiffStatus::Unchanged => Span::styled(
+                    format!("  {:4}{}\n", line.new_line_num.unwrap_or(0), line.content),
+                    Style::default(),
+                ),
             };
             spans.push(styled_span);
         }

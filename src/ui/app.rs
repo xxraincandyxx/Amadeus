@@ -3,14 +3,13 @@ use std::time::Duration;
 
 use crossterm::{
     event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    Terminal,
+    Terminal, TerminalOptions, Viewport,
 };
 use tokio::sync::mpsc;
 use tracing::{info, warn};
@@ -19,12 +18,12 @@ use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
-use crate::ui::{get_colors, get_theme, next_theme};
 use crate::ui::components::{
-    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
-    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
+    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar, InputComponent,
+    LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
+use crate::ui::{get_colors, get_theme, next_theme};
 
 const MARGIN: u16 = 1;
 const MIN_CONTENT_WIDTH: u16 = 60;
@@ -61,7 +60,14 @@ pub struct App<C: LLMClient> {
     /// Channel to receive approval requests from agent (for current stream)
     approval_req_rx: Option<mpsc::Receiver<ApprovalRequest>>,
     /// Channel to receive compaction results from background task
-    compaction_result_rx: Option<mpsc::Receiver<std::result::Result<crate::agent::compaction::CompactionResult, crate::error::AgentError>>>,
+    compaction_result_rx: Option<
+        mpsc::Receiver<
+            std::result::Result<
+                crate::agent::compaction::CompactionResult,
+                crate::error::AgentError,
+            >,
+        >,
+    >,
     /// Whether the current stream is running in background
     is_background: bool,
 }
@@ -104,30 +110,54 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     pub async fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
-        let mut stdout = std::io::stdout();
-        execute!(stdout, EnterAlternateScreen)?;
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
 
-        let mut events = EventHandler::new(Duration::from_millis(100));
-
-        let res = self.run_loop(&mut terminal, &mut events).await;
+        let res = self.run_loop().await;
 
         disable_raw_mode()?;
-        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        // Use a temporary terminal to show cursor if needed
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend)?;
         terminal.show_cursor()?;
 
         res
     }
 
-    async fn run_loop(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-        events: &mut EventHandler,
-    ) -> Result<()> {
+    async fn run_loop(&mut self) -> Result<()> {
+        let stdout = std::io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(15),
+            },
+        )?;
+
+        let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
             if self.should_quit {
                 break;
+            }
+
+            let width = terminal.size()?.width;
+
+            // 1. Pull finalized items from MessagesComponent
+            let unrendered_items = self.messages.take_unrendered_items();
+            if !unrendered_items.is_empty() {
+                let mut static_lines = Vec::new();
+                for item in unrendered_items {
+                    static_lines.extend(crate::ui::components::MessagesComponent::render_item(
+                        &item, width,
+                    ));
+                }
+
+                if !static_lines.is_empty() {
+                    let height = static_lines.len() as u16;
+                    terminal.insert_before(height, |buf| {
+                        let area = Rect::new(0, 0, buf.area.width, height);
+                        let p = ratatui::widgets::Paragraph::new(static_lines.clone());
+                        ratatui::widgets::Widget::render(p, area, buf);
+                    })?;
+                }
             }
 
             terminal.draw(|f| self.render(f))?;
@@ -276,7 +306,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             AgentEvent::Done { result } => {
                 self.messages.finalize_assistant(result.text);
-                self.loading_indicator.set_streaming_state(StreamingState::Idle);
+                self.loading_indicator
+                    .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
                 if self.is_background {
@@ -294,7 +325,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
-                self.loading_indicator.set_streaming_state(StreamingState::Idle);
+                self.loading_indicator
+                    .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
                 if self.is_background {
@@ -320,27 +352,46 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 info!(tool = %request.tool, reason = %request.reason, "Approval required for tool execution");
             }
 
-            AgentEvent::TokenUsage { input_tokens, output_tokens, total_tokens } => {
+            AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+                total_tokens,
+            } => {
                 // Only update input tokens from API - output tokens tracked from text deltas
                 self.status_bar.update_input_tokens(input_tokens);
 
                 // Calculate context window percentage
                 let context_size = self.agent.config().context_window_size;
                 if context_size > 0 {
-                    let percent = ((total_tokens as f32 / context_size as f32) * 100.0).min(100.0) as u8;
+                    let percent =
+                        ((total_tokens as f32 / context_size as f32) * 100.0).min(100.0) as u8;
                     self.footer.set_context_percent(percent);
                 }
 
-                info!(input = input_tokens, output = output_tokens, total = total_tokens, "Token usage");
+                info!(
+                    input = input_tokens,
+                    output = output_tokens,
+                    total = total_tokens,
+                    "Token usage"
+                );
             }
 
-            AgentEvent::ToolProgress { id, message, percent } => {
+            AgentEvent::ToolProgress {
+                id,
+                message,
+                percent,
+            } => {
                 info!(id = %id, message = %message, percent = ?percent, "Tool progress");
                 // Update tool progress in messages component
                 self.messages.update_tool_progress(&id, message, percent);
             }
 
-            AgentEvent::Compaction { original_count, compacted_count, tokens_saved, messages_summarized } => {
+            AgentEvent::Compaction {
+                original_count,
+                compacted_count,
+                tokens_saved,
+                messages_summarized,
+            } => {
                 info!(
                     original = original_count,
                     compacted = compacted_count,
@@ -525,10 +576,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             })
         });
 
-        info!(
-            messages = current_count,
-            "Manual compaction triggered"
-        );
+        info!(messages = current_count, "Manual compaction triggered");
 
         // Warn if history is short, but still allow compaction
         if is_short_history {
@@ -554,7 +602,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let compactor = ContextCompactor::new(compaction_config);
         tokio::spawn(async move {
             let mut history_guard = history.write().await;
-            let result = compactor.compact(&mut history_guard, &client, context_window_size).await;
+            let result = compactor
+                .compact(&mut history_guard, &client, context_window_size)
+                .await;
 
             // Send result through channel (ignore error if receiver was dropped)
             let _ = tx.send(result).await;
@@ -581,9 +631,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                     // Check if compaction was beneficial
                     if result.tokens_saved > 0 {
-                        self.messages.complete_compression(original_tokens, final_tokens);
+                        self.messages
+                            .complete_compression(original_tokens, final_tokens);
                     } else {
-                        self.messages.complete_compression_not_beneficial(original_tokens);
+                        self.messages
+                            .complete_compression_not_beneficial(original_tokens);
                     }
 
                     self.compaction_result_rx = None;
@@ -598,7 +650,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 }
                 Err(mpsc::error::TryRecvError::Disconnected) => {
                     // Task failed without sending result
-                    self.messages.complete_compression_failed("Compaction task crashed".to_string());
+                    self.messages
+                        .complete_compression_failed("Compaction task crashed".to_string());
                     self.compaction_result_rx = None;
                 }
             }
@@ -640,19 +693,23 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             (_, KeyCode::Char('b') | KeyCode::Char('B')) => {
                 let mods = key.modifiers;
                 // Ctrl+Alt+B or Cmd+Alt+B: Run in background
-                if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::ALT)) ||
-                   (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::ALT)) {
+                if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::ALT))
+                    || (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::ALT))
+                {
                     if self.stream_rx.is_some() {
                         self.run_in_background();
                     }
                 }
                 // Ctrl+Shift+B or Cmd+Shift+B: Toggle Files sidebar
-                else if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::SHIFT)) ||
-                        (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::SHIFT)) {
+                else if (mods.contains(KeyModifiers::CONTROL)
+                    && mods.contains(KeyModifiers::SHIFT))
+                    || (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::SHIFT))
+                {
                     self.toggle_sidebar(SidebarKind::Files);
                 }
                 // Ctrl+B or Cmd+B: Toggle Files sidebar (legacy)
-                else if mods.contains(KeyModifiers::CONTROL) || mods.contains(KeyModifiers::SUPER) {
+                else if mods.contains(KeyModifiers::CONTROL) || mods.contains(KeyModifiers::SUPER)
+                {
                     self.toggle_sidebar(SidebarKind::Files);
                 }
                 // Alt+B: Toggle Help sidebar
@@ -755,7 +812,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         self.current_text.clear();
-        self.loading_indicator.set_streaming_state(StreamingState::Idle);
+        self.loading_indicator
+            .set_streaming_state(StreamingState::Idle);
         self.status_bar.stop();
     }
 
@@ -782,8 +840,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             (_, SidebarKind::Skills) => {
                 // Load skills from the skills registry
                 let skills = crate::skills::registry::SkillRegistry::load_from_dir(
-                    &self.workdir.join(".amadeus/skills")
-                ).unwrap_or_default();
+                    &self.workdir.join(".amadeus/skills"),
+                )
+                .unwrap_or_default();
                 Some(Sidebar::Skills(crate::ui::components::SkillSidebar::new(
                     skills.into_skills(),
                 )))
@@ -821,17 +880,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages.add_user(trimmed.to_string());
         self.input.clear();
         self.current_text.clear();
-        self.loading_indicator.set_streaming_state(StreamingState::Responding);
+        self.loading_indicator
+            .set_streaming_state(StreamingState::Responding);
 
         // --- MESH DELEGATION ---
         if let Some(addr) = self.mesh_supervisor_addr.clone() {
             let prompt = trimmed.to_string();
             let (tx, rx) = mpsc::channel(64);
-            
+
             let handle = tokio::spawn(async move {
                 let client = reqwest::Client::new();
                 let url = format!("{}/tasks", addr);
-                
+
                 let body = serde_json::json!({
                     "id": format!("tui-{}", uuid::Uuid::new_v4()),
                     "prompt": prompt,
@@ -843,22 +903,33 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         if resp.status().is_success() {
                             if let Ok(result) = resp.json::<serde_json::Value>().await {
                                 let text = result["output"].as_str().unwrap_or("Done").to_string();
-                                let _ = tx.send(AgentEvent::Done { 
-                                    result: crate::agent::events::RunResult {
-                                        text,
-                                        tool_calls: Vec::new(),
-                                    }
-                                }).await;
+                                let _ = tx
+                                    .send(AgentEvent::Done {
+                                        result: crate::agent::events::RunResult {
+                                            text,
+                                            tool_calls: Vec::new(),
+                                        },
+                                    })
+                                    .await;
                             }
                         } else {
-                            let error_body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-                            let _ = tx.send(AgentEvent::Error { 
-                                message: format!("Supervisor error ({}): {}", addr, error_body) 
-                            }).await;
+                            let error_body = resp
+                                .text()
+                                .await
+                                .unwrap_or_else(|_| "Unknown error".to_string());
+                            let _ = tx
+                                .send(AgentEvent::Error {
+                                    message: format!("Supervisor error ({}): {}", addr, error_body),
+                                })
+                                .await;
                         }
                     }
                     Err(e) => {
-                        let _ = tx.send(AgentEvent::Error { message: format!("Connection failed to {}: {}", addr, e) }).await;
+                        let _ = tx
+                            .send(AgentEvent::Error {
+                                message: format!("Connection failed to {}: {}", addr, e),
+                            })
+                            .await;
                     }
                 }
             });
@@ -916,8 +987,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let size = frame.area();
         let colors = get_colors();
 
-        let bg =
-            ratatui::widgets::Block::default().style(ratatui::style::Style::default().bg(colors.background.primary));
+        let bg = ratatui::widgets::Block::default()
+            .style(ratatui::style::Style::default().bg(colors.background.primary));
         frame.render_widget(bg, size);
 
         let margin_area = Rect::new(
@@ -970,7 +1041,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let footer_height = 1u16;
-        let loading_height = if self.loading_indicator.is_active() { 1u16 } else { 0u16 };
+        let loading_height = if self.loading_indicator.is_active() {
+            1u16
+        } else {
+            0u16
+        };
         let input_height = self.input.height();
         let status_height = 1u16; // Always reserve 1 line to prevent layout jump
 
@@ -978,10 +1053,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),                 // Messages (maximized)
+                Constraint::Min(0), // Messages (maximized)
                 Constraint::Length(loading_height),
-                Constraint::Length(input_height),   // Input (fixed height)
-                Constraint::Length(status_height),  // Status bar (always 1 line)
+                Constraint::Length(input_height), // Input (fixed height)
+                Constraint::Length(status_height), // Status bar (always 1 line)
                 Constraint::Length(footer_height),
             ])
             .split(main_area);

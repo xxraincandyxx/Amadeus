@@ -288,7 +288,10 @@ impl HelpSidebar {
             ]),
             Line::from(vec![
                 Span::styled("   /compact ", Style::default().fg(colors.text.link)),
-                Span::styled(" Compact via command", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    " Compact via command",
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -437,25 +440,21 @@ impl SkillSidebar {
         ];
 
         if self.skills.is_empty() {
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "   No skills available",
-                    Style::default().fg(colors.ui.comment).add_modifier(Modifier::ITALIC),
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "   No skills available",
+                Style::default()
+                    .fg(colors.ui.comment)
+                    .add_modifier(Modifier::ITALIC),
+            )]));
             lines.push(Line::from(""));
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "   Add .md files to",
-                    Style::default().fg(colors.ui.comment),
-                ),
-            ]));
-            lines.push(Line::from(vec![
-                Span::styled(
-                    "   .amadeus/skills/",
-                    Style::default().fg(colors.text.link),
-                ),
-            ]));
+            lines.push(Line::from(vec![Span::styled(
+                "   Add .md files to",
+                Style::default().fg(colors.ui.comment),
+            )]));
+            lines.push(Line::from(vec![Span::styled(
+                "   .amadeus/skills/",
+                Style::default().fg(colors.text.link),
+            )]));
         } else {
             for (i, skill) in self
                 .skills
@@ -487,16 +486,17 @@ impl SkillSidebar {
                 // Description line (truncated)
                 let max_desc_len = (area.width as usize).saturating_sub(6);
                 let desc = if skill.description.len() > max_desc_len {
-                    format!("{}...", &skill.description[..max_desc_len.saturating_sub(3)])
+                    format!(
+                        "{}...",
+                        &skill.description[..max_desc_len.saturating_sub(3)]
+                    )
                 } else {
                     skill.description.clone()
                 };
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("     {}", desc),
-                        Style::default().fg(colors.ui.comment),
-                    ),
-                ]));
+                lines.push(Line::from(vec![Span::styled(
+                    format!("     {}", desc),
+                    Style::default().fg(colors.ui.comment),
+                )]));
             }
         }
 

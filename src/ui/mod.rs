@@ -28,21 +28,24 @@ pub mod event;
 pub mod repl;
 pub mod scroll;
 pub mod semantic_colors;
-pub mod themes;
 pub mod theme_manager;
+pub mod themes;
 
 pub use app::App;
 pub use event::{AppEvent, EventHandler};
 pub use repl::Repl;
 
 pub use components::{
-    FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar, InputComponent,
-    LoadingIndicator, MessagesComponent, PhraseCycler, PhraseMode, SandboxStatus, Sidebar,
-    SidebarKind, StreamingState,
+    FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar, InputComponent, LoadingIndicator,
+    MessagesComponent, PhraseCycler, PhraseMode, SandboxStatus, Sidebar, SidebarKind,
+    StreamingState,
 };
 
 pub use semantic_colors::SemanticColors;
-pub use theme_manager::{get_theme, get_colors, set_theme, next_theme, previous_theme, get_available_themes, THEME_MANAGER};
+pub use theme_manager::{
+    get_available_themes, get_colors, get_theme, next_theme, previous_theme, set_theme,
+    THEME_MANAGER,
+};
 
 #[deprecated(note = "Use get_colors() from theme_manager for semantic colors")]
 pub use colors::THEME;

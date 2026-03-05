@@ -11,13 +11,14 @@ pub enum AppEvent {
 
 pub struct EventHandler {
     receiver: mpsc::Receiver<AppEvent>,
+    task: tokio::task::JoinHandle<()>,
 }
 
 impl EventHandler {
     pub fn new(tick_rate: Duration) -> Self {
         let (tx, rx) = mpsc::channel(16);
 
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             loop {
                 if tx.is_closed() {
                     break;
@@ -35,7 +36,7 @@ impl EventHandler {
             }
         });
 
-        Self { receiver: rx }
+        Self { receiver: rx, task }
     }
 
     fn read_event() -> Option<AppEvent> {
@@ -57,5 +58,11 @@ impl EventHandler {
         self.receiver.recv().await.ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::BrokenPipe, "Event channel closed")
         })
+    }
+}
+
+impl Drop for EventHandler {
+    fn drop(&mut self) {
+        self.task.abort();
     }
 }

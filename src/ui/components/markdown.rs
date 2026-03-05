@@ -9,7 +9,10 @@ use crate::ui::colors::THEME;
 /// Segment of parsed markdown content
 enum Segment {
     Text(String),
-    Code { code: String, language: Option<String> },
+    Code {
+        code: String,
+        language: Option<String>,
+    },
 }
 
 fn detect_code_blocks(content: &str) -> Vec<Segment> {
@@ -35,7 +38,11 @@ fn detect_code_blocks(content: &str) -> Vec<Segment> {
                 }
                 // Extract language from the code fence line
                 let lang = line.trim_start_matches('`').trim();
-                current_language = if lang.is_empty() { None } else { Some(lang.to_string()) };
+                current_language = if lang.is_empty() {
+                    None
+                } else {
+                    Some(lang.to_string())
+                };
                 in_code_block = true;
                 first_segment = true;
             }
@@ -97,7 +104,10 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
     } else {
         lines.push(Line::from(vec![
             Span::styled("╭", Style::default().fg(THEME.comment)),
-            Span::styled("─".repeat(code_width.min(20)), Style::default().fg(THEME.comment)),
+            Span::styled(
+                "─".repeat(code_width.min(20)),
+                Style::default().fg(THEME.comment),
+            ),
         ]));
     }
 
@@ -109,7 +119,10 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
         if line_width <= code_width {
             lines.push(Line::from(vec![
                 Span::styled(line_num, Style::default().fg(THEME.comment)),
-                Span::styled(code_line.to_string(), Style::default().fg(THEME.cyan).bg(THEME.tool_bg)),
+                Span::styled(
+                    code_line.to_string(),
+                    Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                ),
             ]));
         } else {
             // Wrap long lines
@@ -119,13 +132,19 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
                 if first {
                     lines.push(Line::from(vec![
                         Span::styled(line_num.clone(), Style::default().fg(THEME.comment)),
-                        Span::styled(chunk.iter().collect::<String>(), Style::default().fg(THEME.cyan).bg(THEME.tool_bg)),
+                        Span::styled(
+                            chunk.iter().collect::<String>(),
+                            Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                        ),
                     ]));
                     first = false;
                 } else {
                     lines.push(Line::from(vec![
                         Span::styled("     │ ", Style::default().fg(THEME.comment)),
-                        Span::styled(chunk.iter().collect::<String>(), Style::default().fg(THEME.cyan).bg(THEME.tool_bg)),
+                        Span::styled(
+                            chunk.iter().collect::<String>(),
+                            Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                        ),
                     ]));
                 }
             }
@@ -135,7 +154,10 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
     // Bottom border
     lines.push(Line::from(vec![
         Span::styled("╰", Style::default().fg(THEME.comment)),
-        Span::styled("─".repeat(code_width.min(20)), Style::default().fg(THEME.comment)),
+        Span::styled(
+            "─".repeat(code_width.min(20)),
+            Style::default().fg(THEME.comment),
+        ),
     ]));
 
     lines
@@ -523,7 +545,11 @@ mod tests {
         let result = render_markdown("```rust\nfn main() {}\n```", 100);
         // First line should contain "RUST" language label
         let first_line = &result[0];
-        let content: String = first_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = first_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(content.contains("RUST"));
     }
 
@@ -531,7 +557,11 @@ mod tests {
     fn test_code_block_with_python_label() {
         let result = render_markdown("```python\nprint('hello')\n```", 100);
         let first_line = &result[0];
-        let content: String = first_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = first_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(content.contains("PYTHON"));
     }
 
@@ -546,7 +576,11 @@ mod tests {
     fn test_code_block_has_line_numbers() {
         let result = render_markdown("```rust\nline1\nline2\nline3\n```", 100);
         // Check that line numbers appear in the content
-        let all_content: String = result.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let all_content: String = result
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(all_content.contains("1"));
         assert!(all_content.contains("2"));
         assert!(all_content.contains("3"));
@@ -557,7 +591,11 @@ mod tests {
         let result = render_markdown("```rust\ncode\n```", 100);
         // First line should have top border character
         let first_line = &result[0];
-        let content: String = first_line.spans.iter().map(|s| s.content.as_ref()).collect();
+        let content: String = first_line
+            .spans
+            .iter()
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(content.contains('╭') || content.contains('─'));
     }
 
@@ -573,7 +611,11 @@ mod tests {
     fn test_multiple_code_blocks() {
         let content = "```rust\ncode1\n```\n\nSome text\n\n```python\ncode2\n```";
         let result = render_markdown(content, 100);
-        let all_content: String = result.iter().flat_map(|l| l.spans.iter()).map(|s| s.content.as_ref()).collect();
+        let all_content: String = result
+            .iter()
+            .flat_map(|l| l.spans.iter())
+            .map(|s| s.content.as_ref())
+            .collect();
         assert!(all_content.contains("RUST"));
         assert!(all_content.contains("PYTHON"));
     }

@@ -121,7 +121,10 @@ impl CompactionAnimator {
 
     /// Check if showing completion result
     pub fn is_showing_result(&self) -> bool {
-        matches!(self.state, CompactionState::Completed | CompactionState::Failed)
+        matches!(
+            self.state,
+            CompactionState::Completed | CompactionState::Failed
+        )
     }
 
     /// Get current state
@@ -200,8 +203,8 @@ impl CompactionAnimator {
             // Cycle message every ~1.5 seconds
             let msg_elapsed = self.start_time.elapsed().as_millis();
             let msg_interval = 1500u128;
-            self.message_index = ((msg_elapsed / msg_interval) % COMPACTION_MESSAGES.len() as u128)
-                as usize;
+            self.message_index =
+                ((msg_elapsed / msg_interval) % COMPACTION_MESSAGES.len() as u128) as usize;
         }
 
         // Note: We don't auto-transition here. The MessagesComponent handles

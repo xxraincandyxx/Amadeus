@@ -404,8 +404,8 @@ mod tests {
 
     #[test]
     fn test_tool_call_with_command() {
-        let tool = ToolCall::new("id".to_string(), "bash".to_string())
-            .with_command("ls -la".to_string());
+        let tool =
+            ToolCall::new("id".to_string(), "bash".to_string()).with_command("ls -la".to_string());
         assert_eq!(tool.command, Some("ls -la".to_string()));
     }
 
@@ -477,7 +477,9 @@ mod tests {
 
         // Should include summary line with "+2 more tool uses"
         let has_summary = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("+2 more tool uses"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("+2 more tool uses"))
         });
         assert!(has_summary);
     }
@@ -499,7 +501,9 @@ mod tests {
 
         // Should NOT include summary line when expanded
         let has_summary = lines.iter().any(|line| {
-            line.spans.iter().any(|span| span.content.contains("more tool uses"))
+            line.spans
+                .iter()
+                .any(|span| span.content.contains("more tool uses"))
         });
         assert!(!has_summary);
     }

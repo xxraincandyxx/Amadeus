@@ -262,7 +262,10 @@ impl Footer {
 
         if !self.hide_cwd {
             let display_path = Self::shorten_path(&self.info.cwd, path_len);
-            spans.push(Span::styled(ICON_FOLDER, Style::default().fg(colors.text.secondary)));
+            spans.push(Span::styled(
+                ICON_FOLDER,
+                Style::default().fg(colors.text.secondary),
+            ));
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 display_path,
@@ -271,7 +274,10 @@ impl Footer {
 
             if let Some(ref branch) = self.info.git_branch {
                 spans.push(Span::raw(" "));
-                spans.push(Span::styled(ICON_GIT, Style::default().fg(colors.text.secondary)));
+                spans.push(Span::styled(
+                    ICON_GIT,
+                    Style::default().fg(colors.text.secondary),
+                ));
                 spans.push(Span::styled(
                     format!(" {}", branch),
                     Style::default().fg(colors.text.accent),
@@ -286,17 +292,22 @@ impl Footer {
             let (sandbox_text, sandbox_color) = match &self.info.sandbox_status {
                 SandboxStatus::None => ("no sandbox".to_string(), colors.status.error),
                 SandboxStatus::Docker => ("docker".to_string(), colors.status.success),
-                SandboxStatus::Seatbelt(profile) => (
-                    format!("seatbelt:{}", profile),
-                    colors.status.warning,
-                ),
+                SandboxStatus::Seatbelt(profile) => {
+                    (format!("seatbelt:{}", profile), colors.status.warning)
+                }
                 SandboxStatus::Other(name) => (name.clone(), colors.status.success),
             };
 
             spans.push(Span::raw(" "));
-            spans.push(Span::styled(ICON_SANDBOX, Style::default().fg(sandbox_color)));
+            spans.push(Span::styled(
+                ICON_SANDBOX,
+                Style::default().fg(sandbox_color),
+            ));
             spans.push(Span::raw(" "));
-            spans.push(Span::styled(sandbox_text, Style::default().fg(sandbox_color)));
+            spans.push(Span::styled(
+                sandbox_text,
+                Style::default().fg(sandbox_color),
+            ));
         }
 
         // Right side: session duration, model, and context
@@ -306,7 +317,10 @@ impl Footer {
         right_spans.push(Span::raw(" "));
         right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
         right_spans.push(Span::raw(" "));
-        right_spans.push(Span::styled(ICON_CLOCK, Style::default().fg(colors.text.secondary)));
+        right_spans.push(Span::styled(
+            ICON_CLOCK,
+            Style::default().fg(colors.text.secondary),
+        ));
         right_spans.push(Span::styled(
             format!(" {}", self.format_duration()),
             Style::default().fg(colors.text.secondary),
@@ -316,7 +330,10 @@ impl Footer {
             right_spans.push(Span::raw(" "));
             right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
             right_spans.push(Span::raw(" "));
-            right_spans.push(Span::styled(ICON_MODEL, Style::default().fg(colors.text.accent)));
+            right_spans.push(Span::styled(
+                ICON_MODEL,
+                Style::default().fg(colors.text.accent),
+            ));
             right_spans.push(Span::raw(" "));
             right_spans.push(Span::styled(
                 self.info.model_name.clone(),
