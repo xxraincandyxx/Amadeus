@@ -112,11 +112,7 @@ impl Policy {
         self.dangerous_regex_cache = self
             .dangerous_patterns
             .iter()
-            .filter_map(|(tool, pattern)| {
-                Regex::new(pattern)
-                    .ok()
-                    .map(|re| (tool.clone(), re))
-            })
+            .filter_map(|(tool, pattern)| Regex::new(pattern).ok().map(|re| (tool.clone(), re)))
             .collect();
     }
 
@@ -203,16 +199,21 @@ impl Policy {
             if pattern_tool == tool && regex.is_match(&input_str) {
                 return format!(
                     "Tool '{}' matches dangerous pattern: {}",
-                    tool, regex.as_str()
+                    tool,
+                    regex.as_str()
                 );
             }
         }
 
-        format!("Tool '{}' requires approval in {} mode", tool, match self.mode {
-            ApprovalMode::Auto => "auto",
-            ApprovalMode::Ask => "ask",
-            ApprovalMode::Strict => "strict",
-        })
+        format!(
+            "Tool '{}' requires approval in {} mode",
+            tool,
+            match self.mode {
+                ApprovalMode::Auto => "auto",
+                ApprovalMode::Ask => "ask",
+                ApprovalMode::Strict => "strict",
+            }
+        )
     }
 
     /// Add a tool to the auto-approve list.
@@ -275,7 +276,10 @@ mod tests {
         assert!(policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
 
         // Writing to .env is dangerous
-        assert!(policy.needs_approval("write_file", &serde_json::json!({"path": ".env", "content": ""})));
+        assert!(policy.needs_approval(
+            "write_file",
+            &serde_json::json!({"path": ".env", "content": ""})
+        ));
 
         // Normal commands are fine
         assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "ls -la"})));

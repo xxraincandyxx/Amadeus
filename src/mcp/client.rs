@@ -124,16 +124,10 @@ impl McpClient {
 
         // Check for error
         if let Some(error) = response.get("error") {
-            return Err(AgentError::Command(format!(
-                "MCP error: {}",
-                error
-            )));
+            return Err(AgentError::Command(format!("MCP error: {}", error)));
         }
 
-        Ok(response
-            .get("result")
-            .cloned()
-            .unwrap_or(Value::Null))
+        Ok(response.get("result").cloned().unwrap_or(Value::Null))
     }
 
     /// Initialize the MCP connection.
@@ -175,7 +169,10 @@ impl McpClient {
                     .filter_map(|t| {
                         Some(McpToolSchema {
                             name: t.get("name")?.as_str()?.to_string(),
-                            description: t.get("description").and_then(|d| d.as_str()).map(String::from),
+                            description: t
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .map(String::from),
                             input_schema: t.get("inputSchema").cloned().unwrap_or(Value::Null),
                         })
                     })
@@ -211,7 +208,11 @@ impl McpClient {
                 })
                 .collect();
             Ok(text_parts.join("\n"))
-        } else if result.get("isError").and_then(|e| e.as_bool()).unwrap_or(false) {
+        } else if result
+            .get("isError")
+            .and_then(|e| e.as_bool())
+            .unwrap_or(false)
+        {
             Err(AgentError::Command(format!(
                 "Tool '{}' returned an error: {:?}",
                 name, result

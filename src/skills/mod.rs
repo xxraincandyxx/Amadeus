@@ -59,7 +59,11 @@ pub struct Skill {
 
 impl Skill {
     /// Create a new skill.
-    pub fn new(name: impl Into<String>, description: impl Into<String>, prompt_template: impl Into<String>) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        prompt_template: impl Into<String>,
+    ) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
@@ -203,7 +207,10 @@ Context: {context}
         let skill = Skill::parse(content, None).unwrap();
         assert_eq!(skill.name, "test-skill");
         assert_eq!(skill.description, "A test skill");
-        assert_eq!(skill.allowed_tools, Some(vec!["read_file".to_string(), "glob".to_string()]));
+        assert_eq!(
+            skill.allowed_tools,
+            Some(vec!["read_file".to_string(), "glob".to_string()])
+        );
         assert!(skill.prompt_template.contains("Context:"));
     }
 
@@ -216,8 +223,8 @@ Context: {context}
 
     #[test]
     fn test_tool_allowed() {
-        let skill = Skill::new("test", "Test", "prompt")
-            .with_allowed_tools(vec!["read_file".to_string()]);
+        let skill =
+            Skill::new("test", "Test", "prompt").with_allowed_tools(vec!["read_file".to_string()]);
 
         assert!(skill.is_tool_allowed("read_file"));
         assert!(!skill.is_tool_allowed("bash"));
