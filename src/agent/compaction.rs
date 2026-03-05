@@ -53,7 +53,7 @@ pub struct CompactionConfig {
     pub threshold_percent: u8,
 
     /// Target percentage after compaction.
-    /// Default: 40 (compact down to 40% of context window)
+    /// Default: 30 (compact down to 30% of context window)
     pub target_percent: u8,
 
     /// Number of recent messages to always preserve.
@@ -81,7 +81,7 @@ impl Default for CompactionConfig {
     fn default() -> Self {
         Self {
             threshold_percent: 75,
-            target_percent: 40,
+            target_percent: 30,
             preserve_recent: 6,
             use_llm_summary: true,
             max_summary_chars: 2000,

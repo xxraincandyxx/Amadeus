@@ -149,7 +149,7 @@ async fn test_config_defaults() {
     let config = CompactionConfig::default();
 
     assert_eq!(config.threshold_percent, 75);
-    assert_eq!(config.target_percent, 40);
+    assert_eq!(config.target_percent, 30);
     assert_eq!(config.preserve_recent, 6);
     assert!(config.use_llm_summary);
     assert_eq!(config.max_summary_chars, 2000);
