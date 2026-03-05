@@ -2,14 +2,16 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
+    cursor::{MoveToColumn, MoveUp},
     event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode},
     execute,
-    cursor::{MoveUp, MoveToColumn},
+    terminal::{disable_raw_mode, enable_raw_mode},
     terminal::{Clear, ClearType},
 };
 use futures::StreamExt;
-use ratatui::{backend::CrosstermBackend, layout::Rect, text::Line, Terminal, TerminalOptions, Viewport};
+use ratatui::{
+    backend::CrosstermBackend, layout::Rect, text::Line, Terminal, TerminalOptions, Viewport,
+};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -18,8 +20,9 @@ use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::components::{
-    ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar, InputComponent,
-    LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar, StreamingState,
+    render_markdown, ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
+    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SidebarKind, StatusBar,
+    StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::{get_colors, get_theme, next_theme};
@@ -40,25 +43,145 @@ impl StreamingBuffer {
             last_printed_height: 0,
         }
     }
-    
+
     fn push(&mut self, delta: &str) {
         self.text.push_str(delta);
     }
-    
+
     fn should_flush(&self) -> bool {
         let time_elapsed = self.last_flush.elapsed() >= Duration::from_millis(150);
         let chars_accumulated = self.text.len() >= 32;
         time_elapsed || chars_accumulated
     }
-    
+
     fn is_empty(&self) -> bool {
         self.text.is_empty()
     }
-    
+
     fn clear(&mut self) {
         self.text.clear();
         self.allocated_height = 0;
         self.last_printed_height = 0;
+    }
+}
+
+/// A simple stateful filter to remove XML-like tags and their content from a stream
+struct TagFilter {
+    buffer: String,
+    suppressing: bool,
+    /// Tags that trigger suppression of content between opening and closing
+    tags: Vec<String>,
+}
+
+impl TagFilter {
+    fn new() -> Self {
+        Self {
+            buffer: String::new(),
+            suppressing: false,
+            tags: vec![
+                "Claude_TalktoUser".to_string(),
+                "think".to_string(),
+                "thought".to_string(),
+                "thinking".to_string(),
+            ],
+        }
+    }
+
+    fn process(&mut self, delta: &str) -> String {
+        let mut result = String::new();
+        self.buffer.push_str(delta);
+
+        while !self.buffer.is_empty() {
+            if !self.suppressing {
+                if let Some(start_idx) = self.buffer.find('<') {
+                    // Output everything before the '<'
+                    result.push_str(&self.buffer[..start_idx]);
+                    self.buffer.drain(..start_idx);
+
+                    // Check if we have the full tag
+                    if let Some(end_idx) = self.buffer.find('>') {
+                        let tag_content = &self.buffer[1..end_idx];
+                        let tag_name = tag_content.strip_prefix('/').unwrap_or(tag_content);
+
+                        // Check if it's one of our target tags
+                        if self.tags.iter().any(|t| tag_name == t) {
+                            // If it's an opening tag, start suppressing
+                            if !tag_content.starts_with('/') {
+                                self.suppressing = true;
+                            }
+                            self.buffer.drain(..=end_idx);
+                        } else {
+                            // Not a target tag, emit the '<' and continue from next char
+                            result.push('<');
+                            self.buffer.drain(..1);
+                        }
+                    } else {
+                        // We have a '<' but no '>', check if it looks like a tag
+                        let next_char = self.buffer.get(1..2).and_then(|s| s.chars().next());
+                        let looks_like_tag =
+                            next_char.map_or(false, |c| c.is_alphanumeric() || c == '/');
+
+                        if !looks_like_tag || self.buffer.len() > 100 {
+                            result.push('<');
+                            self.buffer.drain(..1);
+                        } else {
+                            // Keep the buffer starting from '<' and stop processing
+                            break;
+                        }
+                    }
+                } else {
+                    // No '<' found, output everything
+                    result.push_str(&self.buffer);
+                    self.buffer.clear();
+                }
+            } else {
+                // We are suppressing content
+                if let Some(start_idx) = self.buffer.find('<') {
+                    if let Some(end_idx) = self.buffer[start_idx..].find('>') {
+                        let full_end_idx = start_idx + end_idx;
+                        let tag_content = &self.buffer[start_idx + 1..full_end_idx];
+
+                        // Check if it's a closing tag of one of our target tags
+                        if tag_content.starts_with('/') {
+                            let tag_name = &tag_content[1..];
+                            if self.tags.iter().any(|t| tag_name == t) {
+                                self.suppressing = false;
+                            }
+                        }
+
+                        self.buffer.drain(..=full_end_idx);
+                    } else {
+                        // Wait for more data
+                        if self.buffer.len() > 500 {
+                            // Safety valve: stop suppressing if we've gone too long without a tag
+                            self.suppressing = false;
+                            self.buffer.drain(..=start_idx);
+                        } else {
+                            // Keep everything from the first '<' for more data
+                            self.buffer.drain(..start_idx);
+                            break;
+                        }
+                    }
+                } else {
+                    // No '<' in suppressing mode, just clear the buffer
+                    self.buffer.clear();
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Flush any remaining content that isn't being suppressed
+    fn finalize(&mut self) -> String {
+        let res = if !self.suppressing {
+            self.buffer.clone()
+        } else {
+            String::new()
+        };
+        self.buffer.clear();
+        self.suppressing = false;
+        res
     }
 }
 
@@ -112,6 +235,8 @@ pub struct App<C: LLMClient> {
     pending_user_input: Option<String>,
     /// Flag to flush buffer before compaction
     flush_before_compaction: bool,
+    /// Filter for removing internal tags
+    tag_filter: TagFilter,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -147,6 +272,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             pending_error: None,
             pending_user_input: None,
             flush_before_compaction: false,
+            tag_filter: TagFilter::new(),
         }
     }
 
@@ -322,60 +448,74 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if self.streaming_buffer.is_empty() {
             return Ok(());
         }
-        
+
         const VIEWPORT_HEIGHT: u16 = 3;
-        
+
         let stdout = std::io::stdout();
         let mut stdout_lock = stdout.lock();
-        
-        // Calculate height needed for entire accumulated text
-        let width = terminal.size()?.width as usize;
-        let text_len = self.streaming_buffer.text.chars().count();
-        let needed_height = if width > 0 {
-            std::cmp::max(1, ((text_len + width - 1) / width) as u16)
-        } else {
-            1
-        };
-        
-        // First flush: allocate space with insert_before
+
+        // Calculate height needed for entire accumulated text using our actual markdown renderer
+        // MessagesComponent uses a padding of 2 on each side (total 4)
+        let terminal_width = terminal.size()?.width;
+        let content_width = terminal_width.saturating_sub(4) as usize;
+
+        // Use render_markdown to get the exact lines that will be shown
+        let rendered_lines = render_markdown(&self.streaming_buffer.text, content_width);
+        let needed_height = rendered_lines.len() as u16;
+
+        // Space allocation: only allocate what we need, growing dynamically
         if self.streaming_buffer.allocated_height == 0 {
-            // Allocate with extra room for growth
-            let alloc_height = std::cmp::max(needed_height + 20, 50);
-            terminal.insert_before(alloc_height, |buf| {
-                let area = Rect::new(0, 0, buf.area.width, alloc_height);
+            terminal.insert_before(needed_height, |buf| {
+                let area = Rect::new(0, 0, buf.area.width, needed_height);
                 let paragraph = ratatui::widgets::Paragraph::new("");
                 ratatui::widgets::Widget::render(paragraph, area, buf);
             })?;
-            self.streaming_buffer.allocated_height = alloc_height;
-            
-            // First time: cursor is below viewport, need to move up to start of inserted space
+            self.streaming_buffer.allocated_height = needed_height;
+
+            // Move up past viewport to the bottom of our content
             execute!(stdout_lock, MoveUp(VIEWPORT_HEIGHT))?;
+        } else if needed_height > self.streaming_buffer.allocated_height {
+            let diff = needed_height - self.streaming_buffer.allocated_height;
+            terminal.insert_before(diff, |buf| {
+                let area = Rect::new(0, 0, buf.area.width, diff);
+                let paragraph = ratatui::widgets::Paragraph::new("");
+                ratatui::widgets::Widget::render(paragraph, area, buf);
+            })?;
+            self.streaming_buffer.allocated_height = needed_height;
+
+            // After insert_before, we are at viewport bottom.
+            // We want to be at the NEW content top.
+            execute!(stdout_lock, MoveUp(VIEWPORT_HEIGHT + needed_height))?;
         } else {
-            // Subsequent flushes: move up past viewport AND previously printed content
-            execute!(
-                stdout_lock,
-                MoveUp(VIEWPORT_HEIGHT + self.streaming_buffer.last_printed_height)
-            )?;
+            // Subsequent flushes with no growth: move up past viewport AND previously printed content
+            let move_up_amount = VIEWPORT_HEIGHT + self.streaming_buffer.last_printed_height;
+            execute!(stdout_lock, MoveUp(move_up_amount))?;
         }
-        
-        // Clear from cursor down (within allocated space)
-        execute!(stdout_lock, Clear(ClearType::FromCursorDown))?;
-        
-        // Move to column 0 (start of line)
-        execute!(stdout_lock, MoveToColumn(0))?;
-        
-        // Print the ENTIRE accumulated text
-        print!("{}", self.streaming_buffer.text);
+
+        // Now at CONTENT_TOP (or just above viewport for first flush).
+        // Clear from cursor down (within allocated space) and reset to col 0
+        execute!(
+            stdout_lock,
+            MoveToColumn(0),
+            Clear(ClearType::FromCursorDown)
+        )?;
+
+        // Print the rendered lines with consistent padding
+        for line in rendered_lines {
+            print!("  "); // Left padding (2 spaces)
+            for span in line.spans {
+                // For now, we print unstyled but wrapped.
+                // Color support could be added here by mapping span.style to ANSI.
+                print!("{}", span.content);
+            }
+            println!();
+        }
         std::io::Write::flush(&mut std::io::stdout())?;
-        
+
         // Remember how many lines we just printed
         self.streaming_buffer.last_printed_height = needed_height;
         self.streaming_buffer.last_flush = Instant::now();
-        
-        // Move cursor back to start position for next flush
-        // (stay at beginning of our content area)
-        execute!(stdout_lock, MoveUp(needed_height.saturating_sub(1)))?;
-        
+
         Ok(())
     }
 
@@ -383,9 +523,21 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
-        // Flush any remaining buffer
+        // Finalize filtering first to get all text
+        let remainder = self.tag_filter.finalize();
+        if !remainder.is_empty() {
+            self.streaming_buffer.push(&remainder);
+            self.current_text.push_str(&remainder);
+        }
+
+        if self.streaming_buffer.is_empty() {
+            self.needs_final_flush = false;
+            return Ok(());
+        }
+
+        // Final flush to terminal
         self.flush_streaming_buffer(terminal)?;
-        
+
         // Handle error message if present
         if let Some(error_msg) = self.pending_error.take() {
             let error_line = Line::styled(
@@ -405,8 +557,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 ratatui::widgets::Widget::render(p, area, buf);
             })?;
         }
-        
-        // Clear the streaming buffer for next response
+
+        // Reset state
         self.streaming_buffer.clear();
         self.needs_final_flush = false;
         Ok(())
@@ -491,16 +643,22 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AgentEvent::TextDelta { delta } => {
                 debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
 
+                // Filter out internal tags
+                let filtered_delta = self.tag_filter.process(&delta);
+                if filtered_delta.is_empty() {
+                    return false;
+                }
+
                 // Accumulate in buffer
-                self.streaming_buffer.push(&delta);
-                self.current_text.push_str(&delta);
+                self.streaming_buffer.push(&filtered_delta);
+                self.current_text.push_str(&filtered_delta);
 
                 // Update internal state
                 if !self.status_bar.is_active() {
                     self.status_bar.start();
                 }
                 self.status_bar.set_thinking(false);
-                self.status_bar.update_text(&delta);
+                self.status_bar.update_text(&filtered_delta);
                 debug!(
                     total_len = self.current_text.len(),
                     buffer_len = self.streaming_buffer.text.len(),
@@ -560,7 +718,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_background(false);
                     self.footer.set_status_message("Background task completed");
                 }
-                
+
                 // Set flag to flush and add spacing
                 self.needs_final_flush = true;
                 return true;
@@ -582,7 +740,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_background(false);
                     self.footer.set_status_message("Background task failed");
                 }
-                
+
                 // Set flag to flush and show error
                 self.needs_final_flush = true;
                 self.pending_error = Some(message);
