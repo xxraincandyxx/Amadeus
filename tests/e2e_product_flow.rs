@@ -161,7 +161,7 @@ async fn test_e2e_product_development_flow() {
         .unwrap();
 
     let supervisor = Arc::new(supervisor);
-    let supervisor_clone = Arc::clone(&supervisor);
+    let supervisor_clone: Arc<Supervisor<StoryClient>> = Arc::clone(&supervisor);
     tokio::spawn(async move {
         let _ = supervisor_clone.run().await;
     });

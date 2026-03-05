@@ -57,9 +57,7 @@ async fn test_needs_compaction_min_messages() {
 
     // Create large content but below min_messages threshold
     let large_text = "x".repeat(50_000);
-    let messages: Vec<Message> = (0..5)
-        .map(|_| Message::user(&large_text))
-        .collect();
+    let messages: Vec<Message> = (0..5).map(|_| Message::user(&large_text)).collect();
 
     // Should not trigger because below min_messages
     assert!(!compactor.needs_compaction(&messages, 200_000));
@@ -78,9 +76,7 @@ async fn test_needs_compaction_above_threshold() {
     // Create large history (above threshold)
     // 30 messages × 20,000 chars = 600,000 chars = ~150,000 tokens = 75% of 200k context
     let large_text = "x".repeat(20_000);
-    let messages: Vec<Message> = (0..30)
-        .map(|_| Message::user(&large_text))
-        .collect();
+    let messages: Vec<Message> = (0..30).map(|_| Message::user(&large_text)).collect();
 
     // Should trigger compaction (75% > 50% threshold)
     assert!(compactor.needs_compaction(&messages, 200_000));
@@ -115,9 +111,7 @@ async fn test_short_history_detection() {
     let compactor = ContextCompactor::new(config);
 
     // Create history with fewer messages than preserve_recent
-    let messages: Vec<Message> = (0..3)
-        .map(|_| Message::user("Test"))
-        .collect();
+    let messages: Vec<Message> = (0..3).map(|_| Message::user("Test")).collect();
 
     // Short history is detected (len <= preserve_recent)
     // Note: Compaction is now allowed for short history with a warning

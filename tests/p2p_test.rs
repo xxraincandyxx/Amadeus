@@ -154,8 +154,8 @@ async fn test_p2p_delegation() {
         .unwrap()[0];
 
     // 3. Start supervisor loop in background
-    let supervisor_arc = Arc::new(supervisor);
-    let supervisor_clone = Arc::clone(&supervisor_arc);
+    let supervisor_arc: Arc<Supervisor<SimpleMockClient>> = Arc::new(supervisor);
+    let supervisor_clone: Arc<Supervisor<SimpleMockClient>> = Arc::clone(&supervisor_arc);
     tokio::spawn(async move {
         supervisor_clone.run().await.unwrap();
     });

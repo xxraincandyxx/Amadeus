@@ -120,7 +120,7 @@ async fn test_high_concurrency_p2p() {
     }
 
     let supervisor = Arc::new(supervisor);
-    let supervisor_clone = Arc::clone(&supervisor);
+    let supervisor_clone: Arc<Supervisor<SimulationMockClient>> = Arc::clone(&supervisor);
     tokio::spawn(async move {
         if let Err(e) = supervisor_clone.run().await {
             eprintln!("Supervisor loop error: {}", e);
@@ -134,7 +134,7 @@ async fn test_high_concurrency_p2p() {
 
     let mut handles = Vec::new();
     for i in 0..num_tasks {
-        let s = Arc::clone(&supervisor);
+        let s: Arc<Supervisor<SimulationMockClient>> = Arc::clone(&supervisor);
         handles.push(tokio::spawn(async move {
             let task = Task::new(format!("task-{}", i), "Execute simulation task")
                 .requires(vec!["worker".to_string()]);
