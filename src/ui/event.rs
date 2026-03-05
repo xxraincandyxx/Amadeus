@@ -12,19 +12,29 @@ pub enum AppEvent {
 pub struct EventHandler {
     receiver: mpsc::Receiver<AppEvent>,
     task: tokio::task::JoinHandle<()>,
+    tick_rate_tx: mpsc::Sender<Duration>,
 }
 
 impl EventHandler {
     pub fn new(tick_rate: Duration) -> Self {
         let (tx, rx) = mpsc::channel(16);
+        let (tick_rate_tx, mut tick_rate_rx) = mpsc::channel(1);
 
         let task = tokio::spawn(async move {
+            let mut current_tick_rate = tick_rate;
             loop {
                 if tx.is_closed() {
                     break;
                 }
 
-                if event::poll(tick_rate).unwrap_or(false) {
+                // Check for tick rate updates
+                match tick_rate_rx.try_recv() {
+                    Ok(new_rate) => current_tick_rate = new_rate,
+                    Err(mpsc::error::TryRecvError::Empty) => {}
+                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                }
+
+                if event::poll(current_tick_rate).unwrap_or(false) {
                     if let Some(app_event) = Self::read_event() {
                         if tx.send(app_event).await.is_err() {
                             break;
@@ -36,7 +46,15 @@ impl EventHandler {
             }
         });
 
-        Self { receiver: rx, task }
+        Self {
+            receiver: rx,
+            task,
+            tick_rate_tx,
+        }
+    }
+
+    pub fn set_tick_rate(&self, tick_rate: Duration) {
+        let _ = self.tick_rate_tx.try_send(tick_rate);
     }
 
     fn read_event() -> Option<AppEvent> {
