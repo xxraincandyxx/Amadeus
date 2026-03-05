@@ -128,7 +128,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let mut terminal = Terminal::with_options(
             backend,
             TerminalOptions {
-                viewport: Viewport::Inline(15),
+                viewport: Viewport::Inline(6),
             },
         )?;
 
@@ -1007,9 +1007,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let margin_area = Rect::new(
             size.x + MARGIN,
-            size.y + MARGIN,
+            size.y,
             size.width.saturating_sub(MARGIN * 2),
-            size.height.saturating_sub(MARGIN * 2),
+            size.height,
         );
 
         if margin_area.width < 10 || margin_area.height < 5 {
