@@ -1,19 +1,15 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::{
-    cursor::MoveTo,
-    event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
-    terminal::{Clear, ClearType},
-};
+use crossterm::{event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind}, terminal::{disable_raw_mode, enable_raw_mode}};
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    text::Line,
-    Terminal, TerminalOptions, Viewport,
+    style::{Modifier, Style},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
+    Terminal,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -32,8 +28,6 @@ use crate::ui::{get_theme, next_theme, SidebarKind};
 struct StreamingBuffer {
     text: String,
     last_flush: Instant,
-    allocated_height: u16,
-    last_printed_height: u16,
 }
 
 impl StreamingBuffer {
@@ -41,8 +35,6 @@ impl StreamingBuffer {
         Self {
             text: String::new(),
             last_flush: Instant::now(),
-            allocated_height: 0,
-            last_printed_height: 0,
         }
     }
 
@@ -62,8 +54,6 @@ impl StreamingBuffer {
 
     fn clear(&mut self) {
         self.text.clear();
-        self.allocated_height = 0;
-        self.last_printed_height = 0;
     }
 }
 
@@ -229,12 +219,6 @@ pub struct App<C: LLMClient> {
     is_background: bool,
     /// Buffer for streaming text before flushing to terminal
     streaming_buffer: StreamingBuffer,
-    /// Whether we need to flush and add spacing after stream completes
-    needs_final_flush: bool,
-    /// Error message to display (if any)
-    pending_error: Option<String>,
-    /// Pending user input to display (set by handle_key, flushed in run_loop)
-    pending_user_input: Option<String>,
     /// Flag to flush buffer before compaction
     flush_before_compaction: bool,
     /// Filter for removing internal tags
@@ -272,9 +256,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             compaction_result_rx: None,
             is_background: false,
             streaming_buffer: StreamingBuffer::new(),
-            needs_final_flush: false,
-            pending_error: None,
-            pending_user_input: None,
             flush_before_compaction: false,
             tag_filter: TagFilter::new(),
             viewport_height_percent: 32,
@@ -326,12 +307,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     async fn run_loop(&mut self) -> Result<()> {
         let stdout = std::io::stdout();
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(3),
-            },
-        )?;
+        let mut terminal = Terminal::new(backend)?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
@@ -339,43 +315,20 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 break;
             }
 
-            let width = terminal.size()?.width;
-
-            // Render dashboard if needed (startup or after compaction)
-            // This happens BEFORE terminal.draw() to ensure dashboard appears above input box
-            if self.messages.should_render_dashboard_to_history() {
-                let mut dashboard_lines = self.messages.render_dashboard_lines(width);
-                if !dashboard_lines.is_empty() {
-                    dashboard_lines.push(Line::from("")); // Add newline after dashboard
-                    let height = dashboard_lines.len() as u16;
-                    terminal.insert_before(height, |buf| {
-                        let area = Rect::new(0, 0, buf.area.width, height);
-                        let p = ratatui::widgets::Paragraph::new(dashboard_lines.clone());
-                        ratatui::widgets::Widget::render(p, area, buf);
-                    })?;
-                }
-                self.messages.mark_dashboard_rendered();
-            }
-
             terminal.draw(|f| self.render(f))?;
 
             // Periodic flush for responsiveness
             if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                self.flush_streaming_buffer(&mut terminal)?;
+                self.flush_streaming_buffer();
             }
 
             tokio::select! {
                 event = events.next() => {
                     self.handle_event(event?).await?;
 
-                    // Flush pending user input if any
-                    if self.pending_user_input.is_some() {
-                        self.flush_user_input(&mut terminal)?;
-                    }
-
                     // Handle compaction flush
                     if self.flush_before_compaction {
-                        self.flush_streaming_buffer(&mut terminal)?;
+                        self.flush_streaming_buffer();
                         self.flush_before_compaction = false;
                         self.start_compaction();
                     }
@@ -433,12 +386,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                         // Flush buffer periodically during streaming
                         if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                            self.flush_streaming_buffer(&mut terminal)?;
-                        }
-
-                        // Handle final flush after stream completes
-                        if self.needs_final_flush {
-                            self.flush_and_finalize(&mut terminal)?;
+                            self.flush_streaming_buffer();
                         }
 
                         // Force immediate redraw to show streaming progress
@@ -459,7 +407,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 } => {
                     if let Some(request) = approval_request {
                         // Flush buffer before showing approval dialog
-                        self.flush_streaming_buffer(&mut terminal)?;
+                        self.flush_streaming_buffer();
                         self.show_approval_dialog(request);
                     }
                 }
@@ -469,250 +417,83 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn flush_streaming_buffer(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<()> {
+    fn flush_streaming_buffer(&mut self) {
         if self.streaming_buffer.is_empty() {
-            return Ok(());
+            self.messages.clear_streaming_text();
+            return;
         }
 
-        const BOTTOM_UI_HEIGHT: u16 = 3;
+        while let Some(flush_idx) = self.find_fluggable_index(&self.streaming_buffer.text) {
+            let flushed = self.streaming_buffer.text[..flush_idx].to_string();
+            let remaining = self.streaming_buffer.text[flush_idx..].to_string();
 
-        let stdout = std::io::stdout();
-        let mut stdout_lock = stdout.lock();
-
-        let terminal_size = terminal.size()?;
-        let terminal_width = terminal_size.width;
-        let terminal_height = terminal_size.height;
-        let content_width = terminal_width.saturating_sub(4) as usize;
-
-        let max_viewport_height = (terminal_height * self.viewport_height_percent) / 100;
-
-        // --- 1. PARAGRAPH FLUSHING ---
-        if let Some(flush_idx) = self.find_fluggable_index(&self.streaming_buffer.text) {
-            let fluggable_text = self.streaming_buffer.text[..flush_idx].to_string();
-            let fluggable_lines = render_markdown(&fluggable_text, content_width);
-            let flush_height = fluggable_lines.len() as u16;
-
-            if flush_height > 0 {
-                // SURGICAL CLEAR of the existing hole only
-                if self.streaming_buffer.allocated_height > 0 {
-                    let top_row = terminal_height
-                        .saturating_sub(BOTTOM_UI_HEIGHT)
-                        .saturating_sub(self.streaming_buffer.allocated_height);
-
-                    for row_offset in 0..self.streaming_buffer.allocated_height {
-                        execute!(
-                            stdout_lock,
-                            MoveTo(0, top_row + row_offset),
-                            Clear(ClearType::UntilNewLine)
-                        )?;
-                    }
-                }
-
-                // 2. Commit to history.
-                terminal.insert_before(flush_height, |buf| {
-                    for (i, line) in fluggable_lines.into_iter().enumerate() {
-                        if i >= flush_height as usize {
-                            break;
-                        }
-                        // Use Line's native widget implementation for robust rendering.
-                        // This handles CJK widths and formatting perfectly.
-                        use ratatui::widgets::Widget;
-                        line.render(
-                            Rect::new(2, i as u16, buf.area.width.saturating_sub(2), 1),
-                            buf,
-                        );
-                    }
-                })?;
-
-                self.streaming_buffer.text = self.streaming_buffer.text[flush_idx..].to_string();
-                self.streaming_buffer.allocated_height = 0;
-                self.streaming_buffer.last_printed_height = 0;
-
-                if self.streaming_buffer.is_empty() {
-                    terminal.draw(|f| self.render(f))?;
-                    return Ok(());
-                }
-            }
-        }
-
-        // --- 2. LIVE VIEWPORT ---
-        let rendered_lines = render_markdown(&self.streaming_buffer.text, content_width);
-        let needed_height = rendered_lines.len() as u16;
-
-        let visible_height = std::cmp::min(needed_height, max_viewport_height);
-        let drop_count = needed_height.saturating_sub(visible_height) as usize;
-
-        // Ensure hole exists
-        if self.streaming_buffer.allocated_height == 0 {
-            terminal.insert_before(visible_height, |_| {})?;
-            self.streaming_buffer.allocated_height = visible_height;
-        } else if visible_height > self.streaming_buffer.allocated_height {
-            let diff = visible_height - self.streaming_buffer.allocated_height;
-            terminal.insert_before(diff, |_| {})?;
-            self.streaming_buffer.allocated_height = visible_height;
-        }
-
-        // Surgical redraw viewport
-        let top_row = terminal_height
-            .saturating_sub(BOTTOM_UI_HEIGHT)
-            .saturating_sub(self.streaming_buffer.allocated_height);
-
-        // CLEAR ONLY THE ALLOCATED ROWS surgically
-        for row_offset in 0..self.streaming_buffer.allocated_height {
-            execute!(
-                stdout_lock,
-                MoveTo(0, top_row + row_offset),
-                Clear(ClearType::UntilNewLine)
-            )?;
-        }
-
-        // Draw ONLY the visible lines in their correct positions
-        use crossterm::style::Print;
-        for (i, line) in rendered_lines.into_iter().skip(drop_count).enumerate() {
-            if i >= visible_height as usize {
+            if flushed.is_empty() {
                 break;
             }
-            // Collect all spans into a single string for atomic print
-            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
-            execute!(stdout_lock, MoveTo(2, top_row + i as u16), Print(text))?;
+
+            self.messages.update_streaming_text(&self.current_text);
+            self.streaming_buffer.text = remaining;
         }
 
-        // Restore cursor and Ratatui UI
-        execute!(stdout_lock, MoveTo(0, terminal_height.saturating_sub(1)))?;
-        let _ = std::io::Write::flush(&mut std::io::stdout());
-
-        terminal.draw(|f| self.render(f))?;
-
-        self.streaming_buffer.last_printed_height = visible_height;
         self.streaming_buffer.last_flush = Instant::now();
-
-        Ok(())
     }
 
-    fn flush_and_finalize(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<()> {
-        const BOTTOM_UI_HEIGHT: u16 = 3;
-
-        // Finalize filtering first to get all text
+    fn finalize_streaming_state(&mut self) {
         let remainder = self.tag_filter.finalize();
         if !remainder.is_empty() {
             self.streaming_buffer.push(&remainder);
             self.current_text.push_str(&remainder);
         }
 
-        if self.streaming_buffer.is_empty() {
-            // Surgical clear of residual hole
-            if self.streaming_buffer.allocated_height > 0 {
-                let stdout = std::io::stdout();
-                let mut stdout_lock = stdout.lock();
-                let terminal_height = terminal.size()?.height;
-                let top_row = terminal_height
-                    .saturating_sub(BOTTOM_UI_HEIGHT)
-                    .saturating_sub(self.streaming_buffer.allocated_height);
-
-                for row_offset in 0..self.streaming_buffer.allocated_height {
-                    execute!(
-                        stdout_lock,
-                        MoveTo(0, top_row + row_offset),
-                        Clear(ClearType::UntilNewLine)
-                    )?;
-                }
-                self.streaming_buffer.allocated_height = 0;
-                terminal.draw(|f| self.render(f))?;
-            }
-            self.needs_final_flush = false;
-            return Ok(());
-        }
-
-        // --- FINAL COMMIT TO HISTORY ---
-        // 1. Surgical clear of viewport rows
-        if self.streaming_buffer.allocated_height > 0 {
-            let stdout = std::io::stdout();
-            let mut stdout_lock = stdout.lock();
-            let terminal_height = terminal.size()?.height;
-            let top_row = terminal_height
-                .saturating_sub(BOTTOM_UI_HEIGHT)
-                .saturating_sub(self.streaming_buffer.allocated_height);
-
-            for row_offset in 0..self.streaming_buffer.allocated_height {
-                execute!(
-                    stdout_lock,
-                    MoveTo(0, top_row + row_offset),
-                    Clear(ClearType::UntilNewLine)
-                )?;
-            }
-        }
-
-        // 2. Render and insert remaining lines
-        let terminal_width = terminal.size()?.width;
-        let content_width = terminal_width.saturating_sub(4) as usize;
-        let rendered_lines = render_markdown(&self.streaming_buffer.text, content_width);
-        let final_height = rendered_lines.len() as u16;
-
-        if final_height > 0 {
-            terminal.insert_before(final_height, |buf| {
-                for (i, line) in rendered_lines.into_iter().enumerate() {
-                    if i >= final_height as usize {
-                        break;
-                    }
-                    use ratatui::widgets::Widget;
-                    line.render(
-                        Rect::new(2, i as u16, buf.area.width.saturating_sub(2), 1),
-                        buf,
-                    );
-                }
-            })?;
-        }
-
-        // Add consistent spacing
-        terminal.insert_before(1, |_| {})?;
-
-        // Handle error message if present
-        if let Some(error_msg) = self.pending_error.take() {
-            let error_line = Line::styled(
-                format!("Error: {}", error_msg),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Red),
-            );
-            terminal.insert_before(2, |buf| {
-                let area = Rect::new(0, 0, buf.area.width, 2);
-                let p = ratatui::widgets::Paragraph::new(vec![Line::from(""), error_line]);
-                ratatui::widgets::Widget::render(p, area, buf);
-            })?;
-        }
-
-        // Reset state
         self.streaming_buffer.clear();
-        self.streaming_buffer.allocated_height = 0;
-        self.streaming_buffer.last_printed_height = 0;
-        self.needs_final_flush = false;
-        Ok(())
+        self.messages.clear_streaming_text();
     }
 
-    fn flush_user_input(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<()> {
-        if let Some(user_input) = self.pending_user_input.take() {
-            let user_lines = vec![
-                Line::styled(
-                    format!("> {}", user_input),
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
-                ),
-                Line::from(""),
-            ];
-            let height = user_lines.len() as u16;
-            terminal.insert_before(height, |buf| {
-                let area = Rect::new(0, 0, buf.area.width, height);
-                let p = ratatui::widgets::Paragraph::new(user_lines);
-                ratatui::widgets::Widget::render(p, area, buf);
-            })?;
+    fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
+        if self.streaming_buffer.is_empty() || width < 4 {
+            return 0;
         }
-        Ok(())
+
+        let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100).max(3);
+        let inner_width = width.saturating_sub(4) as usize;
+        let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
+        let content_height = lines.max(1);
+        (content_height + 2).min(max_height)
+    }
+
+    fn render_live_viewport(&self, frame: &mut ratatui::Frame, area: Rect) {
+        if area.width < 4 || area.height < 3 || self.streaming_buffer.is_empty() {
+            return;
+        }
+
+        let colors = crate::ui::get_colors();
+        let block = Block::default()
+            .title(Span::styled(
+                " Live ",
+                Style::default()
+                    .fg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(colors.border.focused));
+
+        let inner = block.inner(area);
+        frame.render_widget(block, area);
+
+        if inner.width < 1 || inner.height < 1 {
+            return;
+        }
+
+        let rendered_lines = render_markdown(&self.streaming_buffer.text, inner.width as usize);
+        let total_lines = rendered_lines.len();
+        let max_lines = inner.height as usize;
+        let start = total_lines.saturating_sub(max_lines);
+        let visible_lines: Vec<Line> = rendered_lines.into_iter().skip(start).collect();
+
+        frame.render_widget(
+            Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
+            inner,
+        );
     }
 
     async fn handle_event(&mut self, event: AppEvent) -> Result<()> {
@@ -838,6 +619,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 debug!(text_len = result.text.len(), "Agent stream completed");
 
                 self.messages.finalize_assistant(result.text);
+                self.finalize_streaming_state();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -848,8 +630,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_status_message("Background task completed");
                 }
 
-                // Set flag to flush and add spacing
-                self.needs_final_flush = true;
                 return true;
             }
 
@@ -860,6 +640,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
+                self.finalize_streaming_state();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -869,10 +650,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_background(false);
                     self.footer.set_status_message("Background task failed");
                 }
-
-                // Set flag to flush and show error
-                self.needs_final_flush = true;
-                self.pending_error = Some(message);
                 return true;
             }
 
@@ -1350,6 +1127,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             self.messages.add_assistant("[Cancelled]".to_string());
         }
 
+        self.finalize_streaming_state();
         self.current_text.clear();
         self.loading_indicator
             .set_streaming_state(StreamingState::Idle);
@@ -1415,11 +1193,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.messages.add_user(trimmed.to_string());
 
-        // Store user input for flushing in run_loop
-        self.pending_user_input = Some(trimmed.to_string());
-
         self.input.clear();
         self.current_text.clear();
+        self.streaming_buffer.clear();
+        self.messages.clear_streaming_text();
         self.loading_indicator
             .set_streaming_state(StreamingState::Responding);
 
@@ -1526,23 +1303,27 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
-        // Restore partitioned layout to ensure history and input are rendered correctly
         let input_height = self.input.height();
+        let live_height = self.live_viewport_height(size.width, size.height.saturating_sub(input_height));
         let layout = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(0), Constraint::Length(input_height)])
+            .constraints([
+                Constraint::Min(0),
+                Constraint::Length(live_height),
+                Constraint::Length(input_height),
+            ])
             .split(size);
 
         let messages_area = layout[0];
-        let input_area = layout[1];
+        let live_area = layout[1];
+        let input_area = layout[2];
 
-        // Render messages (history)
+        self.messages_area = messages_area;
+
         self.messages.render(frame, messages_area);
-
-        // Render input box at its reserved bottom shelf
+        self.render_live_viewport(frame, live_area);
         self.input.render(frame, input_area);
 
-        // Render approval dialog on top if active
         if let Some(ref dialog) = self.approval_dialog {
             dialog.render(frame, size);
         }

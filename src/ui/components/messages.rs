@@ -146,13 +146,8 @@ pub struct MessagesComponent {
     current_turn: usize,
     /// Whether tool groups are expanded (showing all tools)
     tool_expansion_enabled: bool,
-    last_rendered_index: usize,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
-    /// Whether the dashboard has been printed to static terminal history
-    dashboard_rendered: bool,
-    /// Whether turn separator has been added for current streaming response
-    streaming_turn_separator_added: bool,
 }
 
 impl MessagesComponent {
@@ -167,10 +162,7 @@ impl MessagesComponent {
             turn_counter: 0,
             current_turn: 0,
             tool_expansion_enabled: false,
-            last_rendered_index: 0,
             scroll_offset: 0,
-            dashboard_rendered: false,
-            streaming_turn_separator_added: false,
         }
     }
 
@@ -178,22 +170,6 @@ impl MessagesComponent {
     fn next_turn(&mut self) -> usize {
         self.turn_counter += 1;
         self.turn_counter
-    }
-
-    pub fn take_unrendered_items(&mut self) -> Vec<HistoryItem> {
-        let items: Vec<HistoryItem> = self.items[self.last_rendered_index..].to_vec();
-        self.last_rendered_index = self.items.len();
-        items
-    }
-
-    /// Checks if the dashboard should be printed to the terminal scrollback
-    pub fn should_render_dashboard_to_history(&self) -> bool {
-        !self.dashboard_rendered && self.items.is_empty() && self.streaming_text.is_none()
-    }
-
-    /// Marks the dashboard as printed to the terminal scrollback
-    pub fn mark_dashboard_rendered(&mut self) {
-        self.dashboard_rendered = true;
     }
 
     pub fn add_user(&mut self, content: String) {
@@ -220,7 +196,15 @@ impl MessagesComponent {
 
     pub fn update_streaming_text(&mut self, text: &str) {
         debug!(text_len = text.len(), "Updating streaming text");
-        self.streaming_text = Some(text.to_string());
+        self.streaming_text = if text.is_empty() {
+            None
+        } else {
+            Some(text.to_string())
+        };
+    }
+
+    pub fn clear_streaming_text(&mut self) {
+        self.streaming_text = None;
     }
 
     pub fn flush_streaming_chunk(&mut self) {
@@ -230,7 +214,6 @@ impl MessagesComponent {
     pub fn finalize_assistant(&mut self, text: String) {
         debug!(text_len = text.len(), "Finalizing assistant response");
         self.flush_streaming_chunk();
-        self.streaming_turn_separator_added = false;
         self.finalize_pending_tool_group();
         self.streaming_text = None;
         // Finalize any pending thinking
@@ -521,11 +504,18 @@ impl MessagesComponent {
             || self.pending_tool_group.is_some();
 
         if !has_history {
+            let dashboard_lines = self.render_dashboard_lines(area.width);
+            if !dashboard_lines.is_empty() {
+                frame.render_widget(
+                    Paragraph::new(dashboard_lines)
+                        .style(Style::default().bg(colors.background.primary)),
+                    area,
+                );
+            }
             return;
         }
 
-        // Only render items that haven't been inserted into terminal scrollback
-        for item in self.items[self.last_rendered_index..].iter() {
+        for item in &self.items {
             let item_turn = match item {
                 HistoryItem::User { turn, .. } => Some(*turn),
                 HistoryItem::Assistant { turn, .. } => Some(*turn),
@@ -609,15 +599,12 @@ impl MessagesComponent {
         }
 
         if let Some(ref streaming) = self.streaming_text {
-            if !self.streaming_turn_separator_added
-                && last_turn.map_or(true, |lt| lt != self.current_turn)
-            {
+            if last_turn.map_or(true, |lt| lt != self.current_turn) {
                 if last_turn.is_some() {
                     lines.push(Line::from(""));
                 }
                 lines.push(Self::render_turn_separator(self.current_turn, &colors));
                 lines.push(Line::from(""));
-                self.streaming_turn_separator_added = true;
             }
 
             let content_lines = render_markdown(streaming, content_width);
