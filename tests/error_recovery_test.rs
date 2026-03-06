@@ -7,7 +7,7 @@ mod scenarios;
 mod mocks;
 
 use mocks::ScenarioMockClient;
-use mocks::{FlakyMockClient, SlowMockClient};
+use mocks::FlakyMockClient;
 use scenarios::{assert_events_contain_text, assert_no_errors, ScenarioBuilder, ScenarioRunner};
 
 #[tokio::test]

@@ -123,7 +123,7 @@ async fn test_streaming_with_delays() {
 
     let start = std::time::Instant::now();
 
-    let client = SlowMockClient::new(100, 50);
+    let client = SlowMockClient::slow();
 
     let scenario = ScenarioBuilder::new("slow_streaming")
         .description("Test streaming with delays")
@@ -137,7 +137,30 @@ async fn test_streaming_with_delays() {
 
     let duration = start.elapsed();
 
-    assert!(duration >= Duration::from_millis(100));
+    assert!(duration >= Duration::from_millis(500));
+    assert!(!events.is_empty());
+}
+
+#[tokio::test]
+async fn test_streaming_very_slow() {
+    use std::time::Duration;
+
+    let start = std::time::Instant::now();
+    let client = SlowMockClient::very_slow();
+
+    let scenario = ScenarioBuilder::new("very_slow_streaming")
+        .description("Test streaming with very long delays")
+        .build();
+
+    let runner = ScenarioRunner::new(scenario);
+    let events = runner
+        .execute(client)
+        .await
+        .expect("Scenario execution failed");
+
+    let duration = start.elapsed();
+
+    assert!(duration >= Duration::from_millis(2000));
     assert!(!events.is_empty());
 }
 
