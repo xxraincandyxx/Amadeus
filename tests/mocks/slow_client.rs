@@ -5,8 +5,8 @@ use async_trait::async_trait;
 use futures::Stream;
 use tokio::time::sleep;
 
-use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::agent::messages::Message;
+use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
 
 pub struct SlowMockClient {
@@ -21,11 +21,11 @@ impl SlowMockClient {
             delta_delay_ms,
         }
     }
-    
+
     pub fn slow() -> Self {
         Self::new(500, 50)
     }
-    
+
     pub fn very_slow() -> Self {
         Self::new(2000, 200)
     }
@@ -52,7 +52,7 @@ impl LLMClient for SlowMockClient {
         sleep(Duration::from_millis(self.base_delay_ms)).await;
         Ok(("end_turn".to_string(), vec![]))
     }
-    
+
     async fn create_message_stream(
         &self,
         _system: &str,
@@ -61,17 +61,17 @@ impl LLMClient for SlowMockClient {
         _max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         tokio::time::sleep(Duration::from_millis(self.base_delay_ms)).await;
-        
+
         let events = vec![
             Ok(StreamEvent::TextDelta("Slow ".to_string())),
             Ok(StreamEvent::TextDelta("streaming ".to_string())),
             Ok(StreamEvent::TextDelta("response".to_string())),
             Ok(StreamEvent::StopReason("end_turn".to_string())),
         ];
-        
+
         let base_delay = self.base_delay_ms;
         tokio::time::sleep(Duration::from_millis(base_delay)).await;
-        
+
         Ok(Box::pin(futures::stream::iter(events)))
     }
 }
@@ -80,17 +80,20 @@ impl LLMClient for SlowMockClient {
 mod tests {
     use super::*;
     use futures::StreamExt;
-    
+
     #[tokio::test]
     async fn test_slow_client_delays() {
         let client = SlowMockClient::new(100, 50);
-        
+
         let start = std::time::Instant::now();
-        let stream = client.create_message_stream("", &[], &[], 100).await.unwrap();
-        
+        let stream = client
+            .create_message_stream("", &[], &[], 100)
+            .await
+            .unwrap();
+
         let events: Vec<_> = stream.collect().await;
         let duration = start.elapsed();
-        
+
         assert!(duration >= Duration::from_millis(100));
         assert_eq!(events.len(), 4);
     }

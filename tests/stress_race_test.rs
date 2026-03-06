@@ -1,23 +1,20 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 #[tokio::test]
-async fn fuzz_random_delays() {
-}
+async fn fuzz_random_delays() {}
 
 #[tokio::test]
-async fn fuzz_concurrent_state_mutations() {
-}
+async fn fuzz_concurrent_state_mutations() {}
 
 #[tokio::test]
-async fn fuzz_interleaved_operations() {
-}
+async fn fuzz_interleaved_operations() {}
 
 #[tokio::test]
 async fn stress_race_condition_detection() {
     let counter = Arc::new(AtomicUsize::new(0));
-    
+
     let handles: Vec<_> = (0..100)
         .map(|_| {
             let counter = Arc::clone(&counter);
@@ -28,10 +25,10 @@ async fn stress_race_condition_detection() {
             })
         })
         .collect();
-    
+
     for handle in handles {
         handle.await.unwrap();
     }
-    
+
     assert_eq!(counter.load(Ordering::SeqCst), 10000);
 }
