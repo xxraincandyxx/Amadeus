@@ -514,22 +514,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                 // 2. Commit to history.
                 terminal.insert_before(flush_height, |buf| {
-                    let area = Rect::new(0, 0, buf.area.width, flush_height);
                     for (i, line) in fluggable_lines.into_iter().enumerate() {
                         if i >= flush_height as usize {
                             break;
                         }
-                        let mut x = 2;
-                        for span in line.spans {
-                            for c in span.content.chars() {
-                                let cw = c.width().unwrap_or(1) as u16;
-                                let cell_idx = (area.y + i as u16) * buf.area.width + (area.x + x);
-                                if cell_idx < buf.content.len() as u16 {
-                                    buf.content[cell_idx as usize].set_symbol(&c.to_string());
-                                }
-                                x += cw;
-                            }
-                        }
+                        // Use Line's native widget implementation for robust rendering.
+                        // This handles CJK widths and formatting perfectly.
+                        use ratatui::widgets::Widget;
+                        line.render(
+                            Rect::new(2, i as u16, buf.area.width.saturating_sub(2), 1),
+                            buf,
+                        );
                     }
                 })?;
 

@@ -415,6 +415,16 @@ fn is_list_item(line: &str) -> bool {
     trimmed.starts_with("- ") || trimmed.starts_with("* ")
 }
 
+/// Returns true if the character is a CJK ideograph or punctuation.
+fn is_cjk(c: char) -> bool {
+    // Basic CJK Unified Ideographs block
+    ('\u{4E00}'..='\u{9FFF}').contains(&c) ||
+    // CJK Symbols and Punctuation (full-width comma, period, etc.)
+    ('\u{3000}'..='\u{303F}').contains(&c) ||
+    // Halfwidth and Fullwidth Forms
+    ('\u{FF00}'..='\u{FFEF}').contains(&c)
+}
+
 pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
     let segments = detect_code_blocks(content);
     let mut lines = Vec::new();
@@ -452,8 +462,21 @@ pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
                         {
                             break;
                         }
+
                         if !paragraph.is_empty() {
-                            paragraph.push(' ');
+                            // CJK Heuristic: Only insert a space when joining lines if
+                            // neither the preceding nor the current character is CJK.
+                            let last_char = paragraph.chars().last();
+                            let first_char = current_line.chars().next();
+
+                            let needs_space = match (last_char, first_char) {
+                                (Some(l), Some(f)) => !is_cjk(l) && !is_cjk(f),
+                                _ => true,
+                            };
+
+                            if needs_space {
+                                paragraph.push(' ');
+                            }
                         }
                         paragraph.push_str(current_line);
                         i += 1;
