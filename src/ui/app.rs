@@ -1134,33 +1134,20 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
                 self.messages.toggle_tool_expansion();
             }
-            // Handle 'B' key with various modifier combinations
-            (_, KeyCode::Char('b') | KeyCode::Char('B')) => {
+            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
                 let mods = key.modifiers;
                 // Ctrl+Alt+B or Cmd+Alt+B: Run in background
-                if (mods.contains(KeyModifiers::CONTROL) && mods.contains(KeyModifiers::ALT))
-                    || (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::ALT))
-                {
+                if mods.contains(KeyModifiers::ALT) {
                     if self.stream_rx.is_some() {
                         self.run_in_background();
                     }
-                }
-                // Ctrl+Shift+B or Cmd+Shift+B: Toggle Files sidebar
-                else if (mods.contains(KeyModifiers::CONTROL)
-                    && mods.contains(KeyModifiers::SHIFT))
-                    || (mods.contains(KeyModifiers::SUPER) && mods.contains(KeyModifiers::SHIFT))
-                {
+                } else {
+                    // Ctrl+B or Cmd+B: Toggle Files sidebar
                     self.toggle_sidebar(SidebarKind::Files);
                 }
-                // Ctrl+B or Cmd+B: Toggle Files sidebar (legacy)
-                else if mods.contains(KeyModifiers::CONTROL) || mods.contains(KeyModifiers::SUPER)
-                {
-                    self.toggle_sidebar(SidebarKind::Files);
-                }
-                // Alt+B: Toggle Help sidebar
-                else if mods.contains(KeyModifiers::ALT) {
-                    self.toggle_sidebar(SidebarKind::Help);
-                }
+            }
+            (KeyModifiers::ALT, KeyCode::Char('b' | 'B')) => {
+                self.toggle_sidebar(SidebarKind::Help);
             }
             (KeyModifiers::ALT, KeyCode::Char('s')) => {
                 self.toggle_sidebar(SidebarKind::Skills);
