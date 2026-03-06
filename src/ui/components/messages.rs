@@ -504,6 +504,7 @@ impl MessagesComponent {
             Span::styled("─".repeat(8), Style::default().fg(colors.ui.dark)),
         ])
     }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.width < 3 || area.height < 1 {
             return;
@@ -813,6 +814,7 @@ impl MessagesComponent {
             CompressionStatus::Pending => "Compacting chat history...".to_string(),
         }
     }
+
     fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
         let accent = colors.text.accent;
         let dark = colors.ui.dark;
