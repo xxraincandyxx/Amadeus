@@ -17,7 +17,6 @@ use ratatui::{
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
-use unicode_width::UnicodeWidthChar;
 
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent};
@@ -571,14 +570,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         // Draw ONLY the visible lines in their correct positions
+        use crossterm::style::Print;
         for (i, line) in rendered_lines.into_iter().skip(drop_count).enumerate() {
             if i >= visible_height as usize {
                 break;
             }
-            execute!(stdout_lock, MoveTo(2, top_row + i as u16))?;
-            for span in line.spans {
-                print!("{}", span.content);
-            }
+            // Collect all spans into a single string for atomic print
+            let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+            execute!(stdout_lock, MoveTo(2, top_row + i as u16), Print(text))?;
         }
 
         // Restore cursor and Ratatui UI
@@ -657,19 +656,15 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         if final_height > 0 {
             terminal.insert_before(final_height, |buf| {
-                let area = Rect::new(0, 0, buf.area.width, final_height);
                 for (i, line) in rendered_lines.into_iter().enumerate() {
                     if i >= final_height as usize {
                         break;
                     }
-                    let mut x = 2; // Left padding
-                    for span in line.spans {
-                        let cell_idx = (area.y + i as u16) * buf.area.width + (area.x + x);
-                        if cell_idx < buf.content.len() as u16 {
-                            buf.content[cell_idx as usize].set_symbol(&span.content);
-                        }
-                        x += span.content.len() as u16;
-                    }
+                    use ratatui::widgets::Widget;
+                    line.render(
+                        Rect::new(2, i as u16, buf.area.width.saturating_sub(2), 1),
+                        buf,
+                    );
                 }
             })?;
         }
