@@ -168,6 +168,38 @@ impl InputComponent {
         self.textarea.move_cursor(CursorMove::End);
     }
 
+    pub fn move_cursor_word_forward(&mut self) {
+        self.textarea.move_cursor(CursorMove::WordForward);
+    }
+
+    pub fn move_cursor_word_back(&mut self) {
+        self.textarea.move_cursor(CursorMove::WordBack);
+    }
+
+    pub fn move_cursor_up(&mut self) {
+        self.textarea.move_cursor(CursorMove::Up);
+    }
+
+    pub fn move_cursor_down(&mut self) {
+        self.textarea.move_cursor(CursorMove::Down);
+    }
+
+    pub fn delete_line_by_end(&mut self) {
+        self.textarea.delete_line_by_end();
+    }
+
+    pub fn delete_line_by_head(&mut self) {
+        self.textarea.delete_line_by_head();
+    }
+
+    pub fn delete_word(&mut self) {
+        self.textarea.delete_word();
+    }
+
+    pub fn delete_next_word(&mut self) {
+        self.textarea.delete_next_word();
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if area.height < 3 {
             return;

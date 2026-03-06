@@ -1130,34 +1130,86 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.input.history_down();
                 }
             }
-            // Ctrl+O: Toggle tool expansion
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
                 self.messages.toggle_tool_expansion();
             }
             (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
                 let mods = key.modifiers;
-                // Ctrl+Alt+B or Cmd+Alt+B: Run in background
                 if mods.contains(KeyModifiers::ALT) {
                     if self.stream_rx.is_some() {
                         self.run_in_background();
                     }
-                } else {
-                    // Ctrl+B or Cmd+B: Toggle Files sidebar
-                    self.toggle_sidebar(SidebarKind::Files);
+                } else if self.stream_rx.is_none() {
+                    self.input.move_cursor_left();
+                }
+            }
+            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('f' | 'F')) => {
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_right();
+                }
+            }
+            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('p' | 'P')) => {
+                if self.stream_rx.is_none() {
+                    self.input.history_up();
+                }
+            }
+            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('n' | 'N')) => {
+                if self.stream_rx.is_none() {
+                    self.input.history_down();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('a' | 'A')) => {
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_line_start();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('e' | 'E')) => {
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_line_end();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('k' | 'K')) => {
+                if self.stream_rx.is_none() {
+                    self.input.delete_line_by_end();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('u' | 'U')) => {
+                if self.stream_rx.is_none() {
+                    self.input.delete_line_by_head();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('d' | 'D')) => {
+                if self.stream_rx.is_none() {
+                    self.input.handle_delete();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('h' | 'H')) => {
+                if self.stream_rx.is_none() {
+                    self.input.handle_backspace();
                 }
             }
             (KeyModifiers::ALT, KeyCode::Char('b' | 'B')) => {
-                self.toggle_sidebar(SidebarKind::Help);
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_word_back();
+                }
+            }
+            (KeyModifiers::ALT, KeyCode::Char('f' | 'F')) => {
+                if self.stream_rx.is_none() {
+                    self.input.move_cursor_word_forward();
+                }
+            }
+            (KeyModifiers::ALT, KeyCode::Char('d' | 'D')) => {
+                if self.stream_rx.is_none() {
+                    self.input.delete_next_word();
+                }
+            }
+            (KeyModifiers::ALT, KeyCode::Backspace) => {
+                if self.stream_rx.is_none() {
+                    self.input.delete_word();
+                }
             }
             (KeyModifiers::ALT, KeyCode::Char('s')) => {
                 self.toggle_sidebar(SidebarKind::Skills);
-            }
-            (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
-                self.should_quit = true;
-            }
-            (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
-                // Manual context compaction (also available in input mode)
-                self.start_compaction();
             }
             (KeyModifiers::NONE, KeyCode::Char('q')) => {
                 if self.input.get_input().trim().is_empty() && self.stream_rx.is_none() {
