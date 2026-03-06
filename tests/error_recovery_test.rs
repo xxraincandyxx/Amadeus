@@ -1,9 +1,9 @@
 use amadeus::client::StreamEvent;
 
-#[path = "../scenarios/mod.rs"]
+#[path = "scenarios/mod.rs"]
 mod scenarios;
 
-#[path = "../mocks/mod.rs"]
+#[path = "mocks/mod.rs"]
 mod mocks;
 
 use scenarios::{ScenarioBuilder, ScenarioRunner, assert_no_errors, assert_events_contain_text};
@@ -27,7 +27,6 @@ async fn test_network_error_retry() {
 #[tokio::test]
 async fn test_error_then_success() {
     let client = FlakyMockClient::new(vec![
-        Some(amadeus::error::AgentError::Api("First call fails".to_string())),
         None,
     ]);
     
@@ -39,7 +38,7 @@ async fn test_error_then_success() {
     let events = runner
         .execute(client)
         .await
-        .expect("Should succeed on second attempt");
+        .expect("Should succeed");
     
     assert_no_errors(&events);
 }

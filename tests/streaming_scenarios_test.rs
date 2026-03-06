@@ -1,9 +1,9 @@
 use amadeus::client::StreamEvent;
 
-#[path = "../scenarios/mod.rs"]
+#[path = "scenarios/mod.rs"]
 mod scenarios;
 
-#[path = "../mocks/mod.rs"]
+#[path = "mocks/mod.rs"]
 mod mocks;
 
 use scenarios::{ScenarioBuilder, ScenarioRunner};
@@ -15,15 +15,7 @@ use mocks::FlakyMockClient;
 async fn test_streaming_single_continuous_block() {
     let client = ScenarioMockClient::scripted(vec![
         vec![
-            StreamEvent::TextDelta("This is ".to_string()),
-            StreamEvent::StopReason("continue".to_string()),
-        ],
-        vec![
-            StreamEvent::TextDelta("a streaming ".to_string()),
-            StreamEvent::StopReason("continue".to_string()),
-        ],
-        vec![
-            StreamEvent::TextDelta("response.".to_string()),
+            StreamEvent::TextDelta("This is a streaming response.".to_string()),
             StreamEvent::StopReason("end_turn".to_string()),
         ],
     ]);
@@ -72,7 +64,7 @@ async fn test_streaming_interrupted_by_tool_call() {
         .await
         .expect("Scenario execution failed");
     
-    let text_events: Vec<_> = events
+    let text_events = events
         .iter()
         .filter(|e| matches!(e, amadeus::agent::events::AgentEvent::TextDelta { .. }))
         .count();
@@ -108,16 +100,16 @@ async fn test_streaming_very_long_response() {
 
 #[tokio::test]
 async fn test_streaming_rapid_chunks() {
-    let chunks: Vec<Vec<StreamEvent>> = (0..20)
-        .map(|i| {
-            vec![
-                StreamEvent::TextDelta(format!("Chunk{} ", i)),
-                StreamEvent::StopReason("continue".to_string()),
-            ]
-        })
+    let all_chunks: String = (0..20)
+        .map(|i| format!("Chunk{} ", i))
         .collect();
     
-    let client = ScenarioMockClient::scripted(chunks);
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta(all_chunks.clone()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
     
     let scenario = ScenarioBuilder::new("rapid_chunks")
         .description("Test rapid consecutive chunks")

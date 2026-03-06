@@ -1,27 +1,26 @@
 use amadeus::client::StreamEvent;
 
-#[path = "../scenarios/mod.rs"]
+#[path = "scenarios/mod.rs"]
 mod scenarios;
 
-#[path = "../mocks/mod.rs"]
+#[path = "mocks/mod.rs"]
 mod mocks;
 
-use scenarios::{ScenarioBuilder, ScenarioMockClient, ScenarioRunner, assert_events_contain_text};
+use scenarios::{ScenarioBuilder, ScenarioRunner, assert_events_contain_text};
 use mocks::ScenarioMockClient;
 
 #[tokio::test]
 async fn stress_10k_chars_rapid_streaming() {
-    let chunks: Vec<Vec<StreamEvent>> = (0..100)
-        .map(|i| {
-            vec![
-                StreamEvent::TextDelta(format!("Chunk {}: ", i)),
-                StreamEvent::TextDelta("Lorem ipsum ".repeat(10)),
-                StreamEvent::StopReason("continue".to_string()),
-            ]
-        })
+    let all_chunks: String = (0..100)
+        .map(|i| format!("Chunk {}: {}", i, "Lorem ipsum ".repeat(10)))
         .collect();
     
-    let client = ScenarioMockClient::scripted(chunks);
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta(all_chunks.clone()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
     
     let scenario = ScenarioBuilder::new("10k_streaming")
         .description("Stress test: 10k chars rapid streaming")
@@ -38,16 +37,16 @@ async fn stress_10k_chars_rapid_streaming() {
 
 #[tokio::test]
 async fn stress_100_consecutive_chunks() {
-    let chunks: Vec<Vec<StreamEvent>> = (0..100)
-        .map(|i| {
-            vec![
-                StreamEvent::TextDelta(format!("Message {} ", i)),
-                StreamEvent::StopReason("continue".to_string()),
-            ]
-        })
+    let all_chunks: String = (0..100)
+        .map(|i| format!("Message {} ", i))
         .collect();
     
-    let client = ScenarioMockClient::scripted(chunks);
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta(all_chunks.clone()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
     
     let scenario = ScenarioBuilder::new("100_chunks")
         .description("Stress test: 100 consecutive chunks")

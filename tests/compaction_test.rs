@@ -156,3 +156,137 @@ async fn test_config_defaults() {
     assert_eq!(config.min_messages, 10);
     assert_eq!(config.max_tool_result_chars, 5000);
 }
+
+// ============================================================================
+// Integration tests merged from flows/compaction_during_stream.rs
+// ============================================================================
+
+use amadeus::client::StreamEvent;
+
+#[path = "scenarios/mod.rs"]
+mod scenarios;
+
+#[path = "mocks/mod.rs"]
+mod mocks;
+
+use scenarios::{ScenarioBuilder, assert_events_contain_text};
+use mocks::ScenarioMockClient;
+
+/// Test that compaction preserves recent messages during streaming.
+#[tokio::test]
+async fn test_compaction_preserves_recent_messages() {
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta("Turn 8: Building up context... ".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+    
+    let scenario = ScenarioBuilder::new("compaction_test")
+        .description("Test context compaction preserves recent messages")
+        .build();
+    
+    let events = scenario
+        .execute(client)
+        .await
+        .expect("Scenario failed");
+    
+    assert_events_contain_text(&events, "Turn 8");
+}
+
+/// Test compaction during active streaming.
+#[tokio::test]
+async fn test_compaction_during_active_streaming() {
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta("Turn 4: Final response after potential compaction".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+    
+    let scenario = ScenarioBuilder::new("compaction_streaming")
+        .description("Test compaction during streaming")
+        .build();
+    
+    let events = scenario
+        .execute(client)
+        .await
+        .expect("Scenario failed");
+    
+    assert_events_contain_text(&events, "Final response");
+}
+
+/// Test multiple compactions in a long conversation.
+#[tokio::test]
+async fn test_multiple_compactions_long_conversation() {
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta("Turn 15: This is a longer message to build up context quickly. ".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+    
+    let scenario = ScenarioBuilder::new("long_conversation")
+        .description("Test multiple compactions in long conversation")
+        .build();
+    
+    let events = scenario
+        .execute(client)
+        .await
+        .expect("Scenario failed");
+    
+    assert_events_contain_text(&events, "Turn 15");
+}
+
+/// Test that compaction doesn't interrupt tool chains.
+#[tokio::test]
+async fn test_compaction_doesnt_interrupt_tool_chain() {
+    use serde_json::json;
+    
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta("Reading... ".to_string()),
+            StreamEvent::ToolCallStart {
+                id: "tool_1".to_string(),
+                name: "read_file".to_string(),
+            },
+            StreamEvent::ToolCallDelta {
+                arguments: json!({"path": "main.rs"}).to_string(),
+            },
+            StreamEvent::ToolCallDone("tool_1".to_string()),
+            StreamEvent::StopReason("tool_use".to_string()),
+        ],
+        vec![
+            StreamEvent::TextDelta("Now editing... ".to_string()),
+            StreamEvent::ToolCallStart {
+                id: "tool_2".to_string(),
+                name: "edit_file".to_string(),
+            },
+            StreamEvent::ToolCallDelta {
+                arguments: json!({"path": "main.rs", "old_text": "x", "new_text": "y"}).to_string(),
+            },
+            StreamEvent::ToolCallDone("tool_2".to_string()),
+            StreamEvent::StopReason("tool_use".to_string()),
+        ],
+        vec![
+            StreamEvent::TextDelta("Operations completed".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+    
+    let scenario = ScenarioBuilder::new("tool_compaction")
+        .description("Test compaction doesn't interrupt tool chain")
+        .build();
+    
+    let events = scenario
+        .execute(client)
+        .await
+        .expect("Scenario failed");
+    
+    let tool_calls = events
+        .iter()
+        .filter(|e| matches!(e, amadeus::agent::events::AgentEvent::ToolStart { .. }))
+        .count();
+    
+    assert_eq!(tool_calls, 2, "All tool calls should execute");
+}

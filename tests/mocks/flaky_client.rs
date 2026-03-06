@@ -10,12 +10,12 @@ use amadeus::agent::messages::Message;
 use amadeus::error::{AgentError, Result};
 
 pub struct FlakyMockClient {
-    failure_schedule: Vec<Option<AgentError>>,
+    failure_schedule: Vec<Option<String>>,
     call_count: Arc<AtomicUsize>,
 }
 
 impl FlakyMockClient {
-    pub fn new(failure_schedule: Vec<Option<AgentError>>) -> Self {
+    pub fn new(failure_schedule: Vec<Option<String>>) -> Self {
         Self {
             failure_schedule,
             call_count: Arc::new(AtomicUsize::new(0)),
@@ -27,7 +27,7 @@ impl FlakyMockClient {
         let mut schedule = vec![None; max_turn + 1];
         
         for turn in turn_numbers {
-            schedule[turn] = Some(AgentError::Api("Simulated failure".to_string()));
+            schedule[turn] = Some("Simulated failure".to_string());
         }
         
         Self::new(schedule)
@@ -38,7 +38,7 @@ impl FlakyMockClient {
         let mut schedule = vec![None; max_turn + 1];
         
         for turn in turn_numbers {
-            schedule[turn] = Some(AgentError::Api("503 Service Unavailable".to_string()));
+            schedule[turn] = Some("503 Service Unavailable".to_string());
         }
         
         Self::new(schedule)
@@ -65,8 +65,8 @@ impl LLMClient for FlakyMockClient {
     ) -> Result<(String, Vec<amadeus::agent::messages::ContentBlock>)> {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         
-        if let Some(Some(error)) = self.failure_schedule.get(count) {
-            Err(error.clone())
+        if let Some(Some(error_msg)) = self.failure_schedule.get(count) {
+            Err(AgentError::Api(error_msg.clone()))
         } else {
             Ok(("end_turn".to_string(), vec![]))
         }
@@ -81,8 +81,8 @@ impl LLMClient for FlakyMockClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let count = self.call_count.fetch_add(1, Ordering::SeqCst);
         
-        if let Some(Some(error)) = self.failure_schedule.get(count) {
-            Err(error.clone())
+        if let Some(Some(error_msg)) = self.failure_schedule.get(count) {
+            Err(AgentError::Api(error_msg.clone()))
         } else {
             let events = vec![
                 Ok(StreamEvent::TextDelta("Success".to_string())),
