@@ -8,16 +8,31 @@ Amadeus follows a multi-tier testing strategy, emphasizing mock-based simulation
 
 ```
 tests/
+├── mod.rs                  # Test module organization
 ├── agent_test.rs           # Core agent loop unit tests
+├── agent_integration_test.rs # Full agent lifecycle tests
 ├── bash_test.rs            # Bash tool execution tests
 ├── config_test.rs          # Environment and configuration tests
 ├── messages_test.rs        # Message serialization/deserialization tests
+├── compaction_test.rs      # Context compaction behavior tests
 │
 ├── mock_llm.rs             # Shared Mock LLM client for simulations
-├── mock_functional_test.rs  # High-signal ReAct loop simulation
+├── mock_functional_test.rs # High-signal ReAct loop simulation
 ├── p2p_test.rs             # Multi-agent delegation integration tests
-├── simulation_p2p.rs       # High-concurrency stress tests (Saturation/Deadlock)
-└── e2e_product_flow.rs     # Human-readable E2E narrative flow
+├── simulation_p2p.rs       # High-concurrency stress tests
+├── e2e_product_flow.rs     # Human-readable E2E narrative flow
+│
+├── error_recovery_test.rs  # Error handling and recovery tests
+├── streaming_scenarios_test.rs # Streaming behavior tests
+├── tool_approval_test.rs   # Policy/approval system tests
+│
+├── stress_*.rs             # Stress tests (concurrent, memory, race, rapid streaming)
+├── scenarios_test.rs       # Scenario-based test runner
+│
+├── fixtures/               # Test data fixtures
+├── mocks/                  # Mock implementations
+├── scenarios/              # Test scenario definitions
+└── unit/                   # Unit test utilities
 ```
 
 ## Running Tests
@@ -43,13 +58,20 @@ Ensures individual components (bash tool, config parser, message formats) behave
 ### 2. Functional Simulation
 Uses `mock_functional_test.rs` to simulate a complete ReAct loop turn-by-turn. This verifies that the agent correctly parses tool calls and integrates results into history without calling a real LLM.
 
-### 3. Orchestration Stress Testing
-`simulation_p2p.rs` launches high-concurrency bursts (e.g., 50+ tasks against 10 workers) to verify:
+### 3. Integration Tests
+- `agent_integration_test.rs` - Full agent lifecycle verification
+- `compaction_test.rs` - Context compaction behavior
+- `streaming_scenarios_test.rs` - Streaming response handling
+- `tool_approval_test.rs` - Policy/approval system behavior
+- `error_recovery_test.rs` - Error handling and recovery
+
+### 4. Orchestration Stress Testing
+`simulation_p2p.rs` and `stress_*.rs` files launch high-concurrency bursts to verify:
 - **Deadlock Resistance**: Circular peer dependencies are broken by timeouts.
 - **Backpressure**: The `TaskQueue` correctly buffers and eventually overflows under extreme load.
 - **Worker Saturation**: Tasks are fairly distributed among available workers.
 
-### 4. Narrative E2E Flow
+### 5. Narrative E2E Flow
 `e2e_product_flow.rs` provides a human-readable "story" of a Product Manager, Coder, and Reviewer collaborating. This verifies the high-level developer experience and cross-agent collaboration logic.
 
 ## CI/CD Pipeline
