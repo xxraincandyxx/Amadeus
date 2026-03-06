@@ -340,10 +340,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             if self.messages.should_render_dashboard_to_history() {
                 let width = terminal.size()?.width;
                 let dashboard_lines = self.messages.render_dashboard_lines(width);
-                self.insert_lines_before(
-                    &mut terminal,
-                    dashboard_lines,
-                )?;
+                self.insert_lines_before(&mut terminal, dashboard_lines)?;
                 self.messages.mark_dashboard_rendered();
             }
 
@@ -473,7 +470,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             self.insert_assistant_chunk_before(terminal, &flushed)?;
             self.streaming_buffer.text = remaining;
-            self.messages.update_streaming_text(&self.streaming_buffer.text);
+            self.messages
+                .update_streaming_text(&self.streaming_buffer.text);
             self.sync_inline_viewport(terminal)?;
         }
 
@@ -693,7 +691,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     buffer_len = self.streaming_buffer.text.len(),
                     "Streaming text accumulated"
                 );
-                self.messages.update_streaming_text(&self.streaming_buffer.text);
+                self.messages
+                    .update_streaming_text(&self.streaming_buffer.text);
             }
 
             AgentEvent::ThinkingDelta { delta } => {
@@ -1439,7 +1438,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let size = frame.area();
 
         let input_height = self.input.height();
-        let live_height = self.live_viewport_height(size.width, size.height.saturating_sub(input_height));
+        let live_height =
+            self.live_viewport_height(size.width, size.height.saturating_sub(input_height));
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([

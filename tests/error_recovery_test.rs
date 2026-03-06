@@ -6,8 +6,8 @@ mod scenarios;
 #[path = "mocks/mod.rs"]
 mod mocks;
 
-use mocks::ScenarioMockClient;
 use mocks::FlakyMockClient;
+use mocks::ScenarioMockClient;
 use scenarios::{assert_events_contain_text, assert_no_errors, ScenarioBuilder, ScenarioRunner};
 
 #[tokio::test]
