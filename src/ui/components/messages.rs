@@ -146,8 +146,12 @@ pub struct MessagesComponent {
     current_turn: usize,
     /// Whether tool groups are expanded (showing all tools)
     tool_expansion_enabled: bool,
+    last_rendered_index: usize,
+    last_rendered_turn: Option<usize>,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
+    /// Whether the dashboard has been printed to terminal history
+    dashboard_rendered: bool,
 }
 
 impl MessagesComponent {
@@ -162,7 +166,10 @@ impl MessagesComponent {
             turn_counter: 0,
             current_turn: 0,
             tool_expansion_enabled: false,
+            last_rendered_index: 0,
+            last_rendered_turn: None,
             scroll_offset: 0,
+            dashboard_rendered: false,
         }
     }
 
@@ -170,6 +177,62 @@ impl MessagesComponent {
     fn next_turn(&mut self) -> usize {
         self.turn_counter += 1;
         self.turn_counter
+    }
+
+    pub fn current_turn(&self) -> usize {
+        self.current_turn
+    }
+
+    pub fn take_unrendered_lines(&mut self, width: u16) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let mut lines = Vec::new();
+        let mut last_turn = self.last_rendered_turn;
+
+        for item in self.items[self.last_rendered_index..].iter() {
+            let item_turn = Self::item_turn(item);
+
+            if let Some(turn) = item_turn {
+                if last_turn.map_or(true, |lt| lt != turn) {
+                    if last_turn.is_some() {
+                        lines.push(Line::from(""));
+                    }
+                    lines.push(Self::render_turn_separator(turn, &colors));
+                    lines.push(Line::from(""));
+                    last_turn = Some(turn);
+                }
+            }
+
+            lines.extend(Self::render_item(item, width));
+        }
+
+        self.last_rendered_index = self.items.len();
+        self.last_rendered_turn = last_turn;
+        lines
+    }
+
+    pub fn mark_last_item_rendered(&mut self) {
+        if self.last_rendered_index + 1 == self.items.len() {
+            if let Some(item) = self.items.last() {
+                self.last_rendered_turn = Self::item_turn(item);
+            }
+            self.last_rendered_index = self.items.len();
+        }
+    }
+
+    pub fn should_render_dashboard_to_history(&self) -> bool {
+        !self.dashboard_rendered && self.items.is_empty() && self.streaming_text.is_none()
+    }
+
+    pub fn mark_dashboard_rendered(&mut self) {
+        self.dashboard_rendered = true;
+    }
+
+    pub fn should_prefix_current_turn(&self) -> bool {
+        self.last_rendered_turn != Some(self.current_turn)
+    }
+
+    pub fn note_stream_chunk_rendered(&mut self) {
+        self.last_rendered_turn = Some(self.current_turn);
     }
 
     pub fn add_user(&mut self, content: String) {
@@ -205,6 +268,39 @@ impl MessagesComponent {
 
     pub fn clear_streaming_text(&mut self) {
         self.streaming_text = None;
+    }
+
+    pub fn render_assistant_chunk(
+        content: &str,
+        turn: usize,
+        width: u16,
+        include_prefix: bool,
+    ) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let content_lines = render_markdown(content, width.saturating_sub(4) as usize);
+        let mut lines = Vec::new();
+
+        for (i, content_line) in content_lines.into_iter().enumerate() {
+            let mut spans = Vec::new();
+            if i == 0 {
+                if include_prefix {
+                    spans.push(Span::styled(
+                        format!("✦ [{}] ", turn),
+                        Style::default()
+                            .fg(colors.text.accent)
+                            .add_modifier(Modifier::BOLD),
+                    ));
+                } else {
+                    spans.push(Span::raw("   "));
+                }
+            } else {
+                spans.push(Span::raw("   "));
+            }
+            spans.extend(content_line.spans.into_iter());
+            lines.push(Line::from(spans));
+        }
+
+        lines
     }
 
     pub fn flush_streaming_chunk(&mut self) {
@@ -515,14 +611,8 @@ impl MessagesComponent {
             return;
         }
 
-        for item in &self.items {
-            let item_turn = match item {
-                HistoryItem::User { turn, .. } => Some(*turn),
-                HistoryItem::Assistant { turn, .. } => Some(*turn),
-                HistoryItem::Thinking { turn, .. } => Some(*turn),
-                HistoryItem::ToolGroup { turn, .. } => Some(*turn),
-                HistoryItem::Compression { .. } => None,
-            };
+        for item in self.items[self.last_rendered_index..].iter() {
+            let item_turn = Self::item_turn(item);
 
             if let Some(turn) = item_turn {
                 if last_turn.map_or(true, |lt| lt != turn) {
@@ -762,6 +852,16 @@ impl MessagesComponent {
             }
         }
         lines
+    }
+
+    fn item_turn(item: &HistoryItem) -> Option<usize> {
+        match item {
+            HistoryItem::User { turn, .. } => Some(*turn),
+            HistoryItem::Assistant { turn, .. } => Some(*turn),
+            HistoryItem::Thinking { turn, .. } => Some(*turn),
+            HistoryItem::ToolGroup { turn, .. } => Some(*turn),
+            HistoryItem::Compression { .. } => None,
+        }
     }
 
     fn get_compression_text(compression: &CompressionItem) -> String {

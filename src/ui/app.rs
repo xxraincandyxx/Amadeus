@@ -1,15 +1,18 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crossterm::{event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind}, terminal::{disable_raw_mode, enable_raw_mode}};
+use crossterm::{
+    event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
-    Terminal,
+    widgets::{Block, Borders, Paragraph, Widget},
+    Terminal, TerminalOptions, Viewport,
 };
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
@@ -225,6 +228,7 @@ pub struct App<C: LLMClient> {
     tag_filter: TagFilter,
     /// Configurable viewport height as percentage of terminal height
     viewport_height_percent: u16,
+    current_shelf_height: u16,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -259,6 +263,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             flush_before_compaction: false,
             tag_filter: TagFilter::new(),
             viewport_height_percent: 32,
+            current_shelf_height: 6,
         }
     }
 
@@ -304,10 +309,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         None
     }
 
+    fn max_shelf_height_for_terminal(&self, terminal_height: u16) -> u16 {
+        let input_max = 12;
+        let available = terminal_height.saturating_sub(input_max).saturating_sub(1);
+        let live_max = ((available.saturating_mul(self.viewport_height_percent)) / 100).max(3);
+        (input_max + live_max).min(terminal_height.max(4))
+    }
+
     async fn run_loop(&mut self) -> Result<()> {
+        let terminal_size = crossterm::terminal::size()?;
+        self.current_shelf_height = self.max_shelf_height_for_terminal(terminal_size.1);
+
         let stdout = std::io::stdout();
         let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::new(backend)?;
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(self.current_shelf_height),
+            },
+        )?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
@@ -315,20 +335,35 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 break;
             }
 
+            self.sync_inline_viewport(&mut terminal)?;
+
+            if self.messages.should_render_dashboard_to_history() {
+                let width = terminal.size()?.width;
+                let dashboard_lines = self.messages.render_dashboard_lines(width);
+                self.insert_lines_before(
+                    &mut terminal,
+                    dashboard_lines,
+                )?;
+                self.messages.mark_dashboard_rendered();
+            }
+
+            self.flush_unrendered_history(&mut terminal)?;
+
             terminal.draw(|f| self.render(f))?;
 
             // Periodic flush for responsiveness
             if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                self.flush_streaming_buffer();
+                self.flush_streaming_buffer(&mut terminal)?;
             }
 
             tokio::select! {
                 event = events.next() => {
-                    self.handle_event(event?).await?;
+                    self.handle_event(event?, &mut terminal).await?;
+                    self.flush_unrendered_history(&mut terminal)?;
 
                     // Handle compaction flush
                     if self.flush_before_compaction {
-                        self.flush_streaming_buffer();
+                        self.flush_streaming_buffer(&mut terminal)?;
                         self.flush_before_compaction = false;
                         self.start_compaction();
                     }
@@ -346,7 +381,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     }
                 } => {
                     if let Some(event) = agent_event {
-                        if self.handle_agent_event(event) {
+                        if self.handle_agent_event(event, &mut terminal)? {
                             self.stream_rx = None;
                             self.stream_abort = None;
                             events.set_tick_rate(Duration::from_millis(100));
@@ -376,7 +411,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         };
 
                         for event in events_to_process {
-                            if self.handle_agent_event(event) {
+                            if self.handle_agent_event(event, &mut terminal)? {
                                 self.stream_rx = None;
                                 self.stream_abort = None;
                                 events.set_tick_rate(Duration::from_millis(100));
@@ -386,10 +421,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                         // Flush buffer periodically during streaming
                         if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                            self.flush_streaming_buffer();
+                            self.flush_streaming_buffer(&mut terminal)?;
                         }
 
                         // Force immediate redraw to show streaming progress
+                        self.flush_unrendered_history(&mut terminal)?;
+                        self.sync_inline_viewport(&mut terminal)?;
                         terminal.draw(|f| self.render(f))?;
                     } else {
                         self.stream_rx = None;
@@ -407,7 +444,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 } => {
                     if let Some(request) = approval_request {
                         // Flush buffer before showing approval dialog
-                        self.flush_streaming_buffer();
+                        self.flush_streaming_buffer(&mut terminal)?;
                         self.show_approval_dialog(request);
                     }
                 }
@@ -417,10 +454,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn flush_streaming_buffer(&mut self) {
+    fn flush_streaming_buffer(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         if self.streaming_buffer.is_empty() {
             self.messages.clear_streaming_text();
-            return;
+            return Ok(());
         }
 
         while let Some(flush_idx) = self.find_fluggable_index(&self.streaming_buffer.text) {
@@ -431,22 +471,35 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 break;
             }
 
-            self.messages.update_streaming_text(&self.current_text);
+            self.insert_assistant_chunk_before(terminal, &flushed)?;
             self.streaming_buffer.text = remaining;
+            self.messages.update_streaming_text(&self.streaming_buffer.text);
+            self.sync_inline_viewport(terminal)?;
         }
 
         self.streaming_buffer.last_flush = Instant::now();
+        Ok(())
     }
 
-    fn finalize_streaming_state(&mut self) {
+    fn finalize_streaming_state(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         let remainder = self.tag_filter.finalize();
         if !remainder.is_empty() {
             self.streaming_buffer.push(&remainder);
             self.current_text.push_str(&remainder);
         }
 
+        if !self.streaming_buffer.is_empty() {
+            let tail = self.streaming_buffer.text.clone();
+            self.insert_assistant_chunk_before(terminal, &tail)?;
+        }
+
         self.streaming_buffer.clear();
         self.messages.clear_streaming_text();
+        self.sync_inline_viewport(terminal)?;
+        Ok(())
     }
 
     fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
@@ -459,6 +512,64 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
         let content_height = lines.max(1);
         (content_height + 2).min(max_height)
+    }
+
+    fn sync_inline_viewport(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        let size = terminal.size()?;
+        self.current_shelf_height = self.max_shelf_height_for_terminal(size.height);
+        Ok(())
+    }
+
+    fn flush_unrendered_history(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        let width = terminal.size()?.width;
+        let lines = self.messages.take_unrendered_lines(width);
+        self.insert_lines_before(terminal, lines)
+    }
+
+    fn insert_lines_before(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+        lines: Vec<Line<'static>>,
+    ) -> Result<()> {
+        if lines.is_empty() {
+            return Ok(());
+        }
+
+        let height = lines.len() as u16;
+        terminal.insert_before(height, move |buf| {
+            Paragraph::new(lines).render(buf.area, buf);
+        })?;
+        Ok(())
+    }
+
+    fn insert_assistant_chunk_before(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+        chunk: &str,
+    ) -> Result<()> {
+        if chunk.is_empty() {
+            return Ok(());
+        }
+
+        let width = terminal.size()?.width;
+        let include_prefix = self.messages.should_prefix_current_turn();
+        let lines = MessagesComponent::render_assistant_chunk(
+            chunk,
+            self.messages.current_turn(),
+            width,
+            include_prefix,
+        );
+        let mut lines = lines;
+        lines.push(Line::from(""));
+        self.insert_lines_before(terminal, lines)?;
+        self.messages.note_stream_chunk_rendered();
+        Ok(())
     }
 
     fn render_live_viewport(&self, frame: &mut ratatui::Frame, area: Rect) {
@@ -496,9 +607,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         );
     }
 
-    async fn handle_event(&mut self, event: AppEvent) -> Result<()> {
+    async fn handle_event(
+        &mut self,
+        event: AppEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         match event {
-            AppEvent::Key(key) => self.handle_key(key).await?,
+            AppEvent::Key(key) => self.handle_key(key, terminal).await?,
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {
@@ -548,7 +663,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             && y < self.messages_area.y + self.messages_area.height
     }
 
-    fn handle_agent_event(&mut self, event: AgentEvent) -> bool {
+    fn handle_agent_event(
+        &mut self,
+        event: AgentEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<bool> {
         match event {
             AgentEvent::TextDelta { delta } => {
                 debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
@@ -556,7 +675,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 // Filter out internal tags
                 let filtered_delta = self.tag_filter.process(&delta);
                 if filtered_delta.is_empty() {
-                    return false;
+                    return Ok(false);
                 }
 
                 // Accumulate in buffer
@@ -574,6 +693,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     buffer_len = self.streaming_buffer.text.len(),
                     "Streaming text accumulated"
                 );
+                self.messages.update_streaming_text(&self.streaming_buffer.text);
             }
 
             AgentEvent::ThinkingDelta { delta } => {
@@ -618,8 +738,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AgentEvent::Done { result } => {
                 debug!(text_len = result.text.len(), "Agent stream completed");
 
+                self.finalize_streaming_state(terminal)?;
                 self.messages.finalize_assistant(result.text);
-                self.finalize_streaming_state();
+                self.messages.mark_last_item_rendered();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -630,17 +751,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_status_message("Background task completed");
                 }
 
-                return true;
+                return Ok(true);
             }
 
             AgentEvent::Error { message } => {
+                self.finalize_streaming_state(terminal)?;
                 if self.current_text.is_empty() {
                     self.messages.add_assistant(format!("Error: {}", message));
                 } else {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
-                self.finalize_streaming_state();
+                self.messages.mark_last_item_rendered();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -650,7 +772,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_background(false);
                     self.footer.set_status_message("Background task failed");
                 }
-                return true;
+                return Ok(true);
             }
 
             AgentEvent::SessionSaved { path } => {
@@ -720,13 +842,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
         }
 
-        false
+        Ok(false)
     }
 
-    async fn handle_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+    async fn handle_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         match self.mode {
             AppMode::Normal => self.handle_normal_key(key).await,
-            AppMode::Input => self.handle_input_key(key).await,
+            AppMode::Input => self.handle_input_key(key, terminal).await,
             AppMode::Approval => self.handle_approval_key(key).await,
         }
     }
@@ -974,7 +1100,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
     }
 
-    async fn handle_input_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+    async fn handle_input_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_input().await?;
@@ -984,7 +1114,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 if self.stream_rx.is_some() {
-                    self.cancel_stream();
+                    self.cancel_stream(terminal)?;
                 } else {
                     self.mode = AppMode::Normal;
                     self.sidebar = None;
@@ -1114,7 +1244,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn cancel_stream(&mut self) {
+    fn cancel_stream(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
         if let Some(handle) = self.stream_abort.take() {
             handle.abort();
         }
@@ -1127,11 +1260,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             self.messages.add_assistant("[Cancelled]".to_string());
         }
 
-        self.finalize_streaming_state();
+        self.finalize_streaming_state(terminal)?;
+        self.messages.mark_last_item_rendered();
         self.current_text.clear();
         self.loading_indicator
             .set_streaming_state(StreamingState::Idle);
         self.status_bar.stop();
+        Ok(())
     }
 
     /// Move the current stream to background mode, allowing user to continue interacting
@@ -1308,19 +1443,16 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Min(0),
                 Constraint::Length(live_height),
                 Constraint::Length(input_height),
             ])
             .split(size);
 
-        let messages_area = layout[0];
-        let live_area = layout[1];
-        let input_area = layout[2];
+        let live_area = layout[0];
+        let input_area = layout[1];
 
-        self.messages_area = messages_area;
+        self.messages_area = Rect::default();
 
-        self.messages.render(frame, messages_area);
         self.render_live_viewport(frame, live_area);
         self.input.render(frame, input_area);
 
