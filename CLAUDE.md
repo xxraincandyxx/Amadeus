@@ -233,11 +233,14 @@ Located in `tests/` directory:
 - `config_test.rs` - Configuration loading
 - `messages_test.rs` - Message serialization/deserialization
 - `mock_functional_test.rs` - Mock LLM functional tests
+- `monitoring_harness_test.rs` - Monitoring-first scenario harness coverage
 
 ### Mock Utilities
 - `mockito` - HTTP mocking for LLM client tests
 - `wiremock` - Alternative HTTP mocking
 - `tests/mock_llm.rs` - Mock LLM client for integration tests
+- `tests/mocks/scenario_client.rs` - Scenario-driven mock client with captured request snapshots
+- `tests/scenarios/timeline.rs` - Timestamped event timeline for observability-focused assertions
 
 ## Code Style
 

@@ -23,6 +23,7 @@ tests/
 ├── e2e_product_flow.rs     # Human-readable E2E narrative flow
 │
 ├── error_recovery_test.rs  # Error handling and recovery tests
+├── monitoring_harness_test.rs # Monitoring-first scenario harness tests
 ├── streaming_scenarios_test.rs # Streaming behavior tests
 ├── tool_approval_test.rs   # Policy/approval system tests
 │
@@ -58,9 +59,26 @@ Ensures individual components (bash tool, config parser, message formats) behave
 ### 2. Functional Simulation
 Uses `mock_functional_test.rs` to simulate a complete ReAct loop turn-by-turn. This verifies that the agent correctly parses tool calls and integrates results into history without calling a real LLM.
 
+### 2.5. Monitoring-First Scenario Harness
+The scenario test harness is designed to observe the agent architecture in detail, not just assert final text output.
+
+Key building blocks:
+- `tests/mocks/scenario_client.rs` captures every request sent to the mock LLM, including `system`, `messages`, `tools`, and `max_tokens`
+- `tests/scenarios/runner.rs` can execute a scenario and return an `EventTimeline`
+- `tests/scenarios/timeline.rs` records timestamped `AgentEvent`s and the final agent history snapshot
+- `tests/scenarios/assertions.rs` provides timeline-aware assertions for text, thinking, tools, approvals, token usage, compaction, and history shape
+
+This makes it possible to verify:
+- Exact event ordering and timing
+- Tool input streaming and tool completion outputs
+- Final conversation history shape after the run
+- The content of each request the agent sent to the LLM mock
+- Monitoring gaps in the current architecture when expected events are not emitted
+
 ### 3. Integration Tests
 - `agent_integration_test.rs` - Full agent lifecycle verification
 - `compaction_test.rs` - Context compaction behavior
+- `monitoring_harness_test.rs` - End-to-end observability coverage for the scenario harness
 - `streaming_scenarios_test.rs` - Streaming response handling
 - `tool_approval_test.rs` - Policy/approval system behavior
 - `error_recovery_test.rs` - Error handling and recovery
@@ -83,4 +101,4 @@ The standard verification pipeline for a commit includes:
 4. `cargo build --examples --features full`
 
 ---
-*Last updated: 2026-02-27*
+*Last updated: 2026-03-07*

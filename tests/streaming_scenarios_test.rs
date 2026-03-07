@@ -71,6 +71,43 @@ async fn test_streaming_interrupted_by_tool_call() {
 }
 
 #[tokio::test]
+async fn test_done_result_excludes_pre_tool_text() {
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::TextDelta("Let me check... ".to_string()),
+            StreamEvent::ToolCallStart {
+                id: "tool_1".to_string(),
+                name: "bash".to_string(),
+            },
+            StreamEvent::ToolCallDelta {
+                arguments: r#"{"command":"printf ok"}"#.to_string(),
+            },
+            StreamEvent::ToolCallDone("tool_1".to_string()),
+            StreamEvent::StopReason("tool_use".to_string()),
+        ],
+        vec![
+            StreamEvent::TextDelta("Done checking.".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+
+    let scenario = ScenarioBuilder::new("tool_result_text")
+        .description("Final result text should not duplicate pre-tool narration")
+        .build();
+
+    let runner = ScenarioRunner::new(scenario);
+    let timeline = runner
+        .execute_timeline(client)
+        .await
+        .expect("Scenario execution failed");
+
+    let result = timeline.run_result().expect("missing run result");
+
+    assert_eq!(timeline.full_text(), "Let me check... Done checking.");
+    assert_eq!(result.text, "Done checking.");
+}
+
+#[tokio::test]
 async fn test_streaming_very_long_response() {
     let long_text = (0..100)
         .map(|i| format!("Chunk {} ", i))

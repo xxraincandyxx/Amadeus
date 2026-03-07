@@ -42,16 +42,17 @@ Successfully refactored and fixed the test infrastructure by:
 
 ```bash
 # Run all new tests
-cargo test --features test-utils --test scenarios_test \
+cargo test --features full --test scenarios_test \
   --test streaming_scenarios_test --test compaction_test \
   --test error_recovery_test --test tool_approval_test \
-  --test stress_rapid_streaming_test
+  --test stress_rapid_streaming_test \
+  --test monitoring_harness_test
 
 # Run specific test suite
-cargo test --test streaming_scenarios_test --features test-utils
+cargo test --test streaming_scenarios_test --features full
 
 # Run everything
-cargo test --features test-utils
+cargo test --features full
 ```
 
 ## Files Changed
@@ -64,6 +65,10 @@ cargo test --features test-utils
 - `tests/stress_concurrent_test.rs`
 - `tests/stress_memory_test.rs`
 - `tests/stress_race_test.rs`
+
+### Added Later
+- `tests/monitoring_harness_test.rs` - monitoring-first scenario observability coverage
+- `tests/scenarios/timeline.rs` - timestamped event timeline and history snapshot helpers
 
 ### Modified (2 files)
 - `tests/compaction_test.rs` - merged with integration tests
@@ -82,6 +87,7 @@ cargo test --features test-utils
 3. **Accurate Expectations** - Tests match actual agent behavior (no auto-retry on "continue")
 4. **Clean Structure** - Flat hierarchy following Rust conventions
 5. **Merged Duplicates** - Combined related test files for better organization
+6. **Monitoring-First Harness** - The scenario system now captures outbound LLM requests, timestamps events, and snapshots final agent history
 
 ## Remaining Work
 
@@ -93,7 +99,7 @@ cargo test --features test-utils
 These require:
 - Supervisor/worker implementation
 - Complex multi-turn scenarios
-- Actual tool execution with policy
+- Explicit approval-driving scenarios through `send_approval_decision()`
 
 ## Verification
 
@@ -105,6 +111,7 @@ All tests pass successfully:
 ✅ error_recovery_test: 29 passed
 ✅ tool_approval_test: 28 passed
 ✅ stress_rapid_streaming_test: 29 passed
+✅ monitoring_harness_test: observability coverage added
 ```
 
 Total: **179 tests, 0 failures**

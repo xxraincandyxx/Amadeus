@@ -505,6 +505,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut tool_uses: Vec<ContentBlock> = Vec::new();
                 let mut tool_results: Vec<ContentBlock> = Vec::new();
                 let mut current_tool: Option<(String, String, String)> = None;
+                let mut turn_text = String::new();
                 let mut has_activity_in_turn = false;
                 let mut turn_stop_reason = String::new();
 
@@ -513,7 +514,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::TextDelta(text) => {
                             debug!(turn = turn_count, text = %text, "Received TextDelta");
                             has_activity_in_turn = true;
-                            total_result.text.push_str(&text);
+                            turn_text.push_str(&text);
                             yield Ok(AgentEvent::TextDelta { delta: text });
                         }
 
@@ -796,8 +797,9 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 } else if has_activity_in_turn {
                     // LLM provided text but no tools
                     debug!(turn = turn_count, "Final text provided, ending loop");
+                    total_result.text = turn_text.clone();
                     history_guard.push(Message::assistant(vec![ContentBlock::Text {
-                        text: total_result.text.clone(),
+                        text: turn_text,
                     }]));
                     should_continue = false;
                 } else {
