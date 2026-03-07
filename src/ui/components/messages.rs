@@ -148,6 +148,7 @@ pub struct MessagesComponent {
     tool_expansion_enabled: bool,
     last_rendered_index: usize,
     last_rendered_turn: Option<usize>,
+    skip_next_assistant_history_item: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
     /// Whether the dashboard has been printed to terminal history
@@ -168,6 +169,7 @@ impl MessagesComponent {
             tool_expansion_enabled: false,
             last_rendered_index: 0,
             last_rendered_turn: None,
+            skip_next_assistant_history_item: false,
             scroll_offset: 0,
             dashboard_rendered: false,
         }
@@ -187,8 +189,18 @@ impl MessagesComponent {
         let colors = get_colors();
         let mut lines = Vec::new();
         let mut last_turn = self.last_rendered_turn;
+        let mut skipped_streamed_assistant = false;
 
         for item in self.items[self.last_rendered_index..].iter() {
+            let should_skip = !skipped_streamed_assistant
+                && self.skip_next_assistant_history_item
+                && matches!(item, HistoryItem::Assistant { .. });
+
+            if should_skip {
+                skipped_streamed_assistant = true;
+                continue;
+            }
+
             let item_turn = Self::item_turn(item);
 
             if let Some(turn) = item_turn {
@@ -207,6 +219,9 @@ impl MessagesComponent {
 
         self.last_rendered_index = self.items.len();
         self.last_rendered_turn = last_turn;
+        if skipped_streamed_assistant {
+            self.skip_next_assistant_history_item = false;
+        }
         lines
     }
 
@@ -233,6 +248,7 @@ impl MessagesComponent {
 
     pub fn note_stream_chunk_rendered(&mut self) {
         self.last_rendered_turn = Some(self.current_turn);
+        self.skip_next_assistant_history_item = true;
     }
 
     pub fn add_user(&mut self, content: String) {
@@ -1251,6 +1267,30 @@ mod tests {
         // These should not panic
         messages.collapse_all_tools();
         messages.expand_all_tools();
+    }
+
+    #[test]
+    fn test_take_unrendered_lines_skips_streamed_assistant_after_tool_group() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Test".to_string());
+        messages.start_tool("t1".to_string(), "todo".to_string(), None);
+        messages.complete_tool("t1", "[x] #1: Hello world".to_string(), false, None);
+
+        messages.note_stream_chunk_rendered();
+        messages.finalize_assistant("Tool handled".to_string());
+
+        let tool_lines = messages.take_unrendered_lines(100);
+        assert!(!tool_lines.is_empty());
+        let rendered = tool_lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("todo"));
+        assert!(!rendered.contains("Tool handled"));
+
+        let assistant_lines = messages.take_unrendered_lines(100);
+        assert!(assistant_lines.is_empty());
     }
 
     #[test]
