@@ -58,7 +58,9 @@ async fn stress_100_consecutive_chunks() {
 #[tokio::test]
 async fn stress_unicode_heavy_streaming() {
     let chunks: Vec<StreamEvent> = (0..50)
-        .map(|i| StreamEvent::TextDelta(format!("Message {}: \u{4f60}\u{597d}\u{4e16}\u{754c} ", i)))
+        .map(|i| {
+            StreamEvent::TextDelta(format!("Message {}: \u{4f60}\u{597d}\u{4e16}\u{754c} ", i))
+        })
         .chain(std::iter::once(StreamEvent::StopReason(
             "end_turn".to_string(),
         )))

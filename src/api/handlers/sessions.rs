@@ -14,7 +14,7 @@ use crate::agent::messages::ContentBlock;
 use crate::api::http::AppState;
 use crate::api::types::{
     ErrorResponse, RestoreSessionRequest, RestoreSessionResponse, SessionDetailResponse,
-    SessionStatsResponse, SessionSummary, SessionsResponse,
+    SessionStatsResponse, SessionSummary, SessionsResponse, TodoSummary,
 };
 use crate::client::LLMClient;
 
@@ -62,6 +62,7 @@ pub async fn list_sessions<C: LLMClient + Clone + 'static>(
                         tool_calls: session.stats.tool_calls,
                         duration_ms: session.stats.duration_ms,
                         message_count: session.history.len(),
+                        todo_count: session.todos.len(),
                     }
                 })
                 .collect();
@@ -127,6 +128,15 @@ pub async fn get_session<C: LLMClient + Clone + 'static>(
                 model: session.model,
                 system_prompt: session.system_prompt,
                 history,
+                todos: session
+                    .todos
+                    .into_iter()
+                    .map(|todo| TodoSummary {
+                        id: todo.id,
+                        text: todo.text,
+                        status: todo.status.to_string(),
+                    })
+                    .collect(),
                 stats: SessionStatsResponse {
                     total_tokens: session.stats.total_tokens,
                     tool_calls: session.stats.tool_calls,

@@ -119,8 +119,7 @@ impl ScenarioMockClient {
     }
 
     pub fn from_json(json: &str) -> Result<Self> {
-        let def: ScenarioDefinition =
-            serde_json::from_str(json).map_err(AgentError::Serde)?;
+        let def: ScenarioDefinition = serde_json::from_str(json).map_err(AgentError::Serde)?;
 
         Ok(Self {
             steps: Arc::new(Mutex::new(def.steps.into_iter().collect())),
@@ -156,19 +155,31 @@ impl ScenarioMockClient {
     }
 
     pub fn captured_requests(&self) -> Vec<CapturedRequest> {
-        self.captured_requests.try_lock().map(|r| r.clone()).unwrap_or_default()
+        self.captured_requests
+            .try_lock()
+            .map(|r| r.clone())
+            .unwrap_or_default()
     }
 
     pub fn request_count(&self) -> usize {
-        self.captured_requests.try_lock().map(|r| r.len()).unwrap_or(0)
+        self.captured_requests
+            .try_lock()
+            .map(|r| r.len())
+            .unwrap_or(0)
     }
 
     pub fn nth_request(&self, n: usize) -> Option<CapturedRequest> {
-        self.captured_requests.try_lock().ok().and_then(|r| r.get(n).cloned())
+        self.captured_requests
+            .try_lock()
+            .ok()
+            .and_then(|r| r.get(n).cloned())
     }
 
     pub fn last_request(&self) -> Option<CapturedRequest> {
-        self.captured_requests.try_lock().ok().and_then(|r| r.last().cloned())
+        self.captured_requests
+            .try_lock()
+            .ok()
+            .and_then(|r| r.last().cloned())
     }
 
     pub fn last_messages(&self) -> Vec<Message> {

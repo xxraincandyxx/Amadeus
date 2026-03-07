@@ -450,6 +450,8 @@ pub struct SessionSummary {
     pub duration_ms: u64,
     /// Number of messages in the conversation.
     pub message_count: usize,
+    /// Number of todos stored with the session.
+    pub todo_count: usize,
 }
 
 /// Response for the `/sessions/{id}` endpoint.
@@ -467,8 +469,21 @@ pub struct SessionDetailResponse {
     pub system_prompt: String,
     /// Conversation history.
     pub history: Vec<MessageSummary>,
+    /// Todos captured in the session.
+    pub todos: Vec<TodoSummary>,
     /// Session statistics.
     pub stats: SessionStatsResponse,
+}
+
+/// Summary of a todo in the session.
+#[derive(Debug, Serialize)]
+pub struct TodoSummary {
+    /// Stable todo identifier.
+    pub id: String,
+    /// Todo description.
+    pub text: String,
+    /// Current status.
+    pub status: String,
 }
 
 /// Statistics for a session.
