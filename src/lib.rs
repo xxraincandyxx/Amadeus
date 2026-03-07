@@ -80,6 +80,9 @@ pub mod context;
 /// Hooks system for extensibility
 pub mod hooks;
 
+/// Benchmark and simulation pipeline
+pub mod benchmark;
+
 /// Policy/approval system
 pub mod policy;
 

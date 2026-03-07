@@ -1,3 +1,4 @@
 {
-  "rust-analyzer.trace.server": "verbose"
+  "rust-analyzer.trace.server": "verbose",
+  "rust-analyzer.cargo.features": ["supervisor"]
 }
