@@ -12,3 +12,10 @@
 
 # Test output files
 test_*.txt
+
+# Benchmark output directory
+/benchmark_runs
+
+# User notes
+Song Lyric.txt
+joke.txt
