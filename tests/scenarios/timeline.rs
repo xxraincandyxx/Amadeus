@@ -318,6 +318,10 @@ impl EventTimeline {
             .map(|m| m.role.clone())
             .collect()
     }
+
+    pub fn first_request_elapsed(&self) -> Option<Duration> {
+        self.events.first().map(|e| e.elapsed)
+    }
 }
 
 #[derive(Debug, Clone)]

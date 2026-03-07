@@ -19,6 +19,7 @@ pub struct ScenarioStep {
 pub struct Scenario {
     pub name: String,
     pub description: String,
+    pub initial_user_prompt: Option<String>,
     pub steps: VecDeque<ScenarioStep>,
 }
 
@@ -45,6 +46,7 @@ impl Scenario {
 pub struct ScenarioBuilder {
     name: String,
     description: String,
+    initial_user_prompt: Option<String>,
     steps: Vec<ScenarioStep>,
 }
 
@@ -53,12 +55,18 @@ impl ScenarioBuilder {
         Self {
             name: name.into(),
             description: String::new(),
+            initial_user_prompt: None,
             steps: Vec::new(),
         }
     }
 
     pub fn description(mut self, desc: impl Into<String>) -> Self {
         self.description = desc.into();
+        self
+    }
+
+    pub fn user_says(mut self, prompt: impl Into<String>) -> Self {
+        self.initial_user_prompt = Some(prompt.into());
         self
     }
 
@@ -135,6 +143,7 @@ impl ScenarioBuilder {
         Scenario {
             name: self.name,
             description: self.description,
+            initial_user_prompt: self.initial_user_prompt,
             steps: self.steps.into_iter().collect(),
         }
     }

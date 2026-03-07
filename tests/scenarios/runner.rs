@@ -6,14 +6,16 @@ use std::sync::Arc;
 use amadeus::agent::config::Config;
 use amadeus::agent::events::AgentEvent;
 use amadeus::agent::loop_agent::Agent;
+use amadeus::agent::messages::Message;
 use amadeus::error::Result;
 
 use super::timeline::EventTimeline;
 use super::Scenario;
 
 pub struct ScenarioRunner {
-    scenario_name: String,
-    config: Arc<Config>,
+  scenario_name: String,
+  initial_user_prompt: Option<String>,
+  config: Arc<Config>,
 }
 
 impl ScenarioRunner {
@@ -26,11 +28,12 @@ impl ScenarioRunner {
             ..Config::default()
         });
 
-        Self {
-            scenario_name: scenario.name,
-            config,
-        }
+    Self {
+      scenario_name: scenario.name,
+      initial_user_prompt: scenario.initial_user_prompt,
+      config,
     }
+  }
 
     pub fn with_config(mut self, config: Arc<Config>) -> Self {
         self.config = config;
@@ -54,17 +57,23 @@ impl ScenarioRunner {
         Ok((timeline.raw_events(), text))
     }
 
-    pub async fn execute_timeline<C: amadeus::client::LLMClient + Clone + 'static>(
-        self,
-        client: C,
-    ) -> Result<EventTimeline> {
-        let agent = Agent::builder(client, self.config)
-            .with_default_tools()
-            .build();
+  pub async fn execute_timeline<C: amadeus::client::LLMClient + Clone + 'static>(
+    self,
+    client: C,
+  ) -> Result<EventTimeline> {
+    let agent = Agent::builder(client, self.config)
+      .with_default_tools()
+      .build();
 
-        let history = agent.history();
-        let mut timeline = EventTimeline::new();
-        let stream = agent.run_stream();
+    let history = agent.history();
+
+    if let Some(prompt) = &self.initial_user_prompt {
+      let mut history_guard = history.write().await;
+      history_guard.push(Message::user(prompt));
+    }
+
+    let mut timeline = EventTimeline::new();
+    let stream = agent.run_stream();
 
         let mut stream = std::pin::pin!(stream);
         while let Some(event) = stream.next().await {
