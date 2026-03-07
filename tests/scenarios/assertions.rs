@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use amadeus::agent::events::AgentEvent;
 
 pub fn assert_events_contain_text(events: &[AgentEvent], expected: &str) {

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use futures::StreamExt;
 use std::sync::Arc;
 
@@ -35,7 +37,7 @@ impl ScenarioRunner {
         self,
         client: C,
     ) -> Result<Vec<AgentEvent>> {
-        let mut agent = Agent::builder(client, self.config)
+        let agent = Agent::builder(client, self.config)
             .with_default_tools()
             .build();
 

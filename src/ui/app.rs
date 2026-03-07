@@ -74,7 +74,7 @@ impl TagFilter {
             buffer: String::new(),
             suppressing: false,
             tags: vec![
-                "Claude_TalktoUser".to_string(),
+                "Claude_TalkToUser".to_string(),
                 "think".to_string(),
                 "thought".to_string(),
                 "thinking".to_string(),
@@ -286,7 +286,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         res
     }
 
-    fn find_fluggable_index(&self, text: &str) -> Option<usize> {
+    fn find_flushable_index(&self, text: &str) -> Option<usize> {
         // Find double newline which indicates end of paragraph
         if let Some(idx) = text.find("\n\n") {
             return Some(idx + 2);
@@ -460,7 +460,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return Ok(());
         }
 
-        while let Some(flush_idx) = self.find_fluggable_index(&self.streaming_buffer.text) {
+        while let Some(flush_idx) = self.find_flushable_index(&self.streaming_buffer.text) {
             let flushed = self.streaming_buffer.text[..flush_idx].to_string();
             let remaining = self.streaming_buffer.text[flush_idx..].to_string();
 

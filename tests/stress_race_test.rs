@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[tokio::test]
 async fn fuzz_random_delays() {}

@@ -1,13 +1,14 @@
+#![allow(dead_code)]
+
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tokio::time::sleep;
 
 use amadeus::agent::messages::Message;
 use amadeus::client::{LLMClient, StreamEvent};

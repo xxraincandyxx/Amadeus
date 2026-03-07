@@ -4,10 +4,9 @@ mod cursor_positioning;
 mod runner;
 mod streaming_buffer;
 
+#[allow(unused_imports)]
 pub use assertions::*;
-pub use builder::{Scenario, ScenarioBuilder, ScenarioStep};
+#[allow(unused_imports)]
+pub use builder::{Scenario, ScenarioBuilder};
+#[allow(unused_imports)]
 pub use runner::ScenarioRunner;
-
-// Re-export commonly used types from amadeus
-pub use amadeus::agent::events::AgentEvent;
-pub use amadeus::client::StreamEvent;

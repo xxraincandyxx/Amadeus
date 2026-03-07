@@ -1,5 +1,6 @@
+#![allow(dead_code)]
+
 use amadeus::client::StreamEvent;
-use amadeus::error::AgentError;
 use serde_json::Value;
 use std::collections::VecDeque;
 

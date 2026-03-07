@@ -99,7 +99,22 @@ name = "server"
 path = "examples/server/main.rs"
 required-features = ["api"]
 
+[[example]]
+name = "test_inline"
+path = "examples/test_inline.rs"
+required-features = ["tui"]
+
+[[example]]
+name = "test_layout"
+path = "examples/test_layout.rs"
+required-features = ["tui"]
+
 [[test]]
 name = "agent_integration_test"
 path = "tests/agent_integration_test.rs"
 required-features = ["test-utils"]
+
+[[test]]
+name = "e2e_product_flow"
+path = "tests/e2e_product_flow.rs"
+required-features = ["supervisor"]
