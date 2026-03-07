@@ -1,0 +1,23 @@
+{
+  "id": "error_stream_failure",
+  "suite": "recovery",
+  "description": "Injected upstream failure surfaces as a benchmark error",
+  "tags": ["recovery", "error"],
+  "prompt": "Handle a failing upstream stream.",
+  "mode": "mock",
+  "mock_script": {
+    "steps": [
+      {
+        "error": "Injected stream failure for benchmark coverage",
+        "events": []
+      }
+    ]
+  },
+  "expectations": {
+    "expect_error": true
+  },
+  "thresholds": {
+    "max_duration_ms": 5000,
+    "max_errors": 1
+  }
+}

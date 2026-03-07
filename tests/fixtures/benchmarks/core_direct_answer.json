@@ -1,0 +1,30 @@
+{
+  "id": "core_direct_answer",
+  "suite": "core",
+  "description": "Simple direct response without tool usage",
+  "tags": ["core", "direct"],
+  "prompt": "Say hello and mention that this is a benchmark run.",
+  "mode": "mock",
+  "mock_script": {
+    "steps": [
+      {
+        "events": [
+          { "type": "text_delta", "text": "Hello from the benchmark run." },
+          { "type": "stop_reason", "reason": "end_turn" }
+        ]
+      }
+    ]
+  },
+  "expectations": {
+    "required_substrings": ["benchmark run"],
+    "forbidden_tools": ["bash"],
+    "expect_error": false,
+    "expect_approval": false,
+    "min_output_len": 10
+  },
+  "thresholds": {
+    "max_duration_ms": 5000,
+    "max_tool_calls": 0,
+    "max_errors": 0
+  }
+}

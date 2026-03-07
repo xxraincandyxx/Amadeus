@@ -1,0 +1,38 @@
+{
+  "id": "core_tool_bash",
+  "suite": "core",
+  "description": "Safe bash tool usage followed by a textual summary",
+  "tags": ["core", "tool", "bash"],
+  "prompt": "List the current directory and summarize the result.",
+  "mode": "mock",
+  "mock_script": {
+    "steps": [
+      {
+        "events": [
+          { "type": "tool_call_start", "id": "tool_1", "name": "bash" },
+          { "type": "tool_call_delta", "arguments": "{\"command\":\"ls\"}" },
+          { "type": "tool_call_done", "id": "tool_1" },
+          { "type": "stop_reason", "reason": "tool_use" }
+        ]
+      },
+      {
+        "events": [
+          { "type": "token_usage", "input_tokens": 10, "output_tokens": 12 },
+          { "type": "text_delta", "text": "I inspected the directory and found the Rust project files." },
+          { "type": "stop_reason", "reason": "end_turn" }
+        ]
+      }
+    ]
+  },
+  "expectations": {
+    "required_substrings": ["Rust project files"],
+    "required_tools": ["bash"],
+    "expect_error": false,
+    "expect_approval": false
+  },
+  "thresholds": {
+    "max_duration_ms": 5000,
+    "max_tool_calls": 1,
+    "max_errors": 0
+  }
+}
