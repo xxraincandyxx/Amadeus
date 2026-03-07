@@ -96,15 +96,25 @@ impl From<StreamEvent> for StreamEventDef {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct CapturedRequest {
+    pub system: String,
+    pub messages: Vec<Message>,
+    pub tools: Vec<serde_json::Value>,
+    pub max_tokens: u32,
+}
+
 #[derive(Clone)]
 pub struct ScenarioMockClient {
     steps: Arc<Mutex<VecDeque<ScenarioStepDef>>>,
+    captured_requests: Arc<Mutex<Vec<CapturedRequest>>>,
 }
 
 impl ScenarioMockClient {
     pub fn new() -> Self {
         Self {
             steps: Arc::new(Mutex::new(VecDeque::new())),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -114,6 +124,7 @@ impl ScenarioMockClient {
 
         Ok(Self {
             steps: Arc::new(Mutex::new(def.steps.into_iter().collect())),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -129,17 +140,43 @@ impl ScenarioMockClient {
 
         Self {
             steps: Arc::new(Mutex::new(steps)),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn from_steps(steps: Vec<ScenarioStepDef>) -> Self {
         Self {
             steps: Arc::new(Mutex::new(steps.into_iter().collect())),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
     pub fn remaining_steps(&self) -> usize {
-        self.steps.blocking_lock().len()
+        self.steps.try_lock().map(|s| s.len()).unwrap_or(0)
+    }
+
+    pub fn captured_requests(&self) -> Vec<CapturedRequest> {
+        self.captured_requests.try_lock().map(|r| r.clone()).unwrap_or_default()
+    }
+
+    pub fn request_count(&self) -> usize {
+        self.captured_requests.try_lock().map(|r| r.len()).unwrap_or(0)
+    }
+
+    pub fn nth_request(&self, n: usize) -> Option<CapturedRequest> {
+        self.captured_requests.try_lock().ok().and_then(|r| r.get(n).cloned())
+    }
+
+    pub fn last_request(&self) -> Option<CapturedRequest> {
+        self.captured_requests.try_lock().ok().and_then(|r| r.last().cloned())
+    }
+
+    pub fn last_messages(&self) -> Vec<Message> {
+        self.captured_requests
+            .try_lock()
+            .ok()
+            .and_then(|r| r.last().map(|req| req.messages.clone()))
+            .unwrap_or_default()
     }
 }
 
@@ -153,21 +190,34 @@ impl Default for ScenarioMockClient {
 impl LLMClient for ScenarioMockClient {
     async fn create_message(
         &self,
-        _system: &str,
-        _messages: &[Message],
-        _tools: &[serde_json::Value],
-        _max_tokens: u32,
+        system: &str,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+        max_tokens: u32,
     ) -> Result<(String, Vec<amadeus::agent::messages::ContentBlock>)> {
+        self.captured_requests.lock().await.push(CapturedRequest {
+            system: system.to_string(),
+            messages: messages.to_vec(),
+            tools: tools.to_vec(),
+            max_tokens,
+        });
         Ok(("end_turn".to_string(), vec![]))
     }
 
     async fn create_message_stream(
         &self,
-        _system: &str,
-        _messages: &[Message],
-        _tools: &[serde_json::Value],
-        _max_tokens: u32,
+        system: &str,
+        messages: &[Message],
+        tools: &[serde_json::Value],
+        max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        self.captured_requests.lock().await.push(CapturedRequest {
+            system: system.to_string(),
+            messages: messages.to_vec(),
+            tools: tools.to_vec(),
+            max_tokens,
+        });
+
         let mut steps = self.steps.lock().await;
 
         if let Some(step) = steps.pop_front() {
@@ -235,5 +285,23 @@ mod tests {
         assert_eq!(steps.len(), 1);
         let step = steps.pop_front().unwrap();
         assert_eq!(step.events.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_request_capture() {
+        let client = ScenarioMockClient::scripted(vec![vec![
+            StreamEvent::TextDelta("Hello".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ]]);
+
+        let _ = client
+            .create_message_stream("system prompt", &[], &[], 1000)
+            .await
+            .unwrap();
+
+        assert_eq!(client.request_count(), 1);
+        let req = client.nth_request(0).unwrap();
+        assert_eq!(req.system, "system prompt");
+        assert_eq!(req.max_tokens, 1000);
     }
 }
