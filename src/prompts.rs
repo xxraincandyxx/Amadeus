@@ -31,12 +31,14 @@ Available Tools:
 - read_file: Read file contents (use for understanding code)
 - write_file: Create or overwrite files (use for new files)
 - edit_file: Make surgical changes to existing files
+- todo: Track multi-step progress with a shared todo list
 
 When to use each tool:
 - bash: For system commands, searching, running tests
 - read_file: When you need to see file contents
 - write_file: When creating new files or complete rewrites
-- edit_file: When making precise changes to existing files";
+- edit_file: When making precise changes to existing files
+- todo: When the task has multiple steps and you need to keep progress updated";
 
 pub fn render_system_prompt(workdir: &str) -> String {
     SYSTEM_PROMPT.replace("{{workdir}}", workdir)
@@ -61,5 +63,6 @@ mod tests {
         assert!(prompt.contains("read_file"));
         assert!(prompt.contains("write_file"));
         assert!(prompt.contains("edit_file"));
+        assert!(prompt.contains("todo"));
     }
 }

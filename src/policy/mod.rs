@@ -70,6 +70,7 @@ impl Default for Policy {
                 "read_file".to_string(),
                 "glob".to_string(),
                 "grep".to_string(),
+                "todo".to_string(),
             ],
             auto_deny: vec![],
             dangerous_patterns: vec![
@@ -246,6 +247,7 @@ mod tests {
         let policy = Policy::new();
         assert_eq!(policy.mode, ApprovalMode::Ask);
         assert!(policy.auto_approve.contains(&"read_file".to_string()));
+        assert!(policy.auto_approve.contains(&"todo".to_string()));
     }
 
     #[test]
@@ -293,5 +295,6 @@ mod tests {
         assert!(!policy.needs_approval("read_file", &serde_json::json!({"path": "test.txt"})));
         assert!(!policy.needs_approval("glob", &serde_json::json!({"pattern": "*.rs"})));
         assert!(!policy.needs_approval("grep", &serde_json::json!({"pattern": "test"})));
+        assert!(!policy.needs_approval("todo", &serde_json::json!({"items": []})));
     }
 }

@@ -2,7 +2,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::Instant;
 
 use chrono::Local;
@@ -21,12 +21,80 @@ use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
 use crate::hooks::{HookAction, HookRegistry};
 use crate::policy::Policy;
-use crate::tools::bash::BashTool;
-use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
-use crate::tools::glob::GlobTool;
-use crate::tools::grep::GrepTool;
 use crate::tools::registry::ToolRegistry;
-use crate::tools::web::WebFetchTool;
+use crate::tools::{TodoItem, TodoManager};
+
+#[derive(Debug, Clone)]
+struct ToolExecutionRecord {
+    id: String,
+    name: String,
+    input: serde_json::Value,
+    output: String,
+    is_error: bool,
+}
+
+impl ToolExecutionRecord {
+    fn new(
+        id: String,
+        name: String,
+        input: serde_json::Value,
+        output: String,
+        is_error: bool,
+    ) -> Self {
+        Self {
+            id,
+            name,
+            input,
+            output,
+            is_error,
+        }
+    }
+
+    fn completion_event(&self) -> AgentEvent {
+        AgentEvent::ToolComplete {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            input: self.input.clone(),
+            output: self.output.clone(),
+            is_error: self.is_error,
+        }
+    }
+
+    fn tool_call(&self) -> ToolCall {
+        ToolCall {
+            name: self.name.clone(),
+            input: self.input.clone(),
+            output: self.output.clone(),
+            is_error: self.is_error,
+        }
+    }
+
+    fn tool_use_block(&self) -> ContentBlock {
+        ContentBlock::ToolUse {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            input: self.input.clone(),
+        }
+    }
+
+    fn tool_result_block(&self) -> ContentBlock {
+        ContentBlock::ToolResult {
+            tool_use_id: self.id.clone(),
+            content: self.output.clone(),
+        }
+    }
+}
+
+fn record_tool_execution(
+    total_result: &mut RunResult,
+    tool_uses: &mut Vec<ContentBlock>,
+    tool_results: &mut Vec<ContentBlock>,
+    record: &ToolExecutionRecord,
+) {
+    total_result.tool_calls.push(record.tool_call());
+    tool_uses.push(record.tool_use_block());
+    tool_results.push(record.tool_result_block());
+}
 
 /// A log of a single conversation session.
 #[derive(Debug, Serialize, Deserialize)]
@@ -35,6 +103,8 @@ pub struct SessionLog {
     pub model: String,
     pub system_prompt: String,
     pub history: Vec<Message>,
+    #[serde(default)]
+    pub todos: Vec<TodoItem>,
     pub stats: SessionStats,
 }
 
@@ -51,6 +121,7 @@ pub struct AgentBuilder<C: LLMClient> {
     config: Arc<Config>,
     tools: ToolRegistry,
     history: Option<Arc<RwLock<Vec<Message>>>>,
+    todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
     policy: Policy,
 }
@@ -62,6 +133,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             config,
             tools: ToolRegistry::new(),
             history: None,
+            todo_manager: Arc::new(StdRwLock::new(TodoManager::new())),
             hooks: HookRegistry::new(),
             policy: Policy::default(),
         }
@@ -69,21 +141,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
 
     /// Add default tools (bash, file operations, glob, grep, web_fetch) to the agent.
     pub fn with_default_tools(mut self) -> Self {
-        self.tools = self
-            .tools
-            .register(Box::new(BashTool::from_config(&self.config)))
-            .register(Box::new(ReadFileTool::new(FileTools::from_config(
-                &self.config,
-            ))))
-            .register(Box::new(WriteFileTool::new(FileTools::from_config(
-                &self.config,
-            ))))
-            .register(Box::new(EditFileTool::new(FileTools::from_config(
-                &self.config,
-            ))))
-            .register(Box::new(GlobTool::from_config(&self.config)))
-            .register(Box::new(GrepTool::from_config(&self.config)))
-            .register(Box::new(WebFetchTool::from_config(&self.config)));
+        self.tools =
+            ToolRegistry::with_defaults_and_todo(&self.config, Arc::clone(&self.todo_manager));
         self
     }
 
@@ -102,6 +161,14 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     /// Set an initial conversation history.
     pub fn with_history(mut self, history: Arc<RwLock<Vec<Message>>>) -> Self {
         self.history = Some(history);
+        self
+    }
+
+    /// Set initial todo state.
+    pub fn with_todos(self, todos: Vec<TodoItem>) -> Self {
+        if let Ok(mut manager) = self.todo_manager.write() {
+            manager.replace_items(todos);
+        }
         self
     }
 
@@ -127,6 +194,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             tools: self.tools,
             config: self.config,
             history,
+            todo_manager: self.todo_manager,
             hooks: self.hooks,
             policy: Arc::new(RwLock::new(self.policy)),
         }
@@ -140,6 +208,7 @@ pub struct Agent<C: LLMClient> {
     tools: ToolRegistry,
     config: Arc<Config>,
     history: Arc<RwLock<Vec<Message>>>,
+    todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
     policy: Arc<RwLock<Policy>>,
 }
@@ -254,6 +323,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             tools: filtered_tools,
             config: Arc::clone(&self.config),
             history: Arc::clone(&self.history),
+            todo_manager: Arc::clone(&self.todo_manager),
             hooks: self.hooks.clone(),
             policy: Arc::clone(&self.policy),
         };
@@ -278,11 +348,16 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut path = log_dir.join(&filename);
 
         let history = self.history.read().await;
+        let todos = self
+            .todo_manager
+            .read()
+            .map_err(|_| AgentError::InvalidResponse("Todo state lock poisoned".to_string()))?;
         let session_log = SessionLog {
             timestamp: Local::now().to_rfc3339(),
             model: self.config.model.clone(),
             system_prompt: self.config.system_prompt(),
             history: history.clone(),
+            todos: todos.cloned_items(),
             stats,
         };
 
@@ -372,7 +447,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     pub async fn restore_session(&self, session: &SessionLog) {
         let mut history = self.history.write().await;
         *history = session.history.clone();
-        info!(messages = history.len(), "Session restored");
+        let message_count = history.len();
+        drop(history);
+
+        if let Ok(mut todos) = self.todo_manager.write() {
+            todos.replace_items(session.todos.clone());
+        }
+        info!(messages = message_count, "Session restored");
+    }
+
+    pub fn todos(&self) -> Arc<StdRwLock<TodoManager>> {
+        Arc::clone(&self.todo_manager)
     }
 
     /// Run a single turn with a prompt and return the result.
@@ -643,123 +728,57 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                                 _ => unreachable!(),
                                             };
 
-                                            yield Ok(AgentEvent::ToolComplete {
-                                                id: id.clone(),
-                                                name: name.clone(),
-                                                input: input.clone(),
-                                                output: output.clone(),
-                                                is_error: true,
-                                            });
-
-                                            total_result.tool_calls.push(ToolCall {
-                                                name: name.clone(),
-                                                input: input.clone(),
-                                                output: output.clone(),
-                                                is_error: true,
-                                            });
-
-                                            tool_uses.push(ContentBlock::ToolUse {
-                                                id: id.clone(),
+                                            let record = ToolExecutionRecord::new(
+                                                id,
                                                 name,
                                                 input,
-                                            });
+                                                output,
+                                                true,
+                                            );
 
-                                            tool_results.push(ContentBlock::ToolResult {
-                                                tool_use_id: id,
-                                                content: output,
-                                            });
+                                            yield Ok(record.completion_event());
+                                            record_tool_execution(
+                                                &mut total_result,
+                                                &mut tool_uses,
+                                                &mut tool_results,
+                                                &record,
+                                            );
                                             continue; // Skip execution
                                         }
                                     }
 
                                     // If approved, execute the tool
-                                    let tool_start = Instant::now();
-                                    let output = match tools.execute(&name, input.clone()).await {
-                                        Ok(out) => out,
-                                        Err(e) => format!("Error: {}", e),
-                                    };
-                                    let duration_ms = tool_start.elapsed().as_millis() as u64;
-
-                                    // Run on_tool_complete hooks
-                                    if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
-                                        warn!(tool = %name, error = %e, "Hook error on complete");
-                                    }
-
-                                    debug!(
-                                        tool = %name,
-                                        duration_ms = duration_ms,
-                                        "Tool executed (after approval)"
-                                    );
-
-                                    yield Ok(AgentEvent::ToolComplete {
-                                        id: id.clone(),
-                                        name: name.clone(),
-                                        input: input.clone(),
-                                        output: output.clone(),
-                                        is_error: output.starts_with("Error:"),
-                                    });
-
-                                    total_result.tool_calls.push(ToolCall {
-                                        name: name.clone(),
-                                        input: input.clone(),
-                                        output: output.clone(),
-                                        is_error: output.starts_with("Error:"),
-                                    });
-
-                                    tool_uses.push(ContentBlock::ToolUse {
-                                        id: id.clone(),
+                                    let record = Agent::<C>::execute_tool_call(
+                                        &tools,
+                                        &hooks,
+                                        id,
                                         name,
                                         input,
-                                    });
+                                    ).await;
 
-                                    tool_results.push(ContentBlock::ToolResult {
-                                        tool_use_id: id,
-                                        content: output,
-                                    });
+                                    yield Ok(record.completion_event());
+                                    record_tool_execution(
+                                        &mut total_result,
+                                        &mut tool_uses,
+                                        &mut tool_results,
+                                        &record,
+                                    );
                                 } else if !blocked {
-                                    let tool_start = Instant::now();
-                                    let output = match tools.execute(&name, input.clone()).await {
-                                        Ok(out) => out,
-                                        Err(e) => format!("Error: {}", e),
-                                    };
-                                    let duration_ms = tool_start.elapsed().as_millis() as u64;
-
-                                    // Run on_tool_complete hooks
-                                    if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
-                                        warn!(tool = %name, error = %e, "Hook error on complete");
-                                    }
-
-                                    debug!(
-                                        tool = %name,
-                                        duration_ms = duration_ms,
-                                        "Tool executed"
-                                    );
-
-                                    yield Ok(AgentEvent::ToolComplete {
-                                        id: id.clone(),
-                                        name: name.clone(),
-                                        input: input.clone(),
-                                        output: output.clone(),
-                                        is_error: output.starts_with("Error:"),
-                                    });
-
-                                    total_result.tool_calls.push(ToolCall {
-                                        name: name.clone(),
-                                        input: input.clone(),
-                                        output: output.clone(),
-                                        is_error: output.starts_with("Error:"),
-                                    });
-
-                                    tool_uses.push(ContentBlock::ToolUse {
-                                        id: id.clone(),
+                                    let record = Agent::<C>::execute_tool_call(
+                                        &tools,
+                                        &hooks,
+                                        id,
                                         name,
                                         input,
-                                    });
+                                    ).await;
 
-                                    tool_results.push(ContentBlock::ToolResult {
-                                        tool_use_id: id,
-                                        content: output,
-                                    });
+                                    yield Ok(record.completion_event());
+                                    record_tool_execution(
+                                        &mut total_result,
+                                        &mut tool_uses,
+                                        &mut tool_results,
+                                        &record,
+                                    );
                                 }
                             }
                         }
@@ -855,5 +874,29 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         });
 
         Ok(rx)
+    }
+
+    async fn execute_tool_call(
+        tools: &ToolRegistry,
+        hooks: &HookRegistry,
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    ) -> ToolExecutionRecord {
+        let tool_start = Instant::now();
+        let output = match tools.execute(&name, input.clone()).await {
+            Ok(out) => out,
+            Err(e) => format!("Error: {}", e),
+        };
+        let duration_ms = tool_start.elapsed().as_millis() as u64;
+
+        if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
+            warn!(tool = %name, error = %e, "Hook error on complete");
+        }
+
+        debug!(tool = %name, duration_ms = duration_ms, "Tool executed");
+
+        let is_error = output.starts_with("Error:");
+        ToolExecutionRecord::new(id, name, input, output, is_error)
     }
 }

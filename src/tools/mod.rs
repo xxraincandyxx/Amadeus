@@ -9,6 +9,7 @@ pub mod grep;
 pub mod peer;
 pub mod registry;
 pub mod schema;
+pub mod todo;
 pub mod tool_trait;
 pub mod web;
 
@@ -19,5 +20,6 @@ pub use grep::GrepTool;
 #[cfg(feature = "supervisor")]
 pub use peer::PeerTool;
 pub use registry::ToolRegistry;
+pub use todo::{TodoItem, TodoManager, TodoStatus, TodoTool};
 pub use tool_trait::Tool;
 pub use web::WebFetchTool;

@@ -12,9 +12,17 @@
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::RwLock;
 
+use crate::agent::config::Config;
 use crate::error::Result;
+use crate::tools::bash::BashTool;
+use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
+use crate::tools::glob::GlobTool;
+use crate::tools::grep::GrepTool;
+use crate::tools::todo::{TodoManager, TodoTool};
 use crate::tools::tool_trait::Tool;
+use crate::tools::web::WebFetchTool;
 
 type ToolMap = HashMap<&'static str, Arc<dyn Tool>>;
 
@@ -28,6 +36,24 @@ impl ToolRegistry {
         Self {
             tools: Arc::new(HashMap::new()),
         }
+    }
+
+    pub fn with_defaults(config: &Config) -> Self {
+        Self::with_defaults_and_todo(config, Arc::new(RwLock::new(TodoManager::new())))
+    }
+
+    pub fn with_defaults_and_todo(config: &Config, todo_manager: Arc<RwLock<TodoManager>>) -> Self {
+        let file_tools = FileTools::from_config(config);
+
+        Self::new()
+            .register(Box::new(BashTool::from_config(config)))
+            .register(Box::new(ReadFileTool::new(file_tools.clone())))
+            .register(Box::new(WriteFileTool::new(file_tools.clone())))
+            .register(Box::new(EditFileTool::new(file_tools)))
+            .register(Box::new(GlobTool::from_config(config)))
+            .register(Box::new(GrepTool::from_config(config)))
+            .register(Box::new(TodoTool::new(todo_manager)))
+            .register(Box::new(WebFetchTool::from_config(config)))
     }
 
     pub fn register(self, tool: Box<dyn Tool>) -> Self {

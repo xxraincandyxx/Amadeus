@@ -11,6 +11,7 @@ static WRITE_FILE_SCHEMA: OnceLock<Value> = OnceLock::new();
 static EDIT_FILE_SCHEMA: OnceLock<Value> = OnceLock::new();
 static GLOB_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static GREP_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
+static TODO_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static WEB_FETCH_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 
 pub fn bash_tool() -> &'static Value {
@@ -203,6 +204,44 @@ pub fn web_fetch_tool() -> &'static Value {
     })
 }
 
+pub fn todo_tool() -> &'static Value {
+    TODO_TOOL_SCHEMA.get_or_init(|| {
+        serde_json::json!({
+            "name": "todo",
+            "description": "Update the shared todo list for the current task. Use it to track progress on multi-step work.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "description": "The full todo list to store",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "description": "Stable todo identifier"
+                                },
+                                "text": {
+                                    "type": "string",
+                                    "description": "Todo description"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["pending", "in_progress", "completed"],
+                                    "description": "Current todo status"
+                                }
+                            },
+                            "required": ["id", "text", "status"]
+                        }
+                    }
+                },
+                "required": ["items"]
+            }
+        })
+    })
+}
+
 pub fn all_tools() -> Vec<&'static Value> {
     vec![
         bash_tool(),
@@ -211,6 +250,7 @@ pub fn all_tools() -> Vec<&'static Value> {
         edit_file_tool(),
         glob_tool(),
         grep_tool(),
+        todo_tool(),
         web_fetch_tool(),
     ]
 }
