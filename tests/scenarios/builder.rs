@@ -11,6 +11,10 @@ pub struct ScenarioStep {
     pub error: Option<String>,
 }
 
+/// Metadata for a test scenario. The `steps` field is currently informational
+/// only -- the actual LLM responses are driven by the mock client passed to
+/// `ScenarioRunner::execute`. The builder helpers below populate steps so that
+/// future runner enhancements can feed them into the mock automatically.
 #[derive(Debug, Clone)]
 pub struct Scenario {
     pub name: String,
@@ -58,15 +62,8 @@ impl ScenarioBuilder {
         self
     }
 
-    pub fn user_says(mut self, text: &str) -> Self {
-        self.steps.push(ScenarioStep {
-            delay_ms: None,
-            events: vec![StreamEvent::TextDelta(text.to_string())],
-            error: None,
-        });
-        self
-    }
-
+    /// Record that the agent responds with a text message.
+    /// This is the primary way to script a single-turn LLM response.
     pub fn agent_responds(mut self, text: &str) -> Self {
         self.steps.push(ScenarioStep {
             delay_ms: None,
@@ -108,14 +105,6 @@ impl ScenarioBuilder {
             ],
             error: None,
         });
-        self
-    }
-
-    pub fn user_approves(self) -> Self {
-        self
-    }
-
-    pub fn user_denies(self) -> Self {
         self
     }
 

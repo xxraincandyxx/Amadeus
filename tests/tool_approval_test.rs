@@ -41,31 +41,27 @@ async fn test_safe_tools_auto_approved() {
 }
 
 #[tokio::test]
-async fn test_dangerous_command_blocked() {
-    // Note: This test would require actual tool execution with policy checking
-    // For now, we test that safe tools work correctly
-    use serde_json::json;
-
+async fn test_dangerous_command_requires_approval() {
     let client = ScenarioMockClient::scripted(vec![
         vec![
             StreamEvent::ToolCallStart {
                 id: "tool_1".to_string(),
-                name: "read_file".to_string(),
+                name: "bash".to_string(),
             },
             StreamEvent::ToolCallDelta {
-                arguments: json!({"path": "safe.txt"}).to_string(),
+                arguments: json!({"command": "rm -rf /"}).to_string(),
             },
             StreamEvent::ToolCallDone("tool_1".to_string()),
             StreamEvent::StopReason("tool_use".to_string()),
         ],
         vec![
-            StreamEvent::TextDelta("File read successfully".to_string()),
+            StreamEvent::TextDelta("Command was blocked.".to_string()),
             StreamEvent::StopReason("end_turn".to_string()),
         ],
     ]);
 
-    let scenario = ScenarioBuilder::new("safe_tool")
-        .description("Test safe tool execution")
+    let scenario = ScenarioBuilder::new("dangerous_command")
+        .description("Dangerous commands should require approval")
         .build();
 
     let runner = ScenarioRunner::new(scenario);

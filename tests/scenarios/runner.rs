@@ -11,7 +11,7 @@ use amadeus::error::Result;
 use super::Scenario;
 
 pub struct ScenarioRunner {
-    scenario: Scenario,
+    scenario_name: String,
     config: Arc<Config>,
 }
 
@@ -25,7 +25,10 @@ impl ScenarioRunner {
             ..Config::default()
         });
 
-        Self { scenario, config }
+        Self {
+            scenario_name: scenario.name,
+            config,
+        }
     }
 
     pub fn with_config(mut self, config: Arc<Config>) -> Self {

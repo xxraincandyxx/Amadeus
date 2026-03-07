@@ -5,12 +5,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Stream;
-use tokio::time::sleep;
 
 use amadeus::agent::messages::Message;
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;
 
+#[derive(Clone)]
 pub struct SlowMockClient {
     base_delay_ms: u64,
     delta_delay_ms: u64,
@@ -33,15 +33,6 @@ impl SlowMockClient {
     }
 }
 
-impl Clone for SlowMockClient {
-    fn clone(&self) -> Self {
-        Self {
-            base_delay_ms: self.base_delay_ms,
-            delta_delay_ms: self.delta_delay_ms,
-        }
-    }
-}
-
 #[async_trait]
 impl LLMClient for SlowMockClient {
     async fn create_message(
@@ -51,7 +42,7 @@ impl LLMClient for SlowMockClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<(String, Vec<amadeus::agent::messages::ContentBlock>)> {
-        sleep(Duration::from_millis(self.base_delay_ms)).await;
+        tokio::time::sleep(Duration::from_millis(self.base_delay_ms)).await;
         Ok(("end_turn".to_string(), vec![]))
     }
 
@@ -62,19 +53,21 @@ impl LLMClient for SlowMockClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        tokio::time::sleep(Duration::from_millis(self.base_delay_ms)).await;
-
-        let events = vec![
-            Ok(StreamEvent::TextDelta("Slow ".to_string())),
-            Ok(StreamEvent::TextDelta("streaming ".to_string())),
-            Ok(StreamEvent::TextDelta("response".to_string())),
-            Ok(StreamEvent::StopReason("end_turn".to_string())),
-        ];
-
         let base_delay = self.base_delay_ms;
-        tokio::time::sleep(Duration::from_millis(base_delay)).await;
+        let delta_delay = self.delta_delay_ms;
 
-        Ok(Box::pin(futures::stream::iter(events)))
+        let stream = async_stream::try_stream! {
+            tokio::time::sleep(Duration::from_millis(base_delay)).await;
+
+            let chunks = ["Slow ", "streaming ", "response"];
+            for chunk in chunks {
+                tokio::time::sleep(Duration::from_millis(delta_delay)).await;
+                yield StreamEvent::TextDelta(chunk.to_string());
+            }
+            yield StreamEvent::StopReason("end_turn".to_string());
+        };
+
+        Ok(Box::pin(stream))
     }
 }
 

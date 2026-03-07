@@ -5,10 +5,13 @@ use async_trait::async_trait;
 use futures::Stream;
 use serde_json::json;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 pub struct MockLLMClient {
     pub responses: Vec<(String, Vec<ContentBlock>)>,
     pub stream_events: Vec<StreamEvent>,
+    call_index: Arc<AtomicUsize>,
 }
 
 impl MockLLMClient {
@@ -16,6 +19,7 @@ impl MockLLMClient {
         Self {
             responses: Vec::new(),
             stream_events: Vec::new(),
+            call_index: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -27,6 +31,16 @@ impl MockLLMClient {
     pub fn with_stream_events(mut self, events: Vec<StreamEvent>) -> Self {
         self.stream_events = events;
         self
+    }
+}
+
+impl Clone for MockLLMClient {
+    fn clone(&self) -> Self {
+        Self {
+            responses: self.responses.clone(),
+            stream_events: self.stream_events.clone(),
+            call_index: Arc::clone(&self.call_index),
+        }
     }
 }
 
@@ -45,7 +59,9 @@ impl LLMClient for MockLLMClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)> {
-        Ok(self.responses[0].clone())
+        let idx = self.call_index.fetch_add(1, Ordering::SeqCst);
+        let idx = idx.min(self.responses.len().saturating_sub(1));
+        Ok(self.responses[idx].clone())
     }
 
     async fn create_message_stream(

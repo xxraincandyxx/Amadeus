@@ -96,6 +96,7 @@ impl From<StreamEvent> for StreamEventDef {
     }
 }
 
+#[derive(Clone)]
 pub struct ScenarioMockClient {
     steps: Arc<Mutex<VecDeque<ScenarioStepDef>>>,
 }
@@ -109,7 +110,7 @@ impl ScenarioMockClient {
 
     pub fn from_json(json: &str) -> Result<Self> {
         let def: ScenarioDefinition =
-            serde_json::from_str(json).map_err(|e| AgentError::Serde(e))?;
+            serde_json::from_str(json).map_err(AgentError::Serde)?;
 
         Ok(Self {
             steps: Arc::new(Mutex::new(def.steps.into_iter().collect())),
@@ -117,17 +118,17 @@ impl ScenarioMockClient {
     }
 
     pub fn scripted(event_batches: Vec<Vec<StreamEvent>>) -> Self {
-        let steps: Vec<ScenarioStepDef> = event_batches
+        let steps: VecDeque<ScenarioStepDef> = event_batches
             .into_iter()
             .map(|events| ScenarioStepDef {
                 delay_ms: None,
-                events: events.into_iter().map(|e| e.into()).collect(),
+                events: events.into_iter().map(Into::into).collect(),
                 error: None,
             })
             .collect();
 
         Self {
-            steps: Arc::new(Mutex::new(steps.into_iter().collect())),
+            steps: Arc::new(Mutex::new(steps)),
         }
     }
 
@@ -136,19 +137,15 @@ impl ScenarioMockClient {
             steps: Arc::new(Mutex::new(steps.into_iter().collect())),
         }
     }
+
+    pub fn remaining_steps(&self) -> usize {
+        self.steps.blocking_lock().len()
+    }
 }
 
 impl Default for ScenarioMockClient {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-impl Clone for ScenarioMockClient {
-    fn clone(&self) -> Self {
-        Self {
-            steps: Arc::clone(&self.steps),
-        }
     }
 }
 

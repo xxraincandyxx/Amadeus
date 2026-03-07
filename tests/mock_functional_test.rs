@@ -9,9 +9,9 @@ use futures::Stream;
 use futures::StreamExt;
 use serde_json::json;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
-/// A stateful mock client for testing multi-turn agent loops.
 #[derive(Clone)]
 pub struct StatefulMockClient {
     pub responses: Arc<Mutex<Vec<(String, Vec<ContentBlock>)>>>,
@@ -34,9 +34,9 @@ impl LLMClient for StatefulMockClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<(String, Vec<ContentBlock>)> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock().await;
         if responses.is_empty() {
-            panic!("Mock client has no more responses!");
+            panic!("StatefulMockClient: no more responses");
         }
         Ok(responses.remove(0))
     }
@@ -48,9 +48,8 @@ impl LLMClient for StatefulMockClient {
         _tools: &[serde_json::Value],
         _max_tokens: u32,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
-        let mut responses = self.responses.lock().unwrap();
+        let mut responses = self.responses.lock().await;
         if responses.is_empty() {
-            // Return a simple end_turn if we run out of mock responses unexpectedly
             let stream =
                 futures::stream::iter(vec![Ok(StreamEvent::StopReason("end_turn".to_string()))]);
             return Ok(Box::pin(stream));
@@ -100,9 +99,6 @@ fn create_test_config() -> Arc<Config> {
 
 #[tokio::test]
 async fn test_agent_functional_loop() {
-    println!("\n🎭 AMADEUS AGENT - FUNCTIONAL SIMULATION 🎭");
-    println!("============================================");
-
     let mock_responses = vec![
         (
             "tool_use".to_string(),
@@ -124,9 +120,6 @@ async fn test_agent_functional_loop() {
     let config = create_test_config();
     let agent = Agent::new(client, config);
 
-    println!("👤 USER: Run a system check.");
-
-    // Add to history manually as Agent.run would do
     {
         let history_arc = agent.history();
         let mut history = history_arc.write().await;
@@ -142,33 +135,15 @@ async fn test_agent_functional_loop() {
         match event {
             AgentEvent::TextDelta { delta } => {
                 final_text.push_str(&delta);
-                // Print delta to illustrate streaming
-                print!("{}", delta);
-                use std::io::{self, Write};
-                io::stdout().flush().unwrap();
             }
-            AgentEvent::ToolStart { name, .. } => {
-                println!("\n⚙️  AGENT REQUESTS TOOL: [{}]", name);
-            }
-            AgentEvent::ToolComplete { output, .. } => {
-                println!("📝 TOOL OUTPUT: {}", output.trim());
+            AgentEvent::ToolComplete { .. } => {
                 tool_count += 1;
-                println!("🤖 AGENT PROCESSING OUTPUT...");
             }
-            AgentEvent::Done { result } => {
-                println!("\n\n🏁 SIMULATION COMPLETE");
-                println!("--------------------------------------------");
-                println!("📊 Stats:");
-                println!("   - Total Turns: {}", agent.history().read().await.len());
-                println!("   - Tools Used: {}", tool_count);
-                println!("   - Final Answer: {}", result.text);
-            }
+            AgentEvent::Done { .. } => break,
             _ => {}
         }
     }
 
     assert_eq!(tool_count, 1);
     assert!(final_text.contains("system check is complete"));
-
-    println!("✅ Functional Simulation Passed!\n");
 }
