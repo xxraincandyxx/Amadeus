@@ -9,7 +9,7 @@ set -u
 # --- Configuration Variables ---
 
 # Common directories to exclude (e.g., dependencies, build artifacts)
-EXCLUDE_DIRS="node_modules,vendor,dist,build,.git,target,temp,tmp,out,coverage,docs,doc,.venv,target"
+EXCLUDE_DIRS="node_modules,vendor,dist,build,.git,target,temp,tmp,out,coverage,docs,doc,.venv,target,refs"
 
 # Languages to exclude (mostly configuration, documentation, and lock files)
 # Cloc recognizes these as "languages" but they are not programming code.
