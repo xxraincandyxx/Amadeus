@@ -23,6 +23,8 @@ pub struct FooterInfo {
     pub status_message: Option<String>,
     /// Whether a background task is running
     pub is_background: bool,
+    /// Currently observed key chord/modifier state
+    pub key_chord_hint: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -79,6 +81,7 @@ impl Footer {
                 is_mesh: false,
                 status_message: None,
                 is_background: false,
+                key_chord_hint: None,
             },
             hide_cwd: false,
             hide_sandbox: false,
@@ -189,6 +192,10 @@ impl Footer {
         self.status_message_expiry = None;
     }
 
+    pub fn set_key_chord_hint(&mut self, hint: Option<String>) {
+        self.info.key_chord_hint = hint;
+    }
+
     pub fn tick(&mut self) {
         // Expire status message if time has passed
         if let Some(expiry) = self.status_message_expiry {
@@ -243,6 +250,14 @@ impl Footer {
                     .fg(colors.background.primary)
                     .bg(colors.status.warning)
                     .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // Live key chord state
+        if let Some(ref hint) = self.info.key_chord_hint {
+            spans.push(Span::styled(
+                format!("{} ", hint),
+                Style::default().fg(colors.text.link),
             ));
         }
 
@@ -447,6 +462,20 @@ mod tests {
     }
 
     #[test]
+    fn test_footer_key_chord_hint() {
+        let mut footer = Footer::new("test".to_string());
+
+        footer.set_key_chord_hint(Some("ctrl+x, ctrl+i".to_string()));
+        assert_eq!(
+            footer.info.key_chord_hint,
+            Some("ctrl+x, ctrl+i".to_string())
+        );
+
+        footer.set_key_chord_hint(None);
+        assert!(footer.info.key_chord_hint.is_none());
+    }
+
+    #[test]
     fn test_footer_format_duration() {
         let footer = Footer::new("test".to_string());
         let duration = footer.format_duration();
@@ -485,6 +514,7 @@ mod tests {
             is_mesh: true,
             status_message: Some("test".to_string()),
             is_background: false,
+            key_chord_hint: Some("ctrl+x".to_string()),
         };
 
         let cloned = info.clone();
@@ -492,6 +522,7 @@ mod tests {
         assert_eq!(info.git_branch, cloned.git_branch);
         assert_eq!(info.context_percent, cloned.context_percent);
         assert_eq!(info.is_background, cloned.is_background);
+        assert_eq!(info.key_chord_hint, cloned.key_chord_hint);
     }
 
     #[test]

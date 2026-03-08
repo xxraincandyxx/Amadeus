@@ -3,7 +3,11 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
-    event::{KeyCode, KeyModifiers, MouseButton, MouseEventKind},
+    event::{
+        KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+    },
+    execute,
     terminal::{disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
@@ -40,6 +44,7 @@ const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_VIEWPORT_FRAME_HEIGHT: u16 = 2;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
+const KEY_CHORD_SEPARATOR: &str = ", ";
 
 struct StreamingBuffer {
     text: String,
@@ -535,6 +540,7 @@ pub struct App<C: LLMClient> {
     current_shelf_height: u16,
     tool_monitor: ToolMonitorState,
     monitor_navigation_prefix: bool,
+    key_chord_steps: Vec<String>,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -550,6 +556,120 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.tool_monitor
             .preferred_lines
             .saturating_add(MONITOR_VIEWPORT_FRAME_HEIGHT)
+    }
+
+    fn refresh_key_chord_hint(&mut self) {
+        let hint = if self.key_chord_steps.is_empty() {
+            None
+        } else {
+            Some(self.key_chord_steps.join(KEY_CHORD_SEPARATOR))
+        };
+        self.footer.set_key_chord_hint(hint);
+    }
+
+    fn clear_key_chord_hint(&mut self) {
+        self.key_chord_steps.clear();
+        self.refresh_key_chord_hint();
+    }
+
+    fn push_key_chord_step(&mut self, step: String) {
+        self.key_chord_steps.push(step);
+        self.refresh_key_chord_hint();
+    }
+
+    fn key_code_label(code: KeyCode) -> Option<String> {
+        match code {
+            KeyCode::Backspace => Some("backspace".to_string()),
+            KeyCode::Enter => Some("enter".to_string()),
+            KeyCode::Left => Some("left".to_string()),
+            KeyCode::Right => Some("right".to_string()),
+            KeyCode::Up => Some("up".to_string()),
+            KeyCode::Down => Some("down".to_string()),
+            KeyCode::Home => Some("home".to_string()),
+            KeyCode::End => Some("end".to_string()),
+            KeyCode::PageUp => Some("pageup".to_string()),
+            KeyCode::PageDown => Some("pagedown".to_string()),
+            KeyCode::Tab => Some("tab".to_string()),
+            KeyCode::BackTab => Some("shift+tab".to_string()),
+            KeyCode::Delete => Some("delete".to_string()),
+            KeyCode::Insert => Some("insert".to_string()),
+            KeyCode::F(number) => Some(format!("f{number}")),
+            KeyCode::Char(ch) => Some(ch.to_ascii_lowercase().to_string()),
+            KeyCode::Esc => Some("esc".to_string()),
+            _ => None,
+        }
+    }
+
+    fn key_chord_label(key: crossterm::event::KeyEvent) -> Option<String> {
+        let code_label = Self::key_code_label(key.code)?;
+        let mut parts = Vec::new();
+
+        if key.modifiers.contains(KeyModifiers::CONTROL) {
+            parts.push("ctrl".to_string());
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            parts.push("alt".to_string());
+        }
+        if key.modifiers.contains(KeyModifiers::SUPER) {
+            parts.push("cmd".to_string());
+        }
+        if key.modifiers.contains(KeyModifiers::SHIFT)
+            && !matches!(key.code, KeyCode::Char(_))
+            && !matches!(key.code, KeyCode::BackTab)
+        {
+            parts.push("shift".to_string());
+        }
+
+        if parts.is_empty() {
+            return Some(code_label);
+        }
+
+        parts.push(code_label);
+        Some(parts.join("+"))
+    }
+
+    fn update_key_chord_hint(&mut self, key: crossterm::event::KeyEvent) {
+        match key.code {
+            KeyCode::Modifier(_) => {
+                let mut labels = Vec::new();
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    labels.push("ctrl");
+                }
+                if key.modifiers.contains(KeyModifiers::ALT) {
+                    labels.push("alt");
+                }
+                if key.modifiers.contains(KeyModifiers::SUPER) {
+                    labels.push("cmd");
+                }
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    labels.push("shift");
+                }
+
+                if labels.is_empty() {
+                    self.clear_key_chord_hint();
+                } else {
+                    self.key_chord_steps = vec![labels.join("+")];
+                    self.refresh_key_chord_hint();
+                }
+            }
+            _ => {
+                if let Some(step) = Self::key_chord_label(key) {
+                    if key.modifiers == KeyModifiers::NONE {
+                        if self.monitor_navigation_prefix {
+                            self.push_key_chord_step(step);
+                        } else {
+                            self.key_chord_steps = vec![step];
+                            self.refresh_key_chord_hint();
+                        }
+                    } else {
+                        self.key_chord_steps = vec![step];
+                        self.refresh_key_chord_hint();
+                    }
+                } else {
+                    self.clear_key_chord_hint();
+                }
+            }
+        }
     }
 
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
@@ -586,6 +706,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             current_shelf_height: DEFAULT_SHELF_HEIGHT,
             tool_monitor: ToolMonitorState::new(Self::tool_monitor_line_count()),
             monitor_navigation_prefix: false,
+            key_chord_steps: Vec::new(),
         }
     }
 
@@ -596,9 +717,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     pub async fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
+        let mut stdout = std::io::stdout();
+        let _ = execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
+        );
 
         let res = self.run_loop().await;
 
+        let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
         disable_raw_mode()?;
         // Use a temporary terminal to show cursor if needed
         let backend = CrosstermBackend::new(std::io::stdout());
@@ -606,6 +737,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         terminal.show_cursor()?;
 
         res
+    }
+
+    fn handle_tool_progress_timeout(&mut self) {
+        if self.stream_rx.is_some() && self.tool_monitor.has_running_tools() {
+            self.loading_indicator
+                .set_streaming_state(StreamingState::Responding);
+        }
     }
 
     fn find_flushable_index(&self, text: &str) -> Option<usize> {
@@ -1067,6 +1205,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('x' | 'X')) => {
                 self.monitor_navigation_prefix = true;
+                self.key_chord_steps = vec!["ctrl+x".to_string()];
+                self.refresh_key_chord_hint();
                 self.footer
                     .set_status_message(format!("Monitor nav armed: {MONITOR_NAV_HINT}"));
                 true
@@ -1078,6 +1218,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     fn clear_tool_monitor(&mut self) {
         self.tool_monitor.clear();
         self.monitor_navigation_prefix = false;
+        self.clear_key_chord_hint();
     }
 
     fn maybe_clear_tool_monitor(&mut self) {
@@ -1241,6 +1382,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.loading_indicator.tick();
                 self.messages.tick();
                 self.status_bar.tick();
+                self.handle_tool_progress_timeout();
                 // Poll for compaction result (non-blocking)
                 self.poll_compaction_result();
             }
@@ -1501,6 +1643,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         key: crossterm::event::KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
+        self.update_key_chord_hint(key);
         match self.mode {
             AppMode::Normal => self.handle_normal_key(key).await,
             AppMode::Input => self.handle_input_key(key, terminal).await,
@@ -2165,7 +2308,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MonitorStatus, ToolMonitorState};
+    use super::{App, MonitorStatus, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
@@ -2209,6 +2352,22 @@ mod tests {
         monitor.complete("root", "delegating".to_string(), false);
 
         assert_eq!(monitor.active_tool_name(), Some("bash"));
+    }
+
+    #[test]
+    fn key_chord_label_formats_modifier_shortcuts() {
+        assert_eq!(
+            App::<crate::client::openai::OpenAIClient>::key_chord_label(
+                crossterm::event::KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL,)
+            ),
+            Some("ctrl+x".to_string())
+        );
+        assert_eq!(
+            App::<crate::client::openai::OpenAIClient>::key_chord_label(
+                crossterm::event::KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE,)
+            ),
+            Some("i".to_string())
+        );
     }
 
     #[test]
