@@ -521,14 +521,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn flush_unrendered_history(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<()> {
-        let width = terminal.size()?.width;
-        let lines = self.messages.take_unrendered_lines(width);
-        self.insert_lines_before(terminal, lines)
-    }
+  fn flush_unrendered_history(
+      &mut self,
+      terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+  ) -> Result<()> {
+      let width = terminal.size()?.width;
+      let lines = self.messages.take_unrendered_lines(width);
+      self.insert_lines_before(terminal, lines)
+  }
+
+  fn flush_completed_tool_group(
+      &mut self,
+      terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+  ) -> Result<()> {
+      if self.messages.flush_completed_pending_tool_group() {
+          self.flush_unrendered_history(terminal)?;
+      }
+      Ok(())
+  }
 
     fn insert_lines_before(
         &mut self,
@@ -666,13 +676,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         event: AgentEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
-        match event {
-            AgentEvent::TextDelta { delta } => {
-                debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
+          match event {
+              AgentEvent::TextDelta { delta } => {
+                  self.flush_completed_tool_group(terminal)?;
+                  debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
 
-                // Filter out internal tags
-                let filtered_delta = self.tag_filter.process(&delta);
-                if filtered_delta.is_empty() {
+                  // Filter out internal tags
+                  let filtered_delta = self.tag_filter.process(&delta);
+                  if filtered_delta.is_empty() {
                     return Ok(false);
                 }
 
@@ -711,10 +722,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.messages.finalize_thinking();
             }
 
-            AgentEvent::ToolStart { id, name } => {
-                self.status_bar.set_thinking(true);
-                self.messages.start_tool(id, name, None);
-            }
+              AgentEvent::ToolStart { id, name } => {
+                  self.flush_streaming_buffer(terminal)?;
+                  self.status_bar.set_thinking(true);
+                  self.messages.start_tool(id, name, None);
+              }
 
             AgentEvent::ToolComplete {
                 id,
@@ -722,24 +734,26 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 input,
                 output,
                 is_error,
-            } => {
-                let command = if name == "bash" {
-                    input
-                        .get("command")
-                        .and_then(|v: &serde_json::Value| v.as_str())
+              } => {
+                  let command = if name == "bash" {
+                      input
+                          .get("command")
+                          .and_then(|v: &serde_json::Value| v.as_str())
                         .map(String::from)
                 } else {
-                    None
-                };
-                self.messages.complete_tool(&id, output, is_error, command);
-            }
+                      None
+                  };
+                  self.messages.complete_tool(&id, output, is_error, command);
+                  self.flush_completed_tool_group(terminal)?;
+              }
 
-            AgentEvent::Done { result } => {
-                debug!(text_len = result.text.len(), "Agent stream completed");
+              AgentEvent::Done { result } => {
+                  debug!(text_len = result.text.len(), "Agent stream completed");
 
-                self.finalize_streaming_state(terminal)?;
-                self.messages.finalize_assistant(result.text);
-                self.messages.mark_last_item_rendered();
+                  self.flush_completed_tool_group(terminal)?;
+                  self.finalize_streaming_state(terminal)?;
+                  self.messages.finalize_assistant(result.text);
+                  self.messages.mark_last_item_rendered();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -753,11 +767,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 return Ok(true);
             }
 
-            AgentEvent::Error { message } => {
-                self.finalize_streaming_state(terminal)?;
-                if self.current_text.is_empty() {
-                    self.messages.add_assistant(format!("Error: {}", message));
-                } else {
+              AgentEvent::Error { message } => {
+                  self.flush_completed_tool_group(terminal)?;
+                  self.finalize_streaming_state(terminal)?;
+                  if self.current_text.is_empty() {
+                      self.messages.add_assistant(format!("Error: {}", message));
+                  } else {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }

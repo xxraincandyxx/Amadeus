@@ -251,6 +251,23 @@ impl MessagesComponent {
         self.skip_next_assistant_history_item = true;
     }
 
+    pub fn has_completed_pending_tool_group(&self) -> bool {
+        self.pending_tool_group
+            .as_ref()
+            .map(|group| !group.is_empty() && !group.has_pending())
+            .unwrap_or(false)
+    }
+
+    pub fn flush_completed_pending_tool_group(&mut self) -> bool {
+        if !self.has_completed_pending_tool_group() {
+            return false;
+        }
+
+        let turn = self.current_turn;
+        self.finalize_pending_tool_group_with_turn(turn);
+        true
+    }
+
     pub fn add_user(&mut self, content: String) {
         self.finalize_pending_tool_group();
         let turn = self.next_turn();
@@ -1291,6 +1308,25 @@ mod tests {
 
         let assistant_lines = messages.take_unrendered_lines(100);
         assert!(assistant_lines.is_empty());
+    }
+
+    #[test]
+    fn test_flush_completed_pending_tool_group_moves_tool_group_into_history() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Test".to_string());
+        messages.start_tool("t1".to_string(), "todo".to_string(), None);
+
+        assert!(!messages.has_completed_pending_tool_group());
+
+        messages.complete_tool("t1", "[x] #1: Hello world".to_string(), false, None);
+
+        assert!(messages.has_completed_pending_tool_group());
+        assert!(messages.flush_completed_pending_tool_group());
+        assert!(messages.pending_tool_group.is_none());
+        assert!(matches!(
+            messages.items.last(),
+            Some(HistoryItem::ToolGroup { .. })
+        ));
     }
 
     #[test]
