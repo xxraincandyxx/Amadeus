@@ -26,8 +26,8 @@ use crate::tools::SubAgnetTool;
 use crate::tools::{TodoItem, TodoManager};
 
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+const TOOL_HEARTBEAT_INTERVAL_MS: u64 = 1200;
 const SUB_AGNET_HEARTBEAT_MESSAGE: &str = "subagent working";
-const SUB_AGNET_HEARTBEAT_INTERVAL_MS: u64 = 1200;
 
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
@@ -1027,8 +1027,32 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 )
                 .await;
             } else {
-                let record = Agent::<C>::execute_tool_call(&tools, &hooks, id, name, input).await;
-                let _ = tx.send(record.completion_event()).await;
+                use tokio::time::{interval, MissedTickBehavior};
+
+                let mut heartbeat =
+                    interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
+                heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+                let tool_name = name.clone();
+                let exec = Agent::<C>::execute_tool_call(&tools, &hooks, id.clone(), name, input);
+                tokio::pin!(exec);
+
+                loop {
+                    tokio::select! {
+                        _ = heartbeat.tick() => {
+                            let _ = tx.send(AgentEvent::ToolProgress {
+                                id: id.clone(),
+                                message: format!("{tool_name} running"),
+                                percent: None,
+                                parent_id: None,
+                            }).await;
+                        }
+                        record = &mut exec => {
+                            let _ = tx.send(record.completion_event()).await;
+                            break;
+                        }
+                    }
+                }
             }
         });
 
@@ -1070,9 +1094,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut buffered_output = String::new();
         let mut final_output: Option<String> = None;
         let mut is_error = false;
-        let mut heartbeat = interval(std::time::Duration::from_millis(
-            SUB_AGNET_HEARTBEAT_INTERVAL_MS,
-        ));
+        let mut heartbeat = interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
         loop {
