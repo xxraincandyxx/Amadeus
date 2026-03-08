@@ -38,7 +38,8 @@ const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
 const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
 const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
-const MONITOR_NAV_HINT: &str = "^X ^I prev  ^X ^K next  ^X ^J back  ^X ^L enter";
+const MONITOR_VIEWPORT_FRAME_HEIGHT: u16 = 2;
+const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 
 struct StreamingBuffer {
     text: String,
@@ -545,6 +546,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .unwrap_or(DEFAULT_TOOL_MONITOR_LINES)
     }
 
+    fn monitor_total_height(&self) -> u16 {
+        self.tool_monitor
+            .preferred_lines
+            .saturating_add(MONITOR_VIEWPORT_FRAME_HEIGHT)
+    }
+
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
         let footer = Footer::new(model_name.clone());
         let loading_indicator = LoadingIndicator::new();
@@ -824,10 +831,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .max(MIN_LIVE_VIEWPORT_HEIGHT);
         if self.tool_monitor.has_content() {
             return self
-                .tool_monitor
-                .preferred_lines
+                .monitor_total_height()
                 .min(max_height)
-                .max(MIN_TOOL_MONITOR_LINES);
+                .max(MIN_TOOL_MONITOR_LINES.saturating_add(MONITOR_VIEWPORT_FRAME_HEIGHT));
         }
 
         if self.streaming_buffer.is_empty() {
@@ -1043,21 +1049,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         if self.monitor_navigation_prefix {
             self.monitor_navigation_prefix = false;
-            return match (key.modifiers, key.code) {
-                (KeyModifiers::CONTROL, KeyCode::Char('i' | 'I')) => {
+            return match key.code {
+                KeyCode::Char('i' | 'I') => {
                     self.tool_monitor.select_previous();
                     true
                 }
-                (KeyModifiers::CONTROL, KeyCode::Char('k' | 'K')) => {
+                KeyCode::Char('k' | 'K') => {
                     self.tool_monitor.select_next();
                     true
                 }
-                (KeyModifiers::CONTROL, KeyCode::Char('l' | 'L')) => {
-                    self.tool_monitor.enter_selected()
-                }
-                (KeyModifiers::CONTROL, KeyCode::Char('j' | 'J')) => {
-                    self.tool_monitor.exit_parent()
-                }
+                KeyCode::Char('l' | 'L') => self.tool_monitor.enter_selected(),
+                KeyCode::Char('j' | 'J') => self.tool_monitor.exit_parent(),
                 _ => false,
             };
         }
@@ -1066,7 +1068,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('x' | 'X')) => {
                 self.monitor_navigation_prefix = true;
                 self.footer
-                    .set_status_message(format!("Monitor nav: {MONITOR_NAV_HINT}"));
+                    .set_status_message(format!("Monitor nav armed: {MONITOR_NAV_HINT}"));
                 true
             }
             _ => false,
@@ -1096,7 +1098,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if let Some(tool_name) = self.tool_monitor.active_tool_name() {
             spans.push(Span::styled(
                 format!(" {} ", tool_name),
-                Style::default().fg(colors.ui.dark),
+                Style::default().fg(colors.ui.comment),
             ));
         }
 
@@ -2164,6 +2166,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 #[cfg(test)]
 mod tests {
     use super::{MonitorStatus, ToolMonitorState};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
     fn tool_monitor_clears_when_all_tools_complete() {
@@ -2206,5 +2209,69 @@ mod tests {
         monitor.complete("root", "delegating".to_string(), false);
 
         assert_eq!(monitor.active_tool_name(), Some("bash"));
+    }
+
+    #[test]
+    fn monitor_total_height_keeps_sixteen_content_lines() {
+        let monitor = ToolMonitorState::new(16);
+        assert_eq!(monitor.preferred_lines, 16);
+    }
+
+    #[test]
+    fn monitor_navigation_uses_ctrl_x_prefix_with_plain_followup_keys() {
+        fn apply_navigation_step(
+            monitor: &mut ToolMonitorState,
+            prefix: &mut bool,
+            key: KeyEvent,
+        ) -> bool {
+            if !monitor.has_content() {
+                *prefix = false;
+                return false;
+            }
+
+            if *prefix {
+                *prefix = false;
+                return match key.code {
+                    KeyCode::Char('i' | 'I') => {
+                        monitor.select_previous();
+                        true
+                    }
+                    KeyCode::Char('k' | 'K') => {
+                        monitor.select_next();
+                        true
+                    }
+                    KeyCode::Char('l' | 'L') => monitor.enter_selected(),
+                    KeyCode::Char('j' | 'J') => monitor.exit_parent(),
+                    _ => false,
+                };
+            }
+
+            match (key.modifiers, key.code) {
+                (KeyModifiers::CONTROL, KeyCode::Char('x' | 'X')) => {
+                    *prefix = true;
+                    true
+                }
+                _ => false,
+            }
+        }
+
+        let mut monitor = ToolMonitorState::new(16);
+        let mut prefix = false;
+        monitor.start_tool("root-1".to_string(), "bash".to_string(), None);
+        monitor.start_tool("root-2".to_string(), "read".to_string(), None);
+
+        assert!(apply_navigation_step(
+            &mut monitor,
+            &mut prefix,
+            KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL),
+        ));
+        assert!(prefix);
+        assert!(apply_navigation_step(
+            &mut monitor,
+            &mut prefix,
+            KeyEvent::new(KeyCode::Char('k'), KeyModifiers::NONE),
+        ));
+        assert_eq!(monitor.selected_id.as_deref(), Some("root-2"));
+        assert!(!prefix);
     }
 }

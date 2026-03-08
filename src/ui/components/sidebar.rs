@@ -253,11 +253,11 @@ impl HelpSidebar {
                 Span::styled(" Expand Tools", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   ^X ^I/^K ", Style::default().fg(colors.text.link)),
+                Span::styled("   ^X i/k ", Style::default().fg(colors.text.link)),
                 Span::styled(" Monitor Prev/Next", Style::default().fg(colors.ui.comment)),
             ]),
             Line::from(vec![
-                Span::styled("   ^X ^J/^L ", Style::default().fg(colors.text.link)),
+                Span::styled("   ^X j/l ", Style::default().fg(colors.text.link)),
                 Span::styled(
                     " Monitor Back/Enter",
                     Style::default().fg(colors.ui.comment),

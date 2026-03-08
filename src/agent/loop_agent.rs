@@ -26,6 +26,8 @@ use crate::tools::SubAgnetTool;
 use crate::tools::{TodoItem, TodoManager};
 
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+const SUB_AGNET_HEARTBEAT_MESSAGE: &str = "subagent working";
+const SUB_AGNET_HEARTBEAT_INTERVAL_MS: u64 = 1200;
 
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
@@ -1042,6 +1044,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         input: serde_json::Value,
         tx: mpsc::Sender<AgentEvent>,
     ) {
+        use tokio::time::{interval, MissedTickBehavior};
+
         let tool_start = Instant::now();
         let prompt = input
             .get("prompt")
@@ -1066,129 +1070,149 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut buffered_output = String::new();
         let mut final_output: Option<String> = None;
         let mut is_error = false;
+        let mut heartbeat = interval(std::time::Duration::from_millis(
+            SUB_AGNET_HEARTBEAT_INTERVAL_MS,
+        ));
+        heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
-        while let Some(event) = stream.next().await {
-            match event {
-                Ok(AgentEvent::TextDelta { delta }) => {
-                    buffered_output.push_str(&delta);
-                    let _ = tx
-                        .send(AgentEvent::ToolOutputDelta {
-                            id: id.clone(),
-                            delta,
-                            parent_id: None,
-                        })
-                        .await;
+        loop {
+            tokio::select! {
+                _ = heartbeat.tick() => {
+                    let _ = tx.send(AgentEvent::ToolProgress {
+                        id: id.clone(),
+                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                        percent: None,
+                        parent_id: None,
+                    }).await;
                 }
-                Ok(AgentEvent::ToolStart {
-                    id: child_id,
-                    name,
-                    parent_id,
-                }) => {
-                    let _ = tx
-                        .send(Agent::<C>::namespace_tool_event(
-                            &id,
-                            AgentEvent::ToolStart {
-                                id: child_id,
-                                name,
-                                parent_id,
-                            },
-                        ))
-                        .await;
-                }
-                Ok(AgentEvent::ToolInputDelta {
-                    id: child_id,
-                    delta,
-                    parent_id,
-                }) => {
-                    let _ = tx
-                        .send(Agent::<C>::namespace_tool_event(
-                            &id,
-                            AgentEvent::ToolInputDelta {
-                                id: child_id,
-                                delta,
-                                parent_id,
-                            },
-                        ))
-                        .await;
-                }
-                Ok(AgentEvent::ToolOutputDelta {
-                    id: child_id,
-                    delta,
-                    parent_id,
-                }) => {
-                    let _ = tx
-                        .send(Agent::<C>::namespace_tool_event(
-                            &id,
-                            AgentEvent::ToolOutputDelta {
-                                id: child_id,
-                                delta,
-                                parent_id,
-                            },
-                        ))
-                        .await;
-                }
-                Ok(AgentEvent::ToolProgress {
-                    id: child_id,
-                    message,
-                    percent,
-                    parent_id,
-                }) => {
-                    let _ = tx
-                        .send(Agent::<C>::namespace_tool_event(
-                            &id,
-                            AgentEvent::ToolProgress {
-                                id: child_id,
-                                message,
-                                percent,
-                                parent_id,
-                            },
-                        ))
-                        .await;
-                }
-                Ok(AgentEvent::ToolComplete {
-                    id: child_id,
-                    name,
-                    input,
-                    output,
-                    is_error,
-                    parent_id,
-                }) => {
-                    let _ = tx
-                        .send(Agent::<C>::namespace_tool_event(
-                            &id,
-                            AgentEvent::ToolComplete {
-                                id: child_id,
-                                name,
-                                input,
-                                output,
-                                is_error,
-                                parent_id,
-                            },
-                        ))
-                        .await;
-                }
-                Ok(AgentEvent::Done { result }) => {
-                    final_output = Some(if result.text.is_empty() {
-                        if buffered_output.is_empty() {
-                            "(no summary)".to_string()
-                        } else {
-                            buffered_output.clone()
+                maybe_event = stream.next() => {
+                    let Some(event) = maybe_event else {
+                        break;
+                    };
+
+                    match event {
+                        Ok(AgentEvent::TextDelta { delta }) => {
+                            buffered_output.push_str(&delta);
+                            let _ = tx
+                                .send(AgentEvent::ToolOutputDelta {
+                                    id: id.clone(),
+                                    delta,
+                                    parent_id: None,
+                                })
+                                .await;
                         }
-                    } else {
-                        result.text
-                    });
-                    break;
-                }
-                Ok(AgentEvent::Error { message }) => {
-                    is_error = true;
-                    final_output = Some(format!("Error: {}", message));
-                    break;
-                }
-                Ok(_) => {}
-                Err(error) => {
-                    is_error = true;
-                    final_output = Some(format!("Error: {}", error));
-                    break;
+                        Ok(AgentEvent::ToolStart {
+                            id: child_id,
+                            name,
+                            parent_id,
+                        }) => {
+                            let _ = tx
+                                .send(Agent::<C>::namespace_tool_event(
+                                    &id,
+                                    AgentEvent::ToolStart {
+                                        id: child_id,
+                                        name,
+                                        parent_id,
+                                    },
+                                ))
+                                .await;
+                        }
+                        Ok(AgentEvent::ToolInputDelta {
+                            id: child_id,
+                            delta,
+                            parent_id,
+                        }) => {
+                            let _ = tx
+                                .send(Agent::<C>::namespace_tool_event(
+                                    &id,
+                                    AgentEvent::ToolInputDelta {
+                                        id: child_id,
+                                        delta,
+                                        parent_id,
+                                    },
+                                ))
+                                .await;
+                        }
+                        Ok(AgentEvent::ToolOutputDelta {
+                            id: child_id,
+                            delta,
+                            parent_id,
+                        }) => {
+                            let _ = tx
+                                .send(Agent::<C>::namespace_tool_event(
+                                    &id,
+                                    AgentEvent::ToolOutputDelta {
+                                        id: child_id,
+                                        delta,
+                                        parent_id,
+                                    },
+                                ))
+                                .await;
+                        }
+                        Ok(AgentEvent::ToolProgress {
+                            id: child_id,
+                            message,
+                            percent,
+                            parent_id,
+                        }) => {
+                            let _ = tx
+                                .send(Agent::<C>::namespace_tool_event(
+                                    &id,
+                                    AgentEvent::ToolProgress {
+                                        id: child_id,
+                                        message,
+                                        percent,
+                                        parent_id,
+                                    },
+                                ))
+                                .await;
+                        }
+                        Ok(AgentEvent::ToolComplete {
+                            id: child_id,
+                            name,
+                            input,
+                            output,
+                            is_error,
+                            parent_id,
+                        }) => {
+                            let _ = tx
+                                .send(Agent::<C>::namespace_tool_event(
+                                    &id,
+                                    AgentEvent::ToolComplete {
+                                        id: child_id,
+                                        name,
+                                        input,
+                                        output,
+                                        is_error,
+                                        parent_id,
+                                    },
+                                ))
+                                .await;
+                        }
+                        Ok(AgentEvent::Done { result }) => {
+                            final_output = Some(if result.text.is_empty() {
+                                if buffered_output.is_empty() {
+                                    "(no summary)".to_string()
+                                } else {
+                                    buffered_output.clone()
+                                }
+                            } else {
+                                result.text
+                            });
+                            break;
+                        }
+                        Ok(AgentEvent::Error { message }) => {
+                            is_error = true;
+                            final_output = Some(format!("Error: {}", message));
+                            break;
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            is_error = true;
+                            final_output = Some(format!("Error: {}", error));
+                            break;
+                        }
+                    }
                 }
             }
         }
