@@ -22,6 +22,7 @@ use crate::error::{AgentError, Result};
 use crate::hooks::{HookAction, HookRegistry};
 use crate::policy::Policy;
 use crate::tools::registry::ToolRegistry;
+use crate::tools::SubAgnetTool;
 use crate::tools::{TodoItem, TodoManager};
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,7 @@ pub struct AgentBuilder<C: LLMClient> {
     client: C,
     config: Arc<Config>,
     tools: ToolRegistry,
+    include_sub_agnet_tool: bool,
     history: Option<Arc<RwLock<Vec<Message>>>>,
     todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
@@ -132,6 +134,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             client,
             config,
             tools: ToolRegistry::new(),
+            include_sub_agnet_tool: false,
             history: None,
             todo_manager: Arc::new(StdRwLock::new(TodoManager::new())),
             hooks: HookRegistry::new(),
@@ -143,6 +146,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_default_tools(mut self) -> Self {
         self.tools =
             ToolRegistry::with_defaults_and_todo(&self.config, Arc::clone(&self.todo_manager));
+        self.include_sub_agnet_tool = true;
         self
     }
 
@@ -155,6 +159,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     /// Set a custom tool registry.
     pub fn with_tools(mut self, tools: ToolRegistry) -> Self {
         self.tools = tools;
+        self.include_sub_agnet_tool = false;
         self
     }
 
@@ -185,18 +190,30 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     }
 
     pub fn build(self) -> Agent<C> {
+        let policy = Arc::new(RwLock::new(self.policy));
+        let tools = if self.include_sub_agnet_tool {
+            self.tools.register(Box::new(SubAgnetTool::new(
+                self.client.clone(),
+                Arc::clone(&self.config),
+                self.hooks.clone(),
+                Arc::clone(&policy),
+            )))
+        } else {
+            self.tools
+        };
+
         let history = self
             .history
             .unwrap_or_else(|| Arc::new(RwLock::new(Vec::new())));
 
         Agent {
             client: self.client,
-            tools: self.tools,
+            tools,
             config: self.config,
             history,
             todo_manager: self.todo_manager,
             hooks: self.hooks,
-            policy: Arc::new(RwLock::new(self.policy)),
+            policy,
         }
     }
 }
@@ -463,6 +480,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     /// Run a single turn with a prompt and return the result.
     #[instrument(skip(self), fields(prompt = %prompt))]
     pub async fn run(&self, prompt: &str) -> Result<RunResult> {
+        self.run_internal(prompt, None).await
+    }
+
+    pub async fn run_with_turn_limit(&self, prompt: &str, max_turns: usize) -> Result<RunResult> {
+        self.run_internal(prompt, Some(max_turns)).await
+    }
+
+    async fn run_internal(&self, prompt: &str, max_turns: Option<usize>) -> Result<RunResult> {
         debug!("Starting agent run");
         let start = Instant::now();
 
@@ -471,7 +496,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             history_guard.push(Message::user(prompt));
         }
 
-        let mut stream = self.run_stream();
+        let mut stream = self.run_stream_with_limits(None, max_turns);
         while let Some(event) = stream.next().await {
             match event? {
                 AgentEvent::Done { result } => {
@@ -508,7 +533,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     /// Use `run_stream_with_approval()` for interactive approval flow.
     pub fn run_stream(&self) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         // Run without approval channels - will auto-deny approvals
-        self.run_stream_with_approval(None)
+        self.run_stream_with_limits(None, None)
     }
 
     /// Run the agent loop with optional approval channels.
@@ -516,7 +541,15 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     /// If not provided, tools requiring approval will be auto-denied.
     pub fn run_stream_with_approval(
         &self,
+        approval_channels: Option<ApprovalChannels>,
+    ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
+        self.run_stream_with_limits(approval_channels, None)
+    }
+
+    fn run_stream_with_limits(
+        &self,
         mut approval_channels: Option<ApprovalChannels>,
+        max_turns: Option<usize>,
     ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         let agent = self.clone();
         let client = self.client.clone();
@@ -542,6 +575,15 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             };
 
             while should_continue {
+                if let Some(max_turns) = max_turns {
+                    if turn_count >= max_turns {
+                        yield Ok(AgentEvent::Error {
+                            message: format!("Maximum turn limit ({}) reached", max_turns),
+                        });
+                        return;
+                    }
+                }
+
                 turn_count += 1;
                 debug!(turn = turn_count, "Starting agent turn");
 

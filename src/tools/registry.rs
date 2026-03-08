@@ -56,6 +56,16 @@ impl ToolRegistry {
             .register(Box::new(WebFetchTool::from_config(config)))
     }
 
+    pub fn with_sub_agnet_child_defaults(config: &Config) -> Self {
+        let file_tools = FileTools::from_config(config);
+
+        Self::new()
+            .register(Box::new(BashTool::from_config(config)))
+            .register(Box::new(ReadFileTool::new(file_tools.clone())))
+            .register(Box::new(WriteFileTool::new(file_tools.clone())))
+            .register(Box::new(EditFileTool::new(file_tools)))
+    }
+
     pub fn register(self, tool: Box<dyn Tool>) -> Self {
         let mut tools: ToolMap = (*self.tools).clone();
         tools.insert(tool.name(), Arc::from(tool));
