@@ -247,15 +247,31 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .unwrap())),
 
                 // Tool execution initiated
-                Ok(AgentEvent::ToolStart { id, name, parent_id }) => Some(Ok(Event::default()
+                Ok(AgentEvent::ToolStart {
+                    id,
+                    name,
+                    parent_id,
+                }) => Some(Ok(Event::default()
                     .event("tool_start")
-                    .json_data(ToolStartEvent { id, name, parent_id })
+                    .json_data(ToolStartEvent {
+                        id,
+                        name,
+                        parent_id,
+                    })
                     .unwrap())),
 
                 // Tool execution output delta
-                Ok(AgentEvent::ToolOutputDelta { id, delta, parent_id }) => Some(Ok(Event::default()
+                Ok(AgentEvent::ToolOutputDelta {
+                    id,
+                    delta,
+                    parent_id,
+                }) => Some(Ok(Event::default()
                     .event("tool_output")
-                    .json_data(ToolOutputEvent { id, delta, parent_id })
+                    .json_data(ToolOutputEvent {
+                        id,
+                        delta,
+                        parent_id,
+                    })
                     .unwrap())),
 
                 // Tool execution completed

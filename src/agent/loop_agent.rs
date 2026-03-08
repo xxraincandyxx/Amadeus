@@ -1021,13 +1021,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         tokio::spawn(async move {
             if name == SUB_AGNET_TOOL_NAME {
                 Agent::<C>::stream_sub_agnet_execution(
-                    client,
-                    config,
-                    hooks,
-                    policy,
-                    id,
-                    input,
-                    tx,
+                    client, config, hooks, policy, id, input, tx,
                 )
                 .await;
             } else {
@@ -1236,9 +1230,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             } => AgentEvent::ToolStart {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 name,
-                parent_id: Some(parent_id
-                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
-                    .unwrap_or_else(|| scope_id.to_string())),
+                parent_id: Some(
+                    parent_id
+                        .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                        .unwrap_or_else(|| scope_id.to_string()),
+                ),
             },
             AgentEvent::ToolInputDelta {
                 id,
@@ -1247,9 +1243,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             } => AgentEvent::ToolInputDelta {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 delta,
-                parent_id: Some(parent_id
-                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
-                    .unwrap_or_else(|| scope_id.to_string())),
+                parent_id: Some(
+                    parent_id
+                        .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                        .unwrap_or_else(|| scope_id.to_string()),
+                ),
             },
             AgentEvent::ToolOutputDelta {
                 id,
@@ -1258,9 +1256,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             } => AgentEvent::ToolOutputDelta {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 delta,
-                parent_id: Some(parent_id
-                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
-                    .unwrap_or_else(|| scope_id.to_string())),
+                parent_id: Some(
+                    parent_id
+                        .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                        .unwrap_or_else(|| scope_id.to_string()),
+                ),
             },
             AgentEvent::ToolProgress {
                 id,
@@ -1271,9 +1271,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 message,
                 percent,
-                parent_id: Some(parent_id
-                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
-                    .unwrap_or_else(|| scope_id.to_string())),
+                parent_id: Some(
+                    parent_id
+                        .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                        .unwrap_or_else(|| scope_id.to_string()),
+                ),
             },
             AgentEvent::ToolComplete {
                 id,
@@ -1288,9 +1290,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 input,
                 output,
                 is_error,
-                parent_id: Some(parent_id
-                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
-                    .unwrap_or_else(|| scope_id.to_string())),
+                parent_id: Some(
+                    parent_id
+                        .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                        .unwrap_or_else(|| scope_id.to_string()),
+                ),
             },
             other => other,
         }
