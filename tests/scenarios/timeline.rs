@@ -107,7 +107,7 @@ impl EventTimeline {
         self.events
             .iter()
             .filter_map(|e| match &e.event {
-                AgentEvent::ToolStart { id, name } => Some((id.clone(), name.clone())),
+                AgentEvent::ToolStart { id, name, .. } => Some((id.clone(), name.clone())),
                 _ => None,
             })
             .collect()
@@ -123,6 +123,7 @@ impl EventTimeline {
                     input,
                     output,
                     is_error,
+                    ..
                 } => Some(ToolCompletionInfo {
                     id: id.clone(),
                     name: name.clone(),
@@ -163,7 +164,9 @@ impl EventTimeline {
         self.events
             .iter()
             .filter_map(|e| match &e.event {
-                AgentEvent::ToolInputDelta { id, delta } if id == tool_id => Some(delta.as_str()),
+                AgentEvent::ToolInputDelta { id, delta, .. } if id == tool_id => {
+                    Some(delta.as_str())
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -292,6 +295,7 @@ impl EventTimeline {
                 AgentEvent::ThinkingComplete { .. } => "thinking_complete".to_string(),
                 AgentEvent::ToolStart { name, .. } => format!("tool_start:{}", name),
                 AgentEvent::ToolInputDelta { .. } => "tool_input".to_string(),
+                AgentEvent::ToolOutputDelta { .. } => "tool_output".to_string(),
                 AgentEvent::ToolComplete { name, .. } => format!("tool_complete:{}", name),
                 AgentEvent::ApprovalRequired { request } => {
                     format!("approval:{}", request.tool)

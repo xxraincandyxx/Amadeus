@@ -301,6 +301,8 @@ impl MessagesComponent {
 
     pub fn clear_streaming_text(&mut self) {
         self.streaming_text = None;
+        self.streaming_thinking = None;
+        self.pending_tool_group = None;
     }
 
     pub fn render_assistant_chunk(

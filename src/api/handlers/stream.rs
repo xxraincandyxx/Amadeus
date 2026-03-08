@@ -80,6 +80,8 @@ pub struct ToolStartEvent {
     pub id: String,
     /// Name of the tool being executed.
     pub name: String,
+    /// Parent tool call ID for nested execution.
+    pub parent_id: Option<String>,
 }
 
 /// Payload for the `tool_done` event.
@@ -93,6 +95,8 @@ pub struct ToolDoneEvent {
     pub output: String,
     /// Whether the tool execution failed.
     pub is_error: bool,
+    /// Parent tool call ID for nested execution.
+    pub parent_id: Option<String>,
 }
 
 /// Payload for the `done` event.
@@ -144,6 +148,19 @@ pub struct ToolProgressEvent {
     pub message: String,
     /// Progress percentage (0-100) if available.
     pub percent: Option<u8>,
+    /// Parent tool call ID for nested execution.
+    pub parent_id: Option<String>,
+}
+
+/// Payload for the `tool_output` event.
+#[derive(Debug, Serialize)]
+pub struct ToolOutputEvent {
+    /// Tool call ID.
+    pub id: String,
+    /// Incremental output snippet.
+    pub delta: String,
+    /// Parent tool call ID for nested execution.
+    pub parent_id: Option<String>,
 }
 
 /// Type alias for the complex SSE stream return type.
@@ -230,9 +247,15 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     .unwrap())),
 
                 // Tool execution initiated
-                Ok(AgentEvent::ToolStart { id, name }) => Some(Ok(Event::default()
+                Ok(AgentEvent::ToolStart { id, name, parent_id }) => Some(Ok(Event::default()
                     .event("tool_start")
-                    .json_data(ToolStartEvent { id, name })
+                    .json_data(ToolStartEvent { id, name, parent_id })
+                    .unwrap())),
+
+                // Tool execution output delta
+                Ok(AgentEvent::ToolOutputDelta { id, delta, parent_id }) => Some(Ok(Event::default()
+                    .event("tool_output")
+                    .json_data(ToolOutputEvent { id, delta, parent_id })
                     .unwrap())),
 
                 // Tool execution completed
@@ -241,6 +264,7 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     name,
                     output,
                     is_error,
+                    parent_id,
                     ..
                 }) => Some(Ok(Event::default()
                     .event("tool_done")
@@ -249,6 +273,7 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                         name,
                         output,
                         is_error,
+                        parent_id,
                     })
                     .unwrap())),
 
@@ -257,12 +282,14 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     id,
                     message,
                     percent,
+                    parent_id,
                 }) => Some(Ok(Event::default()
                     .event("tool_progress")
                     .json_data(ToolProgressEvent {
                         id,
                         message,
                         percent,
+                        parent_id,
                     })
                     .unwrap())),
 

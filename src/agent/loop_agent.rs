@@ -25,6 +25,8 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::SubAgnetTool;
 use crate::tools::{TodoItem, TodoManager};
 
+const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
     id: String,
@@ -58,6 +60,7 @@ impl ToolExecutionRecord {
             input: self.input.clone(),
             output: self.output.clone(),
             is_error: self.is_error,
+            parent_id: None,
         }
     }
 
@@ -655,7 +658,11 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;
                             current_tool = Some((id.clone(), name.clone(), String::new()));
-                            yield Ok(AgentEvent::ToolStart { id, name });
+                            yield Ok(AgentEvent::ToolStart {
+                                id,
+                                name,
+                                parent_id: None,
+                            });
                         }
 
                         StreamEvent::ToolCallDelta { arguments } => {
@@ -664,6 +671,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 yield Ok(AgentEvent::ToolInputDelta {
                                     id: id.clone(),
                                     delta: arguments,
+                                    parent_id: None,
                                 });
                             }
                         }
@@ -790,37 +798,91 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     }
 
                                     // If approved, execute the tool
-                                    let record = Agent::<C>::execute_tool_call(
+                                    let mut tool_events = Agent::<C>::execute_tool_call_stream(
                                         &tools,
                                         &hooks,
+                                        client.clone(),
+                                        Arc::clone(&config),
+                                        Arc::clone(&policy),
                                         id,
                                         name,
                                         input,
-                                    ).await;
-
-                                    yield Ok(record.completion_event());
-                                    record_tool_execution(
-                                        &mut total_result,
-                                        &mut tool_uses,
-                                        &mut tool_results,
-                                        &record,
                                     );
+
+                                    let mut final_record: Option<ToolExecutionRecord> = None;
+                                    while let Some(tool_event) = tool_events.recv().await {
+                                        if let AgentEvent::ToolComplete {
+                                            id,
+                                            name,
+                                            input,
+                                            output,
+                                            is_error,
+                                            ..
+                                        } = &tool_event
+                                        {
+                                            final_record = Some(ToolExecutionRecord::new(
+                                                id.clone(),
+                                                name.clone(),
+                                                input.clone(),
+                                                output.clone(),
+                                                *is_error,
+                                            ));
+                                        }
+
+                                        yield Ok(tool_event);
+                                    }
+
+                                    if let Some(record) = final_record {
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                    }
                                 } else if !blocked {
-                                    let record = Agent::<C>::execute_tool_call(
+                                    let mut tool_events = Agent::<C>::execute_tool_call_stream(
                                         &tools,
                                         &hooks,
+                                        client.clone(),
+                                        Arc::clone(&config),
+                                        Arc::clone(&policy),
                                         id,
                                         name,
                                         input,
-                                    ).await;
-
-                                    yield Ok(record.completion_event());
-                                    record_tool_execution(
-                                        &mut total_result,
-                                        &mut tool_uses,
-                                        &mut tool_results,
-                                        &record,
                                     );
+
+                                    let mut final_record: Option<ToolExecutionRecord> = None;
+                                    while let Some(tool_event) = tool_events.recv().await {
+                                        if let AgentEvent::ToolComplete {
+                                            id,
+                                            name,
+                                            input,
+                                            output,
+                                            is_error,
+                                            ..
+                                        } = &tool_event
+                                        {
+                                            final_record = Some(ToolExecutionRecord::new(
+                                                id.clone(),
+                                                name.clone(),
+                                                input.clone(),
+                                                output.clone(),
+                                                *is_error,
+                                            ));
+                                        }
+
+                                        yield Ok(tool_event);
+                                    }
+
+                                    if let Some(record) = final_record {
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -940,5 +1002,301 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
         let is_error = output.starts_with("Error:");
         ToolExecutionRecord::new(id, name, input, output, is_error)
+    }
+
+    fn execute_tool_call_stream(
+        tools: &ToolRegistry,
+        hooks: &HookRegistry,
+        client: C,
+        config: Arc<Config>,
+        policy: Arc<RwLock<Policy>>,
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    ) -> mpsc::Receiver<AgentEvent> {
+        let tools = tools.clone();
+        let hooks = hooks.clone();
+        let (tx, rx) = mpsc::channel(64);
+
+        tokio::spawn(async move {
+            if name == SUB_AGNET_TOOL_NAME {
+                Agent::<C>::stream_sub_agnet_execution(
+                    client,
+                    config,
+                    hooks,
+                    policy,
+                    id,
+                    input,
+                    tx,
+                )
+                .await;
+            } else {
+                let record = Agent::<C>::execute_tool_call(&tools, &hooks, id, name, input).await;
+                let _ = tx.send(record.completion_event()).await;
+            }
+        });
+
+        rx
+    }
+
+    async fn stream_sub_agnet_execution(
+        client: C,
+        config: Arc<Config>,
+        hooks: HookRegistry,
+        policy: Arc<RwLock<Policy>>,
+        id: String,
+        input: serde_json::Value,
+        tx: mpsc::Sender<AgentEvent>,
+    ) {
+        let tool_start = Instant::now();
+        let prompt = input
+            .get("prompt")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+
+        let child_policy = policy.read().await.clone();
+        let child = Agent::builder(client, Arc::clone(&config))
+            .with_tools(ToolRegistry::with_sub_agnet_child_defaults(&config))
+            .with_hooks(hooks.clone())
+            .with_policy(child_policy)
+            .build();
+
+        {
+            let history = child.history();
+            let mut history = history.write().await;
+            history.push(Message::user(&prompt));
+        }
+
+        let mut stream = child.run_stream_with_limits(None, Some(30));
+        let mut buffered_output = String::new();
+        let mut final_output: Option<String> = None;
+        let mut is_error = false;
+
+        while let Some(event) = stream.next().await {
+            match event {
+                Ok(AgentEvent::TextDelta { delta }) => {
+                    buffered_output.push_str(&delta);
+                    let _ = tx
+                        .send(AgentEvent::ToolOutputDelta {
+                            id: id.clone(),
+                            delta,
+                            parent_id: None,
+                        })
+                        .await;
+                }
+                Ok(AgentEvent::ToolStart {
+                    id: child_id,
+                    name,
+                    parent_id,
+                }) => {
+                    let _ = tx
+                        .send(Agent::<C>::namespace_tool_event(
+                            &id,
+                            AgentEvent::ToolStart {
+                                id: child_id,
+                                name,
+                                parent_id,
+                            },
+                        ))
+                        .await;
+                }
+                Ok(AgentEvent::ToolInputDelta {
+                    id: child_id,
+                    delta,
+                    parent_id,
+                }) => {
+                    let _ = tx
+                        .send(Agent::<C>::namespace_tool_event(
+                            &id,
+                            AgentEvent::ToolInputDelta {
+                                id: child_id,
+                                delta,
+                                parent_id,
+                            },
+                        ))
+                        .await;
+                }
+                Ok(AgentEvent::ToolOutputDelta {
+                    id: child_id,
+                    delta,
+                    parent_id,
+                }) => {
+                    let _ = tx
+                        .send(Agent::<C>::namespace_tool_event(
+                            &id,
+                            AgentEvent::ToolOutputDelta {
+                                id: child_id,
+                                delta,
+                                parent_id,
+                            },
+                        ))
+                        .await;
+                }
+                Ok(AgentEvent::ToolProgress {
+                    id: child_id,
+                    message,
+                    percent,
+                    parent_id,
+                }) => {
+                    let _ = tx
+                        .send(Agent::<C>::namespace_tool_event(
+                            &id,
+                            AgentEvent::ToolProgress {
+                                id: child_id,
+                                message,
+                                percent,
+                                parent_id,
+                            },
+                        ))
+                        .await;
+                }
+                Ok(AgentEvent::ToolComplete {
+                    id: child_id,
+                    name,
+                    input,
+                    output,
+                    is_error,
+                    parent_id,
+                }) => {
+                    let _ = tx
+                        .send(Agent::<C>::namespace_tool_event(
+                            &id,
+                            AgentEvent::ToolComplete {
+                                id: child_id,
+                                name,
+                                input,
+                                output,
+                                is_error,
+                                parent_id,
+                            },
+                        ))
+                        .await;
+                }
+                Ok(AgentEvent::Done { result }) => {
+                    final_output = Some(if result.text.is_empty() {
+                        if buffered_output.is_empty() {
+                            "(no summary)".to_string()
+                        } else {
+                            buffered_output.clone()
+                        }
+                    } else {
+                        result.text
+                    });
+                    break;
+                }
+                Ok(AgentEvent::Error { message }) => {
+                    is_error = true;
+                    final_output = Some(format!("Error: {}", message));
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    is_error = true;
+                    final_output = Some(format!("Error: {}", error));
+                    break;
+                }
+            }
+        }
+
+        let output = final_output.unwrap_or_else(|| {
+            if buffered_output.is_empty() {
+                "(no summary)".to_string()
+            } else {
+                buffered_output
+            }
+        });
+
+        let duration_ms = tool_start.elapsed().as_millis() as u64;
+        if let Err(error) = hooks
+            .on_tool_complete(SUB_AGNET_TOOL_NAME, &output, duration_ms)
+            .await
+        {
+            warn!(tool = SUB_AGNET_TOOL_NAME, error = %error, "Hook error on complete");
+        }
+
+        let _ = tx
+            .send(AgentEvent::ToolComplete {
+                id,
+                name: SUB_AGNET_TOOL_NAME.to_string(),
+                input,
+                output,
+                is_error,
+                parent_id: None,
+            })
+            .await;
+    }
+
+    fn namespace_tool_event(scope_id: &str, event: AgentEvent) -> AgentEvent {
+        match event {
+            AgentEvent::ToolStart {
+                id,
+                name,
+                parent_id,
+            } => AgentEvent::ToolStart {
+                id: Agent::<C>::namespace_tool_id(scope_id, &id),
+                name,
+                parent_id: Some(parent_id
+                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                    .unwrap_or_else(|| scope_id.to_string())),
+            },
+            AgentEvent::ToolInputDelta {
+                id,
+                delta,
+                parent_id,
+            } => AgentEvent::ToolInputDelta {
+                id: Agent::<C>::namespace_tool_id(scope_id, &id),
+                delta,
+                parent_id: Some(parent_id
+                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                    .unwrap_or_else(|| scope_id.to_string())),
+            },
+            AgentEvent::ToolOutputDelta {
+                id,
+                delta,
+                parent_id,
+            } => AgentEvent::ToolOutputDelta {
+                id: Agent::<C>::namespace_tool_id(scope_id, &id),
+                delta,
+                parent_id: Some(parent_id
+                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                    .unwrap_or_else(|| scope_id.to_string())),
+            },
+            AgentEvent::ToolProgress {
+                id,
+                message,
+                percent,
+                parent_id,
+            } => AgentEvent::ToolProgress {
+                id: Agent::<C>::namespace_tool_id(scope_id, &id),
+                message,
+                percent,
+                parent_id: Some(parent_id
+                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                    .unwrap_or_else(|| scope_id.to_string())),
+            },
+            AgentEvent::ToolComplete {
+                id,
+                name,
+                input,
+                output,
+                is_error,
+                parent_id,
+            } => AgentEvent::ToolComplete {
+                id: Agent::<C>::namespace_tool_id(scope_id, &id),
+                name,
+                input,
+                output,
+                is_error,
+                parent_id: Some(parent_id
+                    .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))
+                    .unwrap_or_else(|| scope_id.to_string())),
+            },
+            other => other,
+        }
+    }
+
+    fn namespace_tool_id(scope_id: &str, id: &str) -> String {
+        format!("{scope_id}::{id}")
     }
 }

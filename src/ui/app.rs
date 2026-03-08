@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -66,6 +67,257 @@ struct TagFilter {
     suppressing: bool,
     /// Tags that trigger suppression of content between opening and closing
     tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MonitorStatus {
+    Pending,
+    Success,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+struct ToolMonitorNode {
+    id: String,
+    name: String,
+    parent_id: Option<String>,
+    input: String,
+    output: String,
+    status: MonitorStatus,
+    progress_message: Option<String>,
+    progress_percent: Option<u8>,
+    children: Vec<String>,
+}
+
+impl ToolMonitorNode {
+    fn new(id: String, name: String, parent_id: Option<String>) -> Self {
+        Self {
+            id,
+            name,
+            parent_id,
+            input: String::new(),
+            output: String::new(),
+            status: MonitorStatus::Pending,
+            progress_message: None,
+            progress_percent: None,
+            children: Vec::new(),
+        }
+    }
+
+    fn status_label(&self) -> &'static str {
+        match self.status {
+            MonitorStatus::Pending => "running",
+            MonitorStatus::Success => "done",
+            MonitorStatus::Error => "error",
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct ToolMonitorState {
+    nodes: HashMap<String, ToolMonitorNode>,
+    root_ids: Vec<String>,
+    selected_id: Option<String>,
+    current_parent: Option<String>,
+    preferred_lines: u16,
+}
+
+impl ToolMonitorState {
+    fn new(preferred_lines: u16) -> Self {
+        Self {
+            preferred_lines,
+            ..Self::default()
+        }
+    }
+
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.root_ids.clear();
+        self.selected_id = None;
+        self.current_parent = None;
+    }
+
+    fn has_content(&self) -> bool {
+        !self.nodes.is_empty()
+    }
+
+    fn start_tool(&mut self, id: String, name: String, parent_id: Option<String>) {
+        let parent_for_node = parent_id.clone();
+        self.nodes.entry(id.clone()).or_insert_with(|| {
+            ToolMonitorNode::new(id.clone(), name, parent_for_node)
+        });
+
+        if let Some(parent_id) = parent_id {
+            if let Some(parent) = self.nodes.get_mut(&parent_id) {
+                if !parent.children.iter().any(|child| child == &id) {
+                    parent.children.push(id.clone());
+                }
+            }
+        } else if !self.root_ids.iter().any(|root| root == &id) {
+            self.root_ids.push(id.clone());
+        }
+
+        if self.selected_id.is_none() {
+            self.current_parent = self
+                .nodes
+                .get(&id)
+                .and_then(|node| node.parent_id.clone());
+            self.selected_id = Some(id);
+        }
+
+        self.ensure_selection_valid();
+    }
+
+    fn append_input(&mut self, id: &str, delta: &str) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.input.push_str(delta);
+        }
+    }
+
+    fn append_output(&mut self, id: &str, delta: &str) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.output.push_str(delta);
+        }
+    }
+
+    fn update_progress(&mut self, id: &str, message: String, percent: Option<u8>) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.progress_message = Some(message);
+            node.progress_percent = percent;
+        }
+    }
+
+    fn complete(&mut self, id: &str, output: String, is_error: bool) {
+        if let Some(node) = self.nodes.get_mut(id) {
+            node.output = output;
+            node.status = if is_error {
+                MonitorStatus::Error
+            } else {
+                MonitorStatus::Success
+            };
+            node.progress_message = None;
+            node.progress_percent = None;
+        }
+        self.ensure_selection_valid();
+    }
+
+    fn selected_node(&self) -> Option<&ToolMonitorNode> {
+        self.selected_id
+            .as_ref()
+            .and_then(|selected| self.nodes.get(selected))
+    }
+
+    fn current_sibling_ids(&self) -> Vec<String> {
+        if let Some(parent_id) = &self.current_parent {
+            self.nodes
+                .get(parent_id)
+                .map(|node| node.children.clone())
+                .unwrap_or_default()
+        } else {
+            self.root_ids.clone()
+        }
+    }
+
+    fn ensure_selection_valid(&mut self) {
+        let siblings = self.current_sibling_ids();
+        if siblings.is_empty() {
+            self.selected_id = None;
+            if self.current_parent.is_some() {
+                self.current_parent = None;
+                self.ensure_selection_valid();
+            }
+            return;
+        }
+
+        let selected_is_valid = self
+            .selected_id
+            .as_ref()
+            .map(|selected| siblings.iter().any(|id| id == selected))
+            .unwrap_or(false);
+
+        if !selected_is_valid {
+            self.selected_id = siblings.first().cloned();
+        }
+    }
+
+    fn select_previous(&mut self) {
+        self.select_with_offset(-1);
+    }
+
+    fn select_next(&mut self) {
+        self.select_with_offset(1);
+    }
+
+    fn select_with_offset(&mut self, offset: isize) {
+        let siblings = self.current_sibling_ids();
+        if siblings.is_empty() {
+            return;
+        }
+
+        let current_index = self
+            .selected_id
+            .as_ref()
+            .and_then(|selected| siblings.iter().position(|id| id == selected))
+            .unwrap_or(0) as isize;
+
+        let len = siblings.len() as isize;
+        let next_index = (current_index + offset).rem_euclid(len) as usize;
+        self.selected_id = siblings.get(next_index).cloned();
+    }
+
+    fn enter_selected(&mut self) -> bool {
+        let Some(selected_id) = self.selected_id.clone() else {
+            return false;
+        };
+
+        let Some(selected) = self.nodes.get(&selected_id) else {
+            return false;
+        };
+
+        if selected.children.is_empty() {
+            return false;
+        }
+
+        self.current_parent = Some(selected_id);
+        self.selected_id = selected.children.first().cloned();
+        true
+    }
+
+    fn exit_parent(&mut self) -> bool {
+        let Some(parent_id) = self.current_parent.clone() else {
+            return false;
+        };
+
+        let next_parent = self.nodes.get(&parent_id).and_then(|node| node.parent_id.clone());
+        self.current_parent = next_parent;
+        self.selected_id = Some(parent_id);
+        self.ensure_selection_valid();
+        true
+    }
+
+    fn breadcrumb(&self) -> String {
+        match &self.current_parent {
+            Some(parent_id) => {
+                let mut names = Vec::new();
+                let mut cursor = Some(parent_id.clone());
+                while let Some(id) = cursor {
+                    if let Some(node) = self.nodes.get(&id) {
+                        names.push(node.name.clone());
+                        cursor = node.parent_id.clone();
+                    } else {
+                        break;
+                    }
+                }
+                names.reverse();
+                if names.is_empty() {
+                    "root".to_string()
+                } else {
+                    format!("root / {}", names.join(" / "))
+                }
+            }
+            None => "root".to_string(),
+        }
+    }
 }
 
 impl TagFilter {
@@ -229,6 +481,7 @@ pub struct App<C: LLMClient> {
     /// Configurable viewport height as percentage of terminal height
     viewport_height_percent: u16,
     current_shelf_height: u16,
+    tool_monitor: ToolMonitorState,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -264,6 +517,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             tag_filter: TagFilter::new(),
             viewport_height_percent: 32,
             current_shelf_height: 6,
+            tool_monitor: ToolMonitorState::new(
+                std::env::var("AMADEUS_TOOL_MONITOR_LINES")
+                    .ok()
+                    .and_then(|value| value.parse::<u16>().ok())
+                    .filter(|value| *value >= 6)
+                    .unwrap_or(16),
+            ),
         }
     }
 
@@ -501,15 +761,233 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
-        if self.streaming_buffer.is_empty() || width < 4 {
+        if width < 4 {
             return 0;
         }
 
         let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100).max(3);
+        if self.tool_monitor.has_content() {
+            return self.tool_monitor.preferred_lines.min(max_height).max(6);
+        }
+
+        if self.streaming_buffer.is_empty() {
+            return 0;
+        }
+
         let inner_width = width.saturating_sub(4) as usize;
         let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
         let content_height = lines.max(1);
         (content_height + 2).min(max_height)
+    }
+
+    fn wrap_plain_text(text: &str, width: usize) -> Vec<String> {
+        if width == 0 {
+            return Vec::new();
+        }
+
+        let mut wrapped = Vec::new();
+        for raw_line in text.lines() {
+            if raw_line.is_empty() {
+                wrapped.push(String::new());
+                continue;
+            }
+
+            let mut current = String::new();
+            for word in raw_line.split_whitespace() {
+                if current.is_empty() {
+                    if word.chars().count() <= width {
+                        current.push_str(word);
+                    } else {
+                        let mut chunk = String::new();
+                        for ch in word.chars() {
+                            chunk.push(ch);
+                            if chunk.chars().count() >= width {
+                                wrapped.push(chunk.clone());
+                                chunk.clear();
+                            }
+                        }
+                        current = chunk;
+                    }
+                } else if current.chars().count() + 1 + word.chars().count() <= width {
+                    current.push(' ');
+                    current.push_str(word);
+                } else {
+                    wrapped.push(current);
+                    current = String::new();
+                    if word.chars().count() <= width {
+                        current.push_str(word);
+                    } else {
+                        let mut chunk = String::new();
+                        for ch in word.chars() {
+                            chunk.push(ch);
+                            if chunk.chars().count() >= width {
+                                wrapped.push(chunk.clone());
+                                chunk.clear();
+                            }
+                        }
+                        current = chunk;
+                    }
+                }
+            }
+
+            if !current.is_empty() {
+                wrapped.push(current);
+            }
+        }
+
+        if wrapped.is_empty() {
+            wrapped.push(String::new());
+        }
+
+        wrapped
+    }
+
+    fn render_monitor_section(
+        &self,
+        lines: &mut Vec<Line<'static>>,
+        label: &str,
+        text: &str,
+        width: usize,
+        colors: &crate::ui::SemanticColors,
+    ) {
+        if text.trim().is_empty() {
+            return;
+        }
+
+        lines.push(Line::from(vec![
+            Span::styled(label.to_string(), Style::default().fg(colors.text.secondary)),
+        ]));
+
+        for line in Self::wrap_plain_text(text, width.saturating_sub(2).max(1)) {
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default()),
+                Span::styled(line, Style::default().fg(colors.text.primary)),
+            ]));
+        }
+    }
+
+    fn render_tool_monitor_lines(&self, width: u16) -> Vec<Line<'static>> {
+        let colors = crate::ui::get_colors();
+        let content_width = width.saturating_sub(2) as usize;
+        let mut lines = Vec::new();
+
+        let siblings = self.tool_monitor.current_sibling_ids();
+        lines.push(Line::from(vec![
+            Span::styled("Context: ", Style::default().fg(colors.text.secondary)),
+            Span::styled(self.tool_monitor.breadcrumb(), Style::default().fg(colors.text.accent)),
+        ]));
+        lines.push(Line::from(vec![
+            Span::styled(
+                "Navigation: ",
+                Style::default().fg(colors.text.secondary),
+            ),
+            Span::styled(
+                "ctrl+up/down select  ctrl+right enter  ctrl+left back",
+                Style::default().fg(colors.ui.comment),
+            ),
+        ]));
+
+        if siblings.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "No active tool details.",
+                Style::default().fg(colors.ui.comment),
+            )]));
+            return lines;
+        }
+
+        lines.push(Line::from(vec![Span::styled(
+            "Tools:",
+            Style::default().fg(colors.text.secondary),
+        )]));
+
+        for sibling_id in siblings {
+            if let Some(node) = self.tool_monitor.nodes.get(&sibling_id) {
+                let is_selected = self
+                    .tool_monitor
+                    .selected_id
+                    .as_ref()
+                    .map(|selected| selected == &sibling_id)
+                    .unwrap_or(false);
+                let marker = if is_selected { ">" } else { " " };
+                let status_color = match node.status {
+                    MonitorStatus::Pending => colors.status.warning,
+                    MonitorStatus::Success => colors.status.success,
+                    MonitorStatus::Error => colors.status.error,
+                };
+                let child_hint = if node.children.is_empty() { "" } else { " ->" };
+
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{} ", marker),
+                        Style::default().fg(colors.text.accent),
+                    ),
+                    Span::styled(node.name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(" [{}]{}", node.status_label(), child_hint),
+                        Style::default().fg(status_color),
+                    ),
+                ]));
+            }
+        }
+
+        if let Some(selected) = self.tool_monitor.selected_node() {
+            lines.push(Line::from(""));
+            lines.push(Line::from(vec![
+                Span::styled("Selected: ", Style::default().fg(colors.text.secondary)),
+                Span::styled(selected.name.clone(), Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    format!(" ({})", selected.id),
+                    Style::default().fg(colors.ui.comment),
+                ),
+            ]));
+
+            if let Some(progress_message) = &selected.progress_message {
+                let progress = selected
+                    .progress_percent
+                    .map(|percent| format!("{} [{}%]", progress_message, percent))
+                    .unwrap_or_else(|| progress_message.clone());
+                self.render_monitor_section(
+                    &mut lines,
+                    "Progress:",
+                    &progress,
+                    content_width,
+                    &colors,
+                );
+            }
+
+            self.render_monitor_section(
+                &mut lines,
+                "Input:",
+                &selected.input,
+                content_width,
+                &colors,
+            );
+            self.render_monitor_section(
+                &mut lines,
+                "Output:",
+                &selected.output,
+                content_width,
+                &colors,
+            );
+        }
+
+        lines
+    }
+
+    fn handle_monitor_navigation(&mut self, modifiers: KeyModifiers, code: KeyCode) -> bool {
+        match (modifiers, code) {
+            (KeyModifiers::CONTROL, KeyCode::Up) => {
+                self.tool_monitor.select_previous();
+                true
+            }
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                self.tool_monitor.select_next();
+                true
+            }
+            (KeyModifiers::CONTROL, KeyCode::Right) => self.tool_monitor.enter_selected(),
+            (KeyModifiers::CONTROL, KeyCode::Left) => self.tool_monitor.exit_parent(),
+            _ => false,
+        }
     }
 
     fn sync_inline_viewport(
@@ -521,24 +999,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-  fn flush_unrendered_history(
-      &mut self,
-      terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-  ) -> Result<()> {
-      let width = terminal.size()?.width;
-      let lines = self.messages.take_unrendered_lines(width);
-      self.insert_lines_before(terminal, lines)
-  }
+    fn flush_unrendered_history(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        let width = terminal.size()?.width;
+        let lines = self.messages.take_unrendered_lines(width);
+        self.insert_lines_before(terminal, lines)
+    }
 
-  fn flush_completed_tool_group(
-      &mut self,
-      terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-  ) -> Result<()> {
-      if self.messages.flush_completed_pending_tool_group() {
-          self.flush_unrendered_history(terminal)?;
-      }
-      Ok(())
-  }
+    fn flush_completed_tool_group(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        if self.messages.flush_completed_pending_tool_group() {
+            self.flush_unrendered_history(terminal)?;
+        }
+        Ok(())
+    }
 
     fn insert_lines_before(
         &mut self,
@@ -581,14 +1059,20 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     fn render_live_viewport(&self, frame: &mut ratatui::Frame, area: Rect) {
-        if area.width < 4 || area.height < 3 || self.streaming_buffer.is_empty() {
+        if area.width < 4 || area.height < 3 {
             return;
         }
 
         let colors = crate::ui::get_colors();
+        let has_monitor = self.tool_monitor.has_content();
+        let has_stream_text = !self.streaming_buffer.is_empty();
+        if !has_monitor && !has_stream_text {
+            return;
+        }
+
         let block = Block::default()
             .title(Span::styled(
-                " Live ",
+                if has_monitor { " Monitor " } else { " Live " },
                 Style::default()
                     .fg(colors.text.accent)
                     .add_modifier(Modifier::BOLD),
@@ -603,7 +1087,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return;
         }
 
-        let rendered_lines = render_markdown(&self.streaming_buffer.text, inner.width as usize);
+        let rendered_lines = if has_monitor {
+            self.render_tool_monitor_lines(inner.width)
+        } else {
+            render_markdown(&self.streaming_buffer.text, inner.width as usize)
+        };
         let total_lines = rendered_lines.len();
         let max_lines = inner.height as usize;
         let start = total_lines.saturating_sub(max_lines);
@@ -676,14 +1164,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         event: AgentEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
-          match event {
-              AgentEvent::TextDelta { delta } => {
-                  self.flush_completed_tool_group(terminal)?;
-                  debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
+        match event {
+            AgentEvent::TextDelta { delta } => {
+                self.flush_completed_tool_group(terminal)?;
+                debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
 
-                  // Filter out internal tags
-                  let filtered_delta = self.tag_filter.process(&delta);
-                  if filtered_delta.is_empty() {
+                // Filter out internal tags
+                let filtered_delta = self.tag_filter.process(&delta);
+                if filtered_delta.is_empty() {
                     return Ok(false);
                 }
 
@@ -722,11 +1210,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.messages.finalize_thinking();
             }
 
-              AgentEvent::ToolStart { id, name } => {
-                  self.flush_streaming_buffer(terminal)?;
-                  self.status_bar.set_thinking(true);
-                  self.messages.start_tool(id, name, None);
-              }
+            AgentEvent::ToolStart {
+                id,
+                name,
+                parent_id,
+            } => {
+                self.flush_streaming_buffer(terminal)?;
+                self.status_bar.set_thinking(true);
+                self.tool_monitor
+                    .start_tool(id.clone(), name.clone(), parent_id.clone());
+                if parent_id.is_none() {
+                    self.messages.start_tool(id, name, None);
+                }
+            }
 
             AgentEvent::ToolComplete {
                 id,
@@ -734,26 +1230,30 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 input,
                 output,
                 is_error,
-              } => {
-                  let command = if name == "bash" {
-                      input
-                          .get("command")
-                          .and_then(|v: &serde_json::Value| v.as_str())
+                parent_id,
+            } => {
+                self.tool_monitor.complete(&id, output.clone(), is_error);
+                let command = if name == "bash" {
+                    input
+                        .get("command")
+                        .and_then(|v: &serde_json::Value| v.as_str())
                         .map(String::from)
                 } else {
-                      None
-                  };
-                  self.messages.complete_tool(&id, output, is_error, command);
-                  self.flush_completed_tool_group(terminal)?;
-              }
+                    None
+                };
+                if parent_id.is_none() {
+                    self.messages.complete_tool(&id, output, is_error, command);
+                    self.flush_completed_tool_group(terminal)?;
+                }
+            }
 
-              AgentEvent::Done { result } => {
-                  debug!(text_len = result.text.len(), "Agent stream completed");
+            AgentEvent::Done { result } => {
+                debug!(text_len = result.text.len(), "Agent stream completed");
 
-                  self.flush_completed_tool_group(terminal)?;
-                  self.finalize_streaming_state(terminal)?;
-                  self.messages.finalize_assistant(result.text);
-                  self.messages.mark_last_item_rendered();
+                self.flush_completed_tool_group(terminal)?;
+                self.finalize_streaming_state(terminal)?;
+                self.messages.finalize_assistant(result.text);
+                self.messages.mark_last_item_rendered();
                 self.loading_indicator
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
@@ -767,12 +1267,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 return Ok(true);
             }
 
-              AgentEvent::Error { message } => {
-                  self.flush_completed_tool_group(terminal)?;
-                  self.finalize_streaming_state(terminal)?;
-                  if self.current_text.is_empty() {
-                      self.messages.add_assistant(format!("Error: {}", message));
-                  } else {
+            AgentEvent::Error { message } => {
+                self.flush_completed_tool_group(terminal)?;
+                self.finalize_streaming_state(terminal)?;
+                if self.current_text.is_empty() {
+                    self.messages.add_assistant(format!("Error: {}", message));
+                } else {
                     self.messages
                         .finalize_assistant(format!("{}\n\nError: {}", self.current_text, message));
                 }
@@ -793,7 +1293,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 info!(path = %path, "Session log saved to disk");
             }
 
-            AgentEvent::ToolInputDelta { .. } => {
+            AgentEvent::ToolInputDelta { id, delta, .. } => {
+                self.tool_monitor.append_input(&id, &delta);
+                self.status_bar.set_thinking(true);
+            }
+
+            AgentEvent::ToolOutputDelta { id, delta, .. } => {
+                self.tool_monitor.append_output(&id, &delta);
                 self.status_bar.set_thinking(true);
             }
 
@@ -832,10 +1338,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 id,
                 message,
                 percent,
+                parent_id,
             } => {
                 info!(id = %id, message = %message, percent = ?percent, "Tool progress");
-                // Update tool progress in messages component
-                self.messages.update_tool_progress(&id, message, percent);
+                self.tool_monitor.update_progress(&id, message.clone(), percent);
+                if parent_id.is_none() {
+                    self.messages.update_tool_progress(&id, message, percent);
+                }
             }
 
             AgentEvent::Compaction {
@@ -963,6 +1472,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn handle_normal_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        if self.handle_monitor_navigation(key.modifiers, key.code) {
+            return Ok(());
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Char('q')) => {
                 self.should_quit = true;
@@ -1119,6 +1632,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         key: crossterm::event::KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
+        if self.handle_monitor_navigation(key.modifiers, key.code) {
+            return Ok(());
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_input().await?;
@@ -1384,6 +1901,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.input.clear();
         self.current_text.clear();
         self.streaming_buffer.clear();
+        self.tool_monitor.clear();
         self.messages.clear_streaming_text();
         self.loading_indicator
             .set_streaming_state(StreamingState::Responding);

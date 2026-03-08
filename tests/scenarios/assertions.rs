@@ -104,6 +104,7 @@ pub fn assert_event_sequence(events: &[AgentEvent], expected_sequence: &[&str]) 
             AgentEvent::ThinkingComplete { .. } => "thinking_complete".to_string(),
             AgentEvent::ToolStart { name, .. } => format!("tool_start:{}", name),
             AgentEvent::ToolInputDelta { .. } => "tool_input".to_string(),
+            AgentEvent::ToolOutputDelta { .. } => "tool_output".to_string(),
             AgentEvent::ToolComplete { name, .. } => format!("tool_complete:{}", name),
             AgentEvent::ApprovalRequired { request } => format!("approval:{}", request.tool),
             AgentEvent::TokenUsage { .. } => "token_usage".to_string(),

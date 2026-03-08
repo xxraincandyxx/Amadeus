@@ -75,6 +75,7 @@ impl BenchmarkMetrics {
                     metrics.error_count += 1;
                     metrics.error_messages.push(message.clone());
                 }
+                AgentEvent::ToolOutputDelta { .. } => {}
                 _ => {}
             }
         }

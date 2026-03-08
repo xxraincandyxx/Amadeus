@@ -55,10 +55,17 @@ pub enum AgentEvent {
     ToolStart {
         id: String,
         name: String,
+        parent_id: Option<String>,
     },
     ToolInputDelta {
         id: String,
         delta: String,
+        parent_id: Option<String>,
+    },
+    ToolOutputDelta {
+        id: String,
+        delta: String,
+        parent_id: Option<String>,
     },
     ToolComplete {
         id: String,
@@ -66,6 +73,7 @@ pub enum AgentEvent {
         input: Value,
         output: String,
         is_error: bool,
+        parent_id: Option<String>,
     },
     /// Approval is required before tool execution.
     /// The consumer (TUI/Platform) must respond via Agent::send_approval_decision().
@@ -84,6 +92,7 @@ pub enum AgentEvent {
         id: String,
         message: String,
         percent: Option<u8>,
+        parent_id: Option<String>,
     },
     /// Context compaction occurred to manage context window.
     Compaction {
@@ -194,12 +203,18 @@ mod tests {
         let event = AgentEvent::ToolStart {
             id: "tool_1".to_string(),
             name: "bash".to_string(),
+            parent_id: None,
         };
 
         match event {
-            AgentEvent::ToolStart { id, name } => {
+            AgentEvent::ToolStart {
+                id,
+                name,
+                parent_id,
+            } => {
                 assert_eq!(id, "tool_1");
                 assert_eq!(name, "bash");
+                assert!(parent_id.is_none());
             }
             _ => panic!("Expected ToolStart"),
         }
@@ -213,6 +228,7 @@ mod tests {
             input: serde_json::json!({"command": "ls"}),
             output: "files".to_string(),
             is_error: false,
+            parent_id: None,
         };
 
         match event {
@@ -222,14 +238,38 @@ mod tests {
                 input,
                 output,
                 is_error,
+                parent_id,
             } => {
                 assert_eq!(id, "tool_1");
                 assert_eq!(name, "bash");
                 assert_eq!(input["command"], "ls");
                 assert_eq!(output, "files");
                 assert!(!is_error);
+                assert!(parent_id.is_none());
             }
             _ => panic!("Expected ToolComplete"),
+        }
+    }
+
+    #[test]
+    fn test_agent_event_tool_output_delta() {
+        let event = AgentEvent::ToolOutputDelta {
+            id: "tool_1".to_string(),
+            delta: "partial output".to_string(),
+            parent_id: Some("parent".to_string()),
+        };
+
+        match event {
+            AgentEvent::ToolOutputDelta {
+                id,
+                delta,
+                parent_id,
+            } => {
+                assert_eq!(id, "tool_1");
+                assert_eq!(delta, "partial output");
+                assert_eq!(parent_id.as_deref(), Some("parent"));
+            }
+            _ => panic!("Expected ToolOutputDelta"),
         }
     }
 
@@ -261,6 +301,7 @@ mod tests {
             id: "tool_1".to_string(),
             message: "Processing...".to_string(),
             percent: Some(50),
+            parent_id: None,
         };
 
         match event {
@@ -268,10 +309,12 @@ mod tests {
                 id,
                 message,
                 percent,
+                parent_id,
             } => {
                 assert_eq!(id, "tool_1");
                 assert_eq!(message, "Processing...");
                 assert_eq!(percent, Some(50));
+                assert!(parent_id.is_none());
             }
             _ => panic!("Expected ToolProgress"),
         }
