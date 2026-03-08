@@ -24,6 +24,15 @@ pub struct PhraseCycler {
     has_shown_first_tip: bool,
 }
 
+const ARCHAIC_TOOL_ACTIVITY_PHRASES: &[&str] = &[
+    "using tool",
+    "utilizing tool",
+    "employing tool",
+    "wielding tool",
+    "invoking tool",
+    "calling upon tool",
+];
+
 impl PhraseCycler {
     pub fn new(mode: PhraseMode) -> Self {
         Self {
@@ -105,6 +114,18 @@ impl PhraseCycler {
         if waiting {
             self.current_phrase = Some("Waiting for user confirmation...".to_string());
         }
+    }
+
+    pub fn set_tool_activity_phrase(&mut self, tool_name: &str) {
+        use rand::seq::SliceRandom;
+
+        let mut rng = rand::thread_rng();
+        let prefix = ARCHAIC_TOOL_ACTIVITY_PHRASES
+            .choose(&mut rng)
+            .copied()
+            .unwrap_or("using tool");
+        self.current_phrase = Some(format!("{} [{}] ...", prefix, tool_name));
+        self.last_change = Instant::now();
     }
 
     pub fn reset(&mut self) {

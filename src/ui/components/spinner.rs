@@ -101,6 +101,10 @@ impl GeminiSpinner {
         SPINNER_FRAMES[self.frame]
     }
 
+    pub fn frame_index(&self) -> usize {
+        self.frame
+    }
+
     pub fn get_current_color(&self) -> Color {
         if !self.active {
             return Color::Reset;

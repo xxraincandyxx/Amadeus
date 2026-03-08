@@ -27,6 +27,11 @@ pub struct LoadingIndicator {
     show_spinner: bool,
 }
 
+const SLIDING_BLOCK_FRAMES: &[&str] = &[
+    "[=     ]", "[ =    ]", "[  =   ]", "[   =  ]", "[    = ]", "[     =]", "[    = ]", "[   =  ]",
+    "[  =   ]", "[ =    ]",
+];
+
 impl LoadingIndicator {
     pub fn new() -> Self {
         Self {
@@ -71,6 +76,15 @@ impl LoadingIndicator {
 
         let is_responding = self.streaming_state == StreamingState::Responding;
         self.phrase_cycler.tick(is_responding);
+    }
+
+    pub fn set_tool_activity_phrase(&mut self, tool_name: &str) {
+        self.phrase_cycler.set_tool_activity_phrase(tool_name);
+    }
+
+    fn sliding_block_frame(&self) -> &'static str {
+        let idx = (self.spinner.frame_index() as usize) % SLIDING_BLOCK_FRAMES.len();
+        SLIDING_BLOCK_FRAMES[idx]
     }
 
     pub fn set_show_spinner(&mut self, show: bool) {
@@ -127,6 +141,11 @@ impl LoadingIndicator {
                     .fg(colors.text.primary)
                     .add_modifier(Modifier::ITALIC),
             ));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                self.sliding_block_frame(),
+                Style::default().fg(colors.ui.comment),
+            ));
         }
 
         if self.streaming_state != StreamingState::WaitingForConfirmation {
@@ -179,6 +198,11 @@ impl LoadingIndicator {
                 Style::default()
                     .fg(colors.text.primary)
                     .add_modifier(Modifier::ITALIC),
+            ));
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                self.sliding_block_frame(),
+                Style::default().fg(colors.ui.comment),
             ));
         }
 
