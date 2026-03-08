@@ -29,6 +29,17 @@ use crate::ui::components::{
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::{get_theme, next_theme, SidebarKind};
 
+const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
+const STREAM_FLUSH_CHAR_THRESHOLD: usize = 32;
+const DEFAULT_VIEWPORT_HEIGHT_PERCENT: u16 = 32;
+const DEFAULT_SHELF_HEIGHT: u16 = 6;
+const MIN_LIVE_VIEWPORT_WIDTH: u16 = 4;
+const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
+const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
+const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
+const MIN_TOOL_MONITOR_LINES: u16 = 6;
+const MONITOR_NAV_HINT: &str = "^X ^I prev  ^X ^K next  ^X ^J back  ^X ^L enter";
+
 struct StreamingBuffer {
     text: String,
     last_flush: Instant,
@@ -47,8 +58,9 @@ impl StreamingBuffer {
     }
 
     fn should_flush(&self) -> bool {
-        let time_elapsed = self.last_flush.elapsed() >= Duration::from_millis(150);
-        let chars_accumulated = self.text.len() >= 32;
+        let time_elapsed =
+            self.last_flush.elapsed() >= Duration::from_millis(STREAM_FLUSH_INTERVAL_MS);
+        let chars_accumulated = self.text.len() >= STREAM_FLUSH_CHAR_THRESHOLD;
         time_elapsed || chars_accumulated
     }
 
@@ -141,11 +153,26 @@ impl ToolMonitorState {
         !self.nodes.is_empty()
     }
 
+    fn has_running_tools(&self) -> bool {
+        self.nodes
+            .values()
+            .any(|node| node.status == MonitorStatus::Pending)
+    }
+
+    fn clear_if_idle(&mut self) -> bool {
+        if self.has_running_tools() {
+            return false;
+        }
+
+        self.clear();
+        true
+    }
+
     fn start_tool(&mut self, id: String, name: String, parent_id: Option<String>) {
         let parent_for_node = parent_id.clone();
-        self.nodes.entry(id.clone()).or_insert_with(|| {
-            ToolMonitorNode::new(id.clone(), name, parent_for_node)
-        });
+        self.nodes
+            .entry(id.clone())
+            .or_insert_with(|| ToolMonitorNode::new(id.clone(), name, parent_for_node));
 
         if let Some(parent_id) = parent_id {
             if let Some(parent) = self.nodes.get_mut(&parent_id) {
@@ -158,10 +185,7 @@ impl ToolMonitorState {
         }
 
         if self.selected_id.is_none() {
-            self.current_parent = self
-                .nodes
-                .get(&id)
-                .and_then(|node| node.parent_id.clone());
+            self.current_parent = self.nodes.get(&id).and_then(|node| node.parent_id.clone());
             self.selected_id = Some(id);
         }
 
@@ -288,7 +312,10 @@ impl ToolMonitorState {
             return false;
         };
 
-        let next_parent = self.nodes.get(&parent_id).and_then(|node| node.parent_id.clone());
+        let next_parent = self
+            .nodes
+            .get(&parent_id)
+            .and_then(|node| node.parent_id.clone());
         self.current_parent = next_parent;
         self.selected_id = Some(parent_id);
         self.ensure_selection_valid();
@@ -317,6 +344,30 @@ impl ToolMonitorState {
             }
             None => "root".to_string(),
         }
+    }
+
+    fn active_tool_name(&self) -> Option<&str> {
+        let selected_running = self
+            .selected_node()
+            .filter(|node| node.status == MonitorStatus::Pending)
+            .map(|node| node.name.as_str());
+
+        selected_running.or_else(|| {
+            self.root_ids
+                .iter()
+                .find_map(|id| self.first_running_name(id))
+        })
+    }
+
+    fn first_running_name<'a>(&'a self, id: &str) -> Option<&'a str> {
+        let node = self.nodes.get(id)?;
+        if node.status == MonitorStatus::Pending {
+            return Some(node.name.as_str());
+        }
+
+        node.children
+            .iter()
+            .find_map(|child_id| self.first_running_name(child_id))
     }
 }
 
@@ -482,9 +533,18 @@ pub struct App<C: LLMClient> {
     viewport_height_percent: u16,
     current_shelf_height: u16,
     tool_monitor: ToolMonitorState,
+    monitor_navigation_prefix: bool,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
+    fn tool_monitor_line_count() -> u16 {
+        std::env::var(TOOL_MONITOR_LINES_ENV)
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+            .filter(|value| *value >= MIN_TOOL_MONITOR_LINES)
+            .unwrap_or(DEFAULT_TOOL_MONITOR_LINES)
+    }
+
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
         let footer = Footer::new(model_name.clone());
         let loading_indicator = LoadingIndicator::new();
@@ -515,15 +575,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             streaming_buffer: StreamingBuffer::new(),
             flush_before_compaction: false,
             tag_filter: TagFilter::new(),
-            viewport_height_percent: 32,
-            current_shelf_height: 6,
-            tool_monitor: ToolMonitorState::new(
-                std::env::var("AMADEUS_TOOL_MONITOR_LINES")
-                    .ok()
-                    .and_then(|value| value.parse::<u16>().ok())
-                    .filter(|value| *value >= 6)
-                    .unwrap_or(16),
-            ),
+            viewport_height_percent: DEFAULT_VIEWPORT_HEIGHT_PERCENT,
+            current_shelf_height: DEFAULT_SHELF_HEIGHT,
+            tool_monitor: ToolMonitorState::new(Self::tool_monitor_line_count()),
+            monitor_navigation_prefix: false,
         }
     }
 
@@ -761,13 +816,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
-        if width < 4 {
+        if width < MIN_LIVE_VIEWPORT_WIDTH {
             return 0;
         }
 
-        let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100).max(3);
+        let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100)
+            .max(MIN_LIVE_VIEWPORT_HEIGHT);
         if self.tool_monitor.has_content() {
-            return self.tool_monitor.preferred_lines.min(max_height).max(6);
+            return self
+                .tool_monitor
+                .preferred_lines
+                .min(max_height)
+                .max(MIN_TOOL_MONITOR_LINES);
         }
 
         if self.streaming_buffer.is_empty() {
@@ -854,9 +914,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return;
         }
 
-        lines.push(Line::from(vec![
-            Span::styled(label.to_string(), Style::default().fg(colors.text.secondary)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            label.to_string(),
+            Style::default().fg(colors.text.secondary),
+        )]));
 
         for line in Self::wrap_plain_text(text, width.saturating_sub(2).max(1)) {
             lines.push(Line::from(vec![
@@ -874,17 +935,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let siblings = self.tool_monitor.current_sibling_ids();
         lines.push(Line::from(vec![
             Span::styled("Context: ", Style::default().fg(colors.text.secondary)),
-            Span::styled(self.tool_monitor.breadcrumb(), Style::default().fg(colors.text.accent)),
+            Span::styled(
+                self.tool_monitor.breadcrumb(),
+                Style::default().fg(colors.text.accent),
+            ),
         ]));
         lines.push(Line::from(vec![
-            Span::styled(
-                "Navigation: ",
-                Style::default().fg(colors.text.secondary),
-            ),
-            Span::styled(
-                "ctrl+up/down select  ctrl+right enter  ctrl+left back",
-                Style::default().fg(colors.ui.comment),
-            ),
+            Span::styled("Navigation: ", Style::default().fg(colors.text.secondary)),
+            Span::styled(MONITOR_NAV_HINT, Style::default().fg(colors.ui.comment)),
         ]));
 
         if siblings.is_empty() {
@@ -934,7 +992,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             lines.push(Line::from(""));
             lines.push(Line::from(vec![
                 Span::styled("Selected: ", Style::default().fg(colors.text.secondary)),
-                Span::styled(selected.name.clone(), Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    selected.name.clone(),
+                    Style::default().fg(colors.text.primary),
+                ),
                 Span::styled(
                     format!(" ({})", selected.id),
                     Style::default().fg(colors.ui.comment),
@@ -974,20 +1035,82 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         lines
     }
 
-    fn handle_monitor_navigation(&mut self, modifiers: KeyModifiers, code: KeyCode) -> bool {
-        match (modifiers, code) {
-            (KeyModifiers::CONTROL, KeyCode::Up) => {
-                self.tool_monitor.select_previous();
+    fn handle_monitor_navigation(&mut self, key: crossterm::event::KeyEvent) -> bool {
+        if !self.tool_monitor.has_content() {
+            self.monitor_navigation_prefix = false;
+            return false;
+        }
+
+        if self.monitor_navigation_prefix {
+            self.monitor_navigation_prefix = false;
+            return match (key.modifiers, key.code) {
+                (KeyModifiers::CONTROL, KeyCode::Char('i' | 'I')) => {
+                    self.tool_monitor.select_previous();
+                    true
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('k' | 'K')) => {
+                    self.tool_monitor.select_next();
+                    true
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('l' | 'L')) => {
+                    self.tool_monitor.enter_selected()
+                }
+                (KeyModifiers::CONTROL, KeyCode::Char('j' | 'J')) => {
+                    self.tool_monitor.exit_parent()
+                }
+                _ => false,
+            };
+        }
+
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('x' | 'X')) => {
+                self.monitor_navigation_prefix = true;
+                self.footer
+                    .set_status_message(format!("Monitor nav: {MONITOR_NAV_HINT}"));
                 true
             }
-            (KeyModifiers::CONTROL, KeyCode::Down) => {
-                self.tool_monitor.select_next();
-                true
-            }
-            (KeyModifiers::CONTROL, KeyCode::Right) => self.tool_monitor.enter_selected(),
-            (KeyModifiers::CONTROL, KeyCode::Left) => self.tool_monitor.exit_parent(),
             _ => false,
         }
+    }
+
+    fn clear_tool_monitor(&mut self) {
+        self.tool_monitor.clear();
+        self.monitor_navigation_prefix = false;
+    }
+
+    fn maybe_clear_tool_monitor(&mut self) {
+        if self.tool_monitor.clear_if_idle() {
+            self.monitor_navigation_prefix = false;
+        }
+    }
+
+    fn monitor_title(&self) -> Line<'static> {
+        let colors = crate::ui::get_colors();
+        let mut spans = vec![Span::styled(
+            " Monitor ",
+            Style::default()
+                .fg(colors.text.accent)
+                .add_modifier(Modifier::BOLD),
+        )];
+
+        if let Some(tool_name) = self.tool_monitor.active_tool_name() {
+            spans.push(Span::styled(
+                format!(" {} ", tool_name),
+                Style::default().fg(colors.ui.dark),
+            ));
+        }
+
+        Line::from(spans)
+    }
+
+    fn live_title(&self) -> Line<'static> {
+        let colors = crate::ui::get_colors();
+        Line::from(vec![Span::styled(
+            " Live ",
+            Style::default()
+                .fg(colors.text.accent)
+                .add_modifier(Modifier::BOLD),
+        )])
     }
 
     fn sync_inline_viewport(
@@ -1059,7 +1182,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     fn render_live_viewport(&self, frame: &mut ratatui::Frame, area: Rect) {
-        if area.width < 4 || area.height < 3 {
+        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_LIVE_VIEWPORT_HEIGHT {
             return;
         }
 
@@ -1071,12 +1194,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let block = Block::default()
-            .title(Span::styled(
-                if has_monitor { " Monitor " } else { " Live " },
-                Style::default()
-                    .fg(colors.text.accent)
-                    .add_modifier(Modifier::BOLD),
-            ))
+            .title(if has_monitor {
+                self.monitor_title()
+            } else {
+                self.live_title()
+            })
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.border.focused));
 
@@ -1233,6 +1355,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 parent_id,
             } => {
                 self.tool_monitor.complete(&id, output.clone(), is_error);
+                self.maybe_clear_tool_monitor();
                 let command = if name == "bash" {
                     input
                         .get("command")
@@ -1252,6 +1375,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                 self.flush_completed_tool_group(terminal)?;
                 self.finalize_streaming_state(terminal)?;
+                self.clear_tool_monitor();
                 self.messages.finalize_assistant(result.text);
                 self.messages.mark_last_item_rendered();
                 self.loading_indicator
@@ -1270,6 +1394,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AgentEvent::Error { message } => {
                 self.flush_completed_tool_group(terminal)?;
                 self.finalize_streaming_state(terminal)?;
+                self.clear_tool_monitor();
                 if self.current_text.is_empty() {
                     self.messages.add_assistant(format!("Error: {}", message));
                 } else {
@@ -1341,7 +1466,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 parent_id,
             } => {
                 info!(id = %id, message = %message, percent = ?percent, "Tool progress");
-                self.tool_monitor.update_progress(&id, message.clone(), percent);
+                self.tool_monitor
+                    .update_progress(&id, message.clone(), percent);
                 if parent_id.is_none() {
                     self.messages.update_tool_progress(&id, message, percent);
                 }
@@ -1472,7 +1598,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn handle_normal_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
-        if self.handle_monitor_navigation(key.modifiers, key.code) {
+        if self.handle_monitor_navigation(key) {
             return Ok(());
         }
 
@@ -1632,7 +1758,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         key: crossterm::event::KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
-        if self.handle_monitor_navigation(key.modifiers, key.code) {
+        if self.handle_monitor_navigation(key) {
             return Ok(());
         }
 
@@ -1831,6 +1957,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         self.finalize_streaming_state(terminal)?;
+        self.clear_tool_monitor();
         self.messages.mark_last_item_rendered();
         self.current_text.clear();
         self.loading_indicator
@@ -1901,7 +2028,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.input.clear();
         self.current_text.clear();
         self.streaming_buffer.clear();
-        self.tool_monitor.clear();
+        self.clear_tool_monitor();
         self.messages.clear_streaming_text();
         self.loading_indicator
             .set_streaming_state(StreamingState::Responding);
@@ -2031,5 +2158,53 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if let Some(ref dialog) = self.approval_dialog {
             dialog.render(frame, size);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{MonitorStatus, ToolMonitorState};
+
+    #[test]
+    fn tool_monitor_clears_when_all_tools_complete() {
+        let mut monitor = ToolMonitorState::new(16);
+        monitor.start_tool("root".to_string(), "bash".to_string(), None);
+        monitor.complete("root", "done".to_string(), false);
+
+        assert!(monitor.clear_if_idle());
+        assert!(!monitor.has_content());
+    }
+
+    #[test]
+    fn tool_monitor_stays_visible_while_nested_tool_runs() {
+        let mut monitor = ToolMonitorState::new(16);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool(
+            "root::child".to_string(),
+            "bash".to_string(),
+            Some("root".to_string()),
+        );
+        monitor.complete("root", "waiting".to_string(), false);
+
+        assert!(!monitor.clear_if_idle());
+        assert!(monitor.has_content());
+        assert_eq!(
+            monitor.nodes.get("root::child").map(|node| node.status),
+            Some(MonitorStatus::Pending)
+        );
+    }
+
+    #[test]
+    fn active_tool_name_prefers_running_selection_then_running_descendant() {
+        let mut monitor = ToolMonitorState::new(16);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool(
+            "root::child".to_string(),
+            "bash".to_string(),
+            Some("root".to_string()),
+        );
+        monitor.complete("root", "delegating".to_string(), false);
+
+        assert_eq!(monitor.active_tool_name(), Some("bash"));
     }
 }
