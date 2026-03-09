@@ -2119,23 +2119,36 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let size = frame.area();
 
         let input_height = self.input.height();
-        let live_height =
-            self.live_viewport_height(size.width, size.height.saturating_sub(input_height));
+        let status_height = u16::from(self.status_bar.is_active());
+        let footer_height = 1;
+        let live_height = self.live_viewport_height(
+            size.width,
+            size.height
+                .saturating_sub(input_height)
+                .saturating_sub(status_height)
+                .saturating_sub(footer_height),
+        );
         let layout = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(live_height),
                 Constraint::Length(input_height),
+                Constraint::Length(status_height),
+                Constraint::Length(footer_height),
             ])
             .split(size);
 
         let live_area = layout[0];
         let input_area = layout[1];
+        let status_area = layout[2];
+        let footer_area = layout[3];
 
         self.messages_area = Rect::default();
 
         self.render_live_viewport(frame, live_area);
         self.input.render(frame, input_area);
+        self.status_bar.render(frame, status_area);
+        self.footer.render(frame, footer_area);
 
         if let Some(ref dialog) = self.approval_dialog {
             dialog.render(frame, size);
@@ -2147,6 +2160,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 mod tests {
     use super::{App, MonitorStatus, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use ratatui::{backend::TestBackend, Terminal};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -2258,6 +2272,29 @@ mod tests {
 
         assert!(app.should_quit);
         assert!(app.input.get_input().is_empty());
+    }
+
+    #[test]
+    fn render_includes_footer_and_status_bar() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        app.footer.set_status_message("footer ok");
+        app.status_bar.start();
+        app.status_bar.update_input_tokens(128);
+        app.status_bar.update_text("streamed output");
+
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("footer ok"));
+        assert!(rendered.contains("thinking"));
     }
 
     #[test]

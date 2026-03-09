@@ -632,7 +632,8 @@ impl MessagesComponent {
         let has_history = !self.items.is_empty()
             || self.streaming_text.is_some()
             || self.streaming_thinking.is_some()
-            || self.pending_tool_group.is_some();
+            || self.pending_tool_group.is_some()
+            || self.pending_compression.is_some();
 
         if !has_history {
             let dashboard_lines = self.render_dashboard_lines(area.width);
@@ -664,20 +665,59 @@ impl MessagesComponent {
 
         // Render pending compression
         if let Some(ref compression) = self.pending_compression {
-            let color = match compression.status {
-                CompressionStatus::Pending => colors.status.warning,
-                CompressionStatus::Compressed => colors.status.success,
-                CompressionStatus::Failed => colors.status.error,
-                CompressionStatus::Noop | CompressionStatus::NotBeneficial => colors.ui.comment,
-            };
+            if compression.status == CompressionStatus::Pending
+                && self.compaction_animator.is_active()
+            {
+                let spinner_color = self.compaction_animator.get_animated_color();
+                let progress_color = self.compaction_animator.get_progress_color();
+                let elapsed = self.compaction_animator.elapsed_string();
+                let bar_width = content_width.saturating_sub(16).clamp(12, 40);
 
-            lines.push(Line::from(vec![
-                Span::styled("✦ ", Style::default().fg(color)),
-                Span::styled(
-                    Self::get_compression_text(compression),
-                    Style::default().fg(color),
-                ),
-            ]));
+                lines.push(Line::from(vec![
+                    Span::styled(
+                        format!("{} ", self.compaction_animator.spinner_frame()),
+                        Style::default().fg(spinner_color),
+                    ),
+                    Span::styled(
+                        self.compaction_animator.current_message(),
+                        Style::default()
+                            .fg(colors.status.warning)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(elapsed, Style::default().fg(colors.text.secondary)),
+                ]));
+                lines.push(Line::from(vec![
+                    Span::styled("  ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(
+                        self.compaction_animator
+                            .render_progress_bar_smooth(bar_width),
+                        Style::default().fg(progress_color),
+                    ),
+                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(
+                        format!("{}%", self.compaction_animator.progress()),
+                        Style::default()
+                            .fg(colors.text.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]));
+            } else {
+                let color = match compression.status {
+                    CompressionStatus::Pending => colors.status.warning,
+                    CompressionStatus::Compressed => colors.status.success,
+                    CompressionStatus::Failed => colors.status.error,
+                    CompressionStatus::Noop | CompressionStatus::NotBeneficial => colors.ui.comment,
+                };
+
+                lines.push(Line::from(vec![
+                    Span::styled("✦ ", Style::default().fg(color)),
+                    Span::styled(
+                        Self::get_compression_text(compression),
+                        Style::default().fg(color),
+                    ),
+                ]));
+            }
             lines.push(Line::from(""));
         }
 
@@ -1093,6 +1133,7 @@ impl Default for MessagesComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
     fn test_messages_new() {
@@ -1239,6 +1280,30 @@ mod tests {
         let result = messages.compaction_animator.result().unwrap();
         assert_eq!(result.original_tokens, 1000);
         assert_eq!(result.new_tokens, 500);
+    }
+
+    #[test]
+    fn test_pending_compression_renders_animation() {
+        let backend = TestBackend::new(80, 8);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut messages = MessagesComponent::new();
+        messages.start_compression();
+        messages.tick();
+
+        terminal
+            .draw(|frame| messages.render(frame, frame.area()))
+            .expect("render should succeed");
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+
+        assert!(rendered.contains("Compacting conversation history"));
+        assert!(rendered.contains("%"));
     }
 
     #[test]
