@@ -14,6 +14,7 @@ pub struct InputComponent {
     history: Vec<String>,
     history_index: Option<usize>,
     current_draft: String,
+    status_hint: Option<String>,
 }
 
 impl InputComponent {
@@ -50,6 +51,7 @@ impl InputComponent {
             history: Vec::new(),
             history_index: None,
             current_draft: String::new(),
+            status_hint: None,
         }
     }
 
@@ -209,13 +211,18 @@ impl InputComponent {
         let colors = get_colors();
         let (chars, lines) = self.get_stats();
         let multi_indicator = if lines > 1 { " [multi]" } else { "" };
-        let title = format!(
+        let mut title = format!(
             " ❯ PROMPT [{} chars, {} line{}]{} ",
             chars,
             lines,
             if lines == 1 { "" } else { "s" },
             multi_indicator
         );
+        if let Some(hint) = &self.status_hint {
+            title.push_str("• ");
+            title.push_str(hint);
+            title.push(' ');
+        }
 
         self.textarea.set_block(
             Block::default()
@@ -249,6 +256,10 @@ impl InputComponent {
         let line_count = lines.len();
         let char_count: usize = lines.iter().map(|l| l.chars().count()).sum();
         (char_count, line_count)
+    }
+
+    pub fn set_status_hint(&mut self, hint: Option<String>) {
+        self.status_hint = hint;
     }
 }
 

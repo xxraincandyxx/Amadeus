@@ -121,6 +121,14 @@ impl ToolMonitorNode {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ToolActivitySnapshot {
+    tool_name: String,
+    progress_message: Option<String>,
+    progress_percent: Option<u8>,
+    running_count: usize,
+}
+
 #[derive(Debug, Default)]
 struct ToolMonitorState {
     nodes: HashMap<String, ToolMonitorNode>,
@@ -315,28 +323,41 @@ impl ToolMonitorState {
         true
     }
 
-    fn active_tool_name(&self) -> Option<&str> {
-        let selected_running = self
+    fn running_tool_count(&self) -> usize {
+        self.nodes
+            .values()
+            .filter(|node| node.status == MonitorStatus::Pending)
+            .count()
+    }
+
+    fn active_snapshot(&self) -> Option<ToolActivitySnapshot> {
+        let running_count = self.running_tool_count();
+        let node = self
             .selected_node()
             .filter(|node| node.status == MonitorStatus::Pending)
-            .map(|node| node.name.as_str());
+            .or_else(|| {
+                self.root_ids
+                    .iter()
+                    .find_map(|id| self.first_running_node(id))
+            })?;
 
-        selected_running.or_else(|| {
-            self.root_ids
-                .iter()
-                .find_map(|id| self.first_running_name(id))
+        Some(ToolActivitySnapshot {
+            tool_name: node.name.clone(),
+            progress_message: node.progress_message.clone(),
+            progress_percent: node.progress_percent,
+            running_count,
         })
     }
 
-    fn first_running_name<'a>(&'a self, id: &str) -> Option<&'a str> {
+    fn first_running_node<'a>(&'a self, id: &str) -> Option<&'a ToolMonitorNode> {
         let node = self.nodes.get(id)?;
         if node.status == MonitorStatus::Pending {
-            return Some(node.name.as_str());
+            return Some(node);
         }
 
         node.children
             .iter()
-            .find_map(|child_id| self.first_running_name(child_id))
+            .find_map(|child_id| self.first_running_node(child_id))
     }
 }
 
@@ -940,7 +961,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100)
             .max(MIN_LIVE_VIEWPORT_HEIGHT);
         if self.tool_monitor.has_running_tools() {
-            return 3.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
+            return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
 
         if self.streaming_buffer.is_empty() {
@@ -993,11 +1014,26 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.tool_monitor.clear();
         self.monitor_navigation_prefix = false;
         self.clear_key_chord_hint();
+        self.sync_activity_chrome();
     }
 
     fn maybe_clear_tool_monitor(&mut self) {
         if self.tool_monitor.clear_if_idle() {
             self.monitor_navigation_prefix = false;
+            self.sync_activity_chrome();
+        }
+    }
+
+    fn sync_activity_chrome(&mut self) {
+        if let Some(snapshot) = self.tool_monitor.active_snapshot() {
+            self.loading_indicator.set_activity_context(
+                Some(snapshot.tool_name),
+                snapshot.progress_message,
+                snapshot.progress_percent,
+                snapshot.running_count,
+            );
+        } else {
+            self.loading_indicator.clear_activity_context();
         }
     }
 
@@ -1010,11 +1046,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 .add_modifier(Modifier::BOLD),
         )];
 
-        if let Some(tool_name) = self.tool_monitor.active_tool_name() {
+        if let Some(snapshot) = self.tool_monitor.active_snapshot() {
             spans.push(Span::styled(
-                format!(" {} ", tool_name),
+                format!(" {} ", snapshot.tool_name),
                 Style::default().fg(colors.ui.comment),
             ));
+            if let Some(progress) = snapshot.progress_percent {
+                spans.push(Span::styled(
+                    format!(" {progress}% "),
+                    Style::default()
+                        .fg(colors.status.success)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+            if snapshot.running_count > 1 {
+                spans.push(Span::styled(
+                    format!(" {} active ", snapshot.running_count),
+                    Style::default().fg(colors.text.secondary),
+                ));
+            }
         }
 
         Line::from(spans)
@@ -1127,7 +1177,20 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let rendered_lines = if show_tool_activity {
-            vec![self.loading_indicator.render_inline(inner.width as usize)]
+            let mut lines = vec![self.loading_indicator.render_inline(inner.width as usize)];
+            if let Some(detail) = self
+                .loading_indicator
+                .render_detail_line(inner.width as usize)
+            {
+                lines.push(detail);
+            }
+            if inner.height > 2 {
+                lines.push(Line::from(vec![Span::styled(
+                    "ctrl+x then i/k/j/l to navigate tool activity",
+                    Style::default().fg(colors.ui.comment),
+                )]));
+            }
+            lines
         } else {
             render_markdown(&self.streaming_buffer.text, inner.width as usize)
         };
@@ -1261,6 +1324,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.tool_monitor
                     .start_tool(id.clone(), name.clone(), parent_id.clone());
                 self.loading_indicator.set_tool_activity_phrase(&tool_name);
+                self.sync_activity_chrome();
                 if parent_id.is_none() {
                     self.messages.start_tool(id, name, None);
                 }
@@ -1279,6 +1343,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 }
                 self.tool_monitor.complete(&id, output.clone(), is_error);
                 self.maybe_clear_tool_monitor();
+                self.sync_activity_chrome();
                 let command = if name == "bash" {
                     input
                         .get("command")
@@ -1309,6 +1374,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
+                self.input.set_status_hint(None);
                 if self.is_background {
                     self.is_background = false;
                     self.footer.set_background(false);
@@ -1333,6 +1399,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .set_streaming_state(StreamingState::Idle);
                 self.current_text.clear();
                 self.status_bar.stop();
+                self.input.set_status_hint(None);
                 if self.is_background {
                     self.is_background = false;
                     self.footer.set_background(false);
@@ -1348,11 +1415,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AgentEvent::ToolInputDelta { id, delta, .. } => {
                 self.tool_monitor.append_input(&id, &delta);
                 self.status_bar.set_thinking(true);
+                self.sync_activity_chrome();
             }
 
             AgentEvent::ToolOutputDelta { id, delta, .. } => {
                 self.tool_monitor.append_output(&id, &delta);
                 self.status_bar.set_thinking(true);
+                self.sync_activity_chrome();
             }
 
             AgentEvent::ApprovalRequired { request } => {
@@ -1395,6 +1464,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 info!(id = %id, message = %message, percent = ?percent, "Tool progress");
                 self.tool_monitor
                     .update_progress(&id, message.clone(), percent);
+                self.sync_activity_chrome();
                 if parent_id.is_none() {
                     self.messages.update_tool_progress(&id, message, percent);
                 }
@@ -1891,6 +1961,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.loading_indicator
             .set_streaming_state(StreamingState::Idle);
         self.status_bar.stop();
+        self.input.set_status_hint(None);
         Ok(())
     }
 
@@ -1900,6 +1971,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             self.is_background = true;
             self.mode = AppMode::Normal;
             self.footer.set_background(true);
+            self.input
+                .set_status_hint(Some("background task running".to_string()));
         }
     }
 
@@ -1960,6 +2033,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages.clear_streaming_text();
         self.loading_indicator
             .set_streaming_state(StreamingState::Responding);
+        self.input
+            .set_status_hint(Some("esc cancel • ctrl+b background".to_string()));
 
         // --- MESH DELEGATION ---
         if let Some(addr) = self.mesh_supervisor_addr.clone() {
@@ -2124,7 +2199,7 @@ mod tests {
     }
 
     #[test]
-    fn active_tool_name_prefers_running_selection_then_running_descendant() {
+    fn active_snapshot_prefers_running_selection_then_running_descendant() {
         let mut monitor = ToolMonitorState::new(16);
         monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
         monitor.start_tool(
@@ -2134,7 +2209,9 @@ mod tests {
         );
         monitor.complete("root", "delegating".to_string(), false);
 
-        assert_eq!(monitor.active_tool_name(), Some("bash"));
+        let snapshot = monitor.active_snapshot().expect("expected active snapshot");
+        assert_eq!(snapshot.tool_name, "bash");
+        assert_eq!(snapshot.running_count, 1);
     }
 
     #[test]
