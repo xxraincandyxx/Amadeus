@@ -1006,6 +1006,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         ToolExecutionRecord::new(id, name, input, output, is_error)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn execute_tool_call_stream(
         tools: &ToolRegistry,
         hooks: &HookRegistry,

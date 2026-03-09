@@ -124,10 +124,10 @@ impl Skill {
 
         for line in frontmatter.lines() {
             let line = line.trim();
-            if line.starts_with("name:") {
-                name = line[5..].trim().trim_matches('"').to_string();
-            } else if line.starts_with("description:") {
-                description = line[12..].trim().trim_matches('"').to_string();
+            if let Some(value) = line.strip_prefix("name:") {
+                name = value.trim().trim_matches('"').to_string();
+            } else if let Some(value) = line.strip_prefix("description:") {
+                description = value.trim().trim_matches('"').to_string();
             } else if line.starts_with("allowed_tools:") {
                 // Parse YAML list
                 allowed_tools = Some(Vec::new());

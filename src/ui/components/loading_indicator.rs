@@ -83,7 +83,7 @@ impl LoadingIndicator {
     }
 
     fn sliding_block_frame(&self) -> &'static str {
-        let idx = (self.spinner.frame_index() as usize) % SLIDING_BLOCK_FRAMES.len();
+        let idx = self.spinner.frame_index() % SLIDING_BLOCK_FRAMES.len();
         SLIDING_BLOCK_FRAMES[idx]
     }
 

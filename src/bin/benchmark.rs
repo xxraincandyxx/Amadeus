@@ -9,10 +9,9 @@ use amadeus::benchmark::{BenchmarkMode, BenchmarkRunner, BenchmarkRunnerOptions,
 async fn main() -> anyhow::Result<()> {
     let options = parse_args(env::args().skip(1).collect())?;
     let workdir = env::current_dir()?;
-    let base_config = Config::load_with_hierarchy(&workdir).unwrap_or_else(|_| {
-        let mut fallback = Config::default();
-        fallback.workdir = workdir;
-        fallback
+    let base_config = Config::load_with_hierarchy(&workdir).unwrap_or_else(|_| Config {
+        workdir,
+        ..Config::default()
     });
 
     let runner = BenchmarkRunner::new(Arc::new(base_config), options);

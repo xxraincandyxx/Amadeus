@@ -94,7 +94,7 @@ impl ApprovalDialog {
         let colors = get_colors();
 
         // Calculate dialog size
-        let dialog_width = (area.width.saturating_sub(4)).min(70).max(40);
+        let dialog_width = area.width.saturating_sub(4).clamp(40, 70);
         let dialog_height = 14u16; // Fixed height for simplicity
 
         // Center the dialog

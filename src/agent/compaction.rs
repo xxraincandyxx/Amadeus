@@ -159,7 +159,7 @@ impl ContextCompactor {
     /// This is a rough approximation that works reasonably well for English text.
     pub fn estimate_tokens(&self, history: &[Message]) -> usize {
         let total_chars: usize = history.iter().map(|m| self.message_chars(m)).sum();
-        let tokens = (total_chars + 3) / 4;
+        let tokens = total_chars.div_ceil(4);
         debug!(
             message_count = history.len(),
             total_chars = total_chars,

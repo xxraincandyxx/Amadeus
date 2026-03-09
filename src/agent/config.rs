@@ -37,6 +37,8 @@
 // Import our crate's error types
 // `crate::` means "start from the root of this crate"
 // `AgentError` and `Result` were defined in src/error.rs and re-exported in lib.rs
+use std::path::Path;
+
 use crate::error::{AgentError, Result};
 
 // Standard library's environment variable module
@@ -666,8 +668,10 @@ impl Config {
     /// A merged Config with values from all applicable sources.
     pub fn load_with_hierarchy(workdir: &std::path::Path) -> Result<Self> {
         // Start with defaults
-        let mut config = Config::default();
-        config.workdir = workdir.to_path_buf();
+        let mut config = Config {
+            workdir: workdir.to_path_buf(),
+            ..Config::default()
+        };
 
         // 1. Load user global settings (~/.amadeus/settings.json)
         if let Some(home_dir) = dirs::home_dir() {
@@ -718,7 +722,7 @@ impl Config {
             } else {
                 self.model
             },
-            workdir: if other.workdir != PathBuf::from(".")
+            workdir: if other.workdir != Path::new(".")
                 && other.workdir != std::env::current_dir().unwrap_or_default()
             {
                 other.workdir
@@ -749,7 +753,7 @@ impl Config {
             } else {
                 self.context_window_size
             },
-            auto_compact: if other.auto_compact != true {
+            auto_compact: if !other.auto_compact {
                 other.auto_compact
             } else {
                 self.auto_compact

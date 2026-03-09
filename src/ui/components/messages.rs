@@ -204,7 +204,7 @@ impl MessagesComponent {
             let item_turn = Self::item_turn(item);
 
             if let Some(turn) = item_turn {
-                if last_turn.map_or(true, |lt| lt != turn) {
+                if last_turn != Some(turn) {
                     if last_turn.is_some() {
                         lines.push(Line::from(""));
                     }
@@ -650,7 +650,7 @@ impl MessagesComponent {
             let item_turn = Self::item_turn(item);
 
             if let Some(turn) = item_turn {
-                if last_turn.map_or(true, |lt| lt != turn) {
+                if last_turn != Some(turn) {
                     if last_turn.is_some() {
                         lines.push(Line::from(""));
                     }
@@ -724,7 +724,7 @@ impl MessagesComponent {
         }
 
         if let Some(ref streaming) = self.streaming_text {
-            if last_turn.map_or(true, |lt| lt != self.current_turn) {
+            if last_turn != Some(self.current_turn) {
                 if last_turn.is_some() {
                     lines.push(Line::from(""));
                 }
@@ -758,11 +758,7 @@ impl MessagesComponent {
 
         // Just render the tail elements if exceeding view box
         let view_height = area.height as usize;
-        let start_idx = if total_lines > view_height {
-            total_lines - view_height
-        } else {
-            0
-        };
+        let start_idx = total_lines.saturating_sub(view_height);
 
         let visible_lines: Vec<Line> = lines.into_iter().skip(start_idx).collect();
         frame.render_widget(
@@ -1020,7 +1016,7 @@ impl MessagesComponent {
         // Info
         let cwd = std::env::current_dir().unwrap_or_default();
         let cwd_str = cwd.to_string_lossy();
-        let project_name = cwd_str.split('/').last().unwrap_or("");
+        let project_name = cwd_str.split('/').next_back().unwrap_or("");
 
         lines.push(
             Line::from(vec![

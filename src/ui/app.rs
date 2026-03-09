@@ -386,7 +386,7 @@ impl TagFilter {
                         // We have a '<' but no '>', check if it looks like a tag
                         let next_char = self.buffer.get(1..2).and_then(|s| s.chars().next());
                         let looks_like_tag =
-                            next_char.map_or(false, |c| c.is_alphanumeric() || c == '/');
+                            next_char.is_some_and(|c| c.is_alphanumeric() || c == '/');
 
                         if !looks_like_tag || self.buffer.len() > 100 {
                             result.push('<');
@@ -409,8 +409,7 @@ impl TagFilter {
                         let tag_content = &self.buffer[start_idx + 1..full_end_idx];
 
                         // Check if it's a closing tag of one of our target tags
-                        if tag_content.starts_with('/') {
-                            let tag_name = &tag_content[1..];
+                        if let Some(tag_name) = tag_content.strip_prefix('/') {
                             if self.tags.iter().any(|t| tag_name == t) {
                                 self.suppressing = false;
                             }

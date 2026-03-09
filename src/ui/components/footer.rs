@@ -27,18 +27,13 @@ pub struct FooterInfo {
     pub key_chord_hint: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub enum SandboxStatus {
+    #[default]
     None,
     Docker,
     Seatbelt(String),
     Other(String),
-}
-
-impl Default for SandboxStatus {
-    fn default() -> Self {
-        Self::None
-    }
 }
 
 pub struct Footer {
@@ -273,7 +268,7 @@ impl Footer {
         spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
 
         // CWD and git branch with icons
-        let path_len = ((area.width as usize) / 4).max(15).min(40);
+        let path_len = ((area.width as usize) / 4).clamp(15, 40);
 
         if !self.hide_cwd {
             let display_path = Self::shorten_path(&self.info.cwd, path_len);

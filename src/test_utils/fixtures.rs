@@ -147,15 +147,6 @@ pub struct GoldenFile {
 }
 
 impl GoldenFile {
-    /// Get the next response and advance the cursor.
-    pub fn next(&mut self) -> Option<GoldenResponse> {
-        if self.responses.is_empty() {
-            None
-        } else {
-            Some(self.responses.remove(0))
-        }
-    }
-
     /// Peek at the next response without consuming it.
     pub fn peek(&self) -> Option<&GoldenResponse> {
         self.responses.first()
@@ -164,6 +155,18 @@ impl GoldenFile {
     /// Check if there are more responses.
     pub fn has_more(&self) -> bool {
         !self.responses.is_empty()
+    }
+}
+
+impl Iterator for GoldenFile {
+    type Item = GoldenResponse;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.responses.is_empty() {
+            None
+        } else {
+            Some(self.responses.remove(0))
+        }
     }
 }
 

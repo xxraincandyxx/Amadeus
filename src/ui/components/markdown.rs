@@ -46,20 +46,18 @@ fn detect_code_blocks(content: &str) -> Vec<Segment> {
                 in_code_block = true;
                 first_segment = true;
             }
-        } else {
-            if in_code_block {
-                if !first_segment {
-                    current_segment.push('\n');
-                } else {
-                    first_segment = false;
-                }
-                current_segment.push_str(line);
+        } else if in_code_block {
+            if !first_segment {
+                current_segment.push('\n');
             } else {
-                if !current_segment.is_empty() {
-                    current_segment.push('\n');
-                }
-                current_segment.push_str(line);
+                first_segment = false;
             }
+            current_segment.push_str(line);
+        } else {
+            if !current_segment.is_empty() {
+                current_segment.push('\n');
+            }
+            current_segment.push_str(line);
         }
     }
 
@@ -281,16 +279,14 @@ fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
         return vec![line];
     }
 
-    if trimmed.starts_with("- ") {
-        let content = &trimmed[2..];
+    if let Some(content) = trimmed.strip_prefix("- ") {
         let spans = render_inline_code_spans(content);
         let mut final_spans = vec![Span::styled("• ", Style::default().fg(THEME.purple))];
         final_spans.extend(spans);
         return wrap_lines(final_spans, width);
     }
 
-    if trimmed.starts_with("* ") {
-        let content = &trimmed[2..];
+    if let Some(content) = trimmed.strip_prefix("* ") {
         let spans = render_inline_code_spans(content);
         let mut final_spans = vec![Span::styled("• ", Style::default().fg(THEME.purple))];
         final_spans.extend(spans);
@@ -340,7 +336,7 @@ fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
             let word_width = word.width();
 
             if word == " " {
-                if current_width + 1 <= width {
+                if current_width < width {
                     current_line_spans.push(Span::styled(" ", style));
                     current_width += 1;
                 } else {

@@ -2,18 +2,13 @@ use std::time::{Duration, Instant};
 
 use crate::ui::constants::{INFORMATIVE_TIPS, PHRASE_CHANGE_INTERVAL_MS, WITTY_LOADING_PHRASES};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum PhraseMode {
+    #[default]
     Tips,
     Witty,
     All,
     Off,
-}
-
-impl Default for PhraseMode {
-    fn default() -> Self {
-        Self::Tips
-    }
 }
 
 pub struct PhraseCycler {
