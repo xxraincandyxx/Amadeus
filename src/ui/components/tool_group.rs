@@ -5,6 +5,7 @@ use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},
 };
+use unicode_width::UnicodeWidthChar;
 
 use crate::ui::colors::THEME;
 
@@ -157,16 +158,50 @@ impl Default for ToolGroup {
 
 /// Truncate a string to a maximum length with ellipsis
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len.saturating_sub(3)])
+        let keep = max_len.saturating_sub(3);
+        let truncated: String = s.chars().take(keep).collect();
+        format!("{truncated}...")
     }
+}
+
+fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
+    if text.is_empty() || max_width == 0 {
+        return vec![String::new()];
+    }
+
+    let mut lines = Vec::new();
+    let mut current = String::new();
+    let mut current_width = 0;
+
+    for ch in text.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if current_width + ch_width > max_width && !current.is_empty() {
+            lines.push(current);
+            current = String::new();
+            current_width = 0;
+        }
+
+        current.push(ch);
+        current_width += ch_width;
+    }
+
+    if !current.is_empty() {
+        lines.push(current);
+    }
+
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+
+    lines
 }
 
 pub fn render_tool_group_with_limit(
     group: &ToolGroup,
-    _area: Rect,
+    area: Rect,
     max_total_lines: usize,
 ) -> Vec<Line<'static>> {
     if group.tools.is_empty() {
@@ -175,6 +210,9 @@ pub fn render_tool_group_with_limit(
 
     let mut lines = Vec::new();
     let hidden_count = group.hidden_count();
+    let available_width = area.width.max(16) as usize;
+    let body_width = available_width.saturating_sub(6).max(8);
+    let command_width = available_width.saturating_sub(8).max(8);
 
     for tool in group.visible_tools() {
         if lines.len() >= max_total_lines {
@@ -201,7 +239,6 @@ pub fn render_tool_group_with_limit(
             .map(|c| truncate(c, 40))
             .unwrap_or_default();
 
-        // Header line with hierarchical display
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
             Span::styled(
@@ -212,18 +249,22 @@ pub fn render_tool_group_with_limit(
             ),
             Span::styled(" ", Style::default()),
             Span::styled(
-                tool.name.clone(),
+                truncate(&tool.name, body_width.saturating_sub(2)),
                 Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
             ),
-            if !args_preview.is_empty() {
-                Span::styled(
-                    format!("({})", args_preview),
-                    Style::default().fg(THEME.comment),
-                )
-            } else {
-                Span::raw("")
-            },
         ]));
+
+        if !args_preview.is_empty() {
+            for wrapped in wrap_text(&format!("({args_preview})"), body_width) {
+                if lines.len() >= max_total_lines {
+                    break;
+                }
+                lines.push(Line::from(vec![
+                    Span::styled("    │ ", Style::default().fg(THEME.border)),
+                    Span::styled(wrapped, Style::default().fg(THEME.comment)),
+                ]));
+            }
+        }
 
         if tool.status == ToolStatus::Pending && tool.output.is_empty() {
             // Show progress information if available
@@ -233,15 +274,20 @@ pub fn render_tool_group_with_limit(
                 } else {
                     msg.clone()
                 };
-                lines.push(Line::from(vec![
-                    Span::styled("    │ ", Style::default().fg(THEME.border)),
-                    Span::styled(
-                        progress_text,
-                        Style::default()
-                            .fg(THEME.cyan)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                ]));
+                for wrapped in wrap_text(&progress_text, body_width) {
+                    if lines.len() >= max_total_lines {
+                        break;
+                    }
+                    lines.push(Line::from(vec![
+                        Span::styled("    │ ", Style::default().fg(THEME.border)),
+                        Span::styled(
+                            wrapped,
+                            Style::default()
+                                .fg(THEME.cyan)
+                                .add_modifier(Modifier::ITALIC),
+                        ),
+                    ]));
+                }
             } else {
                 lines.push(Line::from(vec![
                     Span::styled("    │ ", Style::default().fg(THEME.border)),
@@ -255,11 +301,17 @@ pub fn render_tool_group_with_limit(
             }
         } else if !tool.is_collapsed {
             if let Some(cmd) = &tool.command {
-                lines.push(Line::from(vec![
-                    Span::styled("    │ ", Style::default().fg(THEME.border)),
-                    Span::styled("$ ", Style::default().fg(THEME.purple)),
-                    Span::styled(cmd.clone(), Style::default().fg(THEME.cyan)),
-                ]));
+                for (idx, wrapped) in wrap_text(cmd, command_width).into_iter().enumerate() {
+                    if lines.len() >= max_total_lines {
+                        break;
+                    }
+                    let command_prefix = if idx == 0 { "$ " } else { "  " };
+                    lines.push(Line::from(vec![
+                        Span::styled("    │ ", Style::default().fg(THEME.border)),
+                        Span::styled(command_prefix, Style::default().fg(THEME.purple)),
+                        Span::styled(wrapped, Style::default().fg(THEME.cyan)),
+                    ]));
+                }
             }
 
             if !tool.output.is_empty() {
@@ -267,13 +319,18 @@ pub fn render_tool_group_with_limit(
                 let total_output_lines = tool.output.lines().count();
 
                 for line_content in output_lines {
+                    for wrapped in wrap_text(line_content, body_width) {
+                        if lines.len() >= max_total_lines {
+                            break;
+                        }
+                        lines.push(Line::from(vec![
+                            Span::styled("    │ ", Style::default().fg(THEME.border)),
+                            Span::styled(wrapped, Style::default().fg(THEME.comment)),
+                        ]));
+                    }
                     if lines.len() >= max_total_lines {
                         break;
                     }
-                    lines.push(Line::from(vec![
-                        Span::styled("    │ ", Style::default().fg(THEME.border)),
-                        Span::styled(line_content.to_string(), Style::default().fg(THEME.comment)),
-                    ]));
                 }
 
                 if total_output_lines > 10 {
@@ -443,6 +500,11 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_handles_unicode_without_panicking() {
+        assert_eq!(truncate("你好世界朋友", 5), "你好...");
+    }
+
+    #[test]
     fn test_render_tool_group_empty() {
         let group = ToolGroup::new();
         let lines = render_tool_group_with_limit(&group, Rect::default(), 100);
@@ -506,5 +568,24 @@ mod tests {
                 .any(|span| span.content.contains("more tool uses"))
         });
         assert!(!has_summary);
+    }
+
+    #[test]
+    fn test_render_tool_group_wraps_long_command_and_output() {
+        let mut group = ToolGroup::new();
+        group.add_tool(
+            ToolCall::new("t1".to_string(), "bash".to_string())
+                .with_command("git diff -- src/ui/app.rs src/ui/components/messages.rs".to_string())
+                .complete(
+                    "diff --git a/.github/pull_request_template.md b/.github/pull_request_template.md".to_string(),
+                    false,
+                ),
+        );
+
+        let area = Rect::new(0, 0, 24, 10);
+        let lines = render_tool_group_with_limit(&group, area, 100);
+
+        assert!(lines.len() > 4);
+        assert!(lines.iter().all(|line| line.width() <= area.width as usize));
     }
 }

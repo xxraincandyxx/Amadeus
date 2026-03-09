@@ -1042,39 +1042,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         } else {
             self.loading_indicator.clear_activity_context();
         }
-    }
 
-    fn monitor_title(&self) -> Line<'static> {
-        let colors = crate::ui::get_colors();
-        let mut spans = vec![Span::styled(
-            " Monitor ",
-            Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
-        )];
-
-        if let Some(snapshot) = self.tool_monitor.active_snapshot() {
-            spans.push(Span::styled(
-                format!(" {} ", snapshot.tool_name),
-                Style::default().fg(colors.ui.comment),
-            ));
-            if let Some(progress) = snapshot.progress_percent {
-                spans.push(Span::styled(
-                    format!(" {progress}% "),
-                    Style::default()
-                        .fg(colors.status.success)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-            if snapshot.running_count > 1 {
-                spans.push(Span::styled(
-                    format!(" {} active ", snapshot.running_count),
-                    Style::default().fg(colors.text.secondary),
-                ));
-            }
-        }
-
-        Line::from(spans)
+        self.sync_prompt_status_hint();
     }
 
     fn live_title(&self) -> Line<'static> {
@@ -1094,6 +1063,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let size = terminal.size()?;
         self.current_shelf_height = self.max_shelf_height_for_terminal(size.height);
         Ok(())
+    }
+
+    fn sync_prompt_status_hint(&mut self) {
+        if self.is_background {
+            self.input
+                .set_status_hint(Some("background task running".to_string()));
+            return;
+        }
+
+        self.input
+            .set_status_hint(self.loading_indicator.prompt_hint());
     }
 
     fn flush_unrendered_history(
@@ -1162,17 +1142,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let colors = crate::ui::get_colors();
         let has_stream_text = !self.streaming_buffer.is_empty();
-        let show_tool_activity = self.tool_monitor.has_running_tools();
-        if !show_tool_activity && !has_stream_text {
+        if !has_stream_text {
             return;
         }
 
         let block = Block::default()
-            .title(if show_tool_activity {
-                self.monitor_title()
-            } else {
-                self.live_title()
-            })
+            .title(self.live_title())
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.border.focused));
 
@@ -1183,24 +1158,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return;
         }
 
-        let rendered_lines = if show_tool_activity {
-            let mut lines = vec![self.loading_indicator.render_inline(inner.width as usize)];
-            if let Some(detail) = self
-                .loading_indicator
-                .render_detail_line(inner.width as usize)
-            {
-                lines.push(detail);
-            }
-            if inner.height > 2 {
-                lines.push(Line::from(vec![Span::styled(
-                    "ctrl+x then i/k/j/l to navigate tool activity",
-                    Style::default().fg(colors.ui.comment),
-                )]));
-            }
-            lines
-        } else {
-            render_markdown(&self.streaming_buffer.text, inner.width as usize)
-        };
+        let rendered_lines = render_markdown(&self.streaming_buffer.text, inner.width as usize);
         let total_lines = rendered_lines.len();
         let max_lines = inner.height as usize;
         let start = total_lines.saturating_sub(max_lines);
@@ -1224,6 +1182,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             AppEvent::Tick => {
                 self.footer.tick();
                 self.loading_indicator.tick();
+                self.sync_prompt_status_hint();
                 self.messages.tick();
                 self.status_bar.tick();
                 self.handle_tool_progress_timeout();
@@ -2054,8 +2013,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.messages.clear_streaming_text();
         self.loading_indicator
             .set_streaming_state(StreamingState::Responding);
-        self.input
-            .set_status_hint(Some("esc cancel • ctrl+b background".to_string()));
+        self.sync_activity_chrome();
 
         // --- MESH DELEGATION ---
         if let Some(addr) = self.mesh_supervisor_addr.clone() {
