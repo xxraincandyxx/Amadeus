@@ -472,6 +472,7 @@ impl TagFilter {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AppMode {
     Normal,
     Input,
@@ -1017,6 +1018,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.sync_activity_chrome();
     }
 
+    fn restore_input_focus(&mut self) {
+        self.mode = AppMode::Input;
+        self.monitor_navigation_prefix = false;
+        self.clear_key_chord_hint();
+    }
+
     fn maybe_clear_tool_monitor(&mut self) {
         if self.tool_monitor.clear_if_idle() {
             self.monitor_navigation_prefix = false;
@@ -1375,6 +1382,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.current_text.clear();
                 self.status_bar.stop();
                 self.input.set_status_hint(None);
+                self.restore_input_focus();
                 if self.is_background {
                     self.is_background = false;
                     self.footer.set_background(false);
@@ -1400,6 +1408,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 self.current_text.clear();
                 self.status_bar.stop();
                 self.input.set_status_hint(None);
+                self.restore_input_focus();
                 if self.is_background {
                     self.is_background = false;
                     self.footer.set_background(false);
@@ -1633,6 +1642,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 if let Some(Sidebar::Files(ref mut sidebar)) = self.sidebar {
                     let visible_count = self.sidebar_area.height.saturating_sub(2) as usize;
                     sidebar.select_down(visible_count);
+                }
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                if self.stream_rx.is_none() {
+                    self.restore_input_focus();
+                    self.input.handle_char(c);
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => {
+                if self.stream_rx.is_none() {
+                    self.restore_input_focus();
                 }
             }
             _ => {}
@@ -1962,6 +1982,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .set_streaming_state(StreamingState::Idle);
         self.status_bar.stop();
         self.input.set_status_hint(None);
+        self.restore_input_focus();
         Ok(())
     }
 
@@ -2168,6 +2189,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 mod tests {
     use super::{App, MonitorStatus, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use crate::agent::config::Config;
+    use crate::agent::loop_agent::Agent;
+    use crate::benchmark::case::MockScript;
+    use crate::benchmark::mock::BenchmarkMockClient;
+
+    fn test_app() -> App<BenchmarkMockClient> {
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        App::new(agent, PathBuf::from("."), "test-model".to_string())
+    }
 
     #[test]
     fn tool_monitor_clears_when_all_tools_complete() {
@@ -2240,6 +2274,32 @@ mod tests {
             ),
             Some("delegated answer".to_string())
         );
+    }
+
+    #[tokio::test]
+    async fn typing_in_normal_mode_restores_input_focus() {
+        let mut app = test_app();
+        app.mode = super::AppMode::Normal;
+
+        app.handle_normal_key(KeyEvent::from(KeyCode::Char('h')))
+            .await
+            .expect("normal key handling should succeed");
+
+        assert_eq!(app.mode, super::AppMode::Input);
+        assert_eq!(app.input.get_input(), "h");
+    }
+
+    #[tokio::test]
+    async fn quit_shortcut_still_works_in_normal_mode() {
+        let mut app = test_app();
+        app.mode = super::AppMode::Normal;
+
+        app.handle_normal_key(KeyEvent::from(KeyCode::Char('q')))
+            .await
+            .expect("normal key handling should succeed");
+
+        assert!(app.should_quit);
+        assert!(app.input.get_input().is_empty());
     }
 
     #[test]
