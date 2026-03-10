@@ -965,6 +965,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
 
+        if self.messages.is_compression_pending() {
+            return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
+        }
+
         if self.streaming_buffer.is_empty() {
             return 0;
         }
@@ -1056,6 +1060,63 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         )])
     }
 
+    fn monitor_title(&self) -> Line<'static> {
+        let colors = crate::ui::get_colors();
+        Line::from(vec![Span::styled(
+            " Monitor ",
+            Style::default()
+                .fg(colors.text.accent)
+                .add_modifier(Modifier::BOLD),
+        )])
+    }
+
+    fn render_tool_activity_preview(&self, max_width: usize) -> Vec<Line<'static>> {
+        let colors = crate::ui::get_colors();
+        let summary = self
+            .tool_monitor
+            .active_snapshot()
+            .map(|snapshot| {
+                let mut text = format!(
+                    "{} {}",
+                    snapshot.tool_name,
+                    self.loading_indicator.prompt_hint().unwrap_or_default()
+                );
+                if let Some(progress) = snapshot.progress_percent {
+                    text.push_str(&format!(" • {progress}%"));
+                }
+                if let Some(message) = snapshot.progress_message {
+                    text.push_str(&format!(" • {message}"));
+                }
+                if snapshot.running_count > 1 {
+                    text.push_str(&format!(" • {} active", snapshot.running_count));
+                }
+                text
+            })
+            .unwrap_or_else(|| "working".to_string());
+
+        let truncated = if summary.chars().count() > max_width {
+            let keep = max_width.saturating_sub(1);
+            let trimmed: String = summary.chars().take(keep).collect();
+            format!("{trimmed}…")
+        } else {
+            summary
+        };
+
+        let mut lines = vec![Line::from(vec![Span::styled(
+            truncated,
+            Style::default().fg(colors.text.secondary),
+        )])];
+
+        if self.tool_monitor.has_content() && max_width > 20 {
+            lines.push(Line::from(vec![Span::styled(
+                "ctrl+x then i/k/j/l to navigate tool activity",
+                Style::default().fg(colors.ui.comment),
+            )]));
+        }
+
+        lines
+    }
+
     fn sync_inline_viewport(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -1135,19 +1196,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn render_live_viewport(&self, frame: &mut ratatui::Frame, area: Rect) {
+    fn render_live_viewport(&mut self, frame: &mut ratatui::Frame, area: Rect) {
         if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_LIVE_VIEWPORT_HEIGHT {
             return;
         }
 
         let colors = crate::ui::get_colors();
         let has_stream_text = !self.streaming_buffer.is_empty();
-        if !has_stream_text {
+        let has_tool_activity = self.tool_monitor.has_running_tools();
+        let has_pending_compaction = self.messages.is_compression_pending();
+        if !has_stream_text && !has_pending_compaction && !has_tool_activity {
             return;
         }
 
         let block = Block::default()
-            .title(self.live_title())
+            .title(if has_tool_activity {
+                self.monitor_title()
+            } else {
+                self.live_title()
+            })
             .borders(Borders::ALL)
             .border_style(Style::default().fg(colors.border.focused));
 
@@ -1155,6 +1222,35 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         frame.render_widget(block, area);
 
         if inner.width < 1 || inner.height < 1 {
+            return;
+        }
+
+        if has_tool_activity && !has_stream_text && !has_pending_compaction {
+            let visible_lines: Vec<Line> = self
+                .render_tool_activity_preview(inner.width as usize)
+                .into_iter()
+                .take(inner.height as usize)
+                .collect();
+            frame.render_widget(
+                Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
+                inner,
+            );
+            return;
+        }
+
+        if has_pending_compaction && !has_stream_text {
+            let preview_lines = self
+                .messages
+                .render_pending_compaction_preview(inner.width as usize)
+                .unwrap_or_default();
+            let visible_lines: Vec<Line> = preview_lines
+                .into_iter()
+                .take(inner.height as usize)
+                .collect();
+            frame.render_widget(
+                Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
+                inner,
+            );
             return;
         }
 
@@ -2168,6 +2264,7 @@ mod tests {
     use crate::agent::loop_agent::Agent;
     use crate::benchmark::case::MockScript;
     use crate::benchmark::mock::BenchmarkMockClient;
+    use crate::ui::components::StreamingState;
 
     fn test_app() -> App<BenchmarkMockClient> {
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
@@ -2295,6 +2392,52 @@ mod tests {
 
         assert!(rendered.contains("footer ok"));
         assert!(rendered.contains("thinking"));
+    }
+
+    #[test]
+    fn render_shows_pending_compaction_in_live_viewport() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        app.messages.start_compression();
+        app.messages.tick();
+
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("Compacting") || rendered.contains("context"));
+    }
+
+    #[test]
+    fn render_shows_tool_monitor_preview_in_live_viewport() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        app.tool_monitor
+            .start_tool("tool-1".to_string(), "bash".to_string(), None);
+        app.tool_monitor
+            .update_progress("tool-1", "counting lines".to_string(), Some(42));
+        app.loading_indicator
+            .set_streaming_state(StreamingState::Responding);
+        app.sync_activity_chrome();
+
+        terminal
+            .draw(|frame| app.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("Monitor"));
+        assert!(rendered.contains("bash"));
     }
 
     #[test]

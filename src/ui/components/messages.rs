@@ -421,6 +421,69 @@ impl MessagesComponent {
         self.pending_compression.is_some()
     }
 
+    pub fn render_pending_compaction_preview(
+        &self,
+        max_width: usize,
+    ) -> Option<Vec<Line<'static>>> {
+        let compression = self.pending_compression.as_ref()?;
+        let colors = get_colors();
+
+        if compression.status == CompressionStatus::Pending && self.compaction_animator.is_active()
+        {
+            let spinner_color = self.compaction_animator.get_animated_color();
+            let progress_color = self.compaction_animator.get_progress_color();
+            let elapsed = self.compaction_animator.elapsed_string();
+            let bar_width = max_width.saturating_sub(16).clamp(8, 32);
+
+            return Some(vec![
+                Line::from(vec![
+                    Span::styled(
+                        format!("{} ", self.compaction_animator.spinner_frame()),
+                        Style::default().fg(spinner_color),
+                    ),
+                    Span::styled(
+                        self.compaction_animator.current_message(),
+                        Style::default()
+                            .fg(colors.status.warning)
+                            .add_modifier(Modifier::ITALIC),
+                    ),
+                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(elapsed, Style::default().fg(colors.text.secondary)),
+                ]),
+                Line::from(vec![
+                    Span::styled("  ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(
+                        self.compaction_animator
+                            .render_progress_bar_smooth(bar_width),
+                        Style::default().fg(progress_color),
+                    ),
+                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
+                    Span::styled(
+                        format!("{}%", self.compaction_animator.progress()),
+                        Style::default()
+                            .fg(colors.text.secondary)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+                ]),
+            ]);
+        }
+
+        let color = match compression.status {
+            CompressionStatus::Pending => colors.status.warning,
+            CompressionStatus::Compressed => colors.status.success,
+            CompressionStatus::Failed => colors.status.error,
+            CompressionStatus::Noop | CompressionStatus::NotBeneficial => colors.ui.comment,
+        };
+
+        Some(vec![Line::from(vec![
+            Span::styled("✦ ", Style::default().fg(color)),
+            Span::styled(
+                Self::get_compression_text(compression),
+                Style::default().fg(color),
+            ),
+        ])])
+    }
+
     /// Update scrollbar colors (called on theme change)
     pub fn update_scrollbar_colors(&mut self) {
         // No-op for now - scrollbar colors are fetched dynamically in render
@@ -664,59 +727,9 @@ impl MessagesComponent {
         }
 
         // Render pending compression
-        if let Some(ref compression) = self.pending_compression {
-            if compression.status == CompressionStatus::Pending
-                && self.compaction_animator.is_active()
-            {
-                let spinner_color = self.compaction_animator.get_animated_color();
-                let progress_color = self.compaction_animator.get_progress_color();
-                let elapsed = self.compaction_animator.elapsed_string();
-                let bar_width = content_width.saturating_sub(16).clamp(12, 40);
-
-                lines.push(Line::from(vec![
-                    Span::styled(
-                        format!("{} ", self.compaction_animator.spinner_frame()),
-                        Style::default().fg(spinner_color),
-                    ),
-                    Span::styled(
-                        self.compaction_animator.current_message(),
-                        Style::default()
-                            .fg(colors.status.warning)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(elapsed, Style::default().fg(colors.text.secondary)),
-                ]));
-                lines.push(Line::from(vec![
-                    Span::styled("  ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        self.compaction_animator
-                            .render_progress_bar_smooth(bar_width),
-                        Style::default().fg(progress_color),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        format!("{}%", self.compaction_animator.progress()),
-                        Style::default()
-                            .fg(colors.text.secondary)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
-            } else {
-                let color = match compression.status {
-                    CompressionStatus::Pending => colors.status.warning,
-                    CompressionStatus::Compressed => colors.status.success,
-                    CompressionStatus::Failed => colors.status.error,
-                    CompressionStatus::Noop | CompressionStatus::NotBeneficial => colors.ui.comment,
-                };
-
-                lines.push(Line::from(vec![
-                    Span::styled("✦ ", Style::default().fg(color)),
-                    Span::styled(
-                        Self::get_compression_text(compression),
-                        Style::default().fg(color),
-                    ),
-                ]));
+        if self.pending_compression.is_some() {
+            if let Some(preview_lines) = self.render_pending_compaction_preview(content_width) {
+                lines.extend(preview_lines);
             }
             lines.push(Line::from(""));
         }
