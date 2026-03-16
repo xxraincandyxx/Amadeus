@@ -10,6 +10,7 @@ use amadeus::client::anthropic::AnthropicClient;
 use amadeus::client::openai::OpenAIClient;
 use anyhow::Result;
 use std::sync::Arc;
+use tracing_subscriber::EnvFilter;
 
 #[cfg(feature = "api")]
 use amadeus::api::http::run_server;
@@ -21,6 +22,13 @@ use amadeus::ui::App;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    if std::env::var("RUST_LOG").is_ok() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .with_target(false)
+            .try_init();
+    }
+
     // 1. Initial Setup
     let config = Arc::new(Config::load()?);
     let sdk_config = Arc::clone(&config);
