@@ -359,6 +359,7 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
 
                 // Intermediate deltas (e.g. tool arguments) are suppressed for public API
                 Ok(AgentEvent::ToolInputDelta { .. }) => None,
+                Ok(AgentEvent::SubAgentRequested { .. }) => None,
 
                 // Session saved event - informational only
                 Ok(AgentEvent::SessionSaved { path }) => Some(Ok(Event::default()

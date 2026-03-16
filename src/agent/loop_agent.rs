@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock as StdRwLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use chrono::Local;
 use flate2::write::GzEncoder;
@@ -11,6 +12,7 @@ use flate2::Compression;
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{Mutex, oneshot};
 use tracing::{debug, info, instrument, warn};
 
 use crate::agent::compaction::ContextCompactor;
@@ -28,6 +30,7 @@ use crate::tools::{TodoItem, TodoManager};
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
 const TOOL_HEARTBEAT_INTERVAL_MS: u64 = 1200;
 const SUB_AGNET_HEARTBEAT_MESSAGE: &str = "subagent working";
+const SUB_AGNET_RESULT_TIMEOUT_SECS: u64 = 1800;
 
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
@@ -127,6 +130,8 @@ pub struct AgentBuilder<C: LLMClient> {
     config: Arc<Config>,
     tools: ToolRegistry,
     include_sub_agnet_tool: bool,
+    subagent_depth: usize,
+    delegate_subagents: bool,
     history: Option<Arc<RwLock<Vec<Message>>>>,
     todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
@@ -140,6 +145,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             config,
             tools: ToolRegistry::new(),
             include_sub_agnet_tool: false,
+            subagent_depth: 0,
+            delegate_subagents: false,
             history: None,
             todo_manager: Arc::new(StdRwLock::new(TodoManager::new())),
             hooks: HookRegistry::new(),
@@ -188,6 +195,18 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Set the current sub-agent depth.
+    pub fn with_subagent_depth(mut self, depth: usize) -> Self {
+        self.subagent_depth = depth;
+        self
+    }
+
+    /// Enable sub-agent delegation to the UI.
+    pub fn with_subagent_delegate(mut self) -> Self {
+        self.delegate_subagents = true;
+        self
+    }
+
     /// Set a policy for tool approval.
     pub fn with_policy(mut self, policy: Policy) -> Self {
         self.policy = policy;
@@ -196,13 +215,19 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
 
     pub fn build(self) -> Agent<C> {
         let policy = Arc::new(RwLock::new(self.policy));
+        let subagent_coordinator = Arc::new(SubAgentCoordinator::new());
         let tools = if self.include_sub_agnet_tool {
-            self.tools.register(Box::new(SubAgnetTool::new(
-                self.client.clone(),
-                Arc::clone(&self.config),
-                self.hooks.clone(),
-                Arc::clone(&policy),
-            )))
+            if self.subagent_depth < self.config.max_subagent_depth {
+                self.tools.register(Box::new(SubAgnetTool::new(
+                    self.client.clone(),
+                    Arc::clone(&self.config),
+                    self.hooks.clone(),
+                    Arc::clone(&policy),
+                    self.subagent_depth,
+                )))
+            } else {
+                self.tools
+            }
         } else {
             self.tools
         };
@@ -219,6 +244,9 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             todo_manager: self.todo_manager,
             hooks: self.hooks,
             policy,
+            subagent_depth: self.subagent_depth,
+            delegate_subagents: self.delegate_subagents,
+            subagent_coordinator,
         }
     }
 }
@@ -233,6 +261,9 @@ pub struct Agent<C: LLMClient> {
     todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
     policy: Arc<RwLock<Policy>>,
+    subagent_depth: usize,
+    delegate_subagents: bool,
+    subagent_coordinator: Arc<SubAgentCoordinator>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -249,6 +280,39 @@ pub struct ApprovalHandle {
     pub request_rx: mpsc::Receiver<ApprovalRequest>,
     /// Channel to send approval decisions to agent
     pub decision_tx: mpsc::Sender<(String, ApprovalDecision)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SubAgentResult {
+    pub output: String,
+    pub is_error: bool,
+}
+
+#[derive(Debug)]
+struct SubAgentCoordinator {
+    pending: Mutex<HashMap<String, oneshot::Sender<SubAgentResult>>>,
+}
+
+impl SubAgentCoordinator {
+    fn new() -> Self {
+        Self {
+            pending: Mutex::new(HashMap::new()),
+        }
+    }
+
+    async fn request(&self, id: String) -> oneshot::Receiver<SubAgentResult> {
+        let (tx, rx) = oneshot::channel();
+        self.pending.lock().await.insert(id, tx);
+        rx
+    }
+
+    async fn complete(&self, id: &str, result: SubAgentResult) -> bool {
+        if let Some(tx) = self.pending.lock().await.remove(id) {
+            tx.send(result).is_ok()
+        } else {
+            false
+        }
+    }
 }
 
 /// Create a pair of approval channels for agent-ui communication.
@@ -304,6 +368,18 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         policy.clone()
     }
 
+    pub fn subagent_depth(&self) -> usize {
+        self.subagent_depth
+    }
+
+    pub fn enable_subagent_delegate(&mut self) {
+        self.delegate_subagents = true;
+    }
+
+    pub async fn complete_subagent(&self, id: &str, result: SubAgentResult) -> bool {
+        self.subagent_coordinator.complete(id, result).await
+    }
+
     /// Update the policy at runtime.
     pub async fn update_policy<F>(&self, f: F)
     where
@@ -317,6 +393,33 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     pub async fn auto_approve_tool(&self, tool: &str) {
         let mut policy = self.policy.write().await;
         policy.add_auto_approve(tool);
+    }
+
+    pub fn spawn_child_agent(&self, depth: usize) -> Agent<C> {
+        let allow_recursive = depth < self.config.max_subagent_depth;
+        let recursive_tool = if allow_recursive {
+            Some(Arc::new(SubAgnetTool::new(
+                self.client.clone(),
+                Arc::clone(&self.config),
+                self.hooks.clone(),
+                Arc::clone(&self.policy),
+                depth,
+            )) as Arc<dyn crate::tools::tool_trait::Tool>)
+        } else {
+            None
+        };
+
+        let child_tools = ToolRegistry::with_sub_agnet_child_defaults_recursive(
+            &self.config,
+            recursive_tool,
+        );
+
+        AgentBuilder::new(self.client.clone(), Arc::clone(&self.config))
+            .with_tools(child_tools)
+            .with_hooks(self.hooks.clone())
+            .with_policy(self.policy())
+            .with_subagent_depth(depth)
+            .build()
     }
 
     /// Run with a specific skill.
@@ -348,6 +451,9 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             todo_manager: Arc::clone(&self.todo_manager),
             hooks: self.hooks.clone(),
             policy: Arc::clone(&self.policy),
+            subagent_depth: self.subagent_depth,
+            delegate_subagents: self.delegate_subagents,
+            subagent_coordinator: Arc::clone(&self.subagent_coordinator),
         };
 
         // Run with the rendered prompt
@@ -799,6 +905,91 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                     }
 
+                                    if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
+                                        let prompt = input
+                                            .get("prompt")
+                                            .and_then(|value| value.as_str())
+                                            .unwrap_or_default()
+                                            .to_string();
+
+                                        let mut subagent_rx =
+                                            agent.subagent_coordinator.request(id.clone()).await;
+
+                                        yield Ok(AgentEvent::SubAgentRequested {
+                                            id: id.clone(),
+                                            prompt,
+                                            depth: agent.subagent_depth.saturating_add(1),
+                                        });
+
+                                        let mut heartbeat = tokio::time::interval(
+                                            Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS),
+                                        );
+                                        heartbeat.set_missed_tick_behavior(
+                                            tokio::time::MissedTickBehavior::Delay,
+                                        );
+
+                                        let timeout =
+                                            tokio::time::sleep(Duration::from_secs(
+                                                SUB_AGNET_RESULT_TIMEOUT_SECS,
+                                            ));
+                                        tokio::pin!(timeout);
+
+                                        let mut final_result: Option<SubAgentResult> = None;
+                                        let mut timed_out = false;
+
+                                        loop {
+                                            tokio::select! {
+                                                _ = heartbeat.tick() => {
+                                                    yield Ok(AgentEvent::ToolProgress {
+                                                        id: id.clone(),
+                                                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                                                        percent: None,
+                                                        parent_id: None,
+                                                    });
+                                                }
+                                                res = &mut subagent_rx => {
+                                                    final_result = res.ok();
+                                                    break;
+                                                }
+                                                _ = &mut timeout => {
+                                                    timed_out = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        let (output, is_error) = if let Some(result) = final_result {
+                                            (result.output, result.is_error)
+                                        } else if timed_out {
+                                            (
+                                                format!(
+                                                    "Error: sub-agent timed out after {}s",
+                                                    SUB_AGNET_RESULT_TIMEOUT_SECS
+                                                ),
+                                                true,
+                                            )
+                                        } else {
+                                            ("Error: sub-agent request cancelled".to_string(), true)
+                                        };
+
+                                        let record = ToolExecutionRecord::new(
+                                            id,
+                                            name,
+                                            input,
+                                            output,
+                                            is_error,
+                                        );
+
+                                        yield Ok(record.completion_event());
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                        continue;
+                                    }
+
                                     // If approved, execute the tool
                                     let mut tool_events = Agent::<C>::execute_tool_call_stream(
                                         &tools,
@@ -806,6 +997,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         client.clone(),
                                         Arc::clone(&config),
                                         Arc::clone(&policy),
+                                        agent.subagent_depth,
                                         id,
                                         name,
                                         input,
@@ -843,12 +1035,98 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         );
                                     }
                                 } else if !blocked {
+                                    if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
+                                        let prompt = input
+                                            .get("prompt")
+                                            .and_then(|value| value.as_str())
+                                            .unwrap_or_default()
+                                            .to_string();
+
+                                        let mut subagent_rx =
+                                            agent.subagent_coordinator.request(id.clone()).await;
+
+                                        yield Ok(AgentEvent::SubAgentRequested {
+                                            id: id.clone(),
+                                            prompt,
+                                            depth: agent.subagent_depth.saturating_add(1),
+                                        });
+
+                                        let mut heartbeat = tokio::time::interval(
+                                            Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS),
+                                        );
+                                        heartbeat.set_missed_tick_behavior(
+                                            tokio::time::MissedTickBehavior::Delay,
+                                        );
+
+                                        let timeout =
+                                            tokio::time::sleep(Duration::from_secs(
+                                                SUB_AGNET_RESULT_TIMEOUT_SECS,
+                                            ));
+                                        tokio::pin!(timeout);
+
+                                        let mut final_result: Option<SubAgentResult> = None;
+                                        let mut timed_out = false;
+
+                                        loop {
+                                            tokio::select! {
+                                                _ = heartbeat.tick() => {
+                                                    yield Ok(AgentEvent::ToolProgress {
+                                                        id: id.clone(),
+                                                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                                                        percent: None,
+                                                        parent_id: None,
+                                                    });
+                                                }
+                                                res = &mut subagent_rx => {
+                                                    final_result = res.ok();
+                                                    break;
+                                                }
+                                                _ = &mut timeout => {
+                                                    timed_out = true;
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        let (output, is_error) = if let Some(result) = final_result {
+                                            (result.output, result.is_error)
+                                        } else if timed_out {
+                                            (
+                                                format!(
+                                                    "Error: sub-agent timed out after {}s",
+                                                    SUB_AGNET_RESULT_TIMEOUT_SECS
+                                                ),
+                                                true,
+                                            )
+                                        } else {
+                                            ("Error: sub-agent request cancelled".to_string(), true)
+                                        };
+
+                                        let record = ToolExecutionRecord::new(
+                                            id,
+                                            name,
+                                            input,
+                                            output,
+                                            is_error,
+                                        );
+
+                                        yield Ok(record.completion_event());
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                        continue;
+                                    }
+
                                     let mut tool_events = Agent::<C>::execute_tool_call_stream(
                                         &tools,
                                         &hooks,
                                         client.clone(),
                                         Arc::clone(&config),
                                         Arc::clone(&policy),
+                                        agent.subagent_depth,
                                         id,
                                         name,
                                         input,
@@ -1013,6 +1291,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         client: C,
         config: Arc<Config>,
         policy: Arc<RwLock<Policy>>,
+        subagent_depth: usize,
         id: String,
         name: String,
         input: serde_json::Value,
@@ -1024,7 +1303,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         tokio::spawn(async move {
             if name == SUB_AGNET_TOOL_NAME {
                 Agent::<C>::stream_sub_agnet_execution(
-                    client, config, hooks, policy, id, input, tx,
+                    client, config, hooks, policy, subagent_depth, id, input, tx,
                 )
                 .await;
             } else {
@@ -1065,6 +1344,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         config: Arc<Config>,
         hooks: HookRegistry,
         policy: Arc<RwLock<Policy>>,
+        subagent_depth: usize,
         id: String,
         input: serde_json::Value,
         tx: mpsc::Sender<AgentEvent>,
@@ -1079,10 +1359,28 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             .to_string();
 
         let child_policy = policy.read().await.clone();
+        let next_depth = subagent_depth.saturating_add(1);
+        let allow_recursive = next_depth < config.max_subagent_depth;
+        let recursive_tool = if allow_recursive {
+            Some(Arc::new(SubAgnetTool::new(
+                client.clone(),
+                Arc::clone(&config),
+                hooks.clone(),
+                Arc::clone(&policy),
+                next_depth,
+            )) as Arc<dyn crate::tools::tool_trait::Tool>)
+        } else {
+            None
+        };
+
+        let child_tools =
+            ToolRegistry::with_sub_agnet_child_defaults_recursive(&config, recursive_tool);
+
         let child = Agent::builder(client, Arc::clone(&config))
-            .with_tools(ToolRegistry::with_sub_agnet_child_defaults(&config))
+            .with_tools(child_tools)
             .with_hooks(hooks.clone())
             .with_policy(child_policy)
+            .with_subagent_depth(next_depth)
             .build();
 
         {

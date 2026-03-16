@@ -29,7 +29,7 @@ pub struct SubAgnetTool<C: LLMClient> {
     config: Arc<Config>,
     hooks: HookRegistry,
     policy: Arc<RwLock<Policy>>,
-    child_tools: ToolRegistry,
+    depth: usize,
 }
 
 impl<C: LLMClient + Clone + 'static> SubAgnetTool<C> {
@@ -38,15 +38,14 @@ impl<C: LLMClient + Clone + 'static> SubAgnetTool<C> {
         config: Arc<Config>,
         hooks: HookRegistry,
         policy: Arc<RwLock<Policy>>,
+        depth: usize,
     ) -> Self {
-        let child_tools = ToolRegistry::with_sub_agnet_child_defaults(&config);
-
         Self {
             client,
             config,
             hooks,
             policy,
-            child_tools,
+            depth,
         }
     }
 }
@@ -62,6 +61,14 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
+        if self.depth >= self.config.max_subagent_depth {
+            return Err(crate::error::AgentError::ToolExecution(format!(
+                "sub-agents disabled at depth {} (max {})",
+                self.depth,
+                self.config.max_subagent_depth
+            )));
+        }
+
         let parsed: SubAgnetInput =
             serde_json::from_value(input).map_err(|e| crate::error::AgentError::ToolInput {
                 tool: self.name().to_string(),
@@ -69,8 +76,28 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
             })?;
 
         let policy = self.policy.read().await.clone();
+        let next_depth = self.depth.saturating_add(1);
+        let allow_recursive = next_depth < self.config.max_subagent_depth;
+        let recursive_tool = if allow_recursive {
+            Some(Arc::new(SubAgnetTool::new(
+                self.client.clone(),
+                Arc::clone(&self.config),
+                self.hooks.clone(),
+                self.policy.clone(),
+                next_depth,
+            )) as Arc<dyn Tool>)
+        } else {
+            None
+        };
+
+        let child_tools = ToolRegistry::with_sub_agnet_child_defaults_recursive(
+            &self.config,
+            recursive_tool,
+        );
+
         let child = Agent::builder(self.client.clone(), Arc::clone(&self.config))
-            .with_tools(self.child_tools.clone())
+            .with_tools(child_tools)
+            .with_subagent_depth(next_depth)
             .with_hooks(self.hooks.clone())
             .with_policy(policy)
             .build();

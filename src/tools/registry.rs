@@ -57,13 +57,25 @@ impl ToolRegistry {
     }
 
     pub fn with_sub_agnet_child_defaults(config: &Config) -> Self {
-        let file_tools = FileTools::from_config(config);
+        Self::with_sub_agnet_child_defaults_recursive(config, None)
+    }
 
-        Self::new()
+    pub fn with_sub_agnet_child_defaults_recursive(
+        config: &Config,
+        subagent_tool: Option<Arc<dyn Tool>>,
+    ) -> Self {
+        let file_tools = FileTools::from_config(config);
+        let registry = Self::new()
             .register(Box::new(BashTool::from_config(config)))
             .register(Box::new(ReadFileTool::new(file_tools.clone())))
             .register(Box::new(WriteFileTool::new(file_tools.clone())))
-            .register(Box::new(EditFileTool::new(file_tools)))
+            .register(Box::new(EditFileTool::new(file_tools)));
+
+        if let Some(tool) = subagent_tool {
+            registry.register_arc(tool)
+        } else {
+            registry
+        }
     }
 
     pub fn register(self, tool: Box<dyn Tool>) -> Self {

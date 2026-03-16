@@ -76,6 +76,7 @@ impl BenchmarkMetrics {
                     metrics.error_messages.push(message.clone());
                 }
                 AgentEvent::ToolOutputDelta { .. } => {}
+                AgentEvent::SubAgentRequested { .. } => {}
                 _ => {}
             }
         }

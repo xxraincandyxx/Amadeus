@@ -81,6 +81,13 @@ pub enum AgentEvent {
         /// The approval request details.
         request: ApprovalRequest,
     },
+    /// A sub-agent has been requested. The UI should spawn a sub-session and
+    /// complete it via Agent::complete_subagent.
+    SubAgentRequested {
+        id: String,
+        prompt: String,
+        depth: usize,
+    },
     /// Token usage update from the LLM.
     TokenUsage {
         input_tokens: u32,

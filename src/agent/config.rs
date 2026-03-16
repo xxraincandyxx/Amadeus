@@ -214,6 +214,18 @@ pub struct Config {
     ///
     /// Default: 6 (typically 3 turns)
     pub compact_preserve_recent: usize,
+
+    // -------------------------------------------------------------------------
+    // Sub-agent Settings
+    // -------------------------------------------------------------------------
+    /// Maximum depth for recursive sub-agent spawning.
+    ///
+    /// Depth starts at 0 for the root agent. A sub-agent spawned from depth 0
+    /// runs at depth 1. When depth >= max_subagent_depth, sub-agent spawning is
+    /// disabled.
+    ///
+    /// Default: 2
+    pub max_subagent_depth: usize,
 }
 
 /*
@@ -239,6 +251,7 @@ impl Default for Config {
             auto_compact: true,
             compact_threshold_percent: 75,
             compact_preserve_recent: 6,
+            max_subagent_depth: 2,
         }
     }
 }
@@ -487,6 +500,15 @@ impl Config {
             .unwrap_or(6);
 
         // ---------------------------------------------------------------------
+        // PARSE SUB-AGENT DEPTH
+        // ---------------------------------------------------------------------
+
+        let max_subagent_depth = env::var("MAX_SUBAGENT_DEPTH")
+            .ok()
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(2);
+
+        // ---------------------------------------------------------------------
         // BUILD AND RETURN CONFIG
         // ---------------------------------------------------------------------
 
@@ -527,6 +549,9 @@ impl Config {
             auto_compact,
             compact_threshold_percent,
             compact_preserve_recent,
+
+            // Sub-agent settings
+            max_subagent_depth,
         })
     }
 
@@ -646,6 +671,10 @@ impl Config {
 
         if let Some(compress) = json.get("session_log_compress").and_then(|v| v.as_bool()) {
             config.session_log_compress = compress;
+        }
+
+        if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {
+            config.max_subagent_depth = max_subagent_depth as usize;
         }
 
         Ok(config)
@@ -768,6 +797,11 @@ impl Config {
             } else {
                 self.compact_preserve_recent
             },
+            max_subagent_depth: if other.max_subagent_depth != 2 {
+                other.max_subagent_depth
+            } else {
+                self.max_subagent_depth
+            },
         }
     }
 
@@ -860,6 +894,12 @@ impl Config {
         if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
             if let Ok(n) = preserve.parse::<usize>() {
                 self.compact_preserve_recent = n;
+            }
+        }
+
+        if let Ok(max_depth) = env::var("MAX_SUBAGENT_DEPTH") {
+            if let Ok(n) = max_depth.parse::<usize>() {
+                self.max_subagent_depth = n;
             }
         }
 
