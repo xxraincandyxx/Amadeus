@@ -50,6 +50,7 @@ use std::time::Duration;
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
+use tracing::{debug, info};
 
 use async_trait::async_trait;
 use futures::{Stream, StreamExt};
@@ -545,6 +546,31 @@ impl LLMClient for OpenAIClient {
             )));
         }
 
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_lowercase();
+
+        debug!(
+            url = %url,
+            content_type = %content_type,
+            "OpenAI streaming response received"
+        );
+
+        if !content_type.contains("text/event-stream") {
+            info!(
+                url = %url,
+                content_type = %content_type,
+                "OpenAI stream fallback to JSON response"
+            );
+            let json: Value = response.json().await?;
+            let (stop_reason, blocks) = Self::parse_response(json)?;
+            let events = Self::blocks_to_stream_events(stop_reason, blocks);
+            return Ok(Box::pin(futures::stream::iter(events.into_iter().map(Ok))));
+        }
+
         let byte_stream = response.bytes_stream();
         Ok(Box::pin(Self::parse_sse_stream(byte_stream)))
     }
@@ -557,6 +583,36 @@ impl LLMClient for OpenAIClient {
  */
 
 impl OpenAIClient {
+    fn blocks_to_stream_events(
+        stop_reason: String,
+        blocks: Vec<ContentBlock>,
+    ) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
+
+        for block in blocks {
+            match block {
+                ContentBlock::Text { text } => {
+                    if !text.is_empty() {
+                        events.push(StreamEvent::TextDelta(text));
+                    }
+                }
+                ContentBlock::ToolUse { id, name, input } => {
+                    events.push(StreamEvent::ToolCallStart { id: id.clone(), name });
+                    let args = serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string());
+                    events.push(StreamEvent::ToolCallDelta { arguments: args });
+                    events.push(StreamEvent::ToolCallDone(id));
+                }
+                ContentBlock::ToolResult { .. } => {}
+            }
+        }
+
+        if !stop_reason.is_empty() {
+            events.push(StreamEvent::StopReason(stop_reason));
+        }
+
+        events
+    }
+
     /// Parse the SSE byte stream into a stream of StreamEvents.
     fn parse_sse_stream(
         mut stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
@@ -672,5 +728,65 @@ impl OpenAIClient {
             }
         }
         events
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::OpenAIClient;
+    use crate::agent::messages::ContentBlock;
+    use crate::client::StreamEvent;
+
+    #[test]
+    fn blocks_to_stream_events_converts_json_fallback_response() {
+        let events = OpenAIClient::blocks_to_stream_events(
+            "tool_use".to_string(),
+            vec![
+                ContentBlock::Text {
+                    text: "Checking".to_string(),
+                },
+                ContentBlock::ToolUse {
+                    id: "call_1".to_string(),
+                    name: "bash".to_string(),
+                    input: serde_json::json!({"command": "pwd"}),
+                },
+            ],
+        );
+
+        assert!(matches!(
+            &events[0],
+            StreamEvent::TextDelta(text) if text == "Checking"
+        ));
+        assert!(matches!(
+            &events[1],
+            StreamEvent::ToolCallStart { id, name }
+            if id == "call_1" && name == "bash"
+        ));
+        assert!(matches!(
+            &events[2],
+            StreamEvent::ToolCallDelta { arguments }
+            if arguments == r#"{"command":"pwd"}"#
+        ));
+        assert!(matches!(
+            &events[3],
+            StreamEvent::ToolCallDone(id) if id == "call_1"
+        ));
+        assert!(matches!(
+            &events[4],
+            StreamEvent::StopReason(reason) if reason == "tool_use"
+        ));
+    }
+
+    #[test]
+    fn parse_sse_line_emits_stop_reason_for_text_completion() {
+        let events = OpenAIClient::parse_sse_line(
+            r#"data: {"choices":[{"finish_reason":"stop","index":0,"delta":{}}]}"#,
+        );
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            StreamEvent::StopReason(reason) if reason == "stop"
+        ));
     }
 }
