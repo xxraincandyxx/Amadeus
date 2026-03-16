@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -479,7 +479,18 @@ pub enum AppMode {
     Approval,
 }
 
-pub struct App<C: LLMClient> {
+#[derive(Debug, Clone)]
+enum SessionAction {
+    None,
+    Done,
+    SpawnSubAgent {
+        request_id: String,
+        prompt: String,
+        depth: usize,
+    },
+}
+
+struct Session<C: LLMClient> {
     agent: Agent<C>,
     mode: AppMode,
     messages: MessagesComponent,
@@ -526,9 +537,18 @@ pub struct App<C: LLMClient> {
     monitor_navigation_prefix: bool,
     key_chord_steps: Vec<String>,
     last_subagent_output: Option<String>,
+    last_result_text: Option<String>,
+    #[allow(dead_code)]
+    subagent_depth: usize,
+    session_label: String,
+    session_id: usize,
+    pending_approvals: VecDeque<ApprovalRequest>,
+    last_error: Option<String>,
+    parent_session_id: Option<usize>,
+    parent_request_id: Option<String>,
 }
 
-impl<C: LLMClient + Clone + 'static> App<C> {
+impl<C: LLMClient + Clone + 'static> Session<C> {
     fn tool_monitor_line_count() -> u16 {
         std::env::var(TOOL_MONITOR_LINES_ENV)
             .ok()
@@ -665,7 +685,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .filter(|text| !text.trim().is_empty())
     }
 
-    pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
+    pub fn new(
+        agent: Agent<C>,
+        workdir: PathBuf,
+        model_name: String,
+        subagent_depth: usize,
+        session_label: String,
+        session_id: usize,
+    ) -> Self {
         let footer = Footer::new(model_name.clone());
         let loading_indicator = LoadingIndicator::new();
         let status_bar = StatusBar::new();
@@ -701,6 +728,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             monitor_navigation_prefix: false,
             key_chord_steps: Vec::new(),
             last_subagent_output: None,
+            last_result_text: None,
+            subagent_depth,
+            session_label,
+            session_id,
+            pending_approvals: VecDeque::new(),
+            last_error: None,
+            parent_session_id: None,
+            parent_request_id: None,
         }
     }
 
@@ -709,6 +744,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.footer.set_mesh(true);
     }
 
+    #[allow(dead_code)]
     pub async fn run(&mut self) -> Result<()> {
         enable_raw_mode()?;
         let mut stdout = std::io::stdout();
@@ -770,6 +806,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         (input_max + live_max).min(terminal_height.max(4))
     }
 
+    #[allow(dead_code)]
     async fn run_loop(&mut self) -> Result<()> {
         let terminal_size = crossterm::terminal::size()?;
         self.current_shelf_height = self.max_shelf_height_for_terminal(terminal_size.1);
@@ -832,7 +869,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     }
                 } => {
                     if let Some(event) = agent_event {
-                        if self.handle_agent_event(event, &mut terminal)? {
+                        if matches!(
+                            self.handle_agent_event(event, &mut terminal, true)?,
+                            SessionAction::Done
+                        ) {
                             self.stream_rx = None;
                             self.stream_abort = None;
                             events.set_tick_rate(Duration::from_millis(100));
@@ -862,7 +902,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         };
 
                         for event in events_to_process {
-                            if self.handle_agent_event(event, &mut terminal)? {
+                            if matches!(
+                                self.handle_agent_event(event, &mut terminal, true)?,
+                                SessionAction::Done
+                            ) {
                                 self.stream_rx = None;
                                 self.stream_abort = None;
                                 events.set_tick_rate(Duration::from_millis(100));
@@ -954,6 +997,16 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
+    fn finalize_streaming_state_background(&mut self) {
+        let remainder = self.tag_filter.finalize();
+        if !remainder.is_empty() {
+            self.streaming_buffer.push(&remainder);
+            self.current_text.push_str(&remainder);
+        }
+        self.streaming_buffer.clear();
+        self.messages.clear_streaming_text();
+    }
+
     fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
         if width < MIN_LIVE_VIEWPORT_WIDTH {
             return 0;
@@ -961,6 +1014,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100)
             .max(MIN_LIVE_VIEWPORT_HEIGHT);
+        let is_streaming = self.stream_rx.is_some();
         if self.tool_monitor.has_running_tools() {
             return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
@@ -969,7 +1023,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
 
-        if self.streaming_buffer.is_empty() {
+        if self.streaming_buffer.is_empty() && !is_streaming {
             return 0;
         }
 
@@ -1149,8 +1203,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     fn flush_completed_tool_group(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+        render_to_terminal: bool,
     ) -> Result<()> {
-        if self.messages.flush_completed_pending_tool_group() {
+        if self.messages.flush_completed_pending_tool_group() && render_to_terminal {
             self.flush_unrendered_history(terminal)?;
         }
         Ok(())
@@ -1202,10 +1257,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let colors = crate::ui::get_colors();
+        let is_streaming = self.stream_rx.is_some();
         let has_stream_text = !self.streaming_buffer.is_empty();
         let has_tool_activity = self.tool_monitor.has_running_tools();
         let has_pending_compaction = self.messages.is_compression_pending();
-        if !has_stream_text && !has_pending_compaction && !has_tool_activity {
+        if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
             return;
         }
 
@@ -1249,6 +1305,22 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 .collect();
             frame.render_widget(
                 Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
+                inner,
+            );
+            return;
+        }
+
+        if !has_stream_text {
+            let hint = self
+                .loading_indicator
+                .prompt_hint()
+                .unwrap_or_else(|| "responding".to_string());
+            let line = Line::from(vec![Span::styled(
+                hint,
+                Style::default().fg(colors.text.secondary),
+            )]);
+            frame.render_widget(
+                Paragraph::new(vec![line]).style(Style::default().bg(colors.background.primary)),
                 inner,
             );
             return;
@@ -1328,16 +1400,17 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         &mut self,
         event: AgentEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<bool> {
+        render_to_terminal: bool,
+    ) -> Result<SessionAction> {
         match event {
             AgentEvent::TextDelta { delta } => {
-                self.flush_completed_tool_group(terminal)?;
+                self.flush_completed_tool_group(terminal, render_to_terminal)?;
                 debug!(delta_len = delta.len(), delta = %delta, "Received TextDelta");
 
                 // Filter out internal tags
                 let filtered_delta = self.tag_filter.process(&delta);
                 if filtered_delta.is_empty() {
-                    return Ok(false);
+                    return Ok(SessionAction::None);
                 }
 
                 // Accumulate in buffer
@@ -1380,7 +1453,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 name,
                 parent_id,
             } => {
-                self.flush_streaming_buffer(terminal)?;
+                if render_to_terminal {
+                    self.flush_streaming_buffer(terminal)?;
+                }
                 self.status_bar.set_thinking(true);
                 let tool_name = name.clone();
                 self.tool_monitor
@@ -1416,7 +1491,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 };
                 if parent_id.is_none() {
                     self.messages.complete_tool(&id, output, is_error, command);
-                    self.flush_completed_tool_group(terminal)?;
+                    self.flush_completed_tool_group(terminal, render_to_terminal)?;
                 }
             }
 
@@ -1424,9 +1499,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 debug!(text_len = result.text.len(), "Agent stream completed");
                 let done_text =
                     Self::resolve_done_text(result.text, &mut self.last_subagent_output);
+                let done_text_for_record = done_text.clone();
 
-                self.flush_completed_tool_group(terminal)?;
-                self.finalize_streaming_state(terminal)?;
+                self.flush_completed_tool_group(terminal, render_to_terminal)?;
+                if render_to_terminal {
+                    self.finalize_streaming_state(terminal)?;
+                } else {
+                    self.finalize_streaming_state_background();
+                }
                 self.clear_tool_monitor();
                 if let Some(text) = done_text {
                     self.messages.finalize_assistant(text);
@@ -1444,12 +1524,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_status_message("Background task completed");
                 }
 
-                return Ok(true);
+                self.last_error = None;
+                self.last_result_text = done_text_for_record;
+                return Ok(SessionAction::Done);
             }
 
             AgentEvent::Error { message } => {
-                self.flush_completed_tool_group(terminal)?;
-                self.finalize_streaming_state(terminal)?;
+                self.flush_completed_tool_group(terminal, render_to_terminal)?;
+                if render_to_terminal {
+                    self.finalize_streaming_state(terminal)?;
+                } else {
+                    self.finalize_streaming_state_background();
+                }
                 self.clear_tool_monitor();
                 if self.current_text.is_empty() {
                     self.messages.add_assistant(format!("Error: {}", message));
@@ -1469,7 +1555,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.footer.set_background(false);
                     self.footer.set_status_message("Background task failed");
                 }
-                return Ok(true);
+                self.last_error = Some(message.clone());
+                self.last_result_text = Some(format!("Error: {}", message));
+                return Ok(SessionAction::Done);
             }
 
             AgentEvent::SessionSaved { path } => {
@@ -1550,9 +1638,18 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 // Note: Compaction happens automatically to manage context window
                 // The user is informed via the footer context percentage indicator
             }
+            AgentEvent::SubAgentRequested { id, prompt, depth } => {
+                self.footer
+                    .set_status_message("Spawning sub-agent session");
+                return Ok(SessionAction::SpawnSubAgent {
+                    request_id: id,
+                    prompt,
+                    depth,
+                });
+            }
         }
 
-        Ok(false)
+        Ok(SessionAction::None)
     }
 
     async fn handle_key(
@@ -1629,6 +1726,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
             // Return to input mode
             self.mode = AppMode::Input;
+            self.maybe_show_next_approval();
         }
     }
 
@@ -1644,6 +1742,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
         }
         self.mode = AppMode::Input;
+        self.maybe_show_next_approval();
     }
 
     /// Show an approval dialog for a tool execution request.
@@ -1657,6 +1756,32 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             &request.reason,
         ));
         self.mode = AppMode::Approval;
+    }
+
+    fn enqueue_approval_request(&mut self, request: ApprovalRequest, is_active: bool) {
+        if self.approval_dialog.is_none() && is_active {
+            self.show_approval_dialog(request);
+            return;
+        }
+
+        self.pending_approvals.push_back(request);
+    }
+
+    fn maybe_show_next_approval(&mut self) {
+        if self.approval_dialog.is_some() {
+            return;
+        }
+        if let Some(request) = self.pending_approvals.pop_front() {
+            self.show_approval_dialog(request);
+        }
+    }
+
+    fn pending_approval_count(&self) -> usize {
+        let mut count = self.pending_approvals.len();
+        if self.approval_dialog.is_some() {
+            count += 1;
+        }
+        count
     }
 
     async fn handle_normal_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
@@ -2104,6 +2229,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         self.input.clear();
         self.current_text.clear();
+        self.last_error = None;
+        self.last_result_text = None;
         self.streaming_buffer.clear();
         self.clear_tool_monitor();
         self.messages.clear_streaming_text();
@@ -2252,9 +2379,694 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 }
 
+pub struct App<C: LLMClient> {
+    sessions: Vec<Session<C>>,
+    active_idx: usize,
+    should_quit: bool,
+    workdir: PathBuf,
+    mesh_supervisor_addr: Option<String>,
+    model_name: String,
+    next_session_id: usize,
+    next_sub_label: usize,
+    pending_close: Option<(usize, Instant)>,
+}
+
+impl<C: LLMClient + Clone + 'static> App<C> {
+    pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
+        let mut agent = agent;
+        agent.enable_subagent_delegate();
+        let session = Session::new(
+            agent,
+            workdir.clone(),
+            model_name.clone(),
+            0,
+            "root".to_string(),
+            0,
+        );
+        Self {
+            sessions: vec![session],
+            active_idx: 0,
+            should_quit: false,
+            workdir,
+            mesh_supervisor_addr: None,
+            model_name,
+            next_session_id: 1,
+            next_sub_label: 1,
+            pending_close: None,
+        }
+    }
+
+    pub fn set_mesh_mode(&mut self, addr: &str) {
+        self.mesh_supervisor_addr = Some(addr.to_string());
+        for session in &mut self.sessions {
+            session.set_mesh_mode(addr);
+        }
+    }
+
+    pub async fn run(&mut self) -> Result<()> {
+        enable_raw_mode()?;
+        let mut stdout = std::io::stdout();
+        let _ = execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(
+                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
+                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+            )
+        );
+
+        let res = self.run_loop().await;
+
+        let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
+        disable_raw_mode()?;
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend)?;
+        terminal.show_cursor()?;
+
+        res
+    }
+
+    fn active_session(&self) -> &Session<C> {
+        &self.sessions[self.active_idx]
+    }
+
+    fn active_session_mut(&mut self) -> &mut Session<C> {
+        &mut self.sessions[self.active_idx]
+    }
+
+    fn build_breadcrumb(&self) -> String {
+        let mut parts = Vec::new();
+        for (idx, session) in self.sessions.iter().enumerate() {
+            let mut label = session.session_label.clone();
+            let mut marker = String::new();
+            if session.stream_rx.is_some() {
+                marker.push('*');
+            }
+            if session.pending_approval_count() > 0 {
+                marker.push('?');
+            }
+            if session.last_error.is_some() {
+                marker.push('!');
+            }
+            if idx == self.active_idx {
+                marker.push('>');
+            }
+            if !marker.is_empty() {
+                label.push_str(&marker);
+            }
+            parts.push(label);
+        }
+        parts.join(" ▸ ")
+    }
+
+    fn update_background_flags(&mut self) {
+        for (idx, session) in self.sessions.iter_mut().enumerate() {
+            let should_background = idx != self.active_idx && session.stream_rx.is_some();
+            if session.is_background != should_background {
+                session.is_background = should_background;
+                session.footer.set_background(should_background);
+            }
+        }
+    }
+
+    fn switch_session(&mut self, next_idx: usize) {
+        if next_idx >= self.sessions.len() || next_idx == self.active_idx {
+            return;
+        }
+        self.active_idx = next_idx;
+        let session = self.active_session_mut();
+        session.is_background = false;
+        session.footer.set_background(false);
+        session.maybe_show_next_approval();
+    }
+
+    fn handle_global_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<bool> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char(']')) => {
+                let next_idx = (self.active_idx + 1) % self.sessions.len();
+                self.switch_session(next_idx);
+                return Ok(true);
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('[')) => {
+                let next_idx = if self.active_idx == 0 {
+                    self.sessions.len().saturating_sub(1)
+                } else {
+                    self.active_idx - 1
+                };
+                self.switch_session(next_idx);
+                return Ok(true);
+            }
+            (KeyModifiers::CONTROL, KeyCode::Backspace) => {
+                self.close_active_session(terminal)?;
+                return Ok(true);
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+
+    fn close_active_session(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        if self.sessions.len() <= 1 {
+            self.active_session_mut()
+                .footer
+                .set_status_message("Cannot close root session");
+            return Ok(());
+        }
+
+        let idx = self.active_idx;
+        let session_id = self.sessions[idx].session_id;
+        let is_root = self.sessions[idx].parent_session_id.is_none();
+        if is_root {
+            self.active_session_mut()
+                .footer
+                .set_status_message("Cannot close root session");
+            return Ok(());
+        }
+
+        if self.sessions[idx].stream_rx.is_some() {
+            let confirmed = match self.pending_close {
+                Some((pending_id, when))
+                    if pending_id == session_id && when.elapsed() < Duration::from_secs(3) =>
+                {
+                    true
+                }
+                _ => false,
+            };
+
+            if !confirmed {
+                self.pending_close = Some((session_id, Instant::now()));
+                self.active_session_mut()
+                    .footer
+                    .set_status_message("Press ctrl+backspace again to close running session");
+                return Ok(());
+            }
+        }
+
+        self.pending_close = None;
+
+        let was_running = self.sessions[idx].stream_rx.is_some();
+        if was_running {
+            self.sessions[idx].cancel_stream(terminal)?;
+        }
+
+        if was_running {
+            if let (Some(parent_idx), Some(request_id)) = (
+                self.sessions[idx].parent_session_id,
+                self.sessions[idx].parent_request_id.clone(),
+            ) {
+                let parent_agent = self.sessions.get(parent_idx).map(|p| p.agent.clone());
+                let summary = "Error: sub-agent session closed".to_string();
+                if let Some(agent) = parent_agent {
+                    tokio::spawn(async move {
+                        let _ = agent
+                            .complete_subagent(
+                                &request_id,
+                                crate::agent::loop_agent::SubAgentResult {
+                                    output: summary.clone(),
+                                    is_error: true,
+                                },
+                            )
+                            .await;
+                    });
+                }
+                if let Some(parent) = self.sessions.get_mut(parent_idx) {
+                    parent
+                        .messages
+                        .add_assistant("[sub-agent] Error: session closed".to_string());
+                }
+            }
+        }
+
+        let parent_idx = self.sessions[idx].parent_session_id.unwrap_or(0);
+        self.sessions.remove(idx);
+
+        for session in &mut self.sessions {
+            if let Some(parent_id) = session.parent_session_id {
+                if parent_id > idx {
+                    session.parent_session_id = Some(parent_id - 1);
+                }
+            }
+        }
+
+        let next_idx = if parent_idx >= self.sessions.len() {
+            self.sessions.len().saturating_sub(1)
+        } else if idx < parent_idx {
+            parent_idx.saturating_sub(1)
+        } else {
+            parent_idx
+        };
+
+        self.switch_session(next_idx);
+        Ok(())
+    }
+
+    fn handle_session_action(
+        &mut self,
+        action: SessionAction,
+        parent_idx: usize,
+    ) -> Result<()> {
+        match action {
+            SessionAction::None => {}
+            SessionAction::Done => {
+                if let Some(session) = self.sessions.get_mut(parent_idx) {
+                    session.stream_rx = None;
+                    session.stream_abort = None;
+                }
+            }
+            SessionAction::SpawnSubAgent {
+                request_id,
+                prompt,
+                depth,
+            } => {
+                self.spawn_sub_session(parent_idx, request_id, prompt, depth)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn restore_session_channels(
+        &mut self,
+        session_id: usize,
+        stream_rx: Option<mpsc::Receiver<AgentEvent>>,
+        approval_rx: Option<mpsc::Receiver<ApprovalRequest>>,
+    ) {
+        if let Some(idx) = self
+            .sessions
+            .iter()
+            .position(|session| session.session_id == session_id)
+        {
+            self.sessions[idx].stream_rx = stream_rx;
+            self.sessions[idx].approval_req_rx = approval_rx;
+        }
+    }
+
+    fn spawn_sub_session(
+        &mut self,
+        parent_idx: usize,
+        request_id: String,
+        prompt: String,
+        depth: usize,
+    ) -> Result<()> {
+        let parent_agent = self.sessions[parent_idx].agent.clone();
+        let mut child_agent = parent_agent.spawn_child_agent(depth);
+        child_agent.enable_subagent_delegate();
+
+        let label = format!("sub{}", self.next_sub_label);
+        self.next_sub_label += 1;
+
+        let mut session = Session::new(
+            child_agent,
+            self.workdir.clone(),
+            self.model_name.clone(),
+            depth,
+            label,
+            self.next_session_id,
+        );
+        self.next_session_id += 1;
+
+        session.parent_session_id = Some(parent_idx);
+        session.parent_request_id = Some(request_id);
+
+        if let Some(addr) = self.mesh_supervisor_addr.clone() {
+            session.set_mesh_mode(&addr);
+        }
+
+        // Seed the child session with the prompt as a user message and start streaming.
+        session.messages.add_user(prompt.clone());
+        session.input.clear();
+        session.current_text.clear();
+        session.streaming_buffer.clear();
+        session.clear_tool_monitor();
+        session.messages.clear_streaming_text();
+        session
+            .loading_indicator
+            .set_streaming_state(StreamingState::Responding);
+        session.sync_activity_chrome();
+
+        let agent = session.agent.clone();
+        let prompt_clone = prompt.clone();
+
+        let (channels, approval_handle) = create_approval_channels();
+        session.approval_dec_tx = Some(approval_handle.decision_tx);
+        session.approval_req_rx = Some(approval_handle.request_rx);
+
+        let (tx, rx) = mpsc::channel(64);
+        let handle = tokio::spawn(async move {
+            {
+                let history_arc = agent.history();
+                let mut history = history_arc.write().await;
+                history.push(crate::agent::messages::Message::user(&prompt_clone));
+            }
+
+            let mut stream = agent.run_stream_with_approval(Some(channels));
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(e) => {
+                        let is_done = matches!(e, AgentEvent::Done { .. });
+                        if tx.send(e).await.is_err() {
+                            break;
+                        }
+                        if is_done {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        let error_msg = e.to_string();
+                        let _ = tx.send(AgentEvent::Error { message: error_msg }).await;
+                        break;
+                    }
+                }
+            }
+        });
+
+        session.stream_rx = Some(rx);
+        session.stream_abort = Some(handle);
+
+        self.sessions.push(session);
+        self.switch_session(self.sessions.len() - 1);
+        Ok(())
+    }
+
+    async fn complete_child_session(&mut self, child_idx: usize) {
+        let (parent_idx, request_id, summary, is_error) = {
+            let child = &mut self.sessions[child_idx];
+            let summary = child
+                .last_result_text
+                .clone()
+                .unwrap_or_else(|| "(no summary)".to_string());
+            let is_error = child.last_error.is_some();
+            (
+                child.parent_session_id,
+                child.parent_request_id.clone(),
+                summary,
+                is_error,
+            )
+        };
+
+        if let (Some(parent_idx), Some(request_id)) = (parent_idx, request_id) {
+            let parent_agent = self.sessions.get(parent_idx).map(|parent| parent.agent.clone());
+            if let Some(agent) = parent_agent {
+                let _ = agent
+                    .complete_subagent(
+                        &request_id,
+                        crate::agent::loop_agent::SubAgentResult {
+                            output: summary.clone(),
+                            is_error,
+                        },
+                    )
+                    .await;
+            }
+
+            if let Some(parent) = self.sessions.get_mut(parent_idx) {
+                parent.messages.add_assistant(format!(
+                    "[sub-agent] {}",
+                    summary.trim_end()
+                ));
+            }
+        }
+    }
+
+    async fn poll_background_sessions(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        let mut completed_children = Vec::new();
+        for idx in 0..self.sessions.len() {
+            if idx == self.active_idx {
+                continue;
+            }
+
+            let mut drained = 0;
+            let mut stream_rx = self.sessions[idx].stream_rx.take();
+            if let Some(ref mut rx) = stream_rx {
+                while drained < 100 {
+                    match rx.try_recv() {
+                        Ok(event) => {
+                            drained += 1;
+                            let action =
+                                self.sessions[idx].handle_agent_event(event, terminal, false)?;
+                            if matches!(action, SessionAction::Done) {
+                                self.sessions[idx].stream_abort = None;
+                                completed_children.push(idx);
+                                stream_rx = None;
+                                break;
+                            }
+                            if let SessionAction::SpawnSubAgent { request_id, prompt, depth } =
+                                action
+                            {
+                                self.spawn_sub_session(idx, request_id, prompt, depth)?;
+                            }
+                        }
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            self.sessions[idx].stream_abort = None;
+                            completed_children.push(idx);
+                            stream_rx = None;
+                            break;
+                        }
+                    }
+                }
+            }
+            self.sessions[idx].stream_rx = stream_rx;
+
+            let mut approval_rx = self.sessions[idx].approval_req_rx.take();
+            if let Some(ref mut rx) = approval_rx {
+                while let Ok(request) = rx.try_recv() {
+                    self.sessions[idx].enqueue_approval_request(request, false);
+                }
+            }
+            self.sessions[idx].approval_req_rx = approval_rx;
+
+            self.sessions[idx].poll_compaction_result();
+        }
+
+        for idx in completed_children {
+            self.complete_child_session(idx).await;
+        }
+
+        Ok(())
+    }
+
+    async fn run_loop(&mut self) -> Result<()> {
+        let terminal_size = crossterm::terminal::size()?;
+        let initial_height = self
+            .active_session()
+            .max_shelf_height_for_terminal(terminal_size.1);
+
+        let stdout = std::io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        let mut terminal = Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(initial_height),
+            },
+        )?;
+
+        let mut events = EventHandler::new(Duration::from_millis(100));
+        loop {
+            if self.should_quit {
+                break;
+            }
+
+            self.update_background_flags();
+            if let Some((_, when)) = self.pending_close {
+                if when.elapsed() > Duration::from_secs(3) {
+                    self.pending_close = None;
+                }
+            }
+
+            {
+                let session = self.active_session_mut();
+                session.poll_compaction_result();
+                session.sync_inline_viewport(&mut terminal)?;
+
+                if session.messages.should_render_dashboard_to_history() {
+                    let width = terminal.size()?.width;
+                    let dashboard_lines = session.messages.render_dashboard_lines(width);
+                    session.insert_lines_before(&mut terminal, dashboard_lines)?;
+                    session.messages.mark_dashboard_rendered();
+                }
+
+                session.flush_unrendered_history(&mut terminal)?;
+            }
+
+            terminal.draw(|f| {
+                let breadcrumb = self.build_breadcrumb();
+                let session = &mut self.sessions[self.active_idx];
+                session
+                    .footer
+                    .set_session_breadcrumb(Some(breadcrumb));
+                session.render(f);
+            })?;
+
+            {
+                let session = self.active_session_mut();
+                if !session.streaming_buffer.is_empty() && session.streaming_buffer.should_flush() {
+                    session.flush_streaming_buffer(&mut terminal)?;
+                }
+            }
+
+            self.poll_background_sessions(&mut terminal).await?;
+
+            let active_idx = self.active_idx;
+            let active_session_id = self.sessions[active_idx].session_id;
+            let mut stream_rx = self.sessions[active_idx].stream_rx.take();
+            let mut approval_rx = self.sessions[active_idx].approval_req_rx.take();
+
+            tokio::select! {
+                event = events.next() => {
+                    let event = event?;
+                    let mut handled_global = false;
+                    if let AppEvent::Key(key) = event {
+                        handled_global = self.handle_global_key(key, &mut terminal)?;
+                    }
+                    if !handled_global {
+                        let (should_quit, session_stream_rx, session_approval_rx) = {
+                            let session = &mut self.sessions[active_idx];
+                            session.handle_event(event, &mut terminal).await?;
+                            session.flush_unrendered_history(&mut terminal)?;
+                            if session.flush_before_compaction {
+                                session.flush_streaming_buffer(&mut terminal)?;
+                                session.flush_before_compaction = false;
+                                session.start_compaction();
+                            }
+                            let session_stream_rx = session.stream_rx.take();
+                            let session_approval_rx = session.approval_req_rx.take();
+                            (
+                                session.should_quit,
+                                session_stream_rx,
+                                session_approval_rx,
+                            )
+                        };
+                        if session_stream_rx.is_some() {
+                            stream_rx = session_stream_rx;
+                            events.set_tick_rate(Duration::from_millis(16));
+                        }
+                        if session_approval_rx.is_some() {
+                            approval_rx = session_approval_rx;
+                        }
+                        if should_quit {
+                            self.should_quit = true;
+                        }
+                    }
+                }
+
+                agent_event = async {
+                    match &mut stream_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(event) = agent_event {
+                        let action = {
+                            let session = &mut self.sessions[active_idx];
+                            session.handle_agent_event(event, &mut terminal, true)?
+                        };
+                        let action_for_check = action.clone();
+                        self.handle_session_action(action, active_idx)?;
+
+                        if matches!(action_for_check, SessionAction::Done) {
+                            if self.sessions[active_idx].parent_request_id.is_some() {
+                                self.complete_child_session(active_idx).await;
+                            }
+                            self.sessions[active_idx].stream_abort = None;
+                            stream_rx = None;
+                        }
+
+                        if matches!(action_for_check, SessionAction::Done) {
+                            events.set_tick_rate(Duration::from_millis(100));
+                        }
+
+                        const MAX_BATCH_SIZE: usize = 100;
+                        let mut events_to_process: Vec<AgentEvent> = Vec::new();
+                        if let Some(ref mut rx) = stream_rx {
+                            let mut batch_count = 0;
+                            while batch_count < MAX_BATCH_SIZE {
+                                match rx.try_recv() {
+                                    Ok(event) => {
+                                        events_to_process.push(event);
+                                        batch_count += 1;
+                                    }
+                                    Err(mpsc::error::TryRecvError::Empty) |
+                                    Err(mpsc::error::TryRecvError::Disconnected) => break,
+                                }
+                            }
+                            if !events_to_process.is_empty() {
+                                debug!(batch_size = events_to_process.len(), "Batch processing events");
+                            }
+                        }
+
+                        for event in events_to_process {
+                            let action = {
+                                let session = &mut self.sessions[active_idx];
+                                session.handle_agent_event(event, &mut terminal, true)?
+                            };
+                            let action_for_check = action.clone();
+                            self.handle_session_action(action, active_idx)?;
+                            if matches!(action_for_check, SessionAction::Done) {
+                                if self.sessions[active_idx].parent_request_id.is_some() {
+                                    self.complete_child_session(active_idx).await;
+                                }
+                                self.sessions[active_idx].stream_abort = None;
+                                stream_rx = None;
+                            }
+                            if matches!(action_for_check, SessionAction::Done) {
+                                events.set_tick_rate(Duration::from_millis(100));
+                                break;
+                            }
+                        }
+
+                        let session = &mut self.sessions[active_idx];
+                        if !session.streaming_buffer.is_empty() && session.streaming_buffer.should_flush() {
+                            session.flush_streaming_buffer(&mut terminal)?;
+                        }
+
+                        session.flush_unrendered_history(&mut terminal)?;
+                        session.sync_inline_viewport(&mut terminal)?;
+                        terminal.draw(|f| {
+                            let breadcrumb = self.build_breadcrumb();
+                            let session = &mut self.sessions[self.active_idx];
+                            session.footer.set_session_breadcrumb(Some(breadcrumb));
+                            session.render(f);
+                        })?;
+                    } else {
+                        let session = &mut self.sessions[active_idx];
+                        session.stream_abort = None;
+                        events.set_tick_rate(Duration::from_millis(100));
+                        stream_rx = None;
+                    }
+                }
+
+                approval_request = async {
+                    match &mut approval_rx {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    if let Some(request) = approval_request {
+                        let session = &mut self.sessions[active_idx];
+                        session.enqueue_approval_request(request, true);
+                    }
+                }
+            }
+
+            self.restore_session_channels(active_session_id, stream_rx, approval_rx);
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{App, MonitorStatus, ToolMonitorState};
+    use super::{App, MonitorStatus, Session, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{backend::TestBackend, Terminal};
     use std::path::PathBuf;
@@ -2270,6 +3082,11 @@ mod tests {
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
         let agent = Agent::builder(client, Arc::new(Config::default())).build();
         App::new(agent, PathBuf::from("."), "test-model".to_string())
+    }
+
+    fn active_session_mut(app: &mut App<BenchmarkMockClient>) -> &mut Session<BenchmarkMockClient> {
+        let idx = app.active_idx;
+        &mut app.sessions[idx]
     }
 
     #[test]
@@ -2320,13 +3137,13 @@ mod tests {
     #[test]
     fn key_chord_label_formats_modifier_shortcuts() {
         assert_eq!(
-            App::<crate::client::openai::OpenAIClient>::key_chord_label(
+            Session::<crate::client::openai::OpenAIClient>::key_chord_label(
                 crossterm::event::KeyEvent::new(KeyCode::Char('x'), KeyModifiers::CONTROL,)
             ),
             Some("ctrl+x".to_string())
         );
         assert_eq!(
-            App::<crate::client::openai::OpenAIClient>::key_chord_label(
+            Session::<crate::client::openai::OpenAIClient>::key_chord_label(
                 crossterm::event::KeyEvent::new(KeyCode::Char('i'), KeyModifiers::NONE,)
             ),
             Some("i".to_string())
@@ -2337,7 +3154,7 @@ mod tests {
     fn resolved_done_text_uses_subagent_output_when_result_is_empty() {
         let mut last_subagent_output = Some("delegated answer".to_string());
         assert_eq!(
-            App::<crate::client::openai::OpenAIClient>::resolve_done_text(
+            Session::<crate::client::openai::OpenAIClient>::resolve_done_text(
                 String::new(),
                 &mut last_subagent_output,
             ),
@@ -2348,27 +3165,31 @@ mod tests {
     #[tokio::test]
     async fn typing_in_normal_mode_restores_input_focus() {
         let mut app = test_app();
-        app.mode = super::AppMode::Normal;
+        let session = active_session_mut(&mut app);
+        session.mode = super::AppMode::Normal;
 
-        app.handle_normal_key(KeyEvent::from(KeyCode::Char('h')))
+        session
+            .handle_normal_key(KeyEvent::from(KeyCode::Char('h')))
             .await
             .expect("normal key handling should succeed");
 
-        assert_eq!(app.mode, super::AppMode::Input);
-        assert_eq!(app.input.get_input(), "h");
+        assert_eq!(session.mode, super::AppMode::Input);
+        assert_eq!(session.input.get_input(), "h");
     }
 
     #[tokio::test]
     async fn quit_shortcut_still_works_in_normal_mode() {
         let mut app = test_app();
-        app.mode = super::AppMode::Normal;
+        let session = active_session_mut(&mut app);
+        session.mode = super::AppMode::Normal;
 
-        app.handle_normal_key(KeyEvent::from(KeyCode::Char('q')))
+        session
+            .handle_normal_key(KeyEvent::from(KeyCode::Char('q')))
             .await
             .expect("normal key handling should succeed");
 
-        assert!(app.should_quit);
-        assert!(app.input.get_input().is_empty());
+        assert!(session.should_quit);
+        assert!(session.input.get_input().is_empty());
     }
 
     #[test]
@@ -2376,13 +3197,14 @@ mod tests {
         let backend = TestBackend::new(90, 12);
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
-        app.footer.set_status_message("footer ok");
-        app.status_bar.start();
-        app.status_bar.update_input_tokens(128);
-        app.status_bar.update_text("streamed output");
+        let session = active_session_mut(&mut app);
+        session.footer.set_status_message("footer ok");
+        session.status_bar.start();
+        session.status_bar.update_input_tokens(128);
+        session.status_bar.update_text("streamed output");
 
         terminal
-            .draw(|frame| app.render(frame))
+            .draw(|frame| session.render(frame))
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
@@ -2399,11 +3221,12 @@ mod tests {
         let backend = TestBackend::new(90, 12);
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
-        app.messages.start_compression();
-        app.messages.tick();
+        let session = active_session_mut(&mut app);
+        session.messages.start_compression();
+        session.messages.tick();
 
         terminal
-            .draw(|frame| app.render(frame))
+            .draw(|frame| session.render(frame))
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
@@ -2419,16 +3242,20 @@ mod tests {
         let backend = TestBackend::new(90, 12);
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
-        app.tool_monitor
+        let session = active_session_mut(&mut app);
+        session
+            .tool_monitor
             .start_tool("tool-1".to_string(), "bash".to_string(), None);
-        app.tool_monitor
+        session
+            .tool_monitor
             .update_progress("tool-1", "counting lines".to_string(), Some(42));
-        app.loading_indicator
+        session
+            .loading_indicator
             .set_streaming_state(StreamingState::Responding);
-        app.sync_activity_chrome();
+        session.sync_activity_chrome();
 
         terminal
-            .draw(|frame| app.render(frame))
+            .draw(|frame| session.render(frame))
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();

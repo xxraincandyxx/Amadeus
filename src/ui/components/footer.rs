@@ -25,6 +25,8 @@ pub struct FooterInfo {
     pub is_background: bool,
     /// Currently observed key chord/modifier state
     pub key_chord_hint: Option<String>,
+    /// Session breadcrumb (e.g., root ▸ sub1 ▸ sub2)
+    pub session_breadcrumb: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -77,6 +79,7 @@ impl Footer {
                 status_message: None,
                 is_background: false,
                 key_chord_hint: None,
+                session_breadcrumb: None,
             },
             hide_cwd: false,
             hide_sandbox: false,
@@ -191,6 +194,10 @@ impl Footer {
         self.info.key_chord_hint = hint;
     }
 
+    pub fn set_session_breadcrumb(&mut self, breadcrumb: Option<String>) {
+        self.info.session_breadcrumb = breadcrumb;
+    }
+
     pub fn tick(&mut self) {
         // Expire status message if time has passed
         if let Some(expiry) = self.status_message_expiry {
@@ -261,6 +268,13 @@ impl Footer {
             spans.push(Span::styled(
                 format!("{} ", message),
                 Style::default().fg(colors.text.accent),
+            ));
+        }
+
+        if let Some(ref breadcrumb) = self.info.session_breadcrumb {
+            spans.push(Span::styled(
+                format!("{} ", breadcrumb),
+                Style::default().fg(colors.text.secondary),
             ));
         }
 
