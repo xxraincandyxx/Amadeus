@@ -64,7 +64,7 @@ pub struct Policy {
 
 impl Default for Policy {
     fn default() -> Self {
-        Self {
+        let mut policy = Self {
             mode: ApprovalMode::Ask,
             auto_approve: vec![
                 "read_file".to_string(),
@@ -84,7 +84,9 @@ impl Default for Policy {
                 ("write_file".to_string(), "\\.key$".to_string()),
             ],
             dangerous_regex_cache: Vec::new(),
-        }
+        };
+        policy.compile_patterns();
+        policy
     }
 }
 
@@ -271,8 +273,7 @@ mod tests {
 
     #[test]
     fn test_dangerous_pattern() {
-        let mut policy = Policy::new();
-        policy.compile_patterns();
+        let policy = Policy::new();
 
         // Sudo commands are dangerous
         assert!(policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
@@ -285,6 +286,13 @@ mod tests {
 
         // Normal commands are fine
         assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "ls -la"})));
+    }
+
+    #[test]
+    fn test_default_policy_blocks_rm_rf_root() {
+        let policy = Policy::new();
+
+        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
     }
 
     #[test]
