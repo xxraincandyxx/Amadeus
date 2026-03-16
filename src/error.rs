@@ -53,6 +53,9 @@ pub enum AgentError {
     #[error("Tool input validation failed for '{tool}': {reason}")]
     ToolInput { tool: String, reason: String },
 
+    #[error("Tool execution failed: {0}")]
+    ToolExecution(String),
+
     #[error("Command blocked: {0}")]
     CommandBlocked(String),
 
