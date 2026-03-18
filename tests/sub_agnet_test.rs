@@ -75,11 +75,12 @@ async fn test_sub_agnet_uses_fresh_context_and_limited_child_tools() {
     assert!(tool_names(&parent_request.tools).contains(&"sub_agnet".to_string()));
 
     let child_tool_names = tool_names(&child_request.tools);
-    assert_eq!(child_tool_names.len(), 4);
+    assert_eq!(child_tool_names.len(), 5);
     assert!(child_tool_names.contains(&"bash".to_string()));
     assert!(child_tool_names.contains(&"read_file".to_string()));
     assert!(child_tool_names.contains(&"write_file".to_string()));
     assert!(child_tool_names.contains(&"edit_file".to_string()));
+    assert!(child_tool_names.contains(&"sub_agnet".to_string()));
     assert_eq!(child_request.messages.len(), 1);
 
     match &child_request.messages[0].content[0] {
