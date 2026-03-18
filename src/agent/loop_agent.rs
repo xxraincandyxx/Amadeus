@@ -214,6 +214,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     }
 
     pub fn build(self) -> Agent<C> {
+        let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
         let subagent_coordinator = Arc::new(SubAgentCoordinator::new());
         let tools = if self.include_sub_agnet_tool {
@@ -244,6 +245,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             todo_manager: self.todo_manager,
             hooks: self.hooks,
             policy,
+            policy_snapshot,
             subagent_depth: self.subagent_depth,
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator,
@@ -261,6 +263,7 @@ pub struct Agent<C: LLMClient> {
     todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
     policy: Arc<RwLock<Policy>>,
+    policy_snapshot: Arc<StdRwLock<Policy>>,
     subagent_depth: usize,
     delegate_subagents: bool,
     subagent_coordinator: Arc<SubAgentCoordinator>,
@@ -364,8 +367,10 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     /// Get a clone of the policy for reading.
     pub fn policy(&self) -> Policy {
-        let policy = self.policy.blocking_read();
-        policy.clone()
+        self.policy_snapshot
+            .read()
+            .expect("policy snapshot lock poisoned")
+            .clone()
     }
 
     pub fn subagent_depth(&self) -> usize {
@@ -387,12 +392,18 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     {
         let mut policy = self.policy.write().await;
         f(&mut policy);
+        if let Ok(mut snapshot) = self.policy_snapshot.write() {
+            *snapshot = policy.clone();
+        }
     }
 
     /// Add a tool to the auto-approve list.
     pub async fn auto_approve_tool(&self, tool: &str) {
         let mut policy = self.policy.write().await;
         policy.add_auto_approve(tool);
+        if let Ok(mut snapshot) = self.policy_snapshot.write() {
+            *snapshot = policy.clone();
+        }
     }
 
     pub fn spawn_child_agent(&self, depth: usize) -> Agent<C> {
@@ -451,6 +462,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             todo_manager: Arc::clone(&self.todo_manager),
             hooks: self.hooks.clone(),
             policy: Arc::clone(&self.policy),
+            policy_snapshot: Arc::clone(&self.policy_snapshot),
             subagent_depth: self.subagent_depth,
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),

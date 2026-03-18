@@ -1858,16 +1858,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let history = self.agent.history();
         let client = self.agent.client();
 
-        // Get current history state (synchronously for UI feedback)
-        let history_arc = history.clone();
-        let (current_count, is_short_history) = tokio::task::block_in_place(|| {
-            let rt = tokio::runtime::Handle::current();
-            rt.block_on(async {
-                let guard = history_arc.read().await;
+        // Get current history state without blocking the runtime thread.
+        let (current_count, is_short_history) = match history.try_read() {
+            Ok(guard) => {
                 let count = guard.len();
                 (count, count <= preserve_recent)
-            })
-        });
+            }
+            Err(_) => (0, false),
+        };
 
         info!(messages = current_count, "Manual compaction triggered");
 
