@@ -23,7 +23,7 @@ default = []
 # Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
 tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
-test-utils = ["tempfile"]
+test-utils = ["tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
 concurrency = []
@@ -81,6 +81,7 @@ dirs = "5.0"
 
 # Optional: Test utilities
 tempfile = { version = "3.10", optional = true }
+rustc_version_runtime = { version = "0.3", optional = true }
 
 [dev-dependencies]
 mockito = "1.4"
