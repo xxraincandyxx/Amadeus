@@ -493,7 +493,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let session_log = SessionLog {
             timestamp: Local::now().to_rfc3339(),
             model: self.config.model.clone(),
-            system_prompt: self.config.system_prompt(),
+            system_prompt: self.config.system_prompt(true),
             history: history.clone(),
             todos: todos.cloned_items(),
             stats,
@@ -679,7 +679,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let history = Arc::clone(&self.history);
         let hooks = self.hooks.clone();
         let policy = Arc::clone(&self.policy);
-        let system = config.system_prompt();
+        let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
         Box::pin(async_stream::stream! {
