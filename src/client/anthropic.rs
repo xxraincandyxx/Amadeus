@@ -199,6 +199,15 @@ impl LLMClient for AnthropicClient {
         // BUILD THE REQUEST BODY
         // -----------------------------------------------------------------
 
+        // Enable Prompt Caching by structuring the system prompt as an array of blocks.
+        // The ephemeral cache_control ensures the large system prompt (including tool docs)
+        // is cached, which drastically reduces latency and token costs for multi-turn agent interactions.
+        let system_blocks = serde_json::json!([{
+            "type": "text",
+            "text": system,
+            "cache_control": { "type": "ephemeral" }
+        }]);
+
         // serde_json::json! creates a JSON Value from Rust-like syntax
         // This is a macro, not a function call
         let body = serde_json::json!({
@@ -208,7 +217,7 @@ impl LLMClient for AnthropicClient {
             // u32 automatically converts to JSON number
             "max_tokens": max_tokens,
             // System prompt (instructions for the model)
-            "system": system,
+            "system": system_blocks,
             // Conversation history
             // &[Message] automatically serializes to JSON array
             "messages": messages,
@@ -231,6 +240,8 @@ impl LLMClient for AnthropicClient {
             // Add the API version header
             // Required by Anthropic to specify API version
             .header("anthropic-version", API_VERSION)
+            // Enable prompt caching beta header
+            .header("anthropic-beta", "prompt-caching-2024-07-31")
             // Set content type to JSON
             .header("content-type", "application/json")
             // Add the JSON body
@@ -312,11 +323,18 @@ impl LLMClient for AnthropicClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let url = format!("{}/v1/messages", self.base_url);
 
+        // Enable Prompt Caching
+        let system_blocks = serde_json::json!([{
+            "type": "text",
+            "text": system,
+            "cache_control": { "type": "ephemeral" }
+        }]);
+
         // Build the request body with stream: true
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": max_tokens,
-            "system": system,
+            "system": system_blocks,
             "messages": messages,
             "tools": tools,
             // Enable streaming mode
@@ -329,6 +347,7 @@ impl LLMClient for AnthropicClient {
             .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", API_VERSION)
+            .header("anthropic-beta", "prompt-caching-2024-07-31")
             .header("content-type", "application/json")
             .json(&body)
             .send()
