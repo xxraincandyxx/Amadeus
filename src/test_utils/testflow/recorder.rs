@@ -44,13 +44,15 @@ impl SessionRecorder {
         let session_id = format!("sess_{}", Uuid::new_v4().simple());
         let now = Utc::now();
 
-        let mut metadata = SessionMetadata::default();
-        metadata.session_id = session_id.clone();
-        metadata.created_at = Some(now);
-        metadata.platform = std::env::consts::OS.to_string();
-        metadata.rust_version = rustc_version_runtime::version().to_string();
-        metadata.amadeus_version = env!("CARGO_PKG_VERSION").to_string();
-        metadata.feature_flags = get_enabled_features();
+        let metadata = SessionMetadata {
+            session_id: session_id.clone(),
+            created_at: Some(now),
+            platform: std::env::consts::OS.to_string(),
+            rust_version: rustc_version_runtime::version().to_string(),
+            amadeus_version: env!("CARGO_PKG_VERSION").to_string(),
+            feature_flags: get_enabled_features(),
+            ..SessionMetadata::default()
+        };
 
         let mut session = SessionLog::new();
         session.metadata = metadata;
@@ -366,6 +368,7 @@ impl SessionRecorder {
     }
 }
 
+#[allow(clippy::vec_init_then_push)]
 fn get_enabled_features() -> Vec<String> {
     let mut features = Vec::new();
     #[cfg(feature = "tui")]

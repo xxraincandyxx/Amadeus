@@ -2714,14 +2714,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         if self.sessions[idx].stream_rx.is_some() {
-            let confirmed = match self.pending_close {
+            let confirmed = matches!(
+                self.pending_close,
                 Some((pending_id, when))
-                    if pending_id == session_id && when.elapsed() < Duration::from_secs(3) =>
-                {
-                    true
-                }
-                _ => false,
-            };
+                    if pending_id == session_id && when.elapsed() < Duration::from_secs(3)
+            );
 
             if !confirmed {
                 self.pending_close = Some((session_id, Instant::now()));

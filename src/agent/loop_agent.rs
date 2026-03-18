@@ -1356,6 +1356,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         rx
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn stream_sub_agnet_execution(
         client: C,
         config: Arc<Config>,
