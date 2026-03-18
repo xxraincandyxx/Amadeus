@@ -51,24 +51,25 @@ impl SessionLog {
 
         for event in &self.timeline {
             match &event.event_type {
-                RecordedEvent::AgentEvent { event, .. } => {
-                    match event {
-                        AgentEventData::ToolStart { .. } => {
-                            summaries.total_tools_executed += 1;
-                        }
-                        AgentEventData::TokenUsage { total_tokens, .. } => {
-                            summaries.total_tokens += total_tokens;
-                        }
-                        AgentEventData::Compaction { tokens_saved, .. } => {
-                            summaries.compaction_events += 1;
-                            summaries.tokens_saved_by_compaction += tokens_saved;
-                        }
-                        _ => {}
+                RecordedEvent::AgentEvent { event, .. } => match event {
+                    AgentEventData::ToolStart { .. } => {
+                        summaries.total_tools_executed += 1;
                     }
-                }
+                    AgentEventData::TokenUsage { total_tokens, .. } => {
+                        summaries.total_tokens += total_tokens;
+                    }
+                    AgentEventData::Compaction { tokens_saved, .. } => {
+                        summaries.compaction_events += 1;
+                        summaries.tokens_saved_by_compaction += tokens_saved;
+                    }
+                    _ => {}
+                },
                 RecordedEvent::ApprovalRequest { tool_name, .. } => {
                     summaries.approvals_requested += 1;
-                    summaries.tools_by_name.entry(tool_name.clone()).or_insert(0);
+                    summaries
+                        .tools_by_name
+                        .entry(tool_name.clone())
+                        .or_insert(0);
                 }
                 RecordedEvent::ApprovalResponse { decision, .. } => match decision {
                     ApprovalDecision::Approve | ApprovalDecision::AlwaysApprove => {
@@ -195,12 +196,30 @@ pub enum RecordedEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentEventData {
-    TextDelta { delta: String },
-    ThinkingDelta { delta: String },
-    ThinkingComplete { thinking: String },
-    ToolStart { id: String, name: String, parent_id: Option<String> },
-    ToolInputDelta { id: String, delta: String, parent_id: Option<String> },
-    ToolOutputDelta { id: String, delta: String, parent_id: Option<String> },
+    TextDelta {
+        delta: String,
+    },
+    ThinkingDelta {
+        delta: String,
+    },
+    ThinkingComplete {
+        thinking: String,
+    },
+    ToolStart {
+        id: String,
+        name: String,
+        parent_id: Option<String>,
+    },
+    ToolInputDelta {
+        id: String,
+        delta: String,
+        parent_id: Option<String>,
+    },
+    ToolOutputDelta {
+        id: String,
+        delta: String,
+        parent_id: Option<String>,
+    },
     ToolComplete {
         id: String,
         name: String,
@@ -215,17 +234,33 @@ pub enum AgentEventData {
         input: serde_json::Value,
         reason: String,
     },
-    TokenUsage { input_tokens: u32, output_tokens: u32, total_tokens: u32 },
-    ToolProgress { id: String, message: String, percent: Option<u8>, parent_id: Option<String> },
+    TokenUsage {
+        input_tokens: u32,
+        output_tokens: u32,
+        total_tokens: u32,
+    },
+    ToolProgress {
+        id: String,
+        message: String,
+        percent: Option<u8>,
+        parent_id: Option<String>,
+    },
     Compaction {
         original_count: usize,
         compacted_count: usize,
         tokens_saved: usize,
         messages_summarized: usize,
     },
-    Done { text: String, tool_call_count: usize },
-    Error { message: String },
-    SessionSaved { path: String },
+    Done {
+        text: String,
+        tool_call_count: usize,
+    },
+    Error {
+        message: String,
+    },
+    SessionSaved {
+        path: String,
+    },
 }
 
 impl From<crate::agent::events::AgentEvent> for AgentEventData {
@@ -237,45 +272,100 @@ impl From<crate::agent::events::AgentEvent> for AgentEventData {
             AgentEvent::ThinkingComplete { thinking } => {
                 AgentEventData::ThinkingComplete { thinking }
             }
-            AgentEvent::ToolStart { id, name, parent_id } => {
-                AgentEventData::ToolStart { id, name, parent_id }
-            }
-            AgentEvent::ToolInputDelta { id, delta, parent_id } => {
-                AgentEventData::ToolInputDelta { id, delta, parent_id }
-            }
-            AgentEvent::ToolOutputDelta { id, delta, parent_id } => {
-                AgentEventData::ToolOutputDelta { id, delta, parent_id }
-            }
-            AgentEvent::ToolComplete { id, name, input, output, is_error, parent_id } => {
-                AgentEventData::ToolComplete { id, name, input, output, is_error, parent_id }
-            }
+            AgentEvent::ToolStart {
+                id,
+                name,
+                parent_id,
+            } => AgentEventData::ToolStart {
+                id,
+                name,
+                parent_id,
+            },
+            AgentEvent::ToolInputDelta {
+                id,
+                delta,
+                parent_id,
+            } => AgentEventData::ToolInputDelta {
+                id,
+                delta,
+                parent_id,
+            },
+            AgentEvent::ToolOutputDelta {
+                id,
+                delta,
+                parent_id,
+            } => AgentEventData::ToolOutputDelta {
+                id,
+                delta,
+                parent_id,
+            },
+            AgentEvent::ToolComplete {
+                id,
+                name,
+                input,
+                output,
+                is_error,
+                parent_id,
+            } => AgentEventData::ToolComplete {
+                id,
+                name,
+                input,
+                output,
+                is_error,
+                parent_id,
+            },
             AgentEvent::ApprovalRequired { request } => AgentEventData::ApprovalRequired {
                 id: request.id,
                 tool: request.tool,
                 input: request.input,
                 reason: request.reason,
             },
-            AgentEvent::TokenUsage { input_tokens, output_tokens, total_tokens } => {
-                AgentEventData::TokenUsage { input_tokens, output_tokens, total_tokens }
-            }
-            AgentEvent::ToolProgress { id, message, percent, parent_id } => {
-                AgentEventData::ToolProgress { id, message, percent, parent_id }
-            }
-            AgentEvent::Compaction { original_count, compacted_count, tokens_saved, messages_summarized } => {
-                AgentEventData::Compaction { original_count, compacted_count, tokens_saved, messages_summarized }
-            }
-            AgentEvent::Done { result } => {
-                AgentEventData::Done { text: result.text, tool_call_count: result.tool_calls.len() }
-            }
+            AgentEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+                total_tokens,
+            } => AgentEventData::TokenUsage {
+                input_tokens,
+                output_tokens,
+                total_tokens,
+            },
+            AgentEvent::ToolProgress {
+                id,
+                message,
+                percent,
+                parent_id,
+            } => AgentEventData::ToolProgress {
+                id,
+                message,
+                percent,
+                parent_id,
+            },
+            AgentEvent::Compaction {
+                original_count,
+                compacted_count,
+                tokens_saved,
+                messages_summarized,
+            } => AgentEventData::Compaction {
+                original_count,
+                compacted_count,
+                tokens_saved,
+                messages_summarized,
+            },
+            AgentEvent::Done { result } => AgentEventData::Done {
+                text: result.text,
+                tool_call_count: result.tool_calls.len(),
+            },
             AgentEvent::Error { message } => AgentEventData::Error { message },
             AgentEvent::SessionSaved { path } => AgentEventData::SessionSaved { path },
-            AgentEvent::SubAgentRequested { id, prompt: _, depth } => {
-                AgentEventData::ToolStart {
-                    id,
-                    name: format!("sub_agent:depth{}", depth),
-                    parent_id: None,
-                }
-            }
+            AgentEvent::SubAgentRequested {
+                id,
+                prompt: _,
+                depth,
+            } => AgentEventData::ToolStart {
+                id,
+                name: format!("sub_agent:depth{}", depth),
+                parent_id: None,
+            },
         }
     }
 }
@@ -344,6 +434,36 @@ pub struct GuiStats {
     pub total_frames: u64,
     pub avg_render_time_us: u64,
     pub max_render_time_us: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TuiFrameSnapshot {
+    pub session_id: String,
+    pub frame_id: u64,
+    pub timestamp_ms: u64,
+    pub width: u16,
+    pub height: u16,
+    pub cursor: Option<TuiCursorSnapshot>,
+    pub cells: Vec<TuiCellSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TuiCursorSnapshot {
+    pub x: u16,
+    pub y: u16,
+    pub visible: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TuiCellSnapshot {
+    pub x: u16,
+    pub y: u16,
+    pub symbol: String,
+    pub fg: String,
+    pub bg: String,
+    pub underline_color: String,
+    pub add_modifier: String,
+    pub sub_modifier: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

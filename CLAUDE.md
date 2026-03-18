@@ -58,6 +58,10 @@ cargo test --test e2e_product_flow --features full
 cargo test --features full -- --nocapture
 ```
 
+### TUI Capture
+
+When `test-utils` is enabled and session recording is on, the TUI writes rendered frame snapshots to `tui_capture.log` in the recording directory. The log is JSONL and includes visible cell content plus styling metadata, which makes it useful for visual regression debugging.
+
 ### Linting & Checking
 
 ```bash

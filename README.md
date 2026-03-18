@@ -13,6 +13,7 @@ Amadeus is a production-ready AI agent framework that provides:
 - **Terminal UI**: Beautiful ratatui-based TUI for interactive use
 - **HTTP API**: Optional REST API server for integration
 - **Session Management**: Automatic logging and session restoration
+- **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
 - **Multi-Agent Coordination**: Supervisor/worker pattern for complex tasks
 
 ## Installation

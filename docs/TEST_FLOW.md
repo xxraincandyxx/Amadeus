@@ -75,6 +75,17 @@ This makes it possible to verify:
 - The content of each request the agent sent to the LLM mock
 - Monitoring gaps in the current architecture when expected events are not emitted
 
+### 2.6. TUI Frame Capture
+When `SessionRecorder` is enabled, the TUI now writes frame snapshots to `tui_capture.log` alongside the structured session JSON.
+
+Captured frame data includes:
+- frame size and timestamp
+- per-cell symbol content
+- foreground/background colors
+- modifiers and underline color
+
+This is useful when debugging visual regressions in the live terminal UI.
+
 ### 3. Integration Tests
 - `agent_integration_test.rs` - Full agent lifecycle verification
 - `compaction_test.rs` - Context compaction behavior

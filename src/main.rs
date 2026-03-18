@@ -166,18 +166,20 @@ async fn main() -> Result<()> {
         // Initialize recorder if --record flag is set
         #[cfg(feature = "test-utils")]
         let recorder = if cli.record_session {
-            let record_dir = cli.record_dir.unwrap_or_else(|| {
-                workdir.join("logs").join("testflow").join("sessions")
-            });
+            let record_dir = cli
+                .record_dir
+                .unwrap_or_else(|| workdir.join("logs").join("testflow").join("sessions"));
             let recorder = SessionRecorder::new(record_dir);
-            recorder.set_config_snapshot(
-                match config.provider {
-                    Provider::Anthropic => "anthropic",
-                    Provider::OpenAI => "openai",
-                },
-                &model,
-                &workdir,
-            ).await;
+            recorder
+                .set_config_snapshot(
+                    match config.provider {
+                        Provider::Anthropic => "anthropic",
+                        Provider::OpenAI => "openai",
+                    },
+                    &model,
+                    &workdir,
+                )
+                .await;
             Some(recorder)
         } else {
             None

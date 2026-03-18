@@ -4,7 +4,7 @@
 
 ## Overview
 
-This document describes a comprehensive test flow system for capturing, replaying, and debugging human-agent interactions. The system records all inputs, outputs, and GUI events into structured JSON logs for bug analysis and regression testing.
+This document describes a comprehensive test flow system for capturing, replaying, and debugging human-agent interactions. The system records all inputs, outputs, GUI events, and rendered TUI frames into structured JSON logs for bug analysis and regression testing.
 
 ---
 
@@ -641,7 +641,8 @@ logs/testflow/
 - [ ] TUI event capture hooks
 - [ ] Keyboard input recording
 - [ ] Render timing capture
-- [ ] State snapshot capture
+- [x] State snapshot capture
+- [x] Frame-by-frame TUI buffer capture (`tui_capture.log`)
 
 ### Phase 3: Playback Engine (Priority: High)
 - [ ] `PlaybackEngine` implementation

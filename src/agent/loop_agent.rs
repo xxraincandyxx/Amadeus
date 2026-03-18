@@ -12,7 +12,7 @@ use flate2::Compression;
 use futures::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, RwLock};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, instrument, warn};
 
 use crate::agent::compaction::ContextCompactor;
@@ -420,10 +420,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             None
         };
 
-        let child_tools = ToolRegistry::with_sub_agnet_child_defaults_recursive(
-            &self.config,
-            recursive_tool,
-        );
+        let child_tools =
+            ToolRegistry::with_sub_agnet_child_defaults_recursive(&self.config, recursive_tool);
 
         AgentBuilder::new(self.client.clone(), Arc::clone(&self.config))
             .with_tools(child_tools)
@@ -1315,7 +1313,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         tokio::spawn(async move {
             if name == SUB_AGNET_TOOL_NAME {
                 Agent::<C>::stream_sub_agnet_execution(
-                    client, config, hooks, policy, subagent_depth, id, input, tx,
+                    client,
+                    config,
+                    hooks,
+                    policy,
+                    subagent_depth,
+                    id,
+                    input,
+                    tx,
                 )
                 .await;
             } else {

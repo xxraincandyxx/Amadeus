@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
+use std::{fs::OpenOptions, io::Write};
 
 use chrono::Utc;
 use tokio::sync::Mutex;
@@ -83,7 +84,11 @@ impl SessionRecorder {
         let seq = self.seq_counter.fetch_add(1, Ordering::SeqCst) as usize;
         let timestamp_ms = self.start_time.elapsed().as_millis() as u64;
 
-        let timeline_event = TimelineEvent { seq, timestamp_ms, event_type: event };
+        let timeline_event = TimelineEvent {
+            seq,
+            timestamp_ms,
+            event_type: event,
+        };
 
         let mut session = self.session.lock().await;
         session.push_event(timeline_event);
@@ -94,7 +99,11 @@ impl SessionRecorder {
     }
 
     pub async fn record_session_end(&self, reason: SessionEndReason, final_state: SessionState) {
-        self.record(RecordedEvent::SessionEnd { reason, final_state }).await;
+        self.record(RecordedEvent::SessionEnd {
+            reason,
+            final_state,
+        })
+        .await;
     }
 
     pub async fn record_user_input(&self, input_id: &str, content: &str, source: InputSource) {
@@ -103,7 +112,8 @@ impl SessionRecorder {
             input_id: input_id.to_string(),
             content: redacted,
             source,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_llm_request(
@@ -121,10 +131,16 @@ impl SessionRecorder {
             turn,
             message_count,
             tools_available: tools_available.to_vec(),
-        }).await;
+        })
+        .await;
     }
 
-    pub async fn record_llm_response(&self, request_id: &str, stop_reason: &str, duration: std::time::Duration) {
+    pub async fn record_llm_response(
+        &self,
+        request_id: &str,
+        stop_reason: &str,
+        duration: std::time::Duration,
+    ) {
         if !self.config.capture_llm_requests {
             return;
         }
@@ -132,7 +148,8 @@ impl SessionRecorder {
             request_id: request_id.to_string(),
             stop_reason: stop_reason.to_string(),
             duration_ms: duration.as_millis() as u64,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_agent_event(&self, event: crate::agent::events::AgentEvent) {
@@ -155,14 +172,16 @@ impl SessionRecorder {
             tool_name: tool_name.to_string(),
             input: redacted_input,
             reason: reason.to_string(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_approval_response(&self, approval_id: &str, decision: ApprovalDecision) {
         self.record(RecordedEvent::ApprovalResponse {
             approval_id: approval_id.to_string(),
             decision,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_tool_start(&self, tool_id: &str, tool_name: &str) {
@@ -172,7 +191,8 @@ impl SessionRecorder {
         self.record(RecordedEvent::ToolExecutionStart {
             tool_id: tool_id.to_string(),
             tool_name: tool_name.to_string(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_tool_input_stream(&self, tool_id: &str, delta: &str) {
@@ -183,7 +203,8 @@ impl SessionRecorder {
         self.record(RecordedEvent::ToolInputStream {
             tool_id: tool_id.to_string(),
             delta: redacted,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_tool_output_stream(&self, tool_id: &str, delta: &str) {
@@ -194,7 +215,8 @@ impl SessionRecorder {
         self.record(RecordedEvent::ToolOutputStream {
             tool_id: tool_id.to_string(),
             delta: truncated,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_tool_complete(
@@ -212,7 +234,8 @@ impl SessionRecorder {
             output: truncated,
             is_error,
             duration_ms: duration.as_millis() as u64,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_keyboard_input(&self, key: &str, modifiers: &[&str], context: &str) {
@@ -223,7 +246,8 @@ impl SessionRecorder {
             key: key.to_string(),
             modifiers: modifiers.iter().map(|s| s.to_string()).collect(),
             context: context.to_string(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_gui_render(
@@ -239,7 +263,8 @@ impl SessionRecorder {
             frame_id,
             components_updated: components_updated.iter().map(|s| s.to_string()).collect(),
             render_duration_us: render_duration.as_micros() as u64,
-        }).await;
+        })
+        .await;
     }
 
     pub async fn record_gui_state_change(&self, component: &str, state: serde_json::Value) {
@@ -249,14 +274,36 @@ impl SessionRecorder {
         self.record(RecordedEvent::GuiStateChange {
             component: component.to_string(),
             state,
-        }).await;
+        })
+        .await;
+    }
+
+    pub async fn record_tui_frame(&self, mut snapshot: TuiFrameSnapshot) -> Result<()> {
+        if !self.config.capture_gui_events {
+            return Ok(());
+        }
+
+        if snapshot.session_id.is_empty() {
+            let session = self.session.lock().await;
+            snapshot.session_id = session.metadata.session_id.clone();
+        }
+
+        std::fs::create_dir_all(&self.output_dir)?;
+        let path = self.output_dir.join("tui_capture.log");
+        let line = serde_json::to_string(&snapshot)?;
+
+        let mut file = OpenOptions::new().create(true).append(true).open(path)?;
+        writeln!(file, "{line}")?;
+
+        Ok(())
     }
 
     pub async fn record_error(&self, message: &str, context: Option<&str>) {
         self.record(RecordedEvent::Error {
             message: message.to_string(),
             context: context.map(|s| s.to_string()),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn save(&self) -> Result<PathBuf> {
@@ -267,7 +314,11 @@ impl SessionRecorder {
 
         let filename = format!(
             "session_{}_{}.json",
-            session.metadata.created_at.map(|t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%d_%H-%M-%S").to_string()).unwrap_or_else(|| "unknown".to_string()),
+            session
+                .metadata
+                .created_at
+                .map(|t: chrono::DateTime<chrono::Utc>| t.format("%Y-%m-%d_%H-%M-%S").to_string())
+                .unwrap_or_else(|| "unknown".to_string()),
             &session.metadata.session_id[..12]
         );
         let path = self.output_dir.join(filename);
@@ -351,8 +402,12 @@ mod tests {
         let recorder = SessionRecorder::new(dir.path());
 
         recorder.record_session_start().await;
-        recorder.record_user_input("inp_001", "Hello world", InputSource::Keyboard).await;
-        recorder.record_session_end(SessionEndReason::Completed, SessionState::Completed).await;
+        recorder
+            .record_user_input("inp_001", "Hello world", InputSource::Keyboard)
+            .await;
+        recorder
+            .record_session_end(SessionEndReason::Completed, SessionState::Completed)
+            .await;
 
         let session = recorder.get_session().await;
         assert_eq!(session.timeline.len(), 3);
@@ -388,8 +443,12 @@ mod tests {
         let recorder = SessionRecorder::new(dir.path());
 
         recorder.record_session_start().await;
-        recorder.record_user_input("inp_001", "Test", InputSource::Keyboard).await;
-        recorder.record_session_end(SessionEndReason::Completed, SessionState::Completed).await;
+        recorder
+            .record_user_input("inp_001", "Test", InputSource::Keyboard)
+            .await;
+        recorder
+            .record_session_end(SessionEndReason::Completed, SessionState::Completed)
+            .await;
 
         let saved_path = recorder.save().await.unwrap();
         assert!(saved_path.exists());
@@ -405,12 +464,54 @@ mod tests {
 
         recorder.record_session_start().await;
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
-        recorder.record_user_input("inp_001", "Test", InputSource::Keyboard).await;
+        recorder
+            .record_user_input("inp_001", "Test", InputSource::Keyboard)
+            .await;
 
         let session = recorder.get_session().await;
         assert_eq!(session.timeline[0].seq, 0);
         assert_eq!(session.timeline[1].seq, 1);
         assert!(session.timeline[1].timestamp_ms >= 10);
+    }
+
+    #[tokio::test]
+    async fn test_record_tui_frame_writes_jsonl() {
+        let dir = TempDir::new().unwrap();
+        let recorder = SessionRecorder::new(dir.path());
+
+        recorder
+            .record_tui_frame(TuiFrameSnapshot {
+                session_id: String::new(),
+                frame_id: 1,
+                timestamp_ms: 42,
+                width: 2,
+                height: 1,
+                cursor: Some(TuiCursorSnapshot {
+                    x: 1,
+                    y: 0,
+                    visible: true,
+                }),
+                cells: vec![TuiCellSnapshot {
+                    x: 0,
+                    y: 0,
+                    symbol: "A".to_string(),
+                    fg: "red".to_string(),
+                    bg: "black".to_string(),
+                    underline_color: "reset".to_string(),
+                    add_modifier: "BOLD".to_string(),
+                    sub_modifier: "NONE".to_string(),
+                }],
+            })
+            .await
+            .unwrap();
+
+        let capture_path = dir.path().join("tui_capture.log");
+        assert!(capture_path.exists());
+
+        let content = std::fs::read_to_string(capture_path).unwrap();
+        assert!(content.contains("\"frame_id\":1"));
+        assert!(content.contains("\"symbol\":\"A\""));
+        assert!(content.contains("\"fg\":\"red\""));
     }
 
     #[test]
@@ -472,13 +573,19 @@ mod tests {
             .join("sample_session.json");
 
         if !fixture_path.exists() {
-            eprintln!("Skipping fixture test - file not found at {:?}", fixture_path);
+            eprintln!(
+                "Skipping fixture test - file not found at {:?}",
+                fixture_path
+            );
             return;
         }
 
         let session = load_session(&fixture_path).unwrap();
         assert_eq!(session.version, "1.0.0");
-        assert_eq!(session.metadata.session_id, "sess_sample00000000000000000000000000");
+        assert_eq!(
+            session.metadata.session_id,
+            "sess_sample00000000000000000000000000"
+        );
         assert_eq!(session.timeline.len(), 9);
         assert_eq!(session.summaries.total_turns, 1);
         assert_eq!(session.summaries.total_tools_executed, 1);

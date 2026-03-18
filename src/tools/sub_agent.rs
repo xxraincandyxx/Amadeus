@@ -64,8 +64,7 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
         if self.depth >= self.config.max_subagent_depth {
             return Err(crate::error::AgentError::ToolExecution(format!(
                 "sub-agents disabled at depth {} (max {})",
-                self.depth,
-                self.config.max_subagent_depth
+                self.depth, self.config.max_subagent_depth
             )));
         }
 
@@ -90,10 +89,8 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
             None
         };
 
-        let child_tools = ToolRegistry::with_sub_agnet_child_defaults_recursive(
-            &self.config,
-            recursive_tool,
-        );
+        let child_tools =
+            ToolRegistry::with_sub_agnet_child_defaults_recursive(&self.config, recursive_tool);
 
         let child = Agent::builder(self.client.clone(), Arc::clone(&self.config))
             .with_tools(child_tools)

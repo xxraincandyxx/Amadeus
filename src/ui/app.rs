@@ -22,6 +22,9 @@ use ratatui::{
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
+#[cfg(feature = "test-utils")]
+use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
+
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
@@ -1639,8 +1642,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 // The user is informed via the footer context percentage indicator
             }
             AgentEvent::SubAgentRequested { id, prompt, depth } => {
-                self.footer
-                    .set_status_message("Spawning sub-agent session");
+                self.footer.set_status_message("Spawning sub-agent session");
                 self.messages.add_subagent_prompt(prompt.clone(), depth);
                 return Ok(SessionAction::SpawnSubAgent {
                     request_id: id,
@@ -2390,6 +2392,8 @@ pub struct App<C: LLMClient> {
     pending_close: Option<(usize, Instant)>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
+    #[cfg(feature = "test-utils")]
+    next_frame_id: u64,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -2416,6 +2420,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             pending_close: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
+            #[cfg(feature = "test-utils")]
+            next_frame_id: 0,
         }
     }
 
@@ -2456,7 +2462,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             let recorder = recorder.clone();
             let context = context.to_string();
             tokio::spawn(async move {
-                recorder.record_keyboard_input(&key_str, &mods, &context).await;
+                recorder
+                    .record_keyboard_input(&key_str, &mods, &context)
+                    .await;
             });
         }
     }
@@ -2470,6 +2478,76 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             });
         }
     }
+
+    #[cfg(feature = "test-utils")]
+    fn color_to_string(color: Option<ratatui::style::Color>) -> String {
+        match color {
+            Some(value) => format!("{value:?}"),
+            None => "None".to_string(),
+        }
+    }
+
+    #[cfg(feature = "test-utils")]
+    fn modifier_to_string(modifier: ratatui::style::Modifier) -> String {
+        if modifier.is_empty() {
+            return "NONE".to_string();
+        }
+        format!("{modifier:?}")
+    }
+
+    #[cfg(feature = "test-utils")]
+    fn record_tui_frame_from_buffer(&mut self, area: Rect, buffer: &ratatui::buffer::Buffer) {
+        let Some(recorder) = self.recorder.clone() else {
+            return;
+        };
+
+        let session_id = recorder.session_id();
+        let frame_id = self.next_frame_id;
+        self.next_frame_id = self.next_frame_id.saturating_add(1);
+
+        let timestamp_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+
+        let mut cells =
+            Vec::with_capacity((area.width as usize).saturating_mul(area.height as usize));
+        for y in 0..area.height {
+            for x in 0..area.width {
+                let cell = &buffer[(x, y)];
+                let style = cell.style();
+                cells.push(TuiCellSnapshot {
+                    x,
+                    y,
+                    symbol: cell.symbol().to_string(),
+                    fg: Self::color_to_string(style.fg),
+                    bg: Self::color_to_string(style.bg),
+                    underline_color: Self::color_to_string(style.underline_color),
+                    add_modifier: Self::modifier_to_string(style.add_modifier),
+                    sub_modifier: Self::modifier_to_string(style.sub_modifier),
+                });
+            }
+        }
+
+        let snapshot = TuiFrameSnapshot {
+            session_id,
+            frame_id,
+            timestamp_ms,
+            width: area.width,
+            height: area.height,
+            cursor: None,
+            cells,
+        };
+
+        tokio::spawn(async move {
+            if let Err(e) = recorder.record_tui_frame(snapshot).await {
+                warn!(error = %e, "Failed to record TUI frame snapshot");
+            }
+        });
+    }
+
+    #[cfg(not(feature = "test-utils"))]
+    fn record_tui_frame_from_buffer(&mut self, _area: Rect, _buffer: &ratatui::buffer::Buffer) {}
 
     #[cfg(not(feature = "test-utils"))]
     fn record_keyboard(&self, _key: crossterm::event::KeyEvent, _context: &str) {}
@@ -2712,11 +2790,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         Ok(())
     }
 
-    fn handle_session_action(
-        &mut self,
-        action: SessionAction,
-        parent_idx: usize,
-    ) -> Result<()> {
+    fn handle_session_action(&mut self, action: SessionAction, parent_idx: usize) -> Result<()> {
         match action {
             SessionAction::None => {}
             SessionAction::Done => {
@@ -2856,7 +2930,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         };
 
         if let (Some(parent_idx), Some(request_id)) = (parent_idx, request_id) {
-            let parent_agent = self.sessions.get(parent_idx).map(|parent| parent.agent.clone());
+            let parent_agent = self
+                .sessions
+                .get(parent_idx)
+                .map(|parent| parent.agent.clone());
             if let Some(agent) = parent_agent {
                 let _ = agent
                     .complete_subagent(
@@ -2870,10 +2947,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             if let Some(parent) = self.sessions.get_mut(parent_idx) {
-                parent.messages.add_assistant(format!(
-                    "[sub-agent] {}",
-                    summary.trim_end()
-                ));
+                parent
+                    .messages
+                    .add_assistant(format!("[sub-agent] {}", summary.trim_end()));
             }
         }
     }
@@ -2903,8 +2979,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                                 stream_rx = None;
                                 break;
                             }
-                            if let SessionAction::SpawnSubAgent { request_id, prompt, depth } =
-                                action
+                            if let SessionAction::SpawnSubAgent {
+                                request_id,
+                                prompt,
+                                depth,
+                            } = action
                             {
                                 self.spawn_sub_session(idx, request_id, prompt, depth)?;
                             }
@@ -2982,14 +3061,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 session.flush_unrendered_history(&mut terminal)?;
             }
 
-            terminal.draw(|f| {
+            let completed = terminal.draw(|f| {
                 let breadcrumb = self.build_breadcrumb();
                 let session = &mut self.sessions[self.active_idx];
-                session
-                    .footer
-                    .set_session_breadcrumb(Some(breadcrumb));
+                session.footer.set_session_breadcrumb(Some(breadcrumb));
                 session.render(f);
             })?;
+            self.record_tui_frame_from_buffer(completed.area, completed.buffer);
 
             {
                 let session = self.active_session_mut();
@@ -3117,12 +3195,13 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                         session.flush_unrendered_history(&mut terminal)?;
                         session.sync_inline_viewport(&mut terminal)?;
-                        terminal.draw(|f| {
+                        let completed = terminal.draw(|f| {
                             let breadcrumb = self.build_breadcrumb();
                             let session = &mut self.sessions[self.active_idx];
                             session.footer.set_session_breadcrumb(Some(breadcrumb));
                             session.render(f);
                         })?;
+                        self.record_tui_frame_from_buffer(completed.area, completed.buffer);
                     } else {
                         let session = &mut self.sessions[active_idx];
                         session.stream_abort = None;

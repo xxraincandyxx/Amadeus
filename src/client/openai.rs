@@ -583,10 +583,7 @@ impl LLMClient for OpenAIClient {
  */
 
 impl OpenAIClient {
-    fn blocks_to_stream_events(
-        stop_reason: String,
-        blocks: Vec<ContentBlock>,
-    ) -> Vec<StreamEvent> {
+    fn blocks_to_stream_events(stop_reason: String, blocks: Vec<ContentBlock>) -> Vec<StreamEvent> {
         let mut events = Vec::new();
 
         for block in blocks {
@@ -597,7 +594,10 @@ impl OpenAIClient {
                     }
                 }
                 ContentBlock::ToolUse { id, name, input } => {
-                    events.push(StreamEvent::ToolCallStart { id: id.clone(), name });
+                    events.push(StreamEvent::ToolCallStart {
+                        id: id.clone(),
+                        name,
+                    });
                     let args = serde_json::to_string(&input).unwrap_or_else(|_| "{}".to_string());
                     events.push(StreamEvent::ToolCallDelta { arguments: args });
                     events.push(StreamEvent::ToolCallDone(id));
