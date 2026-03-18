@@ -14,6 +14,18 @@ use crate::ui::components::markdown::render_markdown;
 use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
 use crate::ui::get_colors;
 
+fn truncate_text(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else if max_len <= 3 {
+        "...".to_string()
+    } else {
+        let keep = max_len - 3;
+        let prefix: String = s.chars().take(keep).collect();
+        format!("{}...", prefix)
+    }
+}
+
 /// Status of a compression operation
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum CompressionStatus {
@@ -103,6 +115,11 @@ pub enum HistoryItem {
         timestamp: Instant,
         turn: usize,
     },
+    SubAgentPrompt {
+        content: String,
+        depth: usize,
+        turn: usize,
+    },
     /// Extended thinking/reasoning content from the model
     Thinking {
         content: String,
@@ -123,6 +140,14 @@ pub enum HistoryItem {
 impl HistoryItem {
     pub fn tool_group(group: ToolGroup, turn: usize) -> Self {
         Self::ToolGroup { group, turn }
+    }
+
+    pub fn subagent_prompt(content: String, depth: usize, turn: usize) -> Self {
+        Self::SubAgentPrompt {
+            content,
+            depth,
+            turn,
+        }
     }
 
     pub fn compression(compression: CompressionItem) -> Self {
@@ -288,6 +313,13 @@ impl MessagesComponent {
             timestamp: Instant::now(),
             turn,
         });
+    }
+
+    pub fn add_subagent_prompt(&mut self, content: String, depth: usize) {
+        self.finalize_pending_tool_group();
+        let turn = self.current_turn;
+        self.items
+            .push(HistoryItem::subagent_prompt(content, depth, turn));
     }
 
     pub fn update_streaming_text(&mut self, text: &str) {
@@ -867,6 +899,45 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
+            HistoryItem::SubAgentPrompt {
+                content,
+                depth,
+                turn,
+            } => {
+                let border_color = colors.status.warning;
+                let body_color = colors.text.secondary;
+                let inner_width = content_width.max(12);
+                let title =
+                    truncate_text(&format!(" sub-agent d{} [{}] ", depth, turn), inner_width);
+                let top_fill = inner_width.saturating_sub(title.chars().count()).max(1);
+                let top = format!("┌{}{}┐", title, "─".repeat(top_fill));
+                let bottom = format!("└{}┘", "─".repeat(inner_width.max(2)));
+
+                lines.push(Line::from(vec![Span::styled(
+                    top,
+                    Style::default().fg(border_color),
+                )]));
+
+                let wrapped = render_markdown(content, inner_width.saturating_sub(2));
+                for line in wrapped {
+                    let mut spans = vec![Span::styled("│ ", Style::default().fg(border_color))];
+                    if line.spans.is_empty() {
+                        spans.push(Span::styled("(empty)", Style::default().fg(body_color)));
+                    } else {
+                        spans.extend(line.spans.into_iter().map(|span| {
+                            Span::styled(span.content.to_string(), Style::default().fg(body_color))
+                        }));
+                    }
+                    lines.push(Line::from(spans));
+                }
+
+                lines.push(Line::from(vec![Span::styled(
+                    bottom,
+                    Style::default().fg(border_color),
+                )]));
+                lines.push(Line::from(""));
+            }
+
             HistoryItem::ToolGroup { group, .. } => {
                 let dummy_area = Rect::new(0, 0, width, 1000);
                 let tool_lines = render_tool_group_with_limit(group, dummy_area, 1000);
@@ -942,6 +1013,7 @@ impl MessagesComponent {
         match item {
             HistoryItem::User { turn, .. } => Some(*turn),
             HistoryItem::Assistant { turn, .. } => Some(*turn),
+            HistoryItem::SubAgentPrompt { turn, .. } => Some(*turn),
             HistoryItem::Thinking { turn, .. } => Some(*turn),
             HistoryItem::ToolGroup { turn, .. } => Some(*turn),
             HistoryItem::Compression { .. } => None,

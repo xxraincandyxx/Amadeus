@@ -1641,6 +1641,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             AgentEvent::SubAgentRequested { id, prompt, depth } => {
                 self.footer
                     .set_status_message("Spawning sub-agent session");
+                self.messages.add_subagent_prompt(prompt.clone(), depth);
                 return Ok(SessionAction::SpawnSubAgent {
                     request_id: id,
                     prompt,
