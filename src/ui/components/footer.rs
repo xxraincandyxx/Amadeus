@@ -524,6 +524,7 @@ mod tests {
             status_message: Some("test".to_string()),
             is_background: false,
             key_chord_hint: Some("ctrl+x".to_string()),
+            session_breadcrumb: None,
         };
 
         let cloned = info.clone();

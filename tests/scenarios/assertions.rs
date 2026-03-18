@@ -113,6 +113,7 @@ pub fn assert_event_sequence(events: &[AgentEvent], expected_sequence: &[&str]) 
             AgentEvent::Done { .. } => "done".to_string(),
             AgentEvent::Error { .. } => "error".to_string(),
             AgentEvent::SessionSaved { .. } => "session_saved".to_string(),
+            AgentEvent::SubAgentRequested { .. } => "subagent_requested".to_string(),
         })
         .collect();
 
