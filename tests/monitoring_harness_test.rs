@@ -130,7 +130,7 @@ async fn test_monitoring_timeline_exposes_missing_default_policy_monitoring_gap(
         .expect("timeline execution failed");
 
     assert!(
-        !timeline.has_approval_requests(),
+        timeline.has_approval_requests(),
         "default test harness policy did not emit approval"
     );
     assert_timeline_text_contains(&timeline, "I could not run that command.");
