@@ -2389,6 +2389,8 @@ pub struct App<C: LLMClient> {
     next_session_id: usize,
     next_sub_label: usize,
     pending_close: Option<(usize, Instant)>,
+    #[cfg(feature = "test-utils")]
+    recorder: Option<crate::test_utils::SessionRecorder>,
 }
 
 impl<C: LLMClient + Clone + 'static> App<C> {
@@ -2413,8 +2415,68 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             next_session_id: 1,
             next_sub_label: 1,
             pending_close: None,
+            #[cfg(feature = "test-utils")]
+            recorder: None,
         }
     }
+
+    #[cfg(feature = "test-utils")]
+    pub fn set_recorder(&mut self, recorder: crate::test_utils::SessionRecorder) {
+        self.recorder = Some(recorder);
+    }
+
+    #[cfg(feature = "test-utils")]
+    fn record_keyboard(&self, key: crossterm::event::KeyEvent, context: &str) {
+        if let Some(ref recorder) = self.recorder {
+            let key_str = match key.code {
+                KeyCode::Char(c) => c.to_string(),
+                KeyCode::Enter => "enter".to_string(),
+                KeyCode::Backspace => "backspace".to_string(),
+                KeyCode::Esc => "esc".to_string(),
+                KeyCode::Tab => "tab".to_string(),
+                KeyCode::Up => "up".to_string(),
+                KeyCode::Down => "down".to_string(),
+                KeyCode::Left => "left".to_string(),
+                KeyCode::Right => "right".to_string(),
+                KeyCode::F(n) => format!("f{}", n),
+                _ => "unknown".to_string(),
+            };
+            let mut mods = Vec::new();
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                mods.push("ctrl");
+            }
+            if key.modifiers.contains(KeyModifiers::ALT) {
+                mods.push("alt");
+            }
+            if key.modifiers.contains(KeyModifiers::SHIFT) {
+                mods.push("shift");
+            }
+            if key.modifiers.contains(KeyModifiers::SUPER) {
+                mods.push("super");
+            }
+            let recorder = recorder.clone();
+            let context = context.to_string();
+            tokio::spawn(async move {
+                recorder.record_keyboard_input(&key_str, &mods, &context).await;
+            });
+        }
+    }
+
+    #[cfg(feature = "test-utils")]
+    fn record_agent_event(&self, event: AgentEvent) {
+        if let Some(ref recorder) = self.recorder {
+            let recorder = recorder.clone();
+            tokio::spawn(async move {
+                recorder.record_agent_event(event).await;
+            });
+        }
+    }
+
+    #[cfg(not(feature = "test-utils"))]
+    fn record_keyboard(&self, _key: crossterm::event::KeyEvent, _context: &str) {}
+
+    #[cfg(not(feature = "test-utils"))]
+    fn record_agent_event(&self, _event: AgentEvent) {}
 
     pub fn set_mesh_mode(&mut self, addr: &str) {
         self.mesh_supervisor_addr = Some(addr.to_string());
@@ -2424,6 +2486,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     pub async fn run(&mut self) -> Result<()> {
+        #[cfg(feature = "test-utils")]
+        if let Some(ref recorder) = self.recorder {
+            recorder.record_session_start().await;
+        }
+
         enable_raw_mode()?;
         let mut stdout = std::io::stdout();
         let _ = execute!(
@@ -2442,6 +2509,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend)?;
         terminal.show_cursor()?;
+
+        #[cfg(feature = "test-utils")]
+        if let Some(ref recorder) = self.recorder {
+            let (reason, state) = match &res {
+                Ok(()) => (
+                    crate::test_utils::testflow::types::SessionEndReason::UserExit,
+                    crate::test_utils::testflow::types::SessionState::Completed,
+                ),
+                Err(e) => {
+                    recorder.record_error(&e.to_string(), None).await;
+                    (
+                        crate::test_utils::testflow::types::SessionEndReason::Error,
+                        crate::test_utils::testflow::types::SessionState::Failed,
+                    )
+                }
+            };
+            recorder.record_session_end(reason, state).await;
+            let _ = recorder.save().await;
+        }
 
         res
     }
@@ -2925,6 +3011,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     let event = event?;
                     let mut handled_global = false;
                     if let AppEvent::Key(key) = event {
+                        self.record_keyboard(key, "global");
                         handled_global = self.handle_global_key(key, &mut terminal)?;
                     }
                     if !handled_global {
@@ -2965,6 +3052,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     }
                 } => {
                     if let Some(event) = agent_event {
+                        self.record_agent_event(event.clone());
                         let action = {
                             let session = &mut self.sessions[active_idx];
                             session.handle_agent_event(event, &mut terminal, true)?
