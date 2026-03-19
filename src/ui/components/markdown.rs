@@ -119,7 +119,7 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
                 Span::styled(line_num, Style::default().fg(THEME.comment)),
                 Span::styled(
                     code_line.to_string(),
-                    Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                    Style::default().fg(THEME.cyan),
                 ),
             ]));
         } else {
@@ -132,7 +132,7 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
                         Span::styled(line_num.clone(), Style::default().fg(THEME.comment)),
                         Span::styled(
                             chunk.iter().collect::<String>(),
-                            Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                            Style::default().fg(THEME.cyan),
                         ),
                     ]));
                     first = false;
@@ -141,7 +141,7 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
                         Span::styled("     │ ", Style::default().fg(THEME.comment)),
                         Span::styled(
                             chunk.iter().collect::<String>(),
-                            Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                            Style::default().fg(THEME.cyan),
                         ),
                     ]));
                 }
@@ -171,7 +171,7 @@ fn render_inline_code_spans(segment: &str) -> Vec<Span<'static>> {
             if in_inline_code {
                 spans.push(Span::styled(
                     current.clone(),
-                    Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                    Style::default().fg(THEME.cyan),
                 ));
                 current.clear();
                 in_inline_code = false;
@@ -191,7 +191,7 @@ fn render_inline_code_spans(segment: &str) -> Vec<Span<'static>> {
         if in_inline_code {
             spans.push(Span::styled(
                 current.clone(),
-                Style::default().fg(THEME.cyan).bg(THEME.tool_bg),
+                Style::default().fg(THEME.cyan),
             ));
         } else {
             spans.extend(render_inline_bold_spans(&current));

@@ -1,5 +1,6 @@
 pub mod atom_one_dark;
 pub mod ayu_dark;
+pub mod dark_red;
 pub mod default_dark;
 pub mod default_light;
 pub mod dracula;
@@ -10,6 +11,7 @@ pub mod solarized_light;
 
 pub use atom_one_dark::AtomOneDark;
 pub use ayu_dark::AyuDark;
+pub use dark_red::DarkRed;
 pub use default_dark::DefaultDark;
 pub use default_light::DefaultLight;
 pub use dracula::Dracula;

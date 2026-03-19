@@ -170,7 +170,6 @@ impl StatusBar {
 
         let line = Line::from(spans);
         let paragraph = Paragraph::new(line)
-            .style(Style::default().bg(colors.background.primary))
             .left_aligned();
 
         frame.render_widget(paragraph, area);

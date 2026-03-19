@@ -397,7 +397,7 @@ impl Footer {
             lines.push(Line::from(line2));
         }
 
-        let paragraph = Paragraph::new(lines).style(Style::default().bg(colors.background.primary));
+        let paragraph = Paragraph::new(lines);
         frame.render_widget(paragraph, area);
     }
 }
