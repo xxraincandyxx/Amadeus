@@ -2469,8 +2469,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         // Render sidebar if open
         if let Some(ref sidebar) = self.sidebar {
             let sidebar_area = Rect {
-                x: main_width,
-                y: 0,
+                x: size.x + main_width,
+                y: size.y,
                 width: sidebar_width,
                 height: size.height,
             };
