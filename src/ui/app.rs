@@ -2426,8 +2426,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 1;
 
-        // If a sidebar is open, reserve space on the right
-        let sidebar_width = if self.sidebar.is_some() { 40u16 } else { 0 };
+        // If a sidebar is open, reserve space on the right.
+        // Clamp sidebar width so the main area never collapses below a usable minimum.
+        let sidebar_min_width = 30u16;
+        let sidebar_max_width = 40u16;
+        let sidebar_width = if self.sidebar.is_some() {
+            size.width.saturating_sub(sidebar_min_width).min(sidebar_max_width)
+        } else {
+            0
+        };
 
         let main_width = size.width.saturating_sub(sidebar_width);
         let live_height = self.live_viewport_height(
