@@ -22,14 +22,6 @@ const COMPACTION_MESSAGES: [&str; 6] = [
     "Compressing history",
 ];
 
-/// Brand gradient colors for animated progress bar
-const GRADIENT_COLORS: [(u8, u8, u8); 4] = [
-    (162, 93, 220), // Purple
-    (66, 133, 244), // Blue
-    (0, 188, 212),  // Cyan
-    (52, 168, 83),  // Green
-];
-
 /// Minimum time to show the animation (prevents flashing)
 const MIN_DISPLAY_DURATION: Duration = Duration::from_millis(800);
 
@@ -228,54 +220,48 @@ impl CompactionAnimator {
 
     /// Get the gradient color at current progress
     pub fn get_progress_color(&self) -> Color {
-        let progress_ratio = self.progress as f64 / 100.0;
+        let colors = crate::ui::theme_manager::get_colors();
 
-        // Interpolate through gradient colors
-        let segment_count = (GRADIENT_COLORS.len() - 1) as f64;
+        let progress_ratio = self.progress as f64 / 100.0;
+        let segment_count = (colors.ui.gradient.len() - 1) as f64;
         let segment = progress_ratio * segment_count;
         let segment_index = segment.floor() as usize;
         let local_progress = segment - segment.floor();
 
-        let clamped_index = segment_index.min(GRADIENT_COLORS.len() - 2);
-        let (r1, g1, b1) = GRADIENT_COLORS[clamped_index];
-        let (r2, g2, b2) = GRADIENT_COLORS[clamped_index + 1];
+        let clamped_index = segment_index.min(colors.ui.gradient.len() - 2);
+        let c1 = colors.ui.gradient[clamped_index];
+        let c2 = colors.ui.gradient[clamped_index + 1];
 
-        Color::Rgb(
-            (r1 as f64 + (r2 as f64 - r1 as f64) * local_progress).round() as u8,
-            (g1 as f64 + (g2 as f64 - g1 as f64) * local_progress).round() as u8,
-            (b1 as f64 + (b2 as f64 - b1 as f64) * local_progress).round() as u8,
-        )
+        crate::ui::semantic_colors::interpolate_color(c1, c2, local_progress as f32)
     }
 
     /// Get the animated gradient color (cycles through colors over time)
     pub fn get_animated_color(&self) -> Color {
+        let colors = crate::ui::theme_manager::get_colors();
+
         let elapsed = self.start_time.elapsed().as_millis() as u64;
         let progress = (elapsed % COLOR_CYCLE_DURATION_MS) as f64 / COLOR_CYCLE_DURATION_MS as f64;
 
-        let segment_count = (GRADIENT_COLORS.len() - 1) as f64;
+        let segment_count = (colors.ui.gradient.len() - 1) as f64;
         let segment = progress * segment_count;
         let segment_index = segment.floor() as usize;
         let local_progress = segment - segment.floor();
 
-        let clamped_index = segment_index.min(GRADIENT_COLORS.len() - 2);
-        let (r1, g1, b1) = GRADIENT_COLORS[clamped_index];
-        let (r2, g2, b2) = GRADIENT_COLORS[clamped_index + 1];
+        let clamped_index = segment_index.min(colors.ui.gradient.len() - 2);
+        let c1 = colors.ui.gradient[clamped_index];
+        let c2 = colors.ui.gradient[clamped_index + 1];
 
-        Color::Rgb(
-            (r1 as f64 + (r2 as f64 - r1 as f64) * local_progress).round() as u8,
-            (g1 as f64 + (g2 as f64 - g1 as f64) * local_progress).round() as u8,
-            (b1 as f64 + (b2 as f64 - b1 as f64) * local_progress).round() as u8,
-        )
+        crate::ui::semantic_colors::interpolate_color(c1, c2, local_progress as f32)
     }
 
     /// Get success color (green)
     pub fn get_success_color(&self) -> Color {
-        Color::Rgb(52, 168, 83)
+        crate::ui::theme_manager::get_colors().status.success
     }
 
     /// Get error color (red)
     pub fn get_error_color(&self) -> Color {
-        Color::Rgb(234, 67, 53)
+        crate::ui::theme_manager::get_colors().status.error
     }
 
     /// Render the progress bar string

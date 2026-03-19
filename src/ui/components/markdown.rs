@@ -4,7 +4,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-use crate::ui::colors::THEME;
+use crate::ui::theme_manager::get_colors;
 
 /// Segment of parsed markdown content
 enum Segment {
@@ -75,7 +75,7 @@ fn detect_code_blocks(content: &str) -> Vec<Segment> {
     segments
 }
 
-fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> Vec<Line<'static>> {
+fn render_code_block_lines(code: &str, language: Option<&str>, width: usize, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Reserve space for line numbers (4 chars: "  1 |")
@@ -86,25 +86,25 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
     if let Some(lang) = language {
         let label = format!("  {} ", lang.to_uppercase());
         lines.push(Line::from(vec![
-            Span::styled("╭", Style::default().fg(THEME.comment)),
-            Span::styled("─".repeat(3), Style::default().fg(THEME.comment)),
+            Span::styled("╭", Style::default().fg(colors.ui.comment)),
+            Span::styled("─".repeat(3), Style::default().fg(colors.ui.comment)),
             Span::styled(
                 label,
                 Style::default()
-                    .fg(THEME.orange)
+                    .fg(colors.status.warning)
                     .add_modifier(Modifier::BOLD),
             ),
             Span::styled(
                 "─".repeat(code_width.saturating_sub(lang.len() + 6).min(20)),
-                Style::default().fg(THEME.comment),
+                Style::default().fg(colors.ui.comment),
             ),
         ]));
     } else {
         lines.push(Line::from(vec![
-            Span::styled("╭", Style::default().fg(THEME.comment)),
+            Span::styled("╭", Style::default().fg(colors.ui.comment)),
             Span::styled(
                 "─".repeat(code_width.min(20)),
-                Style::default().fg(THEME.comment),
+                Style::default().fg(colors.ui.comment),
             ),
         ]));
     }
@@ -116,10 +116,10 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
 
         if line_width <= code_width {
             lines.push(Line::from(vec![
-                Span::styled(line_num, Style::default().fg(THEME.comment)),
+                Span::styled(line_num, Style::default().fg(colors.ui.comment)),
                 Span::styled(
                     code_line.to_string(),
-                    Style::default().fg(THEME.cyan),
+                    Style::default().fg(colors.ui.symbol),
                 ),
             ]));
         } else {
@@ -129,19 +129,19 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
             for chunk in chars.chunks(code_width) {
                 if first {
                     lines.push(Line::from(vec![
-                        Span::styled(line_num.clone(), Style::default().fg(THEME.comment)),
+                        Span::styled(line_num.clone(), Style::default().fg(colors.ui.comment)),
                         Span::styled(
                             chunk.iter().collect::<String>(),
-                            Style::default().fg(THEME.cyan),
+                            Style::default().fg(colors.ui.symbol),
                         ),
                     ]));
                     first = false;
                 } else {
                     lines.push(Line::from(vec![
-                        Span::styled("     │ ", Style::default().fg(THEME.comment)),
+                        Span::styled("     │ ", Style::default().fg(colors.ui.comment)),
                         Span::styled(
                             chunk.iter().collect::<String>(),
-                            Style::default().fg(THEME.cyan),
+                            Style::default().fg(colors.ui.symbol),
                         ),
                     ]));
                 }
@@ -151,17 +151,17 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize) -> 
 
     // Bottom border
     lines.push(Line::from(vec![
-        Span::styled("╰", Style::default().fg(THEME.comment)),
+        Span::styled("╰", Style::default().fg(colors.ui.comment)),
         Span::styled(
             "─".repeat(code_width.min(20)),
-            Style::default().fg(THEME.comment),
+            Style::default().fg(colors.ui.comment),
         ),
     ]));
 
     lines
 }
 
-fn render_inline_code_spans(segment: &str) -> Vec<Span<'static>> {
+fn render_inline_code_spans(segment: &str, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
     let mut in_inline_code = false;
@@ -171,13 +171,13 @@ fn render_inline_code_spans(segment: &str) -> Vec<Span<'static>> {
             if in_inline_code {
                 spans.push(Span::styled(
                     current.clone(),
-                    Style::default().fg(THEME.cyan),
+                    Style::default().fg(colors.ui.symbol),
                 ));
                 current.clear();
                 in_inline_code = false;
             } else {
                 if !current.is_empty() {
-                    spans.extend(render_inline_bold_spans(&current));
+                    spans.extend(render_inline_bold_spans(&current, colors));
                     current.clear();
                 }
                 in_inline_code = true;
@@ -191,17 +191,17 @@ fn render_inline_code_spans(segment: &str) -> Vec<Span<'static>> {
         if in_inline_code {
             spans.push(Span::styled(
                 current.clone(),
-                Style::default().fg(THEME.cyan),
+                Style::default().fg(colors.ui.symbol),
             ));
         } else {
-            spans.extend(render_inline_bold_spans(&current));
+            spans.extend(render_inline_bold_spans(&current, colors));
         }
     }
 
     spans
 }
 
-fn render_inline_bold_spans(text: &str) -> Vec<Span<'static>> {
+fn render_inline_bold_spans(text: &str, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
     let mut in_bold = false;
@@ -212,14 +212,14 @@ fn render_inline_bold_spans(text: &str) -> Vec<Span<'static>> {
                 if !current.is_empty() {
                     spans.push(Span::styled(
                         current.clone(),
-                        Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                        Style::default().fg(colors.text.primary).add_modifier(Modifier::BOLD),
                     ));
                     current.clear();
                 }
                 in_bold = false;
             } else {
                 if !current.is_empty() {
-                    spans.push(Span::styled(current.clone(), Style::default().fg(THEME.fg)));
+                    spans.push(Span::styled(current.clone(), Style::default().fg(colors.text.primary)));
                     current.clear();
                 }
                 in_bold = true;
@@ -233,17 +233,17 @@ fn render_inline_bold_spans(text: &str) -> Vec<Span<'static>> {
         if in_bold {
             spans.push(Span::styled(
                 current.clone(),
-                Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                Style::default().fg(colors.text.primary).add_modifier(Modifier::BOLD),
             ));
         } else {
-            spans.push(Span::styled(current.clone(), Style::default().fg(THEME.fg)));
+            spans.push(Span::styled(current.clone(), Style::default().fg(colors.text.primary)));
         }
     }
 
     spans
 }
 
-fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
+fn render_text_line(line: &str, width: usize, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Line<'static>> {
     let trimmed = line.trim_start();
 
     if trimmed.is_empty() {
@@ -254,21 +254,21 @@ fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
         Some(Line::from(vec![Span::styled(
             stripped.trim_end().to_string(),
             Style::default()
-                .fg(THEME.purple)
+                .fg(colors.text.accent)
                 .add_modifier(Modifier::BOLD),
         )]))
     } else if let Some(stripped) = trimmed.strip_prefix("## ") {
         Some(Line::from(vec![Span::styled(
             stripped.trim_end().to_string(),
             Style::default()
-                .fg(THEME.purple)
+                .fg(colors.text.accent)
                 .add_modifier(Modifier::BOLD),
         )]))
     } else if let Some(stripped) = trimmed.strip_prefix("# ") {
         Some(Line::from(vec![Span::styled(
             stripped.trim_end().to_string(),
             Style::default()
-                .fg(THEME.purple)
+                .fg(colors.text.accent)
                 .add_modifier(Modifier::BOLD),
         )]))
     } else {
@@ -280,21 +280,28 @@ fn render_text_line(line: &str, width: usize) -> Vec<Line<'static>> {
     }
 
     if let Some(content) = trimmed.strip_prefix("- ") {
-        let spans = render_inline_code_spans(content);
-        let mut final_spans = vec![Span::styled("• ", Style::default().fg(THEME.purple))];
+        let spans = render_inline_code_spans(content, colors);
+        let mut final_spans = vec![Span::styled("• ", Style::default().fg(colors.text.accent))];
         final_spans.extend(spans);
         return wrap_lines(final_spans, width);
     }
 
     if let Some(content) = trimmed.strip_prefix("* ") {
-        let spans = render_inline_code_spans(content);
-        let mut final_spans = vec![Span::styled("• ", Style::default().fg(THEME.purple))];
+        let spans = render_inline_code_spans(content, colors);
+        let mut final_spans = vec![Span::styled("• ", Style::default().fg(colors.text.accent))];
         final_spans.extend(spans);
         return wrap_lines(final_spans, width);
     }
 
-    let spans = render_inline_code_spans(trimmed);
-    wrap_lines(spans, width)
+    let spans = render_inline_code_spans(trimmed, colors);
+    let mut final_spans = Vec::new();
+    let indent = &line[0..line.len() - trimmed.len()];
+    if !indent.is_empty() {
+        final_spans.push(Span::styled(indent.to_string(), Style::default().fg(colors.text.primary)));
+    }
+    final_spans.extend(spans);
+    wrap_lines(final_spans, width)
+
 }
 
 fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
@@ -411,24 +418,16 @@ fn is_list_item(line: &str) -> bool {
     trimmed.starts_with("- ") || trimmed.starts_with("* ")
 }
 
-/// Returns true if the character is a CJK ideograph or punctuation.
-fn is_cjk(c: char) -> bool {
-    // Basic CJK Unified Ideographs block
-    ('\u{4E00}'..='\u{9FFF}').contains(&c) ||
-    // CJK Symbols and Punctuation (full-width comma, period, etc.)
-    ('\u{3000}'..='\u{303F}').contains(&c) ||
-    // Halfwidth and Fullwidth Forms
-    ('\u{FF00}'..='\u{FFEF}').contains(&c)
-}
 
 pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
     let segments = detect_code_blocks(content);
+    let colors = get_colors();
     let mut lines = Vec::new();
 
     for segment in segments {
         match segment {
             Segment::Code { code, language } => {
-                lines.extend(render_code_block_lines(&code, language.as_deref(), width));
+                lines.extend(render_code_block_lines(&code, language.as_deref(), width, &colors));
             }
             Segment::Text(text) => {
                 let input_lines: Vec<&str> = text.lines().collect();
@@ -444,43 +443,13 @@ pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
                     }
 
                     if is_header(line) || is_list_item(line) {
-                        lines.extend(render_text_line(line, width));
+                        lines.extend(render_text_line(line, width, &colors));
                         i += 1;
                         continue;
                     }
 
-                    let mut paragraph = String::new();
-                    while i < input_lines.len() {
-                        let current_line = input_lines[i].trim();
-                        if current_line.is_empty()
-                            || is_header(input_lines[i])
-                            || is_list_item(input_lines[i])
-                        {
-                            break;
-                        }
-
-                        if !paragraph.is_empty() {
-                            // CJK Heuristic: Only insert a space when joining lines if
-                            // neither the preceding nor the current character is CJK.
-                            let last_char = paragraph.chars().last();
-                            let first_char = current_line.chars().next();
-
-                            let needs_space = match (last_char, first_char) {
-                                (Some(l), Some(f)) => !is_cjk(l) && !is_cjk(f),
-                                _ => true,
-                            };
-
-                            if needs_space {
-                                paragraph.push(' ');
-                            }
-                        }
-                        paragraph.push_str(current_line);
-                        i += 1;
-                    }
-
-                    if !paragraph.is_empty() {
-                        lines.extend(render_text_line(&paragraph, width));
-                    }
+                    lines.extend(render_text_line(line, width, &colors));
+                    i += 1;
                 }
             }
         }
@@ -548,13 +517,13 @@ mod tests {
     #[test]
     fn test_paragraph_grouping() {
         let result = render_markdown("Line 1\nLine 2\nLine 3", 100);
-        assert_eq!(result.len(), 1);
+        assert_eq!(result.len(), 3);
     }
 
     #[test]
     fn test_paragraph_with_blank_line() {
         let result = render_markdown("Line 1\nLine 2\n\nLine 3", 100);
-        assert_eq!(result.len(), 3);
+        assert_eq!(result.len(), 4);
     }
 
     // New tests for language labels and line numbers

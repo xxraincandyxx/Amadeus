@@ -17,55 +17,58 @@ impl Theme for DarkRed {
     }
 
     fn colors(&self) -> SemanticColors {
-        // True dark background (near black)
-        let bg_primary = Color::Rgb(12, 12, 12);
-        let bg_dark = Color::Rgb(8, 8, 8);
-        // Muted gray for secondary text
-        let gray = Color::Rgb(90, 90, 90);
-        // Dark gray for borders/dividers
-        let dark_gray = Color::Rgb(50, 50, 50);
-        // Subtle blood red for accents only
-        let blood_red = Color::Rgb(120, 50, 50);
+        // True dark background with a very subtle warm/crimson undertone
+        let bg_primary = Color::Rgb(10, 5, 5);
+        let bg_dark = Color::Rgb(5, 2, 2);
+
+        // Red-tinted grays to remove the orange/muddy feel
+        let gray = Color::Rgb(130, 100, 100);
+        let dark_gray = Color::Rgb(70, 40, 40);
+
+        // Pure, visceral blood red (High red, very low green/blue)
+        let blood_red = Color::Rgb(170, 15, 15);
+        let dark_blood = Color::Rgb(110, 5, 5);
+        let bright_blood = Color::Rgb(210, 20, 20);
 
         SemanticColors {
             text: TextColors {
-                primary: Color::Rgb(220, 220, 220),
+                primary: Color::Rgb(230, 215, 215), // Very slightly tinted white
                 secondary: gray,
-                link: Color::Rgb(150, 130, 130),
+                link: bright_blood,
                 accent: blood_red,
-                response: Color::Rgb(200, 200, 200),
+                response: Color::Rgb(220, 210, 210),
             },
             background: BackgroundColors {
                 primary: bg_primary,
-                message: bg_primary,
-                input: Color::Rgb(18, 18, 18),
+                message: Color::Rgb(25, 12, 12),
+                input: Color::Rgb(18, 8, 8),
                 diff: DiffColors {
-                    added: Color::Rgb(20, 40, 20),
-                    removed: Color::Rgb(50, 20, 20),
+                    added: Color::Rgb(30, 50, 30),
+                    removed: Color::Rgb(80, 15, 15),
                 },
             },
             border: BorderColors {
                 default: dark_gray,
-                focused: Color::Rgb(100, 60, 60),
+                focused: bright_blood,
             },
             ui: UiColors {
                 comment: gray,
-                symbol: Color::Rgb(140, 100, 100),
+                symbol: bright_blood, // Make symbols pop with striking red
                 dark: dark_gray,
                 gradient: [
-                    Color::Rgb(80, 40, 40),
-                    Color::Rgb(100, 50, 50),
-                    Color::Rgb(120, 60, 60),
+                    Color::Rgb(60, 0, 0), // Deepest shadow blood
+                    dark_blood,           // Dark blood
+                    blood_red,            // Fresh blood
                 ],
             },
             status: StatusColors {
-                error: Color::Rgb(180, 80, 80),
-                success: Color::Rgb(100, 160, 100),
-                warning: Color::Rgb(180, 140, 80),
+                error: Color::Rgb(240, 10, 10), // Piercing pure red
+                success: Color::Rgb(80, 160, 80),
+                warning: Color::Rgb(200, 80, 20), // More rust/ember than orange
             },
             scrollbar: ScrollbarColors {
                 thumb: dark_gray,
-                thumb_hover: Color::Rgb(100, 60, 60),
+                thumb_hover: blood_red,
                 track: bg_dark,
             },
         }

@@ -842,10 +842,7 @@ impl MessagesComponent {
         let start_idx = total_lines.saturating_sub(view_height);
 
         let visible_lines: Vec<Line> = lines.into_iter().skip(start_idx).collect();
-        frame.render_widget(
-            Paragraph::new(visible_lines),
-            area,
-        );
+        frame.render_widget(Paragraph::new(visible_lines), area);
     }
 
     /// Renders a single history item statically.
@@ -864,14 +861,21 @@ impl MessagesComponent {
                             format!("> [{}] ", turn),
                             Style::default()
                                 .fg(colors.text.link)
-                                .bg(colors.background.primary)
+                                .bg(colors.background.message)
                                 .add_modifier(Modifier::BOLD),
                         ));
                     } else {
-                        spans.push(Span::styled("   ", Style::default().bg(colors.background.primary)));
+                        spans.push(Span::styled(
+                            "   ",
+                            Style::default().bg(colors.background.message),
+                        ));
                     }
                     spans.extend(content_line.spans.into_iter().map(|span| {
-                        Span::styled(span.content.to_string(), span.style.patch(Style::default().bg(colors.background.primary)))
+                        Span::styled(
+                            span.content.to_string(),
+                            span.style
+                                .patch(Style::default().bg(colors.background.message)),
+                        )
                     }));
                     lines.push(Line::from(spans));
                 }
