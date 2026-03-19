@@ -221,7 +221,119 @@ ToolRegistry
     └── get_all_schemas() -> Vec<Value>
 ```
 
-**Built-in Tools:**
+#### Tool Schema Format
+
+Each tool defines a JSON schema that describes what it does and how to call it:
+
+```json
+{
+  "name": "read_file",
+  "description": "Read file contents. Returns UTF-8 text. Use for understanding existing code.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "path": {
+        "type": "string",
+        "description": "Relative path to the file"
+      },
+      "limit": {
+        "type": "integer",
+        "description": "Max lines to read (optional, default: all)"
+      }
+    },
+    "required": ["path"]
+  }
+}
+```
+
+The LLM uses these fields to make decisions:
+
+| Field | Purpose |
+|-------|---------|
+| `name` | Unique identifier (`read_file`, `bash`, `grep`) |
+| `description` | **"Use for"** hint - tells the LLM when to use this tool |
+| `parameters[].description` | What each parameter means |
+| `required` | Which parameters are mandatory |
+
+#### How the LLM Selects Tools
+
+The LLM receives three inputs at each turn:
+1. **System prompt** - general instructions about its role
+2. **Conversation history** - previous messages and tool results
+3. **Tool schemas** - all available tools with descriptions
+
+For each turn, the LLM:
+1. **Reads the user request** - e.g., "show me the contents of Cargo.toml"
+2. **Consults tool descriptions** - sees `read_file` has "Use for understanding existing code"
+3. **Matches intent** - user wants to read a file → `read_file` tool matches
+4. **Extracts parameters** - fills in `path` from the user's message
+5. **Calls the tool** - returns a `ToolCall` content block
+
+```
+User: "show me Cargo.toml"
+         │
+         ▼ LLM Reasoning (internal)
+         │
+         ├─→ Match tool: read_file
+         ├─→ Extract param: path="Cargo.toml"
+         │
+         ▼ LLM Output (streaming)
+         │
+    ToolCallStart { id: "abc", name: "read_file" }
+         │
+    ToolCallDelta { arguments: "{\"path\": \"" }
+         │
+    ToolCallDelta { arguments: "\"Cargo.toml\"" }
+         │
+    ToolCallDelta { arguments: "\"}" }
+         │
+    ToolCallDone { id: "abc" }
+         │
+         ▼ Our Code
+         │
+    Parse JSON → {"path": "Cargo.toml"}
+         │
+    Execute tool(path="Cargo.toml")
+```
+
+#### Parameter Extraction Flow
+
+The **parameter extraction** (figuring out `path="Cargo.toml"` from the user's message) happens inside the LLM's reasoning. Our code handles the streaming JSON assembly:
+
+**Step 1: Tool call starts** (`loop_agent.rs:776`)
+```rust
+StreamEvent::ToolCallStart { id, name } => {
+    current_tool = Some((id.clone(), name.clone(), String::new()));
+}
+```
+
+**Step 2: Arguments stream in chunks** (`loop_agent.rs:787`)
+```rust
+StreamEvent::ToolCallDelta { arguments } => {
+    input_str.push_str(&arguments);  // Accumulate JSON fragments
+}
+```
+
+**Step 3: Tool call completes - JSON is parsed** (`loop_agent.rs:800`)
+```rust
+StreamEvent::ToolCallDone(_id) => {
+    let input: serde_json::Value = serde_json::from_str(&input_str)?;
+}
+```
+
+**Step 4: Tool executes with parsed input** (`loop_agent.rs:1274`)
+```rust
+async fn execute_tool_call(..., input: serde_json::Value) {
+    tools.execute(&name, input.clone()).await
+}
+```
+
+After execution, the result is added back to the conversation history, and the LLM can:
+- **Continue with another tool call** (e.g., grep the file it just read)
+- **Provide a final text response** (done)
+- **Ask clarifying questions** (need more info)
+
+#### Built-in Tools
 
 | Tool | Description |
 |------|-------------|
