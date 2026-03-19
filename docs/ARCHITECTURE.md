@@ -31,7 +31,7 @@ Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It 
 │           ┌───────────────────────┴───────────────────────┐             │
 │           │              Tool Registry                    │             │
 │           │  ┌─────────────────────────────────────────┐  │             │
-│           │  │ bash │ file │ glob │ grep │ web │ ...  │  │             │
+│           │  │ bash │ file │ glob │ grep │ web │ ...   │  │             │
 │           │  └─────────────────────────────────────────┘  │             │
 │           └───────────────────────┬───────────────────────┘             │
 │                                   │                                     │

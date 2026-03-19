@@ -36,9 +36,9 @@ pub use event::{AppEvent, EventHandler};
 pub use repl::Repl;
 
 pub use components::{
-    FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar, InputComponent, LoadingIndicator,
-    MessagesComponent, PhraseCycler, PhraseMode, SandboxStatus, Sidebar, SidebarKind,
-    StreamingState,
+    ContextInfo, ContextSidebar, FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar,
+    InputComponent, LoadingIndicator, MessagesComponent, PhraseCycler, PhraseMode, SandboxStatus,
+    Sidebar, SidebarKind, StreamingState,
 };
 
 pub use semantic_colors::SemanticColors;

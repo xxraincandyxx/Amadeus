@@ -30,8 +30,9 @@ use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::components::{
-    render_markdown, ApprovalDialog, ApprovalResponse, FileSidebar, Footer, HelpSidebar,
-    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar, StreamingState,
+    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, ContextSidebar, FileSidebar,
+    Footer, HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
+    StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::{get_theme, next_theme, SidebarKind};
@@ -2183,6 +2184,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (Some(Sidebar::Files(_)), SidebarKind::Files) => None,
             (Some(Sidebar::Help(_)), SidebarKind::Help) => None,
             (Some(Sidebar::Skills(_)), SidebarKind::Skills) => None,
+            (Some(Sidebar::Context(_)), SidebarKind::Context) => None,
             (_, SidebarKind::Files) => Some(Sidebar::Files(FileSidebar::new(self.workdir.clone()))),
             (_, SidebarKind::Help) => Some(Sidebar::Help(HelpSidebar::new())),
             (_, SidebarKind::Skills) => {
@@ -2195,7 +2197,80 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     skills.into_skills(),
                 )))
             }
+            (_, SidebarKind::Context) => {
+                let info = self.build_context_info();
+                Some(Sidebar::Context(ContextSidebar::new(info)))
+            }
         };
+    }
+
+    fn build_context_info(&self) -> ContextInfo {
+        let config = self.agent.config();
+        let context_window_size = config.context_window_size;
+        let model_name = config.model.clone();
+
+        // Estimate system prompt tokens (~4 chars per token)
+        let system_prompt = config.system_prompt(false);
+        let system_prompt_tokens = system_prompt.len().div_ceil(4);
+
+        // Estimate tool schema tokens
+        let registry = self.agent.registry();
+        let mut tools_tokens: usize = 0;
+        let mut tool_details: Vec<(String, usize)> = Vec::new();
+        for name in registry.names() {
+            let schema_size = registry
+                .get(name)
+                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .unwrap_or(0);
+            let tokens = schema_size.div_ceil(4);
+            tool_details.push((name.to_string(), tokens));
+            tools_tokens += tokens;
+        }
+        tool_details.sort_by(|a, b| b.1.cmp(&a.1));
+
+        // Estimate conversation history tokens
+        let history = self.agent.history();
+        let history_guard = match history.try_read() {
+            Ok(guard) => guard,
+            Err(_) => return ContextInfo {
+                model_name,
+                context_window_size,
+                total_tokens: system_prompt_tokens + tools_tokens,
+                system_prompt_tokens,
+                tools_tokens,
+                conversation_tokens: 0,
+                tool_details,
+                message_details: Vec::new(),
+            },
+        };
+        let mut conversation_tokens: usize = 0;
+        let mut message_details: Vec<(String, usize)> = Vec::new();
+        for msg in history_guard.iter() {
+            let msg_chars: usize = msg.content.iter().map(|block| match block {
+                crate::agent::messages::ContentBlock::Text { text } => text.len(),
+                crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
+                    name.len() + input.to_string().len()
+                }
+                crate::agent::messages::ContentBlock::ToolResult { content, .. } => content.len(),
+            }).sum();
+            let msg_tokens = msg_chars.div_ceil(4);
+            conversation_tokens += msg_tokens;
+            message_details.push((msg.role.clone(), msg_tokens));
+        }
+        message_details.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let total_tokens = system_prompt_tokens + tools_tokens + conversation_tokens;
+
+        ContextInfo {
+            model_name,
+            context_window_size,
+            total_tokens,
+            system_prompt_tokens,
+            tools_tokens,
+            conversation_tokens,
+            tool_details,
+            message_details,
+        }
     }
 
     async fn submit_input(&mut self) -> Result<()> {
@@ -2223,7 +2298,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.flush_before_compaction = true;
                 return Ok(());
             }
-            // Add other slash commands here in the future
+            if command == "/context" {
+                self.input.clear();
+                self.toggle_sidebar(SidebarKind::Context);
+                return Ok(());
+            }
+            // Unknown command: send as user message
         }
 
         self.messages.add_user(trimmed.to_string());
@@ -2345,8 +2425,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let input_height = self.input.height();
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 1;
+
+        // If a sidebar is open, reserve space on the right
+        let sidebar_width = if self.sidebar.is_some() { 40u16 } else { 0 };
+
+        let main_width = size.width.saturating_sub(sidebar_width);
         let live_height = self.live_viewport_height(
-            size.width,
+            main_width,
             size.height
                 .saturating_sub(input_height)
                 .saturating_sub(status_height)
@@ -2360,7 +2445,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 Constraint::Length(status_height),
                 Constraint::Length(footer_height),
             ])
-            .split(size);
+            .split(Rect {
+                width: main_width,
+                ..size
+            });
 
         let live_area = layout[0];
         let input_area = layout[1];
@@ -2376,6 +2464,25 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         if let Some(ref dialog) = self.approval_dialog {
             dialog.render(frame, size);
+        }
+
+        // Render sidebar if open
+        if let Some(ref sidebar) = self.sidebar {
+            let sidebar_area = Rect {
+                x: main_width,
+                y: 0,
+                width: sidebar_width,
+                height: size.height,
+            };
+            self.sidebar_area = sidebar_area;
+            match sidebar {
+                Sidebar::Files(s) => s.render(frame, sidebar_area),
+                Sidebar::Help(s) => s.render(frame, sidebar_area),
+                Sidebar::Skills(s) => s.render(frame, sidebar_area),
+                Sidebar::Context(s) => s.render(frame, sidebar_area),
+            }
+        } else {
+            self.sidebar_area = Rect::default();
         }
     }
 }

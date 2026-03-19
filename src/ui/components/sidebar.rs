@@ -18,12 +18,14 @@ pub enum SidebarKind {
     Files,
     Help,
     Skills,
+    Context,
 }
 
 pub enum Sidebar {
     Files(FileSidebar),
     Help(HelpSidebar),
     Skills(SkillSidebar),
+    Context(ContextSidebar),
 }
 
 pub struct FileSidebar {
@@ -304,6 +306,13 @@ impl HelpSidebar {
                     Style::default().fg(colors.ui.comment),
                 ),
             ]),
+            Line::from(vec![
+                Span::styled("   /context ", Style::default().fg(colors.text.link)),
+                Span::styled(
+                    " Context usage info",
+                    Style::default().fg(colors.ui.comment),
+                ),
+            ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
@@ -525,5 +534,320 @@ impl SkillSidebar {
         );
 
         frame.render_widget(paragraph, area);
+    }
+}
+
+/// Data used to populate the context sidebar.
+#[derive(Debug, Clone)]
+pub struct ContextInfo {
+    pub model_name: String,
+    pub context_window_size: u32,
+    pub total_tokens: usize,
+    /// System prompt tokens
+    pub system_prompt_tokens: usize,
+    /// Tool definitions tokens
+    pub tools_tokens: usize,
+    /// Conversation history tokens
+    pub conversation_tokens: usize,
+    /// Per-tool token estimates (name, estimated schema tokens)
+    pub tool_details: Vec<(String, usize)>,
+    /// Per-message token estimates (role, estimated tokens)
+    pub message_details: Vec<(String, usize)>,
+}
+
+impl ContextInfo {
+    /// Estimate total tokens for the context info.
+    pub fn used_tokens(&self) -> usize {
+        self.system_prompt_tokens + self.tools_tokens + self.conversation_tokens
+    }
+
+    /// Free space remaining in the context window.
+    pub fn free_tokens(&self) -> usize {
+        (self.context_window_size as usize).saturating_sub(self.used_tokens())
+    }
+
+    /// Usage percentage (0-100).
+    pub fn usage_percent(&self) -> u8 {
+        if self.context_window_size == 0 {
+            return 0;
+        }
+        let pct = (self.used_tokens() as f64 / self.context_window_size as f64 * 100.0) as u8;
+        pct.min(100)
+    }
+
+    /// Percentage of the context window used by a token count.
+    fn pct_of(&self, tokens: usize) -> f64 {
+        if self.context_window_size == 0 {
+            return 0.0;
+        }
+        tokens as f64 / self.context_window_size as f64 * 100.0
+    }
+
+    /// Format a token count for display.
+    fn fmt_tokens(n: usize) -> String {
+        if n >= 1_000_000 {
+            format!("{:.1}M", n as f64 / 1_000_000.0)
+        } else if n >= 1000 {
+            format!("{:.1}k", n as f64 / 1000.0)
+        } else {
+            n.to_string()
+        }
+    }
+}
+
+/// Sidebar showing context window usage breakdown.
+pub struct ContextSidebar {
+    info: ContextInfo,
+}
+
+impl ContextSidebar {
+    pub fn new(info: ContextInfo) -> Self {
+        Self { info }
+    }
+
+    fn render_bar(&self, width: u16) -> Line<'static> {
+        let bar_width = (width as usize).min(24);
+        let pct = self.info.usage_percent();
+        let filled = ((pct as usize) * bar_width) / 100;
+        let empty = bar_width.saturating_sub(filled);
+
+        let fill_style = if pct >= 90 {
+            Style::default().fg(ratatui::style::Color::Rgb(220, 50, 47))
+        } else if pct >= 70 {
+            Style::default().fg(ratatui::style::Color::Rgb(181, 137, 0))
+        } else {
+            Style::default().fg(ratatui::style::Color::Rgb(133, 153, 0))
+        };
+
+        let mut spans = vec![
+            Span::styled("█".repeat(filled), fill_style),
+            Span::styled(
+                "░".repeat(empty),
+                Style::default().fg(ratatui::style::Color::Rgb(88, 88, 88)),
+            ),
+        ];
+
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            format!("{}%", pct),
+            if pct >= 90 {
+                Style::default().fg(ratatui::style::Color::Rgb(220, 50, 47))
+            } else if pct >= 70 {
+                Style::default().fg(ratatui::style::Color::Rgb(181, 137, 0))
+            } else {
+                Style::default().fg(ratatui::style::Color::Rgb(147, 161, 161))
+            },
+        ));
+
+        Line::from(spans)
+    }
+
+    fn section_line(colors: &crate::ui::semantic_colors::SemanticColors) -> Line<'static> {
+        Line::from(vec![
+            Span::styled("   ", Style::default()),
+            Span::styled("---", Style::default().fg(colors.ui.dark)),
+        ])
+    }
+
+    pub fn render(&self, frame: &mut Frame, area: Rect) {
+        if area.width < 16 {
+            return;
+        }
+
+        let colors = get_colors();
+        let content_width = area.width.saturating_sub(2) as usize;
+        let visible_lines = area.height.saturating_sub(2) as usize;
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Title + model
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            Span::styled(" ◈ ", Style::default().fg(colors.text.accent)),
+            Span::styled(
+                &self.info.model_name,
+                Style::default()
+                    .fg(colors.text.primary)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        // Usage bar
+        let used = ContextInfo::fmt_tokens(self.info.used_tokens());
+        let total = ContextInfo::fmt_tokens(self.info.context_window_size as usize);
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!(" {} / {} tokens", used, total),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+        lines.push(self.render_bar(area.width.saturating_sub(2)));
+        lines.push(Line::from(""));
+
+        // Breakdown sections
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "ESTIMATED USAGE BY CATEGORY",
+                Style::default()
+                    .fg(colors.ui.comment)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Self::section_line(&colors));
+
+        // System prompt
+        let sys_pct = self.info.pct_of(self.info.system_prompt_tokens);
+        lines.push(Line::from(vec![
+            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
+            Span::styled("System Prompt", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    ContextInfo::fmt_tokens(self.info.system_prompt_tokens),
+                    sys_pct
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Tools
+        let tools_pct = self.info.pct_of(self.info.tools_tokens);
+        lines.push(Line::from(vec![
+            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
+            Span::styled("Tools", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    ContextInfo::fmt_tokens(self.info.tools_tokens),
+                    tools_pct
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Conversation
+        let conv_pct = self.info.pct_of(self.info.conversation_tokens);
+        lines.push(Line::from(vec![
+            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
+            Span::styled("Conversation", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    ContextInfo::fmt_tokens(self.info.conversation_tokens),
+                    conv_pct
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Free space
+        let free = self.info.free_tokens();
+        let free_pct = self.info.pct_of(free);
+        lines.push(Line::from(vec![
+            Span::styled("  ○ ", Style::default().fg(colors.status.success)),
+            Span::styled("Free Space", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    ContextInfo::fmt_tokens(free),
+                    free_pct
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        lines.push(Self::section_line(&colors));
+
+        // Tool details
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "TOOLS",
+                Style::default()
+                    .fg(colors.ui.comment)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        for (name, tokens) in &self.info.tool_details {
+            lines.push(Line::from(vec![
+                Span::styled("    └ ", Style::default().fg(colors.ui.dark)),
+                Span::styled(
+                    truncate_str(name, content_width.saturating_sub(20)),
+                    Style::default().fg(colors.text.primary),
+                ),
+                Span::styled(
+                    format!(": {}", ContextInfo::fmt_tokens(*tokens)),
+                    Style::default().fg(colors.text.secondary),
+                ),
+            ]));
+        }
+
+        lines.push(Self::section_line(&colors));
+
+        // Message details
+        lines.push(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(
+                "MESSAGES",
+                Style::default()
+                    .fg(colors.ui.comment)
+                    .add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        lines.push(Line::from(""));
+
+        for (role, tokens) in &self.info.message_details {
+            let icon = match role.as_str() {
+                "system" => "SYS",
+                "user" => "USR",
+                "assistant" => "AST",
+                _ => "???",
+            };
+            lines.push(Line::from(vec![
+                Span::styled("    └ ", Style::default().fg(colors.ui.dark)),
+                Span::styled(icon, Style::default().fg(colors.text.link)),
+                Span::styled(
+                    truncate_str(
+                        &format!(" {}: {}", role, ContextInfo::fmt_tokens(*tokens)),
+                        content_width.saturating_sub(20),
+                    ),
+                    Style::default().fg(colors.text.secondary),
+                ),
+            ]));
+        }
+
+        // Trim to visible lines
+        lines = lines.into_iter().take(visible_lines).collect();
+
+        let paragraph = Paragraph::new(lines).block(
+            Block::default()
+                .title(" CONTEXT ")
+                .title_style(
+                    Style::default()
+                        .fg(colors.ui.comment)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .borders(Borders::RIGHT)
+                .border_style(Style::default().fg(colors.border.default))
+                .style(Style::default().bg(colors.background.primary)),
+        );
+
+        frame.render_widget(paragraph, area);
+    }
+}
+
+/// Truncate a string to fit within `max` character cells.
+fn truncate_str(s: &str, max: usize) -> String {
+    if max == 0 {
+        return String::new();
+    }
+    if s.chars().count() <= max {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(max.saturating_sub(1)).collect();
+        format!("{}…", truncated)
     }
 }

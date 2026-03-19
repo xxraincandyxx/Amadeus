@@ -48,7 +48,7 @@ impl SessionRecorder {
             session_id: session_id.clone(),
             created_at: Some(now),
             platform: std::env::consts::OS.to_string(),
-            rust_version: rustc_version_runtime::version().to_string(),
+            rust_version: get_rust_version(),
             amadeus_version: env!("CARGO_PKG_VERSION").to_string(),
             feature_flags: get_enabled_features(),
             ..SessionMetadata::default()
@@ -386,6 +386,13 @@ fn get_enabled_features() -> Vec<String> {
     #[cfg(feature = "test-utils")]
     features.push("test-utils".to_string());
     features
+}
+
+fn get_rust_version() -> String {
+    // Use a compile-time approach with CARGO_PKG_RUST_VERSION or fallback to unknown
+    option_env!("CARGO_PKG_RUST_VERSION")
+        .unwrap_or("unknown")
+        .to_string()
 }
 
 pub fn load_session(path: &Path) -> Result<SessionLog> {
