@@ -542,6 +542,7 @@ struct Session<C: LLMClient> {
     key_chord_steps: Vec<String>,
     last_subagent_output: Option<String>,
     last_result_text: Option<String>,
+    last_context_sync: Instant,
     #[allow(dead_code)]
     subagent_depth: usize,
     session_label: String,
@@ -733,6 +734,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             key_chord_steps: Vec::new(),
             last_subagent_output: None,
             last_result_text: None,
+            last_context_sync: Instant::now(),
             subagent_depth,
             session_label,
             session_id,
@@ -805,7 +807,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
     fn max_shelf_height_for_terminal(&self, terminal_height: u16) -> u16 {
         let input_max = 12;
-        let available = terminal_height.saturating_sub(input_max).saturating_sub(1);
+        let available = terminal_height.saturating_sub(input_max).saturating_sub(2);
         let live_max = ((available.saturating_mul(self.viewport_height_percent)) / 100).max(3);
         (input_max + live_max).min(terminal_height.max(4))
     }
@@ -1184,6 +1186,60 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Ok(())
     }
 
+    fn sync_context_percent(&mut self) {
+        if self.last_context_sync.elapsed() < Duration::from_secs(1) {
+            return;
+        }
+        self.last_context_sync = Instant::now();
+
+        let config = self.agent.config();
+        let context_window_size = config.context_window_size;
+        if context_window_size == 0 {
+            return;
+        }
+
+        let history = self.agent.history();
+        let guard = match history.try_read() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+
+        let system_tokens = config.system_prompt(false).len().div_ceil(4);
+
+        let registry = self.agent.registry();
+        let mut tools_tokens: usize = 0;
+        for name in registry.names() {
+            let schema_bytes = registry
+                .get(name)
+                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .unwrap_or(0);
+            tools_tokens += schema_bytes.div_ceil(4);
+        }
+
+        let conv_tokens: usize = guard
+            .iter()
+            .map(|msg| {
+                msg.content
+                    .iter()
+                    .map(|block| match block {
+                        crate::agent::messages::ContentBlock::Text { text } => text.len(),
+                        crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
+                            name.len() + input.to_string().len()
+                        }
+                        crate::agent::messages::ContentBlock::ToolResult { content, .. } => {
+                            content.len()
+                        }
+                    })
+                    .sum::<usize>()
+            })
+            .sum::<usize>()
+            .div_ceil(4);
+
+        let total = system_tokens + tools_tokens + conv_tokens;
+        let percent = ((total as f32 / context_window_size as f32) * 100.0).min(100.0) as u8;
+        self.footer.set_context_percent(percent);
+    }
+
     fn sync_prompt_status_hint(&mut self) {
         if self.is_background {
             self.input
@@ -1358,6 +1414,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.messages.tick();
                 self.status_bar.tick();
                 self.handle_tool_progress_timeout();
+                self.sync_context_percent();
                 // Poll for compaction result (non-blocking)
                 self.poll_compaction_result();
             }
@@ -2424,7 +2481,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         let input_height = self.input.height();
         let status_height = u16::from(self.status_bar.is_active());
-        let footer_height = 1;
+        let footer_height = 2;
 
         // If a sidebar is open, reserve space on the right.
         // Clamp sidebar width so the main area never collapses below a usable minimum.

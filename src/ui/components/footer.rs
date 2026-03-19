@@ -231,22 +231,25 @@ impl Footer {
         }
 
         let colors = get_colors();
-        let mut spans = Vec::new();
+        let mut lines: Vec<Line> = Vec::new();
 
-        // MESH indicator
+        // --- Line 1: Status indicators + Model + Context + Duration ---
+        let mut line1_left: Vec<Span> = Vec::new();
+
         if self.info.is_mesh {
-            spans.push(Span::styled(
+            line1_left.push(Span::styled(
                 "MESH ",
-                Style::default()
-                    .fg(colors.background.primary)
-                    .bg(colors.text.accent)
-                    .add_modifier(Modifier::BOLD),
+                Style::default().fg(colors.text.secondary),
+            ));
+        } else {
+            line1_left.push(Span::styled(
+                "null ",
+                Style::default().fg(colors.text.secondary),
             ));
         }
 
-        // Background mode indicator
         if self.is_background {
-            spans.push(Span::styled(
+            line1_left.push(Span::styled(
                 "⏳ BG ",
                 Style::default()
                     .fg(colors.background.primary)
@@ -255,116 +258,40 @@ impl Footer {
             ));
         }
 
-        // Live key chord state
         if let Some(ref hint) = self.info.key_chord_hint {
-            spans.push(Span::styled(
+            line1_left.push(Span::styled(
                 format!("{} ", hint),
                 Style::default().fg(colors.text.link),
             ));
+        } else {
+            line1_left.push(Span::styled(
+                "null ",
+                Style::default().fg(colors.text.secondary),
+            ));
         }
 
-        // Status message (temporary notification)
         if let Some(ref message) = self.info.status_message {
-            spans.push(Span::styled(
+            line1_left.push(Span::styled(
                 format!("{} ", message),
                 Style::default().fg(colors.text.accent),
             ));
         }
 
-        if let Some(ref breadcrumb) = self.info.session_breadcrumb {
-            spans.push(Span::styled(
-                format!("{} ", breadcrumb),
-                Style::default().fg(colors.text.secondary),
-            ));
-        }
-
-        // Separator
-        spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
-
-        // CWD and git branch with icons
-        let path_len = ((area.width as usize) / 4).clamp(15, 40);
-
-        if !self.hide_cwd {
-            let display_path = Self::shorten_path(&self.info.cwd, path_len);
-            spans.push(Span::styled(
-                ICON_FOLDER,
-                Style::default().fg(colors.text.secondary),
-            ));
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                display_path,
-                Style::default().fg(colors.text.primary),
-            ));
-
-            if let Some(ref branch) = self.info.git_branch {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    ICON_GIT,
-                    Style::default().fg(colors.text.secondary),
-                ));
-                spans.push(Span::styled(
-                    format!(" {}", branch),
-                    Style::default().fg(colors.text.accent),
-                ));
-            }
-        }
-
-        if !self.hide_sandbox {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
-
-            let (sandbox_text, sandbox_color) = match &self.info.sandbox_status {
-                SandboxStatus::None => ("no sandbox".to_string(), colors.status.error),
-                SandboxStatus::Docker => ("docker".to_string(), colors.status.success),
-                SandboxStatus::Seatbelt(profile) => {
-                    (format!("seatbelt:{}", profile), colors.status.warning)
-                }
-                SandboxStatus::Other(name) => (name.clone(), colors.status.success),
-            };
-
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                ICON_SANDBOX,
-                Style::default().fg(sandbox_color),
-            ));
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                sandbox_text,
-                Style::default().fg(sandbox_color),
-            ));
-        }
-
-        // Right side: session duration, model, and context
-        let mut right_spans = Vec::new();
-
-        // Session duration
-        right_spans.push(Span::raw(" "));
-        right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
-        right_spans.push(Span::raw(" "));
-        right_spans.push(Span::styled(
-            ICON_CLOCK,
-            Style::default().fg(colors.text.secondary),
-        ));
-        right_spans.push(Span::styled(
-            format!(" {}", self.format_duration()),
-            Style::default().fg(colors.text.secondary),
-        ));
-
         if !self.hide_model {
-            right_spans.push(Span::raw(" "));
-            right_spans.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
-            right_spans.push(Span::raw(" "));
-            right_spans.push(Span::styled(
+            line1_left.push(Span::raw(" "));
+            line1_left.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+            line1_left.push(Span::raw(" "));
+            line1_left.push(Span::styled(
                 ICON_MODEL,
                 Style::default().fg(colors.text.accent),
             ));
-            right_spans.push(Span::raw(" "));
-            right_spans.push(Span::styled(
+            line1_left.push(Span::raw(" "));
+            line1_left.push(Span::styled(
                 self.info.model_name.clone(),
                 Style::default().fg(colors.text.accent),
             ));
 
-            if !self.hide_context_percent && self.info.context_percent > 0 {
+            if !self.hide_context_percent {
                 let (bar_color, percent_color) = if self.info.context_percent >= 90 {
                     (colors.status.error, colors.status.error)
                 } else if self.info.context_percent >= 70 {
@@ -373,34 +300,104 @@ impl Footer {
                     (colors.status.success, colors.text.secondary)
                 };
 
-                // Visual progress bar [████░░░░] 45%
                 let bar_width = 8;
                 let filled = ((self.info.context_percent as usize) * bar_width) / 100;
                 let empty = bar_width - filled;
                 let bar = format!("[{}{}]", "█".repeat(filled), "░".repeat(empty));
 
-                right_spans.push(Span::raw(" "));
-                right_spans.push(Span::styled(bar, Style::default().fg(bar_color)));
-                right_spans.push(Span::styled(
+                line1_left.push(Span::raw(" "));
+                line1_left.push(Span::styled(bar, Style::default().fg(bar_color)));
+                line1_left.push(Span::styled(
                     format!(" {}%", self.info.context_percent),
                     Style::default().fg(percent_color),
                 ));
             }
         }
 
-        let left_width: usize = spans.iter().map(|s| s.content.chars().count()).sum();
-        let right_width: usize = right_spans.iter().map(|s| s.content.chars().count()).sum();
-        let available = (area.width as usize).saturating_sub(left_width + right_width);
+        // Session duration
+        line1_left.push(Span::raw(" "));
+        line1_left.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+        line1_left.push(Span::raw(" "));
+        line1_left.push(Span::styled(
+            ICON_CLOCK,
+            Style::default().fg(colors.text.secondary),
+        ));
+        line1_left.push(Span::styled(
+            format!(" {}", self.format_duration()),
+            Style::default().fg(colors.text.secondary),
+        ));
 
-        if available > 0 {
-            spans.push(Span::raw(" ".repeat(available)));
+        lines.push(Line::from(line1_left));
+
+        // --- Line 2: Breadcrumb + CWD + Git + Sandbox ---
+        if area.height >= 2 {
+            let mut line2: Vec<Span> = Vec::new();
+
+            if let Some(ref breadcrumb) = self.info.session_breadcrumb {
+                line2.push(Span::styled(
+                    format!("{} ", breadcrumb),
+                    Style::default().fg(colors.text.secondary),
+                ));
+            }
+
+            line2.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+
+            let path_len = ((area.width as usize) / 4).clamp(15, 40);
+
+            if !self.hide_cwd {
+                let display_path = Self::shorten_path(&self.info.cwd, path_len);
+                line2.push(Span::styled(
+                    ICON_FOLDER,
+                    Style::default().fg(colors.text.secondary),
+                ));
+                line2.push(Span::raw(" "));
+                line2.push(Span::styled(
+                    display_path,
+                    Style::default().fg(colors.text.primary),
+                ));
+
+                if let Some(ref branch) = self.info.git_branch {
+                    line2.push(Span::raw(" "));
+                    line2.push(Span::styled(
+                        ICON_GIT,
+                        Style::default().fg(colors.text.secondary),
+                    ));
+                    line2.push(Span::styled(
+                        format!(" {}", branch),
+                        Style::default().fg(colors.text.accent),
+                    ));
+                }
+            }
+
+            if !self.hide_sandbox {
+                line2.push(Span::raw(" "));
+                line2.push(Span::styled("│", Style::default().fg(colors.ui.dark)));
+
+                let (sandbox_text, sandbox_color) = match &self.info.sandbox_status {
+                    SandboxStatus::None => ("no sandbox".to_string(), colors.status.error),
+                    SandboxStatus::Docker => ("docker".to_string(), colors.status.success),
+                    SandboxStatus::Seatbelt(profile) => {
+                        (format!("seatbelt:{}", profile), colors.status.warning)
+                    }
+                    SandboxStatus::Other(name) => (name.clone(), colors.status.success),
+                };
+
+                line2.push(Span::raw(" "));
+                line2.push(Span::styled(
+                    ICON_SANDBOX,
+                    Style::default().fg(sandbox_color),
+                ));
+                line2.push(Span::raw(" "));
+                line2.push(Span::styled(
+                    sandbox_text,
+                    Style::default().fg(sandbox_color),
+                ));
+            }
+
+            lines.push(Line::from(line2));
         }
 
-        spans.extend(right_spans);
-
-        let line = Line::from(spans);
-        let paragraph = Paragraph::new(line).style(Style::default().bg(colors.background.primary));
-
+        let paragraph = Paragraph::new(lines).style(Style::default().bg(colors.background.primary));
         frame.render_widget(paragraph, area);
     }
 }
