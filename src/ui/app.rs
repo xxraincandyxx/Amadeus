@@ -1688,6 +1688,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 compacted_count,
                 tokens_saved,
                 messages_summarized,
+                status,
             } => {
                 info!(
                     original = original_count,

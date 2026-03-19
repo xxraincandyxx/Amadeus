@@ -225,6 +225,7 @@ impl EventTimeline {
                     compacted_count,
                     tokens_saved,
                     messages_summarized,
+                    status: _,
                 } => Some(CompactionInfo {
                     original_count: *original_count,
                     compacted_count: *compacted_count,

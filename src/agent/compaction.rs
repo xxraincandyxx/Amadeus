@@ -91,6 +91,21 @@ impl Default for CompactionConfig {
     }
 }
 
+/// Outcome of a compaction attempt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CompressionStatus {
+    /// Compaction succeeded — history was rewritten.
+    Compressed,
+    /// Compaction would have inflated context — history left untouched.
+    Inflated,
+    /// LLM summary was empty — history left untouched.
+    EmptySummary,
+    /// No compaction was needed.
+    Noop,
+    /// LLM summarization skipped (previous failure); content was truncated only.
+    TruncatedOnly,
+}
+
 /// Result of a compaction operation.
 #[derive(Debug, Clone)]
 pub struct CompactionResult {
@@ -114,6 +129,9 @@ pub struct CompactionResult {
 
     /// Number of messages that were summarized.
     pub messages_summarized: usize,
+
+    /// Outcome status of the compaction attempt.
+    pub status: CompressionStatus,
 }
 
 /// Handles automatic context compaction for conversation history.
@@ -337,6 +355,7 @@ impl ContextCompactor {
                 tokens_saved: 0,
                 summary: None,
                 messages_summarized: 0,
+                status: CompressionStatus::Noop,
             });
         }
 
@@ -411,6 +430,7 @@ impl ContextCompactor {
             tokens_saved,
             summary,
             messages_summarized,
+            status: CompressionStatus::Compressed,
         })
     }
 

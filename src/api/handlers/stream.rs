@@ -373,6 +373,7 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     compacted_count,
                     tokens_saved,
                     messages_summarized,
+                    status: _,
                 }) => Some(Ok(Event::default()
                     .event("compaction")
                     .json_data(serde_json::json!({

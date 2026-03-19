@@ -734,6 +734,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     compacted_count: result.compacted_count,
                                     tokens_saved: result.tokens_saved,
                                     messages_summarized: result.messages_summarized,
+                                    status: result.status.clone(),
                                 });
                             }
                             Err(e) => {

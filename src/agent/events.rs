@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+
+use crate::agent::compaction::CompressionStatus;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -111,6 +113,8 @@ pub enum AgentEvent {
         tokens_saved: usize,
         /// Number of messages summarized.
         messages_summarized: usize,
+        /// Outcome status of the compaction.
+        status: CompressionStatus,
     },
     Done {
         result: RunResult,
@@ -334,6 +338,7 @@ mod tests {
             compacted_count: 5,
             tokens_saved: 1000,
             messages_summarized: 3,
+            status: CompressionStatus::Compressed,
         };
 
         match event {
@@ -342,11 +347,13 @@ mod tests {
                 compacted_count,
                 tokens_saved,
                 messages_summarized,
+                status,
             } => {
                 assert_eq!(original_count, 10);
                 assert_eq!(compacted_count, 5);
                 assert_eq!(tokens_saved, 1000);
                 assert_eq!(messages_summarized, 3);
+                assert_eq!(status, CompressionStatus::Compressed);
             }
             _ => panic!("Expected Compaction"),
         }

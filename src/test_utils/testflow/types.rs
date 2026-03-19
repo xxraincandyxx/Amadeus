@@ -58,7 +58,13 @@ impl SessionLog {
                     AgentEventData::TokenUsage { total_tokens, .. } => {
                         summaries.total_tokens += total_tokens;
                     }
-                    AgentEventData::Compaction { tokens_saved, .. } => {
+                    AgentEventData::Compaction { tokens_saved, status, .. } => {
+                        if status == "Inflated" || status == "Noop" {
+                            // Don't count these as real compaction events
+                        } else {
+                            summaries.compaction_events += 1;
+                            summaries.tokens_saved_by_compaction += tokens_saved;
+                        }
                         summaries.compaction_events += 1;
                         summaries.tokens_saved_by_compaction += tokens_saved;
                     }
@@ -250,6 +256,8 @@ pub enum AgentEventData {
         compacted_count: usize,
         tokens_saved: usize,
         messages_summarized: usize,
+        #[serde(default)]
+        status: String,
     },
     Done {
         text: String,
@@ -345,11 +353,13 @@ impl From<crate::agent::events::AgentEvent> for AgentEventData {
                 compacted_count,
                 tokens_saved,
                 messages_summarized,
+                status,
             } => AgentEventData::Compaction {
                 original_count,
                 compacted_count,
                 tokens_saved,
                 messages_summarized,
+                status: format!("{:?}", status),
             },
             AgentEvent::Done { result } => AgentEventData::Done {
                 text: result.text,

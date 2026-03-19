@@ -13,7 +13,9 @@ pub mod supervisor;
 #[cfg(feature = "supervisor")]
 pub mod worker;
 
-pub use compaction::{CompactionConfig, CompactionEvent, CompactionResult, ContextCompactor};
+pub use compaction::{
+    CompactionConfig, CompactionEvent, CompactionResult, CompressionStatus, ContextCompactor,
+};
 pub use config::{Config, Provider};
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 pub use loop_agent::{Agent, SessionLog, SessionStats};
