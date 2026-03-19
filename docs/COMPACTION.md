@@ -57,24 +57,24 @@ Location: `src/agent/loop_agent.rs`
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Agent Loop (run_stream)                   │
-│                                                              │
+│                    Agent Loop (run_stream)                  │
+│                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Initialize Compactor                                 │   │
+│  │  Initialize Compactor                                │   │
 │  │  if config.auto_compact {                             │   │
-│  │      compactor = ContextCompactor::new(...)           │   │
-│  │  }                                                    │   │
+│  │      compactor = ContextCompactor::new(...)          │   │
+│  │  }                                                   │   │
 │  └──────────────────────────────────────────────────────┘   │
-│                           │                                  │
-│                           ▼                                  │
+│                           │                                 │
+│                           ▼                                 │
 │  ┌──────────────────────────────────────────────────────┐   │
-│  │  Turn Loop                                            │   │
-│  │  while should_continue {                              │   │
-│  │      ┌────────────────────────────────────────────┐   │   │
-│  │      │ Check if compaction needed                 │   │   │
-│  │      │ compactor.needs_compaction(&history, ...)  │   │   │
-│  │      └────────────────────────────────────────────┘   │   │
-│  │                      │                                 │   │
+│  │  Turn Loop                                           │   │
+│  │  while should_continue {                             │   │
+│  │      ┌────────────────────────────────────────────┐  │   │
+│  │      │ Check if compaction needed                 │  │   │
+│  │      │ compactor.needs_compaction(&history, ...)  │  │   │
+│  │      └────────────────────────────────────────────┘  │   │
+│  │                      │                               │   │
 │  │           ┌──────────┴──────────┐                    │   │
 │  │           ▼                     ▼                    │   │
 │  │      [Needed]              [Not Needed]              │   │
@@ -83,10 +83,10 @@ Location: `src/agent/loop_agent.rs`
 │  │      compact()                  │                    │   │
 │  │           │                     │                    │   │
 │  │           └──────────┬──────────┘                    │   │
-│  │                      ▼                                │   │
-│  │      Execute LLM turn                                 │   │
-│  │      Process tool calls                               │   │
-│  │  }                                                    │   │
+│  │                      ▼                               │   │
+│  │      Execute LLM turn                                │   │
+│  │      Process tool calls                              │   │
+│  │  }                                                   │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
