@@ -259,7 +259,7 @@ Keep commits small and reviewable.
 | `Cargo.toml` | Dependencies and feature flags |
 | `verify.sh` | CI verification script |
 | `CLAUDE.md` | Extended project documentation |
-| `ARCH.md` | Architecture diagrams and details |
+| `docs/ARCHITECTURE.md` | Architecture diagrams and details |
 
 ---
 
@@ -290,7 +290,7 @@ Keep commits small and reviewable.
 ## Where to Find More
 
 - **CLAUDE.md**: Extended commands, architecture details, session management
-- **ARCH.md**: Architecture diagrams and data flow
+- **docs/ARCHITECTURE.md**: Architecture diagrams and data flow
 - **GEMINI.md**: Performance mandates and defensive engineering guidelines
 - **.github/copilot-instructions.md**: Quick reference for GitHub Copilot
 - **docs/**: Design notes (REST API, TUI guide, test flow, etc.)

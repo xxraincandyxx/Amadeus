@@ -1,10 +1,18 @@
 # Amadeus Architecture
 
-> AI Agent SDK - Core building blocks for building AI agents
+> AI Agent SDK - Production-ready multi-agent system with LLM support
 
 ## Overview
 
-Amadeus is a production-ready Rust SDK for building AI agents with LLM support. It provides multi-provider compatibility (Anthropic Claude, OpenAI GPT), streaming responses, an extensible tool system, and both TUI and HTTP API interfaces.
+Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It provides multi-provider compatibility (Anthropic Claude, OpenAI GPT), streaming responses, an extensible tool system, and both TUI and HTTP API interfaces.
+
+**Key Capabilities:**
+- Concurrent execution with `tokio::task::JoinSet` for parallel task processing
+- Task queuing and backpressure control via centralized `TaskQueue`
+- P2P recursive delegation through `PeerTool` for inter-agent collaboration
+- Resilient error handling with deadlock prevention and saturation management
+
+---
 
 ## High-Level Architecture
 
@@ -23,7 +31,7 @@ Amadeus is a production-ready Rust SDK for building AI agents with LLM support. 
 │           ┌───────────────────────┴───────────────────────┐             │
 │           │              Tool Registry                    │             │
 │           │  ┌─────────────────────────────────────────┐  │             │
-│           │  │ bash │ file │ glob │ grep │ web │ ...  │ │  │             │
+│           │  │ bash │ file │ glob │ grep │ web │ ...  │  │             │
 │           │  └─────────────────────────────────────────┘  │             │
 │           └───────────────────────┬───────────────────────┘             │
 │                                   │                                     │
@@ -56,6 +64,8 @@ Amadeus is a production-ready Rust SDK for building AI agents with LLM support. 
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
 
 ## Module Structure
 
@@ -90,7 +100,7 @@ lib.rs
 ├── agent/
 │   ├── config.rs          ← Depends on: error, context
 │   ├── loop_agent.rs      ← Depends on: client, tools, policy, hooks
-│   ├── supervisor.rs     ← Depends on: concurrency
+│   ├── supervisor.rs      ← Depends on: concurrency
 │   └── ...
 ├── client/
 │   ├── mod.rs             ← Defines LLMClient trait
@@ -111,11 +121,13 @@ lib.rs
 └── ...
 ```
 
+---
+
 ## Core Components
 
 ### 1. Agent Loop (`agent/loop_agent.rs`)
 
-The heart of the SDK - orchestrates LLM interactions and tool execution.
+The heart of the SDK - orchestrates LLM interactions and tool execution using the ReAct (Reason + Act) pattern.
 
 ```
 User Prompt
@@ -159,14 +171,14 @@ User Prompt
 ```
 
 **Key Types:**
-- `Agent<C: LLMClient>` - Main agent struct
+- `Agent<C: LLMClient>` - Main agent struct, generic over LLM provider
 - `AgentBuilder<C>` - Fluent builder for agent construction
 - `RunResult` - Result of an agent run
 - `AgentEvent` - Events emitted during execution
 
 ### 2. LLM Client Trait (`client/mod.rs`)
 
-Abstraction layer for LLM providers:
+Abstraction layer for LLM providers, enabling zero-cost provider switching:
 
 ```rust
 #[async_trait]
@@ -210,6 +222,7 @@ ToolRegistry
 ```
 
 **Built-in Tools:**
+
 | Tool | Description |
 |------|-------------|
 | `bash` | Execute shell commands |
@@ -236,19 +249,221 @@ Three approval modes:
 - `rm -rf /`
 - Writing to `.env`, `.pem`, `.key` files
 
-### 5. Supervisor/Worker Pattern (`agent/supervisor.rs`)
-
-Multi-agent coordination with:
-- **Dispatch Strategies**: RoundRobin, LeastLoaded, CapabilityMatch
-- **Task Queue**: Buffered task execution
-- **Lock Manager**: Resource coordination
-
-### 6. Session Management
+### 5. Session Management
 
 Automatic session logging with:
 - Full conversation history
 - JSON or compressed JSON.gz format
 - Session restoration capability
+
+---
+
+## Multi-Agent Orchestration
+
+### Supervisor-Worker Pattern
+
+Amadeus uses a **Supervisor-Worker** pattern where a central supervisor manages a pool of specialized agents.
+
+| Feature | Implementation |
+|---------|----------------|
+| **Concurrency** | Parallel task execution via `JoinSet` |
+| **Queuing** | Async `VecDeque` with periodic processing |
+| **Load Balancing** | `LeastLoaded`, `RoundRobin`, and `CapabilityMatch` strategies |
+| **P2P Help** | Recursive sub-tasking via the `HelpRequest` bus |
+
+### The Supervisor Loop
+
+The Supervisor runs a reactive background loop that handles two main event sources:
+1. **P2P Help Requests**: Incoming from agents via `HelpRequest` channels
+2. **Task Queue**: Periodic processing of pending tasks whenever workers become available
+
+```rust
+pub async fn run(&self) -> Result<()> {
+    loop {
+        tokio::select! {
+            help_req = self.help_rx.recv() => {
+                // Dispatch or fail immediately if no workers
+            }
+            _ = interval.tick() => {
+                self.process_queue().await;
+            }
+        }
+    }
+}
+```
+
+### Task Buffering
+
+When `Supervisor::execute` is called and no workers are immediately available, the task is pushed into a `VecDeque`. This ensures bursty traffic doesn't fail immediately, provided it stays within the `max_pending_tasks` limit.
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        SUPERVISOR                               │
+│                                                                 │
+│   Task Queue: [Task1, Task2, Task3, ...]                        │
+│                                                                 │
+│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
+│   │Worker A │  │Worker B │  │Worker C │  │Worker D │            │
+│   │ 2 tasks │  │ 0 tasks │  │ 3 tasks │  │ 1 task  │            │
+│   │ [bash]  │  │ [web]   │  │ [file]  │  │ [bash]  │            │
+│   └─────────┘  └─────────┘  └─────────┘  └─────────┘            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Dispatch Strategies
+
+The Supervisor supports three load balancing strategies for distributing tasks across worker agents.
+
+#### RoundRobin (default)
+
+Cycles through workers in order, regardless of current load.
+
+```rust
+DispatchStrategy::RoundRobin => {
+    let mut next_idx = next_idx_mutex.lock().await;
+    let idx = *next_idx % candidates.len();
+    *next_idx += 1;
+    Some(candidates[idx].0)
+}
+```
+
+**Example:**
+```
+Task 1 → Worker A
+Task 2 → Worker B
+Task 3 → Worker C
+Task 4 → Worker A  (cycles back)
+Task 5 → Worker B
+```
+
+| Pros | Cons |
+|------|------|
+| Simple, predictable | Ignores current workload |
+| Even distribution over time | Busy workers get equal share |
+| No state tracking beyond index | Can queue on overloaded workers |
+
+**Best for:** Homogeneous tasks, equal worker capacity
+
+#### LeastLoaded
+
+Always picks the worker with the fewest active tasks.
+
+```rust
+DispatchStrategy::LeastLoaded => candidates
+    .iter()
+    .min_by_key(|(_, info)| info.active_tasks)
+    .map(|(id, _)| *id)
+```
+
+**Example:**
+```
+Current state:  A(2 tasks), B(0 tasks), C(3 tasks), D(1 task)
+Task arrives → Worker B (has 0 active tasks)
+Next state:    A(2), B(1), C(3), D(1)
+Another task → Worker B or D (tie, both have 1)
+```
+
+| Pros | Cons |
+|------|------|
+| Balances load dynamically | Requires tracking active_tasks per worker |
+| Prevents hot spots | Doesn't consider task complexity |
+| Better resource utilization | Race conditions possible (handled via locks) |
+
+**Best for:** Variable task durations, uneven workloads
+
+#### CapabilityMatch
+
+First filters workers by required capabilities, then picks least loaded among them.
+
+```rust
+DispatchStrategy::CapabilityMatch => candidates
+    .iter()
+    .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
+    .min_by_key(|(_, info)| info.active_tasks)
+    .map(|(id, _)| *id)
+```
+
+**Example:**
+```
+Workers:
+  Worker A - capabilities: [bash, file]     - active: 2
+  Worker B - capabilities: [web, search]    - active: 0
+  Worker C - capabilities: [bash, docker]   - active: 1
+  Worker D - capabilities: [web, bash]      - active: 3
+
+Task arrives requiring: [bash]
+Eligible: A, C, D (all have bash)
+Selected: Worker C (has bash, lowest active count = 1)
+```
+
+| Pros | Cons |
+|------|------|
+| Routes tasks to specialized workers | Can fail if no capable worker available |
+| Prevents dispatching to incapable workers | More complex matching logic |
+| Combines capability filtering with load balancing | Requires capability declaration at spawn |
+
+**Best for:** Heterogeneous workers, specialized tasks (e.g., web scraping, code execution)
+
+#### Strategy Selection Guide
+
+| Scenario | Best Strategy | Why |
+|----------|---------------|-----|
+| Quick uniform tasks | RoundRobin | Simplicity, even spread |
+| Mixed short/long tasks | LeastLoaded | Prevents queuing |
+| Specialized workers | CapabilityMatch | Routes to right worker |
+| Unknown task profiles | LeastLoaded | Safe default |
+
+#### Configuration
+
+Set the dispatch strategy in `SupervisorConfig`:
+
+```rust
+let config = SupervisorConfig {
+    strategy: DispatchStrategy::LeastLoaded,
+    max_pending_tasks: 100,
+    task_timeout: Duration::from_secs(300),
+    retry_failed_tasks: true,
+    max_retries: 3,
+};
+```
+
+#### Worker Capabilities
+
+Workers declare capabilities when spawned:
+
+```rust
+let worker_configs = vec![
+    WorkerConfig {
+        name: "code-executor".to_string(),
+        capabilities: vec!["bash".to_string(), "file".to_string()],
+        max_concurrent: 3,
+        ..Default::default()
+    },
+    WorkerConfig {
+        name: "web-scraper".to_string(),
+        capabilities: vec!["web".to_string(), "search".to_string()],
+        max_concurrent: 2,
+        ..Default::default()
+    },
+];
+```
+
+---
+
+## P2P Collaboration (Help System)
+
+### The PeerTool
+
+Agents are initialized with a `PeerTool`, which allows them to send `HelpRequest`s back to the Supervisor. This enables recursive collaboration where a Coder agent can ask a Reviewer agent for feedback mid-task.
+
+### Deadlock Prevention
+
+To prevent circular dependency deadlocks (e.g., Worker A waits for Worker B, who is waiting for Worker A), the Supervisor implements:
+1. **Timeout Enforcement**: Every task has a `task_timeout`
+2. **Saturation Errors**: If a help request cannot be fulfilled because all potential workers are busy, it returns an error immediately rather than queuing indefinitely (which would block the requester)
+
+---
 
 ## Data Flow
 
@@ -294,6 +509,20 @@ enum ContentBlock {
 }
 ```
 
+---
+
+## Performance
+
+### Concurrent Execution
+
+Tasks are spawned as independent Tokio tasks. In a batch of 5 tasks taking 2s each, total time is ~2s instead of 10s (5x speedup).
+
+### Backpressure Control
+
+The `SupervisorConfig::max_pending_tasks` (default: 100) prevents OOM and API exhaustion by rejecting new tasks when the buffer is full.
+
+---
+
 ## Feature Flags
 
 ```toml
@@ -317,12 +546,18 @@ context = []
 full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
 ```
 
+Feature flag chain: `mesh` → `supervisor` → `concurrency`
+
+---
+
 ## Testing Strategy
 
 - **Unit Tests**: Co-located with implementation
 - **Integration Tests**: `tests/` directory
 - **Feature-Gated Tests**: Using `#[cfg(feature = "...")]`
-- **Mock LLM**: For deterministic testing
+- **Mock LLM**: For deterministic testing without API calls
+
+---
 
 ## Configuration
 
@@ -336,6 +571,8 @@ Environment-based configuration via `.env`:
 - Context window management
 - Blocked commands
 
+---
+
 ## Extension Points
 
 1. **Custom Tools**: Implement `Tool` trait
@@ -343,3 +580,34 @@ Environment-based configuration via `.env`:
 3. **Custom Providers**: Implement `LLMClient` trait
 4. **Skills**: YAML-based prompt templates
 5. **Policy**: JSON-based approval rules
+
+---
+
+## Implementation Status
+
+| Feature | Status | Notes |
+|---------|--------|-------|
+| Agent Loop (ReAct) | ✅ Complete | Core orchestration |
+| LLM Client Trait | ✅ Complete | Anthropic, OpenAI |
+| Tool System | ✅ Complete | 10+ built-in tools |
+| Policy System | ✅ Complete | Auto/Ask/Strict |
+| Concurrent Execution (JoinSet) | ✅ Complete | Parallel processing |
+| Task Queuing & Backpressure | ✅ Complete | Centralized TaskQueue |
+| P2P Help System | ✅ Complete | PeerTool integration |
+| Supervisor/Worker | ✅ Complete | Multi-agent coordination |
+| TUI Interface | ✅ Complete | ratatui-based |
+| HTTP API | ✅ Complete | axum-based |
+| Actor-based Agents | ⏳ Planned | Persistent tasks with mailboxes |
+| Delta State Management | ⏳ Planned | Surgical state updates |
+
+---
+
+## Roadmap
+
+1. **Actor-Based Agents** - Transform agents into persistent tasks with mailboxes to support `Pause`/`Resume` and better state persistence
+2. **Delta State** - Implement surgical state updates to handle large workspaces efficiently
+
+---
+
+*Document Version: 2.0*
+*Last Updated: 2026-03-19*
