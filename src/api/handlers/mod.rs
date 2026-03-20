@@ -90,6 +90,9 @@ pub mod skills;
 /// Approvals handler for tool approval flow.
 pub mod approvals;
 
+/// Agents handler for multi-agent management.
+pub mod agents;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -113,3 +116,4 @@ pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;
 pub use stream::stream;
 pub use tasks::handle_task;
+pub use agents::{agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent};
