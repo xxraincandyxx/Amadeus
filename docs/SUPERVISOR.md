@@ -446,3 +446,50 @@ Or enable all features:
 ```toml
 amadeus = { version = "0.1", features = ["full"] }
 ```
+
+---
+
+## AgentManager (Standalone Multi-Agent)
+
+In addition to the Supervisor pattern, Amadeus provides a simpler `AgentManager` for managing multiple standalone agents without the worker pool architecture.
+
+### When to use AgentManager vs Supervisor
+
+| Use Case | Recommended Pattern |
+|----------|---------------------|
+| Multiple independent agents with different roles | AgentManager |
+| Collaborative problem-solving with capability routing | Supervisor + Workers |
+| Simple TUI with agent switching | AgentManager |
+| Complex multi-agent task orchestration | Supervisor |
+
+### AgentManager Features
+
+- **Agent Profiles**: Specialized system prompts (default, debug, docs, code_review, custom)
+- **Agent Lifecycle**: Create, switch, kill agents
+- **API Integration**: REST endpoints for agent management
+- **TUI Support**: Agent panel for visual management
+
+### Example
+
+```rust
+use amadeus::agent::{AgentManager, AgentProfile};
+use amadeus::agent::config::Config;
+use amadeus::client::anthropic::AnthropicClient;
+
+// Create manager
+let client = AnthropicClient::new(api_key, base_url, model);
+let config = Arc::new(Config::load()?);
+let mut manager = AgentManager::new(client, config);
+
+// Create agents with different profiles
+manager.create_agent(Some("debugger".to_string()), AgentProfile::Debug).await?;
+manager.create_agent(Some("docs-writer".to_string()), AgentProfile::Docs).await?;
+
+// List and switch
+let agents = manager.list_agents();
+manager.switch_next();
+```
+
+### API Endpoints
+
+See [REST_API.md](./REST_API.md#5-multi-agent-endpoints) for the HTTP API.

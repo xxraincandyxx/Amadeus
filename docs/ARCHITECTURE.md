@@ -418,6 +418,29 @@ When `Supervisor::execute` is called and no workers are immediately available, t
 │                                                                 │
 │   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
 │   │Worker A │  │Worker B │  │Worker C │  │Worker D │            │
+│                                                                 │
+│ ─────────────────────────────────────────────────────────────── │
+│                                                                 │
+│ ### AgentManager (Standalone Multi-Agent)                       │
+│                                                                 │
+│ For simpler use cases, `AgentManager` provides a lightweight    │
+│ alternative to the Supervisor pattern:                          │
+│                                                                 │
+│ - Multiple independent agents with different profiles            │
+│ - API-first design (REST endpoints for all operations)          │
+│ - TUI integration via ApiClient                                 │
+│ - Agent switching in terminal UI                                │
+│                                                                 │
+│ ```rust                                                         │
+│ let mut manager = AgentManager::new(client, config);            │
+│ manager.create_agent(None, AgentProfile::Debug).await;           │
+│ manager.create_agent(None, AgentProfile::Docs).await;           │
+│ let agents = manager.list_agents();                             │
+│ manager.switch_next();                                          │
+│ ```                                                             │
+│                                                                 │
+│ See [REST_API.md](./REST_API.md#5-multi-agent-endpoints)       │
+│ for HTTP API details.
 │   │ 2 tasks │  │ 0 tasks │  │ 3 tasks │  │ 1 task  │            │
 │   │ [bash]  │  │ [web]   │  │ [file]  │  │ [bash]  │            │
 │   └─────────┘  └─────────┘  └─────────┘  └─────────┘            │
