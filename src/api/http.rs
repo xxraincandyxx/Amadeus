@@ -74,6 +74,9 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 // Internal dependencies
+use crate::agent::manager::AgentManager;
+use tokio::sync::RwLock;
+use crate::agent::config::Config;
 use crate::agent::supervisor::Supervisor;
 use crate::api::handlers::{
     agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
@@ -96,6 +99,8 @@ use crate::error::Result;
 pub struct AppState<C: LLMClient> {
     /// The multi-agent supervisor instance.
     pub supervisor: Arc<Supervisor<C>>,
+    /// The multi-agent manager for standalone agent management.
+    pub agent_manager: Arc<RwLock<AgentManager<C>>>,
 }
 
 /*
@@ -145,11 +150,19 @@ pub struct AppState<C: LLMClient> {
 pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
     supervisor: Arc<Supervisor<C>>,
+    config: Arc<Config>,
 ) -> Result<()> {
     // -------------------------------------------------------------------------
     // CREATE SHARED STATE
     // -------------------------------------------------------------------------
-    let state = Arc::new(AppState { supervisor });
+    // Create AgentManager with a cloned client
+    let client = supervisor.client().clone();
+    let agent_manager = Arc::new(RwLock::new(AgentManager::new(client, config)));
+
+    let state = Arc::new(AppState {
+        supervisor,
+        agent_manager,
+    });
 
     // -------------------------------------------------------------------------
     // CREATE ROUTER

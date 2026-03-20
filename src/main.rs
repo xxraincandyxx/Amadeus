@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
         match provider {
             ClientKind::Anthropic(c) => {
                 let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
                 supervisor
                     .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                     .await?;
@@ -136,11 +136,11 @@ async fn main() -> Result<()> {
                     let _ = s_clone.run().await;
                 });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor).await?;
+                run_server(port, supervisor, sdk_config.clone()).await?;
             }
             ClientKind::OpenAI(c) => {
                 let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config);
+                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
                 supervisor
                     .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                     .await?;
@@ -150,7 +150,7 @@ async fn main() -> Result<()> {
                     let _ = s_clone.run().await;
                 });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor).await?;
+                run_server(port, supervisor, sdk_config.clone()).await?;
             }
         }
         mesh_manager.cleanup();
