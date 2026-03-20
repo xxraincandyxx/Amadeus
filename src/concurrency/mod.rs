@@ -26,5 +26,7 @@
 //! ```
 
 mod lock;
+mod file_lock;
 
 pub use lock::{LockEntry, LockError, LockManager, LockMode, LockStatus};
+pub use file_lock::{FileLockManager, FileReadGuard, FileWriteGuard, FileReadInfo, FileLockStats};

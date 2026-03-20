@@ -15,6 +15,8 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::agent::config::Config;
+use crate::concurrency::FileLockManager;
+use crate::core::id::AgentId;
 use crate::error::Result;
 use crate::tools::bash::BashTool;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
@@ -29,12 +31,27 @@ type ToolMap = HashMap<&'static str, Arc<dyn Tool>>;
 #[derive(Clone)]
 pub struct ToolRegistry {
     tools: Arc<ToolMap>,
+    /// Optional file lock manager for concurrent file access control.
+    file_lock_manager: Option<Arc<FileLockManager>>,
+    /// Agent ID for this agent (used for file lock tracking).
+    agent_id: Option<AgentId>,
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
         Self {
             tools: Arc::new(HashMap::new()),
+            file_lock_manager: None,
+            agent_id: None,
+        }
+    }
+
+    /// Create a new ToolRegistry with file locking enabled.
+    pub fn new_with_file_locks(file_lock_manager: Arc<FileLockManager>, agent_id: AgentId) -> Self {
+        Self {
+            tools: Arc::new(HashMap::new()),
+            file_lock_manager: Some(file_lock_manager),
+            agent_id: Some(agent_id),
         }
     }
 
@@ -43,9 +60,23 @@ impl ToolRegistry {
     }
 
     pub fn with_defaults_and_todo(config: &Config, todo_manager: Arc<RwLock<TodoManager>>) -> Self {
-        let file_tools = FileTools::from_config(config);
+        Self::with_defaults_and_todo_with_locks(config, todo_manager, None, None)
+    }
 
-        Self::new()
+    /// Create default tools with optional file locking.
+    pub fn with_defaults_and_todo_with_locks(
+        config: &Config,
+        todo_manager: Arc<RwLock<TodoManager>>,
+        file_lock_manager: Option<Arc<FileLockManager>>,
+        agent_id: Option<AgentId>,
+    ) -> Self {
+        let file_tools = FileTools::from_config_with_locks(config, file_lock_manager.clone(), agent_id);
+
+        Self {
+            tools: Arc::new(HashMap::new()),
+            file_lock_manager,
+            agent_id,
+        }
             .register(Box::new(BashTool::from_config(config)))
             .register(Box::new(ReadFileTool::new(file_tools.clone())))
             .register(Box::new(WriteFileTool::new(file_tools.clone())))
@@ -54,6 +85,23 @@ impl ToolRegistry {
             .register(Box::new(GrepTool::from_config(config)))
             .register(Box::new(TodoTool::new(todo_manager)))
             .register(Box::new(WebFetchTool::from_config(config)))
+    }
+
+    /// Set the file lock manager for this registry.
+    pub fn with_file_locks(mut self, manager: Arc<FileLockManager>, agent_id: AgentId) -> Self {
+        self.file_lock_manager = Some(manager);
+        self.agent_id = Some(agent_id);
+        self
+    }
+
+    /// Get the file lock manager if available.
+    pub fn file_lock_manager(&self) -> Option<&Arc<FileLockManager>> {
+        self.file_lock_manager.as_ref()
+    }
+
+    /// Get the agent ID if available.
+    pub fn agent_id(&self) -> Option<&AgentId> {
+        self.agent_id.as_ref()
     }
 
     pub fn with_sub_agnet_child_defaults(config: &Config) -> Self {
@@ -78,12 +126,11 @@ impl ToolRegistry {
         }
     }
 
-    pub fn register(self, tool: Box<dyn Tool>) -> Self {
+    pub fn register(mut self, tool: Box<dyn Tool>) -> Self {
         let mut tools: ToolMap = (*self.tools).clone();
         tools.insert(tool.name(), Arc::from(tool));
-        Self {
-            tools: Arc::new(tools),
-        }
+        self.tools = Arc::new(tools);
+        self
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
@@ -126,15 +173,16 @@ impl ToolRegistry {
 
         Self {
             tools: Arc::new(filtered),
+            file_lock_manager: self.file_lock_manager.clone(),
+            agent_id: self.agent_id,
         }
     }
 
-    pub fn register_arc(self, tool: Arc<dyn Tool>) -> Self {
+    pub fn register_arc(mut self, tool: Arc<dyn Tool>) -> Self {
         let mut tools: ToolMap = (*self.tools).clone();
         tools.insert(tool.name(), tool);
-        Self {
-            tools: Arc::new(tools),
-        }
+        self.tools = Arc::new(tools);
+        self
     }
 }
 

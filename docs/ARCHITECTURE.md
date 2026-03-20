@@ -376,6 +376,8 @@ Automatic session logging with:
 
 Amadeus uses a **Supervisor-Worker** pattern where a central supervisor manages a pool of specialized agents.
 
+> **📖 For detailed usage examples, see [SUPERVISOR.md](./SUPERVISOR.md)**
+
 | Feature | Implementation |
 |---------|----------------|
 | **Concurrency** | Parallel task execution via `JoinSet` |

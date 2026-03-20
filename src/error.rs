@@ -62,6 +62,9 @@ pub enum AgentError {
     #[error("Text not found in {path}: {snippet}")]
     TextNotFound { path: String, snippet: String },
 
+    #[error("Lock error: {0}")]
+    Lock(String),
+
     #[error("Task join error: {0}")]
     JoinError(String),
 }
@@ -71,6 +74,7 @@ impl AgentError {
         match self {
             AgentError::ApiRequest(_) => true,
             AgentError::Timeout(_) => true,
+            AgentError::Lock(_) => true,
             AgentError::StreamError(_) => true,
             AgentError::Api(msg) => {
                 let msg_lower = msg.to_lowercase();

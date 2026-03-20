@@ -132,7 +132,18 @@ pub mod concurrency;
 pub use error::{AgentError, Result};
 
 #[cfg(feature = "concurrency")]
-pub use concurrency::{LockEntry, LockError, LockManager, LockMode, LockStatus};
+pub use concurrency::{
+    FileLockManager,
+    FileLockStats,
+    FileReadGuard,
+    FileWriteGuard,
+    FileReadInfo,
+    LockEntry,
+    LockError,
+    LockManager,
+    LockMode,
+    LockStatus,
+};
 
 #[cfg(feature = "supervisor")]
 pub use agent::{
