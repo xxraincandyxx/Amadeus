@@ -22,7 +22,7 @@ default = []
 
 # Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
+tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
 test-utils = ["tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
