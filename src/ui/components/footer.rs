@@ -19,6 +19,8 @@ pub struct FooterInfo {
     pub model_name: String,
     pub context_percent: u8,
     pub is_mesh: bool,
+    /// Active agent name (for multi-agent mode)
+    pub agent_name: Option<String>,
     /// Temporary status message (shown for a short time)
     pub status_message: Option<String>,
     /// Whether a background task is running
@@ -76,6 +78,7 @@ impl Footer {
                 model_name,
                 context_percent: 0,
                 is_mesh: false,
+                agent_name: None,
                 status_message: None,
                 is_background: false,
                 key_chord_hint: None,
@@ -172,6 +175,11 @@ impl Footer {
         self.info.is_mesh = is_mesh;
     }
 
+    /// Set the active agent name (shown in footer for multi-agent mode)
+    pub fn set_agent_name(&mut self, name: Option<String>) {
+        self.info.agent_name = name;
+    }
+
     /// Set background mode indicator
     pub fn set_background(&mut self, is_background: bool) {
         self.is_background = is_background;
@@ -236,16 +244,19 @@ impl Footer {
         // --- Line 1: Status indicators + Model + Context + Duration ---
         let mut line1_left: Vec<Span> = Vec::new();
 
+        // Show agent indicator (agent name or MESH mode)
         if self.info.is_mesh {
             line1_left.push(Span::styled(
                 "MESH ",
                 Style::default().fg(colors.text.secondary),
             ));
-        } else {
+        } else if let Some(ref agent_name) = self.info.agent_name {
             line1_left.push(Span::styled(
-                "null ",
+                format!("{} ", agent_name),
                 Style::default().fg(colors.text.secondary),
             ));
+        } else {
+            // Single agent mode - show nothing or could show "main"
         }
 
         if self.is_background {
@@ -262,11 +273,6 @@ impl Footer {
             line1_left.push(Span::styled(
                 format!("{} ", hint),
                 Style::default().fg(colors.text.link),
-            ));
-        } else {
-            line1_left.push(Span::styled(
-                "null ",
-                Style::default().fg(colors.text.secondary),
             ));
         }
 

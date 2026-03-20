@@ -698,7 +698,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         session_label: String,
         session_id: usize,
     ) -> Self {
-        let footer = Footer::new(model_name.clone());
+        let mut footer = Footer::new(model_name.clone());
+        // Set default agent name for multi-agent indicator
+        footer.set_agent_name(Some("main".to_string()));
         let loading_indicator = LoadingIndicator::new();
         let status_bar = StatusBar::new();
 
@@ -2036,11 +2038,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.collapse_all_tools();
                 }
             }
-            // Tab: Accept command completion
+            // Tab: Accept command completion OR switch agent
             (KeyModifiers::NONE, KeyCode::Tab) => {
                 if self.stream_rx.is_none() {
                     if self.input.completion_is_visible() {
                         self.input.apply_completion();
+                    } else {
+                        // Switch to next agent (placeholder - requires API connection)
+                        self.footer.set_status_message("Tab: Agent switch (API not connected)");
                     }
                 }
             }
