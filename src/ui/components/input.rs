@@ -7,6 +7,7 @@ use ratatui::{
 use tui_textarea::{CursorMove, TextArea};
 use unicode_width::UnicodeWidthStr;
 
+use crate::ui::components::completion::{CompletionState, render_completion};
 use crate::ui::get_colors;
 
 pub struct InputComponent {
@@ -15,6 +16,7 @@ pub struct InputComponent {
     history_index: Option<usize>,
     current_draft: String,
     status_hint: Option<String>,
+    completion: CompletionState,
 }
 
 impl InputComponent {
@@ -52,6 +54,7 @@ impl InputComponent {
             history_index: None,
             current_draft: String::new(),
             status_hint: None,
+            completion: CompletionState::new(),
         }
     }
 
@@ -237,6 +240,55 @@ impl InputComponent {
         );
 
         frame.render_widget(&self.textarea, area);
+
+        // Render completion popup
+        let input_text = self.textarea.lines().join("\n");
+        if self.completion.update(&input_text) {
+            render_completion(frame, area, &self.completion, area);
+        }
+    }
+
+    /// Get the currently selected completion command, if any.
+    pub fn get_completion(&self) -> Option<String> {
+        self.completion.selected().map(|c| c.name.clone())
+    }
+
+    /// Check if completion popup is visible.
+    pub fn completion_is_visible(&self) -> bool {
+        self.completion.is_visible()
+    }
+
+    /// Move selection up in completion list.
+    pub fn completion_select_up(&mut self) {
+        self.completion.select_up();
+    }
+
+    /// Move selection down in completion list.
+    pub fn completion_select_down(&mut self) {
+        self.completion.select_down();
+    }
+
+    /// Apply the selected completion (replace input with command).
+    pub fn apply_completion(&mut self) {
+        if let Some(cmd) = self.completion.selected() {
+            // Replace current input with the command
+            let lines: Vec<String> = vec![cmd.name.clone()];
+            self.textarea = TextArea::new(lines);
+            // Re-setup the textarea styling
+            let colors = get_colors();
+            self.textarea.set_block(
+                Block::default()
+                    .borders(Borders::TOP)
+                    .border_style(Style::default().fg(colors.border.default))
+                    .title(" ❯ PROMPT ")
+                    .title_style(
+                        Style::default()
+                            .fg(colors.text.accent)
+                            .add_modifier(Modifier::BOLD),
+                    ),
+            );
+            self.textarea.set_style(Style::default().fg(colors.text.primary));
+        }
     }
 
     pub fn height(&self) -> u16 {

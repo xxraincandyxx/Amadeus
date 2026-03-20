@@ -1,4 +1,5 @@
 mod approval;
+mod completion;
 mod compaction_animation;
 mod diff;
 mod footer;

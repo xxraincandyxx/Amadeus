@@ -2036,6 +2036,30 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.collapse_all_tools();
                 }
             }
+            // Tab: Accept command completion
+            (KeyModifiers::NONE, KeyCode::Tab) => {
+                if self.stream_rx.is_none() {
+                    if self.input.completion_is_visible() {
+                        self.input.apply_completion();
+                    }
+                }
+            }
+            // Shift+Tab: Move up in completion list
+            (KeyModifiers::SHIFT, KeyCode::Tab) => {
+                if self.stream_rx.is_none() {
+                    if self.input.completion_is_visible() {
+                        self.input.completion_select_up();
+                    }
+                }
+            }
+            // Ctrl+Down: Move down in completion list
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                if self.stream_rx.is_none() {
+                    if self.input.completion_is_visible() {
+                        self.input.completion_select_down();
+                    }
+                }
+            }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if self.stream_rx.is_none() {
                     self.input.history_up();
