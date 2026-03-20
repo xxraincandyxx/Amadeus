@@ -20,6 +20,7 @@
 //! - **`components`**: UI components (input, messages, sidebar, status)
 //! - **`repl`**: Legacy REPL (kept for backward compatibility)
 
+pub mod api_client;
 pub mod app;
 pub mod colors;
 pub mod components;
@@ -31,6 +32,7 @@ pub mod semantic_colors;
 pub mod theme_manager;
 pub mod themes;
 
+pub use api_client::ApiClient;
 pub use app::App;
 pub use event::{AppEvent, EventHandler};
 pub use repl::Repl;
