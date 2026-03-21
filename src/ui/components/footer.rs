@@ -524,6 +524,7 @@ mod tests {
             model_name: "test-model".to_string(),
             context_percent: 50,
             is_mesh: true,
+            agent_name: Some("test-agent".to_string()),
             status_message: Some("test".to_string()),
             is_background: false,
             key_chord_hint: Some("ctrl+x".to_string()),

@@ -187,6 +187,7 @@ Type these in the input field:
 |---------|--------|
 | `/compact` or `/compress` | Manual context compaction |
 | `/exit` | Quit |
+| `/new-agent` | Spawn a new independent session with fresh agent |
 
 ---
 
@@ -229,12 +230,17 @@ Tools display inline in the chat stream with status indicators:
 
 ## Multi-Session Support
 
+Amadeus supports two types of sessions:
+
+1. **Independent Sessions** - Created with `/new-agent`. Each has its own fresh agent with empty history. Use for parallel, unrelated tasks.
+2. **Sub-Agent Sessions** - Created when the supervisor delegates tasks to workers. Share parent context and are organized hierarchically.
+
 ### Session Indicators
 
-The footer shows session breadcrumbs:
-```
-▸ root ▸ sub1 ▸ sub2
-```
+The footer shows session information:
+- **In MESH mode**: Displays `MESH` indicator
+- **With named agents**: Shows agent name (e.g., `reviewer `)
+- **Session breadcrumbs**: Hierarchical view of sub-agents (e.g., `root ▸ sub1 ▸ sub2`)
 
 Session status markers:
 | Marker | Meaning |
@@ -409,4 +415,4 @@ Always use `Ctrl+C` or `q` to quit - this ensures:
 
 ---
 
-*Last updated: 2026-03-19*
+*Last updated: 2026-03-21*

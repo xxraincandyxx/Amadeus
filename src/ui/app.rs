@@ -547,6 +547,7 @@ struct Session<C: LLMClient> {
     subagent_depth: usize,
     session_label: String,
     session_id: usize,
+    pending_new_agent: bool,
     pending_approvals: VecDeque<ApprovalRequest>,
     last_error: Option<String>,
     parent_session_id: Option<usize>,
@@ -740,6 +741,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             subagent_depth,
             session_label,
             session_id,
+            pending_new_agent: false,
             pending_approvals: VecDeque::new(),
             last_error: None,
             parent_session_id: None,
@@ -2390,6 +2392,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.toggle_sidebar(SidebarKind::Context);
                 return Ok(());
             }
+            if command == "/new-agent" {
+                self.input.clear();
+                self.pending_new_agent = true;
+                return Ok(());
+            }
             // Unknown command: send as user message
         }
 
@@ -3024,6 +3031,53 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
     }
 
+    /// Spawn a new independent session with a fresh agent (empty history).
+    fn spawn_new_session(&mut self) -> Result<()> {
+        // Get client and config from the active session's agent
+        let active_session = self.active_session();
+        let client = active_session.agent.client().clone();
+        let config = active_session.agent.config();
+
+        // Create a fresh agent with empty history and default configuration
+        let new_agent = Agent::builder(client, config)
+            .with_default_tools()
+            .build();
+
+        let label = format!("session{}", self.next_session_id);
+
+        let mut session = Session::new(
+            new_agent,
+            self.workdir.clone(),
+            self.model_name.clone(),
+            0,
+            label,
+            self.next_session_id,
+        );
+        self.next_session_id += 1;
+
+        if let Some(addr) = self.mesh_supervisor_addr.clone() {
+            session.set_mesh_mode(&addr);
+        }
+
+        // Set up approval channels
+        let (_channels, approval_handle) = create_approval_channels();
+        session.approval_dec_tx = Some(approval_handle.decision_tx);
+        session.approval_req_rx = Some(approval_handle.request_rx);
+
+        // Don't start streaming - just create the session and switch to it
+        session.input.clear();
+        session.current_text.clear();
+        session.streaming_buffer.clear();
+        session.clear_tool_monitor();
+        session.messages.clear_streaming_text();
+        session.sync_activity_chrome();
+
+        self.sessions.push(session);
+        self.switch_session(self.sessions.len() - 1);
+
+        Ok(())
+    }
+
     fn spawn_sub_session(
         &mut self,
         parent_idx: usize,
@@ -3290,6 +3344,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         handled_global = self.handle_global_key(key, &mut terminal)?;
                     }
                     if !handled_global {
+                        let mut needs_new_agent = false;
                         let (should_quit, session_stream_rx, session_approval_rx) = {
                             let session = &mut self.sessions[active_idx];
                             session.handle_event(event, &mut terminal).await?;
@@ -3299,6 +3354,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                                 session.flush_before_compaction = false;
                                 session.start_compaction();
                             }
+                            if session.pending_new_agent {
+                                session.pending_new_agent = false;
+                                needs_new_agent = true;
+                            }
                             let session_stream_rx = session.stream_rx.take();
                             let session_approval_rx = session.approval_req_rx.take();
                             (
@@ -3307,6 +3366,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                                 session_approval_rx,
                             )
                         };
+                        if needs_new_agent {
+                            self.spawn_new_session()?;
+                        }
                         if session_stream_rx.is_some() {
                             stream_rx = session_stream_rx;
                             events.set_tick_rate(Duration::from_millis(16));
