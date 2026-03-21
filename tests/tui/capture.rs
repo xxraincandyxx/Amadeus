@@ -152,6 +152,62 @@ impl Default for TuiCapture {
     }
 }
 
+impl TuiFrameSnapshot {
+    /// Format as readable terminal-like output
+    pub fn to_terminal_view(&self) -> String {
+        let mut output = String::new();
+
+        // Header
+        output.push_str(&format!(
+            "╔══ Frame {} ════════════════════════════════════════════╗\n",
+            self.frame_id
+        ));
+        output.push_str(&format!("║ Session: {} | {}x{} | {:3}ms ║\n",
+            self.session_id, self.width, self.height, self.timestamp_ms));
+        output.push_str("╠══════════════════════════════════════════════════════════╣\n");
+
+        // Header region
+        if !self.header.session_label.is_empty() || self.header.streaming {
+            output.push_str(&format!("║ Header: label='{}' streaming={} ║\n",
+                self.header.session_label, self.header.streaming));
+        }
+
+        // Cells as ASCII art (simplified view)
+        output.push_str("║ Cells (first 10x40):                               ║\n");
+        for y in 0..10.min(self.height) {
+            let mut row = String::from("║ ");
+            for x in 0..40.min(self.width) {
+                let cell = self.cells.iter().find(|c| c.x == x && c.y == y);
+                row.push(cell.map(|c| c.c).unwrap_or(' '));
+            }
+            row.push_str(" ║");
+            output.push_str(&row);
+            output.push('\n');
+        }
+
+        // Cursor
+        output.push_str(&format!("║ Cursor: ({}, {}) visible={}                    ║\n",
+            self.cursor.x, self.cursor.y, self.cursor.visible));
+
+        // Footer
+        output.push_str("╠══════════════════════════════════════════════════════════╣\n");
+        output.push_str(&format!("║ Footer: {} [{}] {}%",
+            self.footer.model, self.footer.cwd, self.footer.context_pct));
+        if self.footer.is_mesh {
+            output.push_str(" MESH");
+        }
+        if let Some(ref name) = self.footer.agent_name {
+            output.push_str(&format!(" [{}]", name));
+        }
+        output.push_str(" ║\n");
+        output.push_str("\n╚");
+        for _ in 0..58 { output.push('═'); }
+        output.push_str("╝\n");
+
+        output
+    }
+}
+
 /// Convert raw terminal buffer to cell snapshots
 pub fn buffer_to_cells(buf: &[Vec<(char, &str, &str)>]) -> Vec<CellSnapshot> {
     let mut cells = Vec::new();

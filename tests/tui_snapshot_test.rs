@@ -5,6 +5,7 @@
 mod tui;
 
 use tui::TuiCapture;
+use tui::capture::CellSnapshot;
 use tui::comparison::{compare, format_diff, SnapshotComparison};
 use tui::harness::{TuiTestHarness, InputSequence, run_scenario};
 use tui::scenarios::{
@@ -211,6 +212,139 @@ mod tests {
 
         let client2 = client.clone();
         assert!(std::mem::size_of_val(&client2) > 0);
+    }
+
+    // ============================================================================
+    // Debug Visualization Tests
+    // ============================================================================
+
+    #[test]
+    fn test_snapshot_debug_view_simple() {
+        let mut capture = TuiCapture::new("debug_test");
+
+        // Create a frame with some content
+        let cells = vec![
+            CellSnapshot {
+                x: 0, y: 0, c: 'H', fg: "white".into(), bg: "black".into(),
+                bold: true, underline: false, reverse: false,
+            },
+            CellSnapshot {
+                x: 1, y: 0, c: 'e', fg: "white".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            },
+            CellSnapshot {
+                x: 2, y: 0, c: 'l', fg: "white".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            },
+            CellSnapshot {
+                x: 3, y: 0, c: 'l', fg: "white".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            },
+            CellSnapshot {
+                x: 4, y: 0, c: 'o', fg: "white".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            },
+        ];
+
+        let snapshot = capture.capture(80, 24, &[cells.clone()]);
+
+        println!("\n\n===== SIMPLE TEXT SNAPSHOT =====");
+        println!("{}", snapshot.to_terminal_view());
+        println!("===== SERIALIZED =====");
+        println!("{}", serde_json::to_string_pretty(&snapshot).unwrap());
+
+        assert_eq!(snapshot.cells.len(), 5);
+    }
+
+    #[test]
+    fn test_snapshot_debug_view_with_footer() {
+        let mut capture = TuiCapture::new("footer_test");
+
+        let cells = vec![
+            CellSnapshot {
+                x: 0, y: 0, c: '>', fg: "green".into(), bg: "black".into(),
+                bold: true, underline: false, reverse: false,
+            },
+            CellSnapshot {
+                x: 2, y: 0, c: ' ', fg: "white".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            },
+        ];
+
+        let mut snapshot = capture.capture(120, 40, &[cells]);
+        snapshot.footer.cwd = "/Users/dev/project".into();
+        snapshot.footer.model = "claude-3-sonnet".into();
+        snapshot.footer.context_pct = 45;
+        snapshot.footer.git_branch = Some("main".into());
+
+        println!("\n\n===== FOOTER SNAPSHOT =====");
+        println!("{}", snapshot.to_terminal_view());
+        println!("===== FOOTER DETAILS =====");
+        println!("cwd: {}", snapshot.footer.cwd);
+        println!("model: {}", snapshot.footer.model);
+        println!("context: {}%", snapshot.footer.context_pct);
+        println!("git: {:?}", snapshot.footer.git_branch);
+
+        assert_eq!(snapshot.footer.context_pct, 45);
+    }
+
+    #[test]
+    fn test_snapshot_streaming_sequence() {
+        let mut capture = TuiCapture::new("streaming_test");
+
+        // Simulate streaming "Hello World" character by character
+        let text = "Hello World!";
+        let mut frames = Vec::new();
+
+        for (i, c) in text.chars().enumerate() {
+            let cells = vec![CellSnapshot {
+                x: i as u16, y: 0, c, fg: "cyan".into(), bg: "black".into(),
+                bold: false, underline: false, reverse: false,
+            }];
+            let frame = capture.capture(80, 24, &[cells]);
+            frames.push(frame);
+        }
+
+        println!("\n\n===== STREAMING SEQUENCE ({} frames) =====", frames.len());
+        for (i, frame) in frames.iter().enumerate() {
+            println!("Frame {}: '{}'", i, frame.cells.iter().map(|c| c.c).collect::<String>());
+        }
+
+        assert_eq!(frames.len(), 12);
+        assert_eq!(frames.last().unwrap().cells.len(), 1);
+    }
+
+    #[test]
+    fn test_diff_visualization() {
+        let mut capture1 = TuiCapture::new("diff_test");
+        let mut capture2 = TuiCapture::new("diff_test");
+
+        // Frame 1: "Hello"
+        let cells1 = "Hello".chars().enumerate().map(|(i, c)| CellSnapshot {
+            x: i as u16, y: 0, c, fg: "white".into(), bg: "black".into(),
+            bold: false, underline: false, reverse: false,
+        }).collect::<Vec<_>>();
+        let snap1 = capture1.capture(80, 24, &[cells1]);
+
+        // Frame 2: "World"
+        let cells2 = "World".chars().enumerate().map(|(i, c)| CellSnapshot {
+            x: i as u16, y: 0, c, fg: "white".into(), bg: "black".into(),
+            bold: false, underline: false, reverse: false,
+        }).collect::<Vec<_>>();
+        let snap2 = capture2.capture(80, 24, &[cells2]);
+
+        let diff = compare(&snap1, &snap2);
+
+        println!("\n\n===== DIFF VISUALIZATION =====");
+        println!("{}", format_diff(&diff));
+        println!("===== SUMMARY =====");
+        println!("Total changes: {}", diff.summary.total_cells_changed);
+        println!("Cells added: {}", diff.summary.cells_added);
+        println!("Cells removed: {}", diff.summary.cells_removed);
+        println!("Style changes: {}", diff.summary.style_changes);
+
+        assert!(diff.summary.cells_removed > 0);
+        assert!(diff.summary.cells_added > 0);
     }
 
     // ============================================================================
