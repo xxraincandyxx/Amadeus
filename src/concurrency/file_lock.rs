@@ -21,6 +21,22 @@ use tracing::debug;
 use crate::core::id::AgentId;
 use crate::error::{AgentError, Result};
 
+/// Format SystemTime to ISO 8601 string for error messages.
+fn format_system_time(time: SystemTime) -> String {
+    let duration_since_epoch = time
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = duration_since_epoch.as_secs();
+    let nanos = duration_since_epoch.subsec_nanos();
+    
+    // Convert to chrono DateTime for formatting
+    use chrono::{DateTime, Utc};
+    let datetime = DateTime::<Utc>::from_timestamp(secs as i64, nanos);
+    datetime
+        .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+        .unwrap_or_else(|| format!("{}s", secs))
+}
+
 /// Information about a cached file read.
 #[derive(Debug, Clone)]
 pub struct FileReadInfo {
@@ -186,11 +202,11 @@ impl FileLockManager {
                     .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))?;
 
                 if current_modified > read_info.modified_at {
-                    return Err(AgentError::Lock(format!(
-                        "File '{}' has been modified since last read by this agent. \
-                         Please re-read the file before writing.",
-                        path
-                    )));
+                    return Err(AgentError::FileModified {
+                        path: path.to_string(),
+                        read_at: format_system_time(read_info.modified_at),
+                        modified_at: format_system_time(current_modified),
+                    });
                 }
             }
         }

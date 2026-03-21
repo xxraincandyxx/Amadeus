@@ -65,6 +65,16 @@ pub enum AgentError {
     #[error("Lock error: {0}")]
     Lock(String),
 
+    #[error("File '{path}' has been modified since it was last read.\n\
+             Last modification: {modified_at}\n\
+             Last read: {read_at}\n\
+             Please re-read the file before modifying it.")]
+    FileModified {
+        path: String,
+        read_at: String,
+        modified_at: String,
+    },
+
     #[error("Task join error: {0}")]
     JoinError(String),
 }
