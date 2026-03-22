@@ -675,6 +675,13 @@ impl OpenAIClient {
                                 events.push(StreamEvent::TextDelta(content.to_string()));
                             }
 
+                            // Reasoning content delta (supported by some OpenAI-compatible APIs)
+                            if let Some(reasoning) =
+                                delta.get("reasoning_content").and_then(|v| v.as_str())
+                            {
+                                events.push(StreamEvent::ThinkingDelta(reasoning.to_string()));
+                            }
+
                             // Tool call details (can have start and delta in same chunk)
                             if let Some(tool_calls) =
                                 delta.get("tool_calls").and_then(|v| v.as_array())
