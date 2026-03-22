@@ -728,7 +728,7 @@ impl OpenAIClient {
                             if finish_reason == "tool_calls" {
                                 events.push(StreamEvent::ToolCallDone(String::new()));
                             }
-                            events.push(StreamEvent::StopReason(finish_reason.to_string()));
+                            let mapped_reason = match finish_reason { "stop" => "end_turn", "tool_calls" => "tool_use", "length" => "max_tokens", _ => finish_reason }; events.push(StreamEvent::StopReason(mapped_reason.to_string()));
                         }
                     }
                 }
@@ -793,7 +793,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0],
-            StreamEvent::StopReason(reason) if reason == "stop"
+            StreamEvent::StopReason(reason) if reason == "end_turn"
         ));
     }
 }
