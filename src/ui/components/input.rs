@@ -7,7 +7,7 @@ use ratatui::{
 use tui_textarea::{CursorMove, TextArea};
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::components::completion::{CompletionState, render_completion};
+use crate::ui::components::completion::{render_completion, CompletionState};
 use crate::ui::get_colors;
 
 pub struct InputComponent {
@@ -287,7 +287,8 @@ impl InputComponent {
                             .add_modifier(Modifier::BOLD),
                     ),
             );
-            self.textarea.set_style(Style::default().fg(colors.text.primary));
+            self.textarea
+                .set_style(Style::default().fg(colors.text.primary));
         }
     }
 

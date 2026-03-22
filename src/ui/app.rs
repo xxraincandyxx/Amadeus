@@ -1215,7 +1215,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         for name in registry.names() {
             let schema_bytes = registry
                 .get(name)
-                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .map(|tool| {
+                    serde_json::to_string(tool.schema())
+                        .unwrap_or_default()
+                        .len()
+                })
                 .unwrap_or(0);
             tools_tokens += schema_bytes.div_ceil(4);
         }
@@ -1746,8 +1750,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_approval().await;
             }
-            (KeyModifiers::NONE, KeyCode::Esc) => {
-                // Cancel/deny on escape
+            (KeyModifiers::NONE, KeyCode::Esc)
+            | (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                // Cancel/deny on escape or Ctrl+C
                 self.deny_approval().await;
             }
             (KeyModifiers::NONE, KeyCode::Char('y')) => {
@@ -1856,7 +1861,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         match (key.modifiers, key.code) {
-            (KeyModifiers::NONE, KeyCode::Char('q')) => {
+            (KeyModifiers::NONE, KeyCode::Char('q'))
+            | (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
                 self.should_quit = true;
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
@@ -2031,6 +2037,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Enter) => {
                 self.input.insert_newline();
             }
+            (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                if self.stream_rx.is_some() {
+                    self.cancel_stream(terminal)?;
+                } else if self.input.get_input().trim().is_empty() {
+                    self.should_quit = true;
+                } else {
+                    self.input.clear();
+                }
+            }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 if self.stream_rx.is_some() {
                     self.cancel_stream(terminal)?;
@@ -2047,25 +2062,24 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         self.input.apply_completion();
                     } else {
                         // Switch to next agent (placeholder - requires API connection)
-                        self.footer.set_status_message("Tab: Agent switch (API not connected)");
+                        self.footer
+                            .set_status_message("Tab: Agent switch (API not connected)");
                     }
                 }
             }
             // Shift+Tab: Move up in completion list
             (KeyModifiers::SHIFT, KeyCode::Tab) => {
-                if self.stream_rx.is_none() {
-                    if self.input.completion_is_visible() {
+                if self.stream_rx.is_none()
+                    && self.input.completion_is_visible() {
                         self.input.completion_select_up();
                     }
-                }
             }
             // Ctrl+Down: Move down in completion list
             (KeyModifiers::CONTROL, KeyCode::Down) => {
-                if self.stream_rx.is_none() {
-                    if self.input.completion_is_visible() {
+                if self.stream_rx.is_none()
+                    && self.input.completion_is_visible() {
                         self.input.completion_select_down();
                     }
-                }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if self.stream_rx.is_none() {
@@ -2309,7 +2323,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         for name in registry.names() {
             let schema_size = registry
                 .get(name)
-                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .map(|tool| {
+                    serde_json::to_string(tool.schema())
+                        .unwrap_or_default()
+                        .len()
+                })
                 .unwrap_or(0);
             let tokens = schema_size.div_ceil(4);
             tool_details.push((name.to_string(), tokens));
@@ -2321,27 +2339,35 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let history = self.agent.history();
         let history_guard = match history.try_read() {
             Ok(guard) => guard,
-            Err(_) => return ContextInfo {
-                model_name,
-                context_window_size,
-                total_tokens: system_prompt_tokens + tools_tokens,
-                system_prompt_tokens,
-                tools_tokens,
-                conversation_tokens: 0,
-                tool_details,
-                message_details: Vec::new(),
-            },
+            Err(_) => {
+                return ContextInfo {
+                    model_name,
+                    context_window_size,
+                    total_tokens: system_prompt_tokens + tools_tokens,
+                    system_prompt_tokens,
+                    tools_tokens,
+                    conversation_tokens: 0,
+                    tool_details,
+                    message_details: Vec::new(),
+                }
+            }
         };
         let mut conversation_tokens: usize = 0;
         let mut message_details: Vec<(String, usize)> = Vec::new();
         for msg in history_guard.iter() {
-            let msg_chars: usize = msg.content.iter().map(|block| match block {
-                crate::agent::messages::ContentBlock::Text { text } => text.len(),
-                crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
-                    name.len() + input.to_string().len()
-                }
-                crate::agent::messages::ContentBlock::ToolResult { content, .. } => content.len(),
-            }).sum();
+            let msg_chars: usize = msg
+                .content
+                .iter()
+                .map(|block| match block {
+                    crate::agent::messages::ContentBlock::Text { text } => text.len(),
+                    crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
+                        name.len() + input.to_string().len()
+                    }
+                    crate::agent::messages::ContentBlock::ToolResult { content, .. } => {
+                        content.len()
+                    }
+                })
+                .sum();
             let msg_tokens = msg_chars.div_ceil(4);
             conversation_tokens += msg_tokens;
             message_details.push((msg.role.clone(), msg_tokens));
@@ -2395,6 +2421,21 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             if command == "/new-agent" {
                 self.input.clear();
                 self.pending_new_agent = true;
+                return Ok(());
+            }
+            if command == "/help" {
+                self.input.clear();
+                let help_text = "\
+**Available Commands**
+- `/help`: Show this help message
+- `/compact` or `/compress`: Force context compaction
+- `/context`: Toggle context sidebar
+- `/new-agent`: Spawn new agent session
+- `/test`: Run integration tests
+- `Ctrl+C` / `Esc`: Cancel active stream
+- `Ctrl+]` / `Ctrl+[`: Switch sessions
+- `Ctrl+Backspace`: Close active session";
+                self.messages.add_assistant(help_text.to_string());
                 return Ok(());
             }
             // Unknown command: send as user message
@@ -2525,7 +2566,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let sidebar_min_width = 30u16;
         let sidebar_max_width = 40u16;
         let sidebar_width = if self.sidebar.is_some() {
-            size.width.saturating_sub(sidebar_min_width).min(sidebar_max_width)
+            size.width
+                .saturating_sub(sidebar_min_width)
+                .min(sidebar_max_width)
         } else {
             0
         };
@@ -3039,9 +3082,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let config = active_session.agent.config();
 
         // Create a fresh agent with empty history and default configuration
-        let new_agent = Agent::builder(client, config)
-            .with_default_tools()
-            .build();
+        let new_agent = Agent::builder(client, config).with_default_tools().build();
 
         let label = format!("session{}", self.next_session_id);
 
@@ -3253,12 +3294,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             self.sessions[idx].stream_rx = stream_rx;
 
             let mut approval_rx = self.sessions[idx].approval_req_rx.take();
+            let mut needs_approval = false;
             if let Some(ref mut rx) = approval_rx {
                 while let Ok(request) = rx.try_recv() {
                     self.sessions[idx].enqueue_approval_request(request, false);
+                    needs_approval = true;
                 }
             }
             self.sessions[idx].approval_req_rx = approval_rx;
+
+            if needs_approval {
+                self.switch_session(idx);
+                break;
+            }
 
             self.sessions[idx].poll_compaction_result();
         }
