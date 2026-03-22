@@ -114,11 +114,16 @@ impl ToolRegistry {
         subagent_tool: Option<Arc<dyn Tool>>,
     ) -> Self {
         let file_tools = FileTools::from_config(config);
+        let todo_manager = Arc::new(RwLock::new(TodoManager::new()));
         let registry = Self::new()
             .register(Box::new(BashTool::from_config(config)))
             .register(Box::new(ReadFileTool::new(file_tools.clone())))
             .register(Box::new(WriteFileTool::new(file_tools.clone())))
-            .register(Box::new(EditFileTool::new(file_tools)));
+            .register(Box::new(EditFileTool::new(file_tools)))
+            .register(Box::new(GlobTool::from_config(config)))
+            .register(Box::new(GrepTool::from_config(config)))
+            .register(Box::new(TodoTool::new(todo_manager)))
+            .register(Box::new(WebFetchTool::from_config(config)));
 
         if let Some(tool) = subagent_tool {
             registry.register_arc(tool)
