@@ -91,13 +91,17 @@ impl OpenAIClient {
         let base_url = base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
 
         // Create a configured HTTP client with connection pooling and timeouts
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .pool_max_idle_per_host(5)
             .pool_idle_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(120))
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to create HTTP client");
+            .connect_timeout(Duration::from_secs(10));
+
+        if std::env::var("AMADEUS_NO_PROXY").map(|v| v == "true" || v == "1").unwrap_or(true) {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().expect("Failed to create HTTP client");
 
         Self {
             client,

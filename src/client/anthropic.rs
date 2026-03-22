@@ -128,7 +128,7 @@ impl AnthropicClient {
 
         // Create a configured HTTP client with connection pooling and timeouts
         // This improves performance for multiple API calls
-        let client = Client::builder()
+        let mut builder = Client::builder()
             // Maximum idle connections per host (connection pooling)
             .pool_max_idle_per_host(5)
             // How long to keep idle connections alive
@@ -136,9 +136,15 @@ impl AnthropicClient {
             // Total request timeout (includes connection + response)
             .timeout(Duration::from_secs(120))
             // Connection establishment timeout
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to create HTTP client");
+            .connect_timeout(Duration::from_secs(10));
+
+        // Disable proxy by default to avoid issues with local proxies breaking connections,
+        // unless AMADEUS_NO_PROXY is explicitly set to false/0
+        if std::env::var("AMADEUS_NO_PROXY").map(|v| v == "true" || v == "1").unwrap_or(true) {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().expect("Failed to create HTTP client");
 
         Self {
             client,
