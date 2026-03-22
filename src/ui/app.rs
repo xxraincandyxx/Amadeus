@@ -3244,6 +3244,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .messages
                     .add_assistant(format!("[sub-agent] {}", summary.trim_end()));
             }
+            
+            // Automatically switch back to parent session if the completed subagent was active
+            if self.active_idx == child_idx {
+                self.switch_session(parent_idx);
+            }
         }
     }
 
