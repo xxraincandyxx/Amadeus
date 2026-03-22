@@ -138,10 +138,16 @@ pub fn compare(expected: &TuiFrameSnapshot, actual: &TuiFrameSnapshot) -> FrameD
     // Footer changes
     let footer_changes = FooterChanges {
         cwd: diff_field(&expected.footer.cwd, &actual.footer.cwd),
-        git_branch: diff_option_string(expected.footer.git_branch.clone(), actual.footer.git_branch.clone()),
+        git_branch: diff_option_string(
+            expected.footer.git_branch.clone(),
+            actual.footer.git_branch.clone(),
+        ),
         model: diff_field(&expected.footer.model, &actual.footer.model),
         context_pct: diff_u8(expected.footer.context_pct, actual.footer.context_pct),
-        agent_name: diff_option_string(expected.footer.agent_name.clone(), actual.footer.agent_name.clone()),
+        agent_name: diff_option_string(
+            expected.footer.agent_name.clone(),
+            actual.footer.agent_name.clone(),
+        ),
         is_mesh: diff_bool(expected.footer.is_mesh, actual.footer.is_mesh),
     };
     let footer_changed = !is_footer_default(&footer_changes);
@@ -252,15 +258,15 @@ pub fn format_diff(diff: &FrameDiff) -> String {
             output.push_str(&format!("  - {}\n", cell));
         }
         if diff.removed_cells.len() > 10 {
-            output.push_str(&format!("  ... and {} more\n", diff.removed_cells.len() - 10));
+            output.push_str(&format!(
+                "  ... and {} more\n",
+                diff.removed_cells.len() - 10
+            ));
         }
     }
 
     if !diff.style_changes.is_empty() {
-        output.push_str(&format!(
-            "~ STYLE {} changes:\n",
-            diff.style_changes.len()
-        ));
+        output.push_str(&format!("~ STYLE {} changes:\n", diff.style_changes.len()));
         for change in &diff.style_changes[..diff.style_changes.len().min(10)] {
             output.push_str(&format!(
                 "  ~ ({}:{}) {}: {} → {}\n",
@@ -285,7 +291,10 @@ pub fn format_diff(diff: &FrameDiff) -> String {
 
     output.push_str(&"-".repeat(60));
     output.push('\n');
-    output.push_str(&format!("Total changes: {}\n", diff.summary.total_cells_changed));
+    output.push_str(&format!(
+        "Total changes: {}\n",
+        diff.summary.total_cells_changed
+    ));
 
     output
 }
@@ -321,10 +330,10 @@ impl SnapshotComparison {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::capture::{
-        CursorSnapshot, FooterSnapshot, HeaderSnapshot, TuiCapture, CellSnapshot,
+        CellSnapshot, CursorSnapshot, FooterSnapshot, HeaderSnapshot, TuiCapture,
     };
+    use super::*;
 
     fn make_snapshot(frame_id: u64, text: &str, cursor_x: u16) -> TuiFrameSnapshot {
         let cells: Vec<CellSnapshot> = text

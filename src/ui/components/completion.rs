@@ -40,8 +40,7 @@ pub fn get_available_commands() -> Vec<Command> {
         Command::new("/new-agent", "Create a new agent with a specific profile")
             .with_usage("/new-agent [profile] - Profiles: default, debug, docs, review"),
         Command::new("/agents", "List all active agents"),
-        Command::new("/kill", "Kill an agent by name or ID")
-            .with_usage("/kill <agent-name>"),
+        Command::new("/kill", "Kill an agent by name or ID").with_usage("/kill <agent-name>"),
         Command::new("/compact", "Trigger context compaction"),
         Command::new("/compress", "Trigger context compaction"),
         Command::new("/context", "Toggle context sidebar"),
@@ -124,7 +123,7 @@ impl CompletionState {
     }
 
     /// Get the number of matches.
-    pub fn match_count(&self) -> usize {
+    pub fn _match_count(&self) -> usize {
         self.matches.len()
     }
 }

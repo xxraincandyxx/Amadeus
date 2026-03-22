@@ -113,8 +113,10 @@ async fn test_e2e_product_development_flow() {
 🎭 --- STARTING E2E PRODUCT DEVELOPMENT FLOW --- 🎭"
     );
 
-    let mut config = SupervisorConfig::default();
-    config.strategy = DispatchStrategy::CapabilityMatch;
+    let config = SupervisorConfig {
+        strategy: DispatchStrategy::CapabilityMatch,
+        ..Default::default()
+    };
 
     let mut supervisor = Supervisor::new(
         StoryClient {

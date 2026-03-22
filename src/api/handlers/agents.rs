@@ -17,7 +17,6 @@ use crate::api::types::{
     KillAgentResponse, ListAgentsResponse, SwitchAgentRequest, SwitchAgentResponse,
 };
 use crate::client::LLMClient;
-use tokio::sync::RwLock;
 
 /// List all agents.
 pub async fn list_agents<C: LLMClient + Clone + 'static>(
@@ -88,9 +87,12 @@ pub async fn get_agent<C: LLMClient + Clone + 'static>(
 ) -> Result<Json<crate::api::types::AgentInfo>, Json<ErrorResponse>> {
     use crate::core::id::AgentId;
 
-    let _agent_uuid = agent_id
-        .parse::<AgentId>()
-        .map_err(|_| Json(ErrorResponse::new("InvalidAgentId", "Invalid agent ID format")))?;
+    let _agent_uuid = agent_id.parse::<AgentId>().map_err(|_| {
+        Json(ErrorResponse::new(
+            "InvalidAgentId",
+            "Invalid agent ID format",
+        ))
+    })?;
 
     // For now, return a placeholder since get_agent returns Option
     Ok(Json(crate::api::types::AgentInfo {
@@ -110,9 +112,12 @@ pub async fn kill_agent<C: LLMClient + Clone + 'static>(
 ) -> Result<Json<KillAgentResponse>, Json<ErrorResponse>> {
     use crate::core::id::AgentId;
 
-    let agent_uuid = agent_id
-        .parse::<AgentId>()
-        .map_err(|_| Json(ErrorResponse::new("InvalidAgentId", "Invalid agent ID format")))?;
+    let agent_uuid = agent_id.parse::<AgentId>().map_err(|_| {
+        Json(ErrorResponse::new(
+            "InvalidAgentId",
+            "Invalid agent ID format",
+        ))
+    })?;
 
     let mut agent_manager = state.agent_manager.write().await;
     match agent_manager.kill(&agent_uuid) {
@@ -129,9 +134,12 @@ pub async fn switch_agent<C: LLMClient + Clone + 'static>(
 ) -> Result<Json<SwitchAgentResponse>, Json<ErrorResponse>> {
     use crate::core::id::AgentId;
 
-    let agent_uuid = agent_id
-        .parse::<AgentId>()
-        .map_err(|_| Json(ErrorResponse::new("InvalidAgentId", "Invalid agent ID format")))?;
+    let agent_uuid = agent_id.parse::<AgentId>().map_err(|_| {
+        Json(ErrorResponse::new(
+            "InvalidAgentId",
+            "Invalid agent ID format",
+        ))
+    })?;
 
     let mut agent_manager = state.agent_manager.write().await;
     match agent_manager.switch_to(&agent_uuid) {
@@ -168,7 +176,10 @@ pub async fn agent_stream<C: LLMClient + Clone + 'static>(
     State(_state): State<Arc<AppState<C>>>,
     Path(agent_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> Result<Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>, Json<ErrorResponse>> {
+) -> Result<
+    Sse<impl futures::Stream<Item = Result<axum::response::sse::Event, std::convert::Infallible>>>,
+    Json<ErrorResponse>,
+> {
     use axum::response::sse::Event;
     use futures::stream;
 
@@ -180,8 +191,8 @@ pub async fn agent_stream<C: LLMClient + Clone + 'static>(
     // TODO: Implement actual streaming from agent
     let stream = stream::iter(vec![
         Ok(Event::default().data(format!("Agent {}: Processing '{}'", agent_id, message))),
-        Ok(Event::default().data("Agent: Working on it...".to_string())),
-        Ok(Event::default().data("Agent: Done!".to_string())),
+        Ok(Event::default().data("Agent: Working on it...")),
+        Ok(Event::default().data("Agent: Done!")),
     ]);
 
     Ok(Sse::new(stream))

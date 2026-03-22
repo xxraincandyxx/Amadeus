@@ -675,12 +675,10 @@ impl ContextSidebar {
         // Usage bar
         let used = ContextInfo::fmt_tokens(self.info.used_tokens());
         let total = ContextInfo::fmt_tokens(self.info.context_window_size as usize);
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(" {} / {} tokens", used, total),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            format!(" {} / {} tokens", used, total),
+            Style::default().fg(colors.text.secondary),
+        )]));
         lines.push(self.render_bar(area.width.saturating_sub(2)));
         lines.push(Line::from(""));
 

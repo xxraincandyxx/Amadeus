@@ -106,6 +106,9 @@ pub mod agents;
 //
 // Or access via the module:
 //   use crate::api::handlers::chat::chat;
+pub use agents::{
+    agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent,
+};
 pub use approvals::{list_pending_approvals, register_approval_channel, submit_approval};
 pub use chat::chat;
 pub use config::{get_config, update_config};
@@ -116,4 +119,3 @@ pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;
 pub use stream::stream;
 pub use tasks::handle_task;
-pub use agents::{agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent};

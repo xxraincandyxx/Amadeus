@@ -6,8 +6,10 @@ use serde::{Deserialize, Serialize};
 /// Each profile has a specific system prompt that shapes the agent's behavior.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AgentProfile {
     /// Default agent - general purpose, current system prompt
+    #[default]
     Default,
     /// Debugging specialist - focuses on error analysis, debugging
     Debug,
@@ -60,7 +62,8 @@ You are a powerful agent that helps users with software development tasks.
 - Think step by step before taking action
 - Explain your reasoning before making changes
 - Ask clarifying questions when needed
-- Be precise and accurate in your responses"#.to_string()
+- Be precise and accurate in your responses"#
+            .to_string()
     }
 
     /// Debugging specialist prompt.
@@ -82,7 +85,8 @@ You specialize in debugging, error analysis, and problem diagnosis.
 - Read relevant code to understand context
 - Identify the root cause, not just symptoms
 - Propose minimal, targeted fixes
-- Explain the debugging process"#.to_string()
+- Explain the debugging process"#
+            .to_string()
     }
 
     /// Documentation specialist prompt.
@@ -103,7 +107,8 @@ You specialize in creating and improving documentation.
 - Keep documentation clear and concise
 - Use appropriate formatting
 - Focus on user-facing documentation
-- Maintain consistency with existing docs"#.to_string()
+- Maintain consistency with existing docs"#
+            .to_string()
     }
 
     /// Code review specialist prompt.
@@ -125,15 +130,11 @@ You specialize in code reviews and quality assessment.
 - Focus on important issues first
 - Suggest concrete improvements
 - Be constructive and helpful
-- Consider code maintainability"#.to_string()
+- Consider code maintainability"#
+            .to_string()
     }
 }
 
-impl Default for AgentProfile {
-    fn default() -> Self {
-        AgentProfile::Default
-    }
-}
 
 impl std::fmt::Display for AgentProfile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

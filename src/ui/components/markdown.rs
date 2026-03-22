@@ -75,7 +75,12 @@ fn detect_code_blocks(content: &str) -> Vec<Segment> {
     segments
 }
 
-fn render_code_block_lines(code: &str, language: Option<&str>, width: usize, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Line<'static>> {
+fn render_code_block_lines(
+    code: &str,
+    language: Option<&str>,
+    width: usize,
+    colors: &crate::ui::semantic_colors::SemanticColors,
+) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
 
     // Reserve space for line numbers (4 chars: "  1 |")
@@ -117,10 +122,7 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize, col
         if line_width <= code_width {
             lines.push(Line::from(vec![
                 Span::styled(line_num, Style::default().fg(colors.ui.comment)),
-                Span::styled(
-                    code_line.to_string(),
-                    Style::default().fg(colors.ui.symbol),
-                ),
+                Span::styled(code_line.to_string(), Style::default().fg(colors.ui.symbol)),
             ]));
         } else {
             // Wrap long lines
@@ -161,7 +163,10 @@ fn render_code_block_lines(code: &str, language: Option<&str>, width: usize, col
     lines
 }
 
-fn render_inline_code_spans(segment: &str, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Span<'static>> {
+fn render_inline_code_spans(
+    segment: &str,
+    colors: &crate::ui::semantic_colors::SemanticColors,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
     let mut in_inline_code = false;
@@ -201,7 +206,10 @@ fn render_inline_code_spans(segment: &str, colors: &crate::ui::semantic_colors::
     spans
 }
 
-fn render_inline_bold_spans(text: &str, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Span<'static>> {
+fn render_inline_bold_spans(
+    text: &str,
+    colors: &crate::ui::semantic_colors::SemanticColors,
+) -> Vec<Span<'static>> {
     let mut spans = Vec::new();
     let mut current = String::new();
     let mut in_bold = false;
@@ -212,14 +220,19 @@ fn render_inline_bold_spans(text: &str, colors: &crate::ui::semantic_colors::Sem
                 if !current.is_empty() {
                     spans.push(Span::styled(
                         current.clone(),
-                        Style::default().fg(colors.text.primary).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(colors.text.primary)
+                            .add_modifier(Modifier::BOLD),
                     ));
                     current.clear();
                 }
                 in_bold = false;
             } else {
                 if !current.is_empty() {
-                    spans.push(Span::styled(current.clone(), Style::default().fg(colors.text.primary)));
+                    spans.push(Span::styled(
+                        current.clone(),
+                        Style::default().fg(colors.text.primary),
+                    ));
                     current.clear();
                 }
                 in_bold = true;
@@ -233,17 +246,26 @@ fn render_inline_bold_spans(text: &str, colors: &crate::ui::semantic_colors::Sem
         if in_bold {
             spans.push(Span::styled(
                 current.clone(),
-                Style::default().fg(colors.text.primary).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(colors.text.primary)
+                    .add_modifier(Modifier::BOLD),
             ));
         } else {
-            spans.push(Span::styled(current.clone(), Style::default().fg(colors.text.primary)));
+            spans.push(Span::styled(
+                current.clone(),
+                Style::default().fg(colors.text.primary),
+            ));
         }
     }
 
     spans
 }
 
-fn render_text_line(line: &str, width: usize, colors: &crate::ui::semantic_colors::SemanticColors) -> Vec<Line<'static>> {
+fn render_text_line(
+    line: &str,
+    width: usize,
+    colors: &crate::ui::semantic_colors::SemanticColors,
+) -> Vec<Line<'static>> {
     let trimmed = line.trim_start();
 
     if trimmed.is_empty() {
@@ -297,11 +319,13 @@ fn render_text_line(line: &str, width: usize, colors: &crate::ui::semantic_color
     let mut final_spans = Vec::new();
     let indent = &line[0..line.len() - trimmed.len()];
     if !indent.is_empty() {
-        final_spans.push(Span::styled(indent.to_string(), Style::default().fg(colors.text.primary)));
+        final_spans.push(Span::styled(
+            indent.to_string(),
+            Style::default().fg(colors.text.primary),
+        ));
     }
     final_spans.extend(spans);
     wrap_lines(final_spans, width)
-
 }
 
 fn wrap_lines(spans: Vec<Span<'static>>, width: usize) -> Vec<Line<'static>> {
@@ -418,7 +442,6 @@ fn is_list_item(line: &str) -> bool {
     trimmed.starts_with("- ") || trimmed.starts_with("* ")
 }
 
-
 pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
     let segments = detect_code_blocks(content);
     let colors = get_colors();
@@ -427,7 +450,12 @@ pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
     for segment in segments {
         match segment {
             Segment::Code { code, language } => {
-                lines.extend(render_code_block_lines(&code, language.as_deref(), width, &colors));
+                lines.extend(render_code_block_lines(
+                    &code,
+                    language.as_deref(),
+                    width,
+                    &colors,
+                ));
             }
             Segment::Text(text) => {
                 let input_lines: Vec<&str> = text.lines().collect();
@@ -502,7 +530,7 @@ mod tests {
     #[test]
     fn test_code_block_with_content() {
         let result = render_markdown("```bash\necho hello\n```", 100);
-        assert!(result.len() >= 1);
+        assert!(!result.is_empty());
     }
 
     #[test]

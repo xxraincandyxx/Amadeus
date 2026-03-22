@@ -25,8 +25,8 @@
 //! manager.release("/path/to/file", agent_id)?;
 //! ```
 
-mod lock;
 mod file_lock;
+mod lock;
 
+pub use file_lock::{FileLockManager, FileLockStats, FileReadGuard, FileReadInfo, FileWriteGuard};
 pub use lock::{LockEntry, LockError, LockManager, LockMode, LockStatus};
-pub use file_lock::{FileLockManager, FileReadGuard, FileWriteGuard, FileReadInfo, FileLockStats};

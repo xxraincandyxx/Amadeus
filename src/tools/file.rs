@@ -191,9 +191,7 @@ impl FileTools {
         // If file locking is enabled, acquire read lock
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
-            let read_guard = manager
-                .acquire_read(agent_id.clone(), &path_str)
-                .await?;
+            let read_guard = manager.acquire_read(*agent_id, &path_str).await?;
 
             let text = tokio::fs::read_to_string(&fp).await.map_err(|e| {
                 AgentError::Io(std::io::Error::other(format!(
@@ -207,7 +205,9 @@ impl FileTools {
             let content_hash = compute_content_hash(&text);
 
             // Record the read in the guard
-            read_guard.record_read(modified_at, Some(content_hash)).await;
+            read_guard
+                .record_read(modified_at, Some(content_hash))
+                .await;
 
             let mut lines: Vec<&str> = text.lines().collect();
             if let Some(lim) = limit {
@@ -247,13 +247,11 @@ impl FileTools {
 
             // First validate that file wasn't modified since last read
             manager
-                .validate_read_freshness(agent_id.clone(), &path_str)
+                .validate_read_freshness(*agent_id, &path_str)
                 .await?;
 
             // Acquire exclusive write lock
-            let write_guard = manager
-                .acquire_write(agent_id.clone(), &path_str)
-                .await?;
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
 
             if let Some(parent) = fp.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -312,13 +310,11 @@ impl FileTools {
 
             // First validate that file wasn't modified since last read
             manager
-                .validate_read_freshness(agent_id.clone(), &path_str)
+                .validate_read_freshness(*agent_id, &path_str)
                 .await?;
 
             // Acquire exclusive write lock
-            let write_guard = manager
-                .acquire_write(agent_id.clone(), &path_str)
-                .await?;
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
 
             let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
                 AgentError::Io(std::io::Error::other(format!(

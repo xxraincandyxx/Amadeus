@@ -1,6 +1,6 @@
 mod approval;
-mod completion;
 mod compaction_animation;
+mod completion;
 mod diff;
 mod footer;
 mod input;
@@ -25,7 +25,9 @@ pub use markdown::render_markdown;
 pub use messages::{CompressionItem, CompressionStatus, HistoryItem, MessagesComponent};
 pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sessions::{SessionBrowser, SessionMetadata};
-pub use sidebar::{ContextInfo, ContextSidebar, FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar};
+pub use sidebar::{
+    ContextInfo, ContextSidebar, FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar,
+};
 pub use spinner::GeminiSpinner;
 pub use status_bar::StatusBar;
 pub use tool_group::{ToolCall, ToolGroup, ToolStatus};

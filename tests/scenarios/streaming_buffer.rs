@@ -42,7 +42,7 @@ impl StreamingBuffer {
             return 1;
         }
         let text_len = self.text.chars().count();
-        std::cmp::max(1, ((text_len + width - 1) / width) as u16)
+        std::cmp::max(1, text_len.div_ceil(width) as u16)
     }
 }
 

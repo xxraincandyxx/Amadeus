@@ -18,6 +18,12 @@ pub struct EventTimeline {
     start: Instant,
 }
 
+impl Default for EventTimeline {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventTimeline {
     pub fn new() -> Self {
         Self {

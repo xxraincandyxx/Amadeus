@@ -58,7 +58,11 @@ impl SessionLog {
                     AgentEventData::TokenUsage { total_tokens, .. } => {
                         summaries.total_tokens += total_tokens;
                     }
-                    AgentEventData::Compaction { tokens_saved, status, .. } => {
+                    AgentEventData::Compaction {
+                        tokens_saved,
+                        status,
+                        ..
+                    } => {
                         if status == "Inflated" || status == "Noop" {
                             // Don't count these as real compaction events
                         } else {

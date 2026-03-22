@@ -74,17 +74,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 // Internal dependencies
-use crate::agent::manager::AgentManager;
-use tokio::sync::RwLock;
 use crate::agent::config::Config;
+use crate::agent::manager::AgentManager;
 use crate::agent::supervisor::Supervisor;
 use crate::api::handlers::{
     agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
     get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
-    list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent, update_config,
+    list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
+    update_config,
 };
 use crate::client::LLMClient;
 use crate::error::Result;
+use tokio::sync::RwLock;
 
 /*
  * ============================================================================

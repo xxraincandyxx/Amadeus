@@ -70,21 +70,22 @@ impl ToolRegistry {
         file_lock_manager: Option<Arc<FileLockManager>>,
         agent_id: Option<AgentId>,
     ) -> Self {
-        let file_tools = FileTools::from_config_with_locks(config, file_lock_manager.clone(), agent_id);
+        let file_tools =
+            FileTools::from_config_with_locks(config, file_lock_manager.clone(), agent_id);
 
         Self {
             tools: Arc::new(HashMap::new()),
             file_lock_manager,
             agent_id,
         }
-            .register(Box::new(BashTool::from_config(config)))
-            .register(Box::new(ReadFileTool::new(file_tools.clone())))
-            .register(Box::new(WriteFileTool::new(file_tools.clone())))
-            .register(Box::new(EditFileTool::new(file_tools)))
-            .register(Box::new(GlobTool::from_config(config)))
-            .register(Box::new(GrepTool::from_config(config)))
-            .register(Box::new(TodoTool::new(todo_manager)))
-            .register(Box::new(WebFetchTool::from_config(config)))
+        .register(Box::new(BashTool::from_config(config)))
+        .register(Box::new(ReadFileTool::new(file_tools.clone())))
+        .register(Box::new(WriteFileTool::new(file_tools.clone())))
+        .register(Box::new(EditFileTool::new(file_tools)))
+        .register(Box::new(GlobTool::from_config(config)))
+        .register(Box::new(GrepTool::from_config(config)))
+        .register(Box::new(TodoTool::new(todo_manager)))
+        .register(Box::new(WebFetchTool::from_config(config)))
     }
 
     /// Set the file lock manager for this registry.

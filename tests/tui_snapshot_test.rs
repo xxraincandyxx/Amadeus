@@ -4,15 +4,14 @@
 
 mod tui;
 
-use tui::TuiCapture;
-use tui::capture::CellSnapshot;
-use tui::comparison::{compare, format_diff, SnapshotComparison};
-use tui::harness::{TuiTestHarness, InputSequence, run_scenario};
-use tui::scenarios::{
-    simple_text, streaming_text, with_tool_call, requiring_approval,
-    MockScenarioClient, Scenario,
-};
 use amadeus::client::StreamEvent;
+use tui::capture::CellSnapshot;
+use tui::comparison::{compare, format_diff};
+use tui::harness::{run_scenario, InputSequence, TuiTestHarness};
+use tui::scenarios::{
+    requiring_approval, simple_text, streaming_text, with_tool_call, MockScenarioClient, Scenario,
+};
+use tui::TuiCapture;
 
 #[cfg(test)]
 mod tests {
@@ -64,12 +63,8 @@ mod tests {
         let scenario = streaming_text("Hello world");
         let client = MockScenarioClient::new(scenario);
 
-        let frames: Vec<tui::TuiFrameSnapshot> = run_scenario(
-            client,
-            InputSequence::new().type_text("Say hello"),
-            80,
-            24,
-        ).await;
+        let frames: Vec<tui::TuiFrameSnapshot> =
+            run_scenario(client, InputSequence::new().type_text("Say hello"), 80, 24).await;
 
         // Should capture multiple frames during streaming
         assert!(frames.len() >= 2);
@@ -77,7 +72,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_call_scenario() {
-        let scenario = with_tool_call("ls -la", "total 8\ndrwxr-xr-x  3 user staff  160 Mar 21 12:00 .");
+        let scenario = with_tool_call(
+            "ls -la",
+            "total 8\ndrwxr-xr-x  3 user staff  160 Mar 21 12:00 .",
+        );
         let client = MockScenarioClient::new(scenario);
 
         let frames: Vec<tui::TuiFrameSnapshot> = run_scenario(
@@ -85,7 +83,8 @@ mod tests {
             InputSequence::new().type_text("List files").enter(),
             80,
             24,
-        ).await;
+        )
+        .await;
 
         assert!(!frames.is_empty());
     }
@@ -100,7 +99,8 @@ mod tests {
             InputSequence::new().type_text("Clean up").enter(),
             80,
             24,
-        ).await;
+        )
+        .await;
 
         assert!(!frames.is_empty());
     }
@@ -225,28 +225,58 @@ mod tests {
         // Create a frame with some content
         let cells = vec![
             CellSnapshot {
-                x: 0, y: 0, c: 'H', fg: "white".into(), bg: "black".into(),
-                bold: true, underline: false, reverse: false,
+                x: 0,
+                y: 0,
+                c: 'H',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: true,
+                underline: false,
+                reverse: false,
             },
             CellSnapshot {
-                x: 1, y: 0, c: 'e', fg: "white".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: 1,
+                y: 0,
+                c: 'e',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             },
             CellSnapshot {
-                x: 2, y: 0, c: 'l', fg: "white".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: 2,
+                y: 0,
+                c: 'l',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             },
             CellSnapshot {
-                x: 3, y: 0, c: 'l', fg: "white".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: 3,
+                y: 0,
+                c: 'l',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             },
             CellSnapshot {
-                x: 4, y: 0, c: 'o', fg: "white".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: 4,
+                y: 0,
+                c: 'o',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             },
         ];
 
-        let snapshot = capture.capture(80, 24, &[cells.clone()]);
+        let snapshot = capture.capture(80, 24, std::slice::from_ref(&cells));
 
         println!("\n\n===== SIMPLE TEXT SNAPSHOT =====");
         println!("{}", snapshot.to_terminal_view());
@@ -262,12 +292,24 @@ mod tests {
 
         let cells = vec![
             CellSnapshot {
-                x: 0, y: 0, c: '>', fg: "green".into(), bg: "black".into(),
-                bold: true, underline: false, reverse: false,
+                x: 0,
+                y: 0,
+                c: '>',
+                fg: "green".into(),
+                bg: "black".into(),
+                bold: true,
+                underline: false,
+                reverse: false,
             },
             CellSnapshot {
-                x: 2, y: 0, c: ' ', fg: "white".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: 2,
+                y: 0,
+                c: ' ',
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             },
         ];
 
@@ -298,16 +340,29 @@ mod tests {
 
         for (i, c) in text.chars().enumerate() {
             let cells = vec![CellSnapshot {
-                x: i as u16, y: 0, c, fg: "cyan".into(), bg: "black".into(),
-                bold: false, underline: false, reverse: false,
+                x: i as u16,
+                y: 0,
+                c,
+                fg: "cyan".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
             }];
             let frame = capture.capture(80, 24, &[cells]);
             frames.push(frame);
         }
 
-        println!("\n\n===== STREAMING SEQUENCE ({} frames) =====", frames.len());
+        println!(
+            "\n\n===== STREAMING SEQUENCE ({} frames) =====",
+            frames.len()
+        );
         for (i, frame) in frames.iter().enumerate() {
-            println!("Frame {}: '{}'", i, frame.cells.iter().map(|c| c.c).collect::<String>());
+            println!(
+                "Frame {}: '{}'",
+                i,
+                frame.cells.iter().map(|c| c.c).collect::<String>()
+            );
         }
 
         assert_eq!(frames.len(), 12);
@@ -320,17 +375,37 @@ mod tests {
         let mut capture2 = TuiCapture::new("diff_test");
 
         // Frame 1: "Hello"
-        let cells1 = "Hello".chars().enumerate().map(|(i, c)| CellSnapshot {
-            x: i as u16, y: 0, c, fg: "white".into(), bg: "black".into(),
-            bold: false, underline: false, reverse: false,
-        }).collect::<Vec<_>>();
+        let cells1 = "Hello"
+            .chars()
+            .enumerate()
+            .map(|(i, c)| CellSnapshot {
+                x: i as u16,
+                y: 0,
+                c,
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
+            })
+            .collect::<Vec<_>>();
         let snap1 = capture1.capture(80, 24, &[cells1]);
 
         // Frame 2: "World"
-        let cells2 = "World".chars().enumerate().map(|(i, c)| CellSnapshot {
-            x: i as u16, y: 0, c, fg: "white".into(), bg: "black".into(),
-            bold: false, underline: false, reverse: false,
-        }).collect::<Vec<_>>();
+        let cells2 = "World"
+            .chars()
+            .enumerate()
+            .map(|(i, c)| CellSnapshot {
+                x: i as u16,
+                y: 0,
+                c,
+                fg: "white".into(),
+                bg: "black".into(),
+                bold: false,
+                underline: false,
+                reverse: false,
+            })
+            .collect::<Vec<_>>();
         let snap2 = capture2.capture(80, 24, &[cells2]);
 
         let diff = compare(&snap1, &snap2);

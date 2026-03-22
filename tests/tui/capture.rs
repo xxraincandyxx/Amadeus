@@ -112,7 +112,12 @@ impl TuiCapture {
     }
 
     /// Capture current frame as structured snapshot
-    pub fn capture(&mut self, width: u16, height: u16, cells: &[Vec<CellSnapshot>]) -> TuiFrameSnapshot {
+    pub fn capture(
+        &mut self,
+        width: u16,
+        height: u16,
+        cells: &[Vec<CellSnapshot>],
+    ) -> TuiFrameSnapshot {
         let frame = TuiFrameSnapshot {
             version: "1.0.0".to_string(),
             session_id: self.session_id.clone(),
@@ -133,16 +138,20 @@ impl TuiCapture {
 
     /// Create a minimal snapshot for testing
     pub fn minimal(&mut self) -> TuiFrameSnapshot {
-        self.capture(120, 40, &[vec![CellSnapshot {
-            x: 0,
-            y: 0,
-            c: ' ',
-            fg: "default".to_string(),
-            bg: "default".to_string(),
-            bold: false,
-            underline: false,
-            reverse: false,
-        }]])
+        self.capture(
+            120,
+            40,
+            &[vec![CellSnapshot {
+                x: 0,
+                y: 0,
+                c: ' ',
+                fg: "default".to_string(),
+                bg: "default".to_string(),
+                bold: false,
+                underline: false,
+                reverse: false,
+            }]],
+        )
     }
 }
 
@@ -162,14 +171,18 @@ impl TuiFrameSnapshot {
             "╔══ Frame {} ════════════════════════════════════════════╗\n",
             self.frame_id
         ));
-        output.push_str(&format!("║ Session: {} | {}x{} | {:3}ms ║\n",
-            self.session_id, self.width, self.height, self.timestamp_ms));
+        output.push_str(&format!(
+            "║ Session: {} | {}x{} | {:3}ms ║\n",
+            self.session_id, self.width, self.height, self.timestamp_ms
+        ));
         output.push_str("╠══════════════════════════════════════════════════════════╣\n");
 
         // Header region
         if !self.header.session_label.is_empty() || self.header.streaming {
-            output.push_str(&format!("║ Header: label='{}' streaming={} ║\n",
-                self.header.session_label, self.header.streaming));
+            output.push_str(&format!(
+                "║ Header: label='{}' streaming={} ║\n",
+                self.header.session_label, self.header.streaming
+            ));
         }
 
         // Cells as ASCII art (simplified view)
@@ -186,13 +199,17 @@ impl TuiFrameSnapshot {
         }
 
         // Cursor
-        output.push_str(&format!("║ Cursor: ({}, {}) visible={}                    ║\n",
-            self.cursor.x, self.cursor.y, self.cursor.visible));
+        output.push_str(&format!(
+            "║ Cursor: ({}, {}) visible={}                    ║\n",
+            self.cursor.x, self.cursor.y, self.cursor.visible
+        ));
 
         // Footer
         output.push_str("╠══════════════════════════════════════════════════════════╣\n");
-        output.push_str(&format!("║ Footer: {} [{}] {}%",
-            self.footer.model, self.footer.cwd, self.footer.context_pct));
+        output.push_str(&format!(
+            "║ Footer: {} [{}] {}%",
+            self.footer.model, self.footer.cwd, self.footer.context_pct
+        ));
         if self.footer.is_mesh {
             output.push_str(" MESH");
         }
@@ -201,7 +218,9 @@ impl TuiFrameSnapshot {
         }
         output.push_str(" ║\n");
         output.push_str("\n╚");
-        for _ in 0..58 { output.push('═'); }
+        for _ in 0..58 {
+            output.push('═');
+        }
         output.push_str("╝\n");
 
         output
@@ -235,16 +254,20 @@ mod tests {
     #[test]
     fn test_capture_basic() {
         let mut capture = TuiCapture::new("test");
-        let snapshot = capture.capture(80, 24, &[vec![CellSnapshot {
-            x: 0,
-            y: 0,
-            c: 'H',
-            fg: "white".to_string(),
-            bg: "black".to_string(),
-            bold: true,
-            underline: false,
-            reverse: false,
-        }]]);
+        let snapshot = capture.capture(
+            80,
+            24,
+            &[vec![CellSnapshot {
+                x: 0,
+                y: 0,
+                c: 'H',
+                fg: "white".to_string(),
+                bg: "black".to_string(),
+                bold: true,
+                underline: false,
+                reverse: false,
+            }]],
+        );
 
         assert_eq!(snapshot.session_id, "test");
         assert_eq!(snapshot.frame_id, 0);

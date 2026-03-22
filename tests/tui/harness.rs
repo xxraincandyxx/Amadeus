@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use amadeus::client::LLMClient;
 use amadeus::agent::config::Config;
+use amadeus::client::LLMClient;
 
 use super::capture::{TuiCapture, TuiFrameSnapshot};
 

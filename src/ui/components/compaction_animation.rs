@@ -381,8 +381,8 @@ mod tests {
         }
 
         assert!(animator.is_active());
-        // Frame should have advanced
-        assert!(animator.frame > 0 || animator.frame == 0); // frame cycles through
+        // Frame should have advanced or cycled
+        let _ = animator.frame; // Silence any unused warnings if we remove assert
     }
 
     #[test]

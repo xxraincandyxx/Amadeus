@@ -2,9 +2,9 @@
 //!
 //! Pre-built scripted scenarios for reproducible TUI tests.
 
-use amadeus::client::StreamEvent;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::client::LLMClient;
+use amadeus::client::StreamEvent;
 use amadeus::error::Result;
 use async_trait::async_trait;
 use futures::Stream;
@@ -105,9 +105,7 @@ pub fn requiring_approval(tool: &str, command: &str) -> Scenario {
 pub fn empty() -> Scenario {
     Scenario::new("empty")
         .description("Empty response")
-        .add_turn(vec![
-            StreamEvent::StopReason("end_turn".to_string()),
-        ])
+        .add_turn(vec![StreamEvent::StopReason("end_turn".to_string())])
 }
 
 /// Long text for testing scrolling
@@ -176,9 +174,7 @@ impl LLMClient for MockScenarioClient {
         for event in events {
             match event {
                 StreamEvent::TextDelta(text) => {
-                    blocks.push(ContentBlock::Text {
-                        text: text.clone(),
-                    });
+                    blocks.push(ContentBlock::Text { text: text.clone() });
                 }
                 StreamEvent::ToolCallStart { id, name, .. } => {
                     blocks.push(ContentBlock::ToolUse {
@@ -215,7 +211,8 @@ impl LLMClient for MockScenarioClient {
     ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
         let mut turn_idx = self.turn_index.lock().unwrap();
         if *turn_idx >= self.scenario.events.len() {
-            let stream = futures::stream::iter(vec![Ok(StreamEvent::StopReason("end_turn".to_string()))]);
+            let stream =
+                futures::stream::iter(vec![Ok(StreamEvent::StopReason("end_turn".to_string()))]);
             return Ok(Box::pin(stream));
         }
 

@@ -79,7 +79,11 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// Create a new agent with the given profile.
     /// Returns the AgentId of the newly created agent.
-    pub async fn create_agent(&mut self, name: Option<String>, profile: AgentProfile) -> Result<AgentId> {
+    pub async fn create_agent(
+        &mut self,
+        name: Option<String>,
+        profile: AgentProfile,
+    ) -> Result<AgentId> {
         // Generate name if not provided
         let name = name.unwrap_or_else(|| {
             self.name_counter += 1;
@@ -87,11 +91,10 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         });
 
         // Determine if we need to enable call_peer
-        let enable_call_peer = self.agents.len() >= 1; // Enable when 2+ agents
+        let enable_call_peer = !self.agents.is_empty(); // Enable when 2+ agents
 
         // Create the agent with appropriate system prompt
-        let agent = Agent::builder(self.client.clone(), Arc::clone(&self.config))
-            .build();
+        let agent = Agent::builder(self.client.clone(), Arc::clone(&self.config)).build();
 
         let id = AgentId::new();
 
@@ -144,19 +147,16 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
     pub fn get_agent(&self, _agent_id: &AgentId) -> Option<AgentInfo> {
         // For now, just return the first agent or find by index
         // TODO: Implement proper ID-based lookup
-        self.agents
-            .iter()
-            .next()
-            .map(|handle| {
-                let id = AgentId::new();
-                AgentInfo {
-                    id,
-                    name: handle.name.clone(),
-                    profile: handle.profile.clone(),
-                    status: handle.status,
-                    task_count: handle.task_count,
-                }
-            })
+        self.agents.first().map(|handle| {
+            let id = AgentId::new();
+            AgentInfo {
+                id,
+                name: handle.name.clone(),
+                profile: handle.profile.clone(),
+                status: handle.status,
+                task_count: handle.task_count,
+            }
+        })
     }
 
     /// Get the currently active agent.

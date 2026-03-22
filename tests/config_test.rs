@@ -31,5 +31,5 @@ fn test_config_workdir_type() {
     std::env::set_var("PROVIDER", "anthropic");
 
     let config = Config::load().unwrap();
-    assert!(config.workdir.as_os_str().len() > 0);
+    assert!(!config.workdir.as_os_str().is_empty());
 }

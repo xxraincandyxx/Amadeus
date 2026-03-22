@@ -115,7 +115,7 @@ impl FileLockManager {
     ///
     /// Multiple readers can hold the lock simultaneously.
     /// Returns a guard that must be dropped to release the lock.
-    pub async fn acquire_read(&self, agent_id: AgentId, path: &str) -> Result<FileReadGuard> {
+    pub async fn acquire_read(&self, agent_id: AgentId, path: &str) -> Result<FileReadGuard<'_>> {
         self.acquire_read_with_timeout(agent_id, path, self.default_timeout).await
     }
 
@@ -125,7 +125,7 @@ impl FileLockManager {
         agent_id: AgentId,
         path: &str,
         timeout: Duration,
-    ) -> Result<FileReadGuard> {
+    ) -> Result<FileReadGuard<'_>> {
         let lock = self.get_lock(path).await;
 
         // Wait for any writer to finish
@@ -152,7 +152,7 @@ impl FileLockManager {
     ///
     /// Blocks all readers and other writers.
     /// Returns a guard that must be dropped to release the lock.
-    pub async fn acquire_write(&self, agent_id: AgentId, path: &str) -> Result<FileWriteGuard> {
+    pub async fn acquire_write(&self, agent_id: AgentId, path: &str) -> Result<FileWriteGuard<'_>> {
         self.acquire_write_with_timeout(agent_id, path, self.default_timeout).await
     }
 
@@ -162,7 +162,7 @@ impl FileLockManager {
         agent_id: AgentId,
         path: &str,
         timeout: Duration,
-    ) -> Result<FileWriteGuard> {
+    ) -> Result<FileWriteGuard<'_>> {
         let lock = self.get_lock(path).await;
 
         // Acquire exclusive writer lock (blocks readers too)
@@ -181,7 +181,6 @@ impl FileLockManager {
 
         Ok(FileWriteGuard {
             manager: self,
-            agent_id,
             path: path.to_string(),
         })
     }
@@ -305,7 +304,6 @@ impl Drop for FileReadGuard<'_> {
 #[derive(Debug)]
 pub struct FileWriteGuard<'a> {
     manager: &'a FileLockManager,
-    agent_id: AgentId,
     path: String,
 }
 
@@ -330,7 +328,6 @@ pub struct FileLockStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::TempDir;
     use uuid::Uuid;
 

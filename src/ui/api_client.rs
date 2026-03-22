@@ -104,7 +104,11 @@ impl ApiClient {
     }
 
     /// Create a new agent.
-    pub async fn create_agent(&self, name: Option<String>, profile: &str) -> Result<AgentInfo, String> {
+    pub async fn create_agent(
+        &self,
+        name: Option<String>,
+        profile: &str,
+    ) -> Result<AgentInfo, String> {
         let request = CreateAgentRequest {
             name,
             profile: profile.to_string(),
@@ -206,7 +210,11 @@ impl ApiClient {
             return Ok(None);
         }
 
-        index = if index == 0 { agents.len() - 1 } else { index - 1 };
+        index = if index == 0 {
+            agents.len() - 1
+        } else {
+            index - 1
+        };
         let new_agent = agents.get(index).cloned();
 
         drop(agents);
@@ -259,7 +267,12 @@ impl ApiClient {
             urlencoding::encode(message)
         );
 
-        let response = self.client.get(&url).send().await.map_err(|e| e.to_string())?;
+        let response = self
+            .client
+            .get(&url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
         let body = response.text().await.map_err(|e| e.to_string())?;
 
         Ok(body)

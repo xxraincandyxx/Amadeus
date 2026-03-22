@@ -27,7 +27,8 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
+            let mut supervisor =
+                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
             supervisor
                 .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                 .await?;
@@ -44,7 +45,8 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
+            let mut supervisor =
+                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
             supervisor
                 .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                 .await?;
