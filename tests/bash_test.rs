@@ -150,7 +150,7 @@ async fn test_bash_substitution() {
 
     let result = tool.execute(input).await.unwrap();
     assert!(result.contains("today is"));
-    assert!(result.chars().any(|c| c.is_digit(10)));
+    assert!(result.chars().any(|c| c.is_ascii_digit()));
 }
 
 #[tokio::test]

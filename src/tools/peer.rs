@@ -2,6 +2,23 @@
 //!
 //! Allows agents to request assistance from other workers in the swarm.
 
+use serde::{Deserialize, Serialize};
+
+use crate::core::id::AgentId;
+
+/// Information about a peer agent.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PeerInfo {
+    /// Agent ID.
+    pub id: AgentId,
+    /// Agent name.
+    pub name: String,
+    /// Agent profile.
+    pub profile: String,
+    /// Human-readable description.
+    pub description: String,
+}
+
 #[cfg(feature = "supervisor")]
 use async_trait::async_trait;
 #[cfg(feature = "supervisor")]
@@ -13,8 +30,6 @@ use tracing::{debug, info};
 
 #[cfg(feature = "supervisor")]
 use crate::agent::worker::{HelpRequest, Task};
-#[cfg(feature = "supervisor")]
-use crate::core::id::AgentId;
 #[cfg(feature = "supervisor")]
 use crate::error::{AgentError, Result};
 #[cfg(feature = "supervisor")]

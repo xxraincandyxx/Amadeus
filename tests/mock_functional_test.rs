@@ -14,6 +14,7 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 pub struct StatefulMockClient {
+    #[allow(clippy::type_complexity)]
     pub responses: Arc<Mutex<Vec<(String, Vec<ContentBlock>)>>>,
 }
 

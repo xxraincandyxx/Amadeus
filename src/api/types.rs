@@ -692,3 +692,109 @@ pub struct ToolProgressEvent {
     /// Progress percentage (0-100) if available.
     pub percent: Option<u8>,
 }
+
+/*
+ * ============================================================================
+ * MULTI-AGENT ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request to create a new agent.
+#[derive(Debug, Deserialize)]
+pub struct CreateAgentRequest {
+    /// Optional name for the agent.
+    /// If not provided, a default name will be generated.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Agent profile/type.
+    /// Options: "default", "debug", "docs", "review", or "custom"
+    #[serde(default = "default_profile")]
+    pub profile: String,
+}
+
+fn default_profile() -> String {
+    "default".to_string()
+}
+
+/// Response for agent creation.
+#[derive(Debug, Serialize)]
+pub struct CreateAgentResponse {
+    /// The created agent's information.
+    pub agent: AgentInfo,
+}
+
+/// Information about an agent (API version).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInfo {
+    /// Unique agent identifier.
+    pub id: String,
+    /// User-defined name for the agent.
+    pub name: String,
+    /// Agent profile/type.
+    pub profile: String,
+    /// Current status.
+    pub status: String,
+    /// Number of tasks completed.
+    pub task_count: usize,
+}
+
+/// Response listing all agents.
+#[derive(Debug, Serialize)]
+pub struct ListAgentsResponse {
+    /// List of all active agents.
+    pub agents: Vec<AgentInfo>,
+    /// Currently active agent ID.
+    pub active_agent_id: Option<String>,
+}
+
+/// Request to switch the active agent.
+#[derive(Debug, Deserialize)]
+pub struct SwitchAgentRequest {
+    /// The agent ID to switch to.
+    pub agent_id: String,
+}
+
+/// Response for agent switch.
+#[derive(Debug, Serialize)]
+pub struct SwitchAgentResponse {
+    /// Whether the switch was successful.
+    pub success: bool,
+    /// The new active agent ID.
+    pub active_agent_id: String,
+}
+
+/// Request to chat with a specific agent.
+#[derive(Debug, Deserialize)]
+pub struct AgentChatRequest {
+    /// The message/prompt to send to the agent.
+    pub message: String,
+    /// Optional timeout for tool execution.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+/// Response for agent chat (non-streaming).
+#[derive(Debug, Serialize)]
+pub struct AgentChatResponse {
+    /// The agent's response content.
+    pub content: String,
+    /// Tool calls made during processing.
+    pub tool_calls: Vec<ToolCall>,
+    /// Why the agent stopped.
+    pub stop_reason: String,
+}
+
+/// Request to kill an agent.
+#[derive(Debug, Deserialize)]
+pub struct KillAgentRequest {
+    /// Reason for killing the agent (optional).
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+/// Response for agent kill.
+#[derive(Debug, Serialize)]
+pub struct KillAgentResponse {
+    /// Whether the kill was successful.
+    pub success: bool,
+}

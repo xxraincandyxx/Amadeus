@@ -7,8 +7,6 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
-use crate::ui::colors::THEME;
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ToolStatus {
     Pending,
@@ -204,6 +202,7 @@ pub fn render_tool_group_with_limit(
     area: Rect,
     max_total_lines: usize,
 ) -> Vec<Line<'static>> {
+    let colors = crate::ui::theme_manager::get_colors();
     if group.tools.is_empty() {
         return Vec::new();
     }
@@ -220,9 +219,9 @@ pub fn render_tool_group_with_limit(
         }
 
         let status_color = match tool.status {
-            ToolStatus::Pending => THEME.orange,
-            ToolStatus::Success => THEME.green,
-            ToolStatus::Error => THEME.red,
+            ToolStatus::Pending => colors.status.warning,
+            ToolStatus::Success => colors.status.success,
+            ToolStatus::Error => colors.status.error,
         };
 
         // Hierarchical icon: filled for pending, empty for completed
@@ -250,7 +249,9 @@ pub fn render_tool_group_with_limit(
             Span::styled(" ", Style::default()),
             Span::styled(
                 truncate(&tool.name, body_width.saturating_sub(2)),
-                Style::default().fg(THEME.fg).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(colors.text.primary)
+                    .add_modifier(Modifier::BOLD),
             ),
         ]));
 
@@ -260,8 +261,8 @@ pub fn render_tool_group_with_limit(
                     break;
                 }
                 lines.push(Line::from(vec![
-                    Span::styled("    │ ", Style::default().fg(THEME.border)),
-                    Span::styled(wrapped, Style::default().fg(THEME.comment)),
+                    Span::styled("    │ ", Style::default().fg(colors.border.default)),
+                    Span::styled(wrapped, Style::default().fg(colors.ui.comment)),
                 ]));
             }
         }
@@ -279,22 +280,22 @@ pub fn render_tool_group_with_limit(
                         break;
                     }
                     lines.push(Line::from(vec![
-                        Span::styled("    │ ", Style::default().fg(THEME.border)),
+                        Span::styled("    │ ", Style::default().fg(colors.border.default)),
                         Span::styled(
                             wrapped,
                             Style::default()
-                                .fg(THEME.cyan)
+                                .fg(colors.ui.symbol)
                                 .add_modifier(Modifier::ITALIC),
                         ),
                     ]));
                 }
             } else {
                 lines.push(Line::from(vec![
-                    Span::styled("    │ ", Style::default().fg(THEME.border)),
+                    Span::styled("    │ ", Style::default().fg(colors.border.default)),
                     Span::styled(
                         "Running...",
                         Style::default()
-                            .fg(THEME.comment)
+                            .fg(colors.ui.comment)
                             .add_modifier(Modifier::ITALIC),
                     ),
                 ]));
@@ -307,9 +308,9 @@ pub fn render_tool_group_with_limit(
                     }
                     let command_prefix = if idx == 0 { "$ " } else { "  " };
                     lines.push(Line::from(vec![
-                        Span::styled("    │ ", Style::default().fg(THEME.border)),
-                        Span::styled(command_prefix, Style::default().fg(THEME.purple)),
-                        Span::styled(wrapped, Style::default().fg(THEME.cyan)),
+                        Span::styled("    │ ", Style::default().fg(colors.border.default)),
+                        Span::styled(command_prefix, Style::default().fg(colors.text.accent)),
+                        Span::styled(wrapped, Style::default().fg(colors.ui.symbol)),
                     ]));
                 }
             }
@@ -324,8 +325,8 @@ pub fn render_tool_group_with_limit(
                             break;
                         }
                         lines.push(Line::from(vec![
-                            Span::styled("    │ ", Style::default().fg(THEME.border)),
-                            Span::styled(wrapped, Style::default().fg(THEME.comment)),
+                            Span::styled("    │ ", Style::default().fg(colors.border.default)),
+                            Span::styled(wrapped, Style::default().fg(colors.ui.comment)),
                         ]));
                     }
                     if lines.len() >= max_total_lines {
@@ -335,11 +336,11 @@ pub fn render_tool_group_with_limit(
 
                 if total_output_lines > 10 {
                     lines.push(Line::from(vec![
-                        Span::styled("    │ ", Style::default().fg(THEME.border)),
+                        Span::styled("    │ ", Style::default().fg(colors.border.default)),
                         Span::styled(
                             format!("... ({} more lines)", total_output_lines - 10),
                             Style::default()
-                                .fg(THEME.comment)
+                                .fg(colors.ui.comment)
                                 .add_modifier(Modifier::DIM),
                         ),
                     ]));
@@ -355,9 +356,9 @@ pub fn render_tool_group_with_limit(
         lines.push(Line::from(vec![
             Span::styled(
                 format!("+{} more tool uses ", hidden_count),
-                Style::default().fg(THEME.comment),
+                Style::default().fg(colors.ui.comment),
             ),
-            Span::styled("(ctrl+o to expand)", Style::default().fg(THEME.cyan)),
+            Span::styled("(ctrl+o to expand)", Style::default().fg(colors.ui.symbol)),
         ]));
     }
 

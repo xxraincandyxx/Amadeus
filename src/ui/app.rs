@@ -547,6 +547,7 @@ struct Session<C: LLMClient> {
     subagent_depth: usize,
     session_label: String,
     session_id: usize,
+    pending_new_agent: bool,
     pending_approvals: VecDeque<ApprovalRequest>,
     last_error: Option<String>,
     parent_session_id: Option<usize>,
@@ -698,7 +699,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         session_label: String,
         session_id: usize,
     ) -> Self {
-        let footer = Footer::new(model_name.clone());
+        let mut footer = Footer::new(model_name.clone());
+        // Set default agent name for multi-agent indicator
+        footer.set_agent_name(Some("main".to_string()));
         let loading_indicator = LoadingIndicator::new();
         let status_bar = StatusBar::new();
 
@@ -738,6 +741,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             subagent_depth,
             session_label,
             session_id,
+            pending_new_agent: false,
             pending_approvals: VecDeque::new(),
             last_error: None,
             parent_session_id: None,
@@ -1211,7 +1215,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         for name in registry.names() {
             let schema_bytes = registry
                 .get(name)
-                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .map(|tool| {
+                    serde_json::to_string(tool.schema())
+                        .unwrap_or_default()
+                        .len()
+                })
                 .unwrap_or(0);
             tools_tokens += schema_bytes.div_ceil(4);
         }
@@ -1742,8 +1750,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_approval().await;
             }
-            (KeyModifiers::NONE, KeyCode::Esc) => {
-                // Cancel/deny on escape
+            (KeyModifiers::NONE, KeyCode::Esc)
+            | (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                // Cancel/deny on escape or Ctrl+C
                 self.deny_approval().await;
             }
             (KeyModifiers::NONE, KeyCode::Char('y')) => {
@@ -1852,7 +1861,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         match (key.modifiers, key.code) {
-            (KeyModifiers::NONE, KeyCode::Char('q')) => {
+            (KeyModifiers::NONE, KeyCode::Char('q'))
+            | (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
                 self.should_quit = true;
             }
             (KeyModifiers::CONTROL, KeyCode::Char('d')) => {
@@ -2027,6 +2037,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Enter) => {
                 self.input.insert_newline();
             }
+            (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                if self.stream_rx.is_some() {
+                    self.cancel_stream(terminal)?;
+                } else if self.input.get_input().trim().is_empty() {
+                    self.should_quit = true;
+                } else {
+                    self.input.clear();
+                }
+            }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 if self.stream_rx.is_some() {
                     self.cancel_stream(terminal)?;
@@ -2035,6 +2054,32 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.sidebar = None;
                     self.messages.collapse_all_tools();
                 }
+            }
+            // Tab: Accept command completion OR switch agent
+            (KeyModifiers::NONE, KeyCode::Tab) => {
+                if self.stream_rx.is_none() {
+                    if self.input.completion_is_visible() {
+                        self.input.apply_completion();
+                    } else {
+                        // Switch to next agent (placeholder - requires API connection)
+                        self.footer
+                            .set_status_message("Tab: Agent switch (API not connected)");
+                    }
+                }
+            }
+            // Shift+Tab: Move up in completion list
+            (KeyModifiers::SHIFT, KeyCode::Tab) => {
+                if self.stream_rx.is_none()
+                    && self.input.completion_is_visible() {
+                        self.input.completion_select_up();
+                    }
+            }
+            // Ctrl+Down: Move down in completion list
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                if self.stream_rx.is_none()
+                    && self.input.completion_is_visible() {
+                        self.input.completion_select_down();
+                    }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if self.stream_rx.is_none() {
@@ -2278,7 +2323,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         for name in registry.names() {
             let schema_size = registry
                 .get(name)
-                .map(|tool| serde_json::to_string(tool.schema()).unwrap_or_default().len())
+                .map(|tool| {
+                    serde_json::to_string(tool.schema())
+                        .unwrap_or_default()
+                        .len()
+                })
                 .unwrap_or(0);
             let tokens = schema_size.div_ceil(4);
             tool_details.push((name.to_string(), tokens));
@@ -2290,27 +2339,35 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let history = self.agent.history();
         let history_guard = match history.try_read() {
             Ok(guard) => guard,
-            Err(_) => return ContextInfo {
-                model_name,
-                context_window_size,
-                total_tokens: system_prompt_tokens + tools_tokens,
-                system_prompt_tokens,
-                tools_tokens,
-                conversation_tokens: 0,
-                tool_details,
-                message_details: Vec::new(),
-            },
+            Err(_) => {
+                return ContextInfo {
+                    model_name,
+                    context_window_size,
+                    total_tokens: system_prompt_tokens + tools_tokens,
+                    system_prompt_tokens,
+                    tools_tokens,
+                    conversation_tokens: 0,
+                    tool_details,
+                    message_details: Vec::new(),
+                }
+            }
         };
         let mut conversation_tokens: usize = 0;
         let mut message_details: Vec<(String, usize)> = Vec::new();
         for msg in history_guard.iter() {
-            let msg_chars: usize = msg.content.iter().map(|block| match block {
-                crate::agent::messages::ContentBlock::Text { text } => text.len(),
-                crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
-                    name.len() + input.to_string().len()
-                }
-                crate::agent::messages::ContentBlock::ToolResult { content, .. } => content.len(),
-            }).sum();
+            let msg_chars: usize = msg
+                .content
+                .iter()
+                .map(|block| match block {
+                    crate::agent::messages::ContentBlock::Text { text } => text.len(),
+                    crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
+                        name.len() + input.to_string().len()
+                    }
+                    crate::agent::messages::ContentBlock::ToolResult { content, .. } => {
+                        content.len()
+                    }
+                })
+                .sum();
             let msg_tokens = msg_chars.div_ceil(4);
             conversation_tokens += msg_tokens;
             message_details.push((msg.role.clone(), msg_tokens));
@@ -2359,6 +2416,26 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             if command == "/context" {
                 self.input.clear();
                 self.toggle_sidebar(SidebarKind::Context);
+                return Ok(());
+            }
+            if command == "/new-agent" {
+                self.input.clear();
+                self.pending_new_agent = true;
+                return Ok(());
+            }
+            if command == "/help" {
+                self.input.clear();
+                let help_text = "\
+**Available Commands**
+- `/help`: Show this help message
+- `/compact` or `/compress`: Force context compaction
+- `/context`: Toggle context sidebar
+- `/new-agent`: Spawn new agent session
+- `/test`: Run integration tests
+- `Ctrl+C` / `Esc`: Cancel active stream
+- `Ctrl+]` / `Ctrl+[`: Switch sessions
+- `Ctrl+Backspace`: Close active session";
+                self.messages.add_assistant(help_text.to_string());
                 return Ok(());
             }
             // Unknown command: send as user message
@@ -2489,7 +2566,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let sidebar_min_width = 30u16;
         let sidebar_max_width = 40u16;
         let sidebar_width = if self.sidebar.is_some() {
-            size.width.saturating_sub(sidebar_min_width).min(sidebar_max_width)
+            size.width
+                .saturating_sub(sidebar_min_width)
+                .min(sidebar_max_width)
         } else {
             0
         };
@@ -2995,6 +3074,51 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
     }
 
+    /// Spawn a new independent session with a fresh agent (empty history).
+    fn spawn_new_session(&mut self) -> Result<()> {
+        // Get client and config from the active session's agent
+        let active_session = self.active_session();
+        let client = active_session.agent.client().clone();
+        let config = active_session.agent.config();
+
+        // Create a fresh agent with empty history and default configuration
+        let new_agent = Agent::builder(client, config).with_default_tools().build();
+
+        let label = format!("session{}", self.next_session_id);
+
+        let mut session = Session::new(
+            new_agent,
+            self.workdir.clone(),
+            self.model_name.clone(),
+            0,
+            label,
+            self.next_session_id,
+        );
+        self.next_session_id += 1;
+
+        if let Some(addr) = self.mesh_supervisor_addr.clone() {
+            session.set_mesh_mode(&addr);
+        }
+
+        // Set up approval channels
+        let (_channels, approval_handle) = create_approval_channels();
+        session.approval_dec_tx = Some(approval_handle.decision_tx);
+        session.approval_req_rx = Some(approval_handle.request_rx);
+
+        // Don't start streaming - just create the session and switch to it
+        session.input.clear();
+        session.current_text.clear();
+        session.streaming_buffer.clear();
+        session.clear_tool_monitor();
+        session.messages.clear_streaming_text();
+        session.sync_activity_chrome();
+
+        self.sessions.push(session);
+        self.switch_session(self.sessions.len() - 1);
+
+        Ok(())
+    }
+
     fn spawn_sub_session(
         &mut self,
         parent_idx: usize,
@@ -3120,6 +3244,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .messages
                     .add_assistant(format!("[sub-agent] {}", summary.trim_end()));
             }
+            
+            // Automatically switch back to parent session if the completed subagent was active
+            if self.active_idx == child_idx {
+                self.switch_session(parent_idx);
+            }
         }
     }
 
@@ -3170,12 +3299,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             self.sessions[idx].stream_rx = stream_rx;
 
             let mut approval_rx = self.sessions[idx].approval_req_rx.take();
+            let mut needs_approval = false;
             if let Some(ref mut rx) = approval_rx {
                 while let Ok(request) = rx.try_recv() {
                     self.sessions[idx].enqueue_approval_request(request, false);
+                    needs_approval = true;
                 }
             }
             self.sessions[idx].approval_req_rx = approval_rx;
+
+            if needs_approval {
+                self.switch_session(idx);
+                break;
+            }
 
             self.sessions[idx].poll_compaction_result();
         }
@@ -3261,6 +3397,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         handled_global = self.handle_global_key(key, &mut terminal)?;
                     }
                     if !handled_global {
+                        let mut needs_new_agent = false;
                         let (should_quit, session_stream_rx, session_approval_rx) = {
                             let session = &mut self.sessions[active_idx];
                             session.handle_event(event, &mut terminal).await?;
@@ -3270,6 +3407,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                                 session.flush_before_compaction = false;
                                 session.start_compaction();
                             }
+                            if session.pending_new_agent {
+                                session.pending_new_agent = false;
+                                needs_new_agent = true;
+                            }
                             let session_stream_rx = session.stream_rx.take();
                             let session_approval_rx = session.approval_req_rx.take();
                             (
@@ -3278,6 +3419,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                                 session_approval_rx,
                             )
                         };
+                        if needs_new_agent {
+                            self.spawn_new_session()?;
+                        }
                         if session_stream_rx.is_some() {
                             stream_rx = session_stream_rx;
                             events.set_tick_rate(Duration::from_millis(16));

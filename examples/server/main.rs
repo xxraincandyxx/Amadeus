@@ -27,7 +27,8 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config);
+            let mut supervisor =
+                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
             supervisor
                 .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                 .await?;
@@ -36,7 +37,7 @@ async fn main() -> Result<()> {
             tokio::spawn(async move {
                 let _ = s_clone.run().await;
             });
-            run_server(port, supervisor).await?;
+            run_server(port, supervisor, sdk_config.clone()).await?;
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -44,7 +45,8 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor = Supervisor::new(client, SupervisorConfig::default(), sdk_config);
+            let mut supervisor =
+                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
             supervisor
                 .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
                 .await?;
@@ -53,7 +55,7 @@ async fn main() -> Result<()> {
             tokio::spawn(async move {
                 let _ = s_clone.run().await;
             });
-            run_server(port, supervisor).await?;
+            run_server(port, supervisor, sdk_config.clone()).await?;
         }
     }
 

@@ -1,6 +1,6 @@
 use crate::ui::semantic_colors::SemanticColors;
 use crate::ui::themes::{
-    AtomOneDark, AyuDark, DefaultDark, DefaultLight, Dracula, GitHubDark, GitHubLight,
+    AtomOneDark, AyuDark, DarkRed, DefaultDark, DefaultLight, Dracula, GitHubDark, GitHubLight,
     SolarizedDark, SolarizedLight, Theme, ThemeType,
 };
 use std::sync::{Arc, RwLock};
@@ -13,6 +13,7 @@ pub struct ThemeManager {
 impl ThemeManager {
     pub fn new() -> Self {
         let themes: Vec<Arc<dyn Theme>> = vec![
+            Arc::new(DarkRed),
             Arc::new(DefaultDark),
             Arc::new(DefaultLight),
             Arc::new(Dracula),

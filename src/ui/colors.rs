@@ -22,21 +22,21 @@ pub struct Theme {
 impl Theme {
     pub fn dracula() -> Self {
         Self {
-            bg: Color::Rgb(40, 42, 54),
-            fg: Color::Rgb(248, 248, 242),
-            purple: Color::Rgb(189, 147, 249),
-            cyan: Color::Rgb(139, 233, 253),
-            green: Color::Rgb(80, 250, 123),
-            pink: Color::Rgb(255, 121, 198),
-            orange: Color::Rgb(255, 184, 108),
-            red: Color::Rgb(255, 85, 85),
-            comment: Color::Rgb(98, 114, 164),
-            current_line: Color::Rgb(68, 71, 90),
-            selection: Color::Rgb(68, 71, 90),
-            user_msg: Color::Rgb(139, 233, 253),
-            assistant_msg: Color::Rgb(189, 147, 249),
-            tool_bg: Color::Rgb(33, 35, 44),
-            border: Color::Rgb(68, 71, 90),
+            bg: Color::Rgb(12, 12, 12),
+            fg: Color::Rgb(220, 220, 220),
+            purple: Color::Rgb(120, 50, 50),
+            cyan: Color::Rgb(140, 140, 160),
+            green: Color::Rgb(100, 160, 100),
+            pink: Color::Rgb(160, 100, 100),
+            orange: Color::Rgb(180, 140, 80),
+            red: Color::Rgb(180, 80, 80),
+            comment: Color::Rgb(90, 90, 90),
+            current_line: Color::Rgb(25, 25, 25),
+            selection: Color::Rgb(40, 35, 35),
+            user_msg: Color::Rgb(150, 130, 130),
+            assistant_msg: Color::Rgb(120, 50, 50),
+            tool_bg: Color::Rgb(12, 12, 12),
+            border: Color::Rgb(50, 50, 50),
         }
     }
 }
@@ -48,21 +48,21 @@ impl Default for Theme {
 }
 
 pub static THEME: Theme = Theme {
-    bg: Color::Rgb(40, 42, 54),
-    fg: Color::Rgb(248, 248, 242),
-    purple: Color::Rgb(189, 147, 249),
-    cyan: Color::Rgb(139, 233, 253),
-    green: Color::Rgb(80, 250, 123),
-    pink: Color::Rgb(255, 121, 198),
-    orange: Color::Rgb(255, 184, 108),
-    red: Color::Rgb(255, 85, 85),
-    comment: Color::Rgb(98, 114, 164),
-    current_line: Color::Rgb(68, 71, 90),
-    selection: Color::Rgb(68, 71, 90),
-    user_msg: Color::Rgb(139, 233, 253),
-    assistant_msg: Color::Rgb(189, 147, 249),
-    tool_bg: Color::Rgb(33, 35, 44),
-    border: Color::Rgb(68, 71, 90),
+    bg: Color::Rgb(12, 12, 12),
+    fg: Color::Rgb(220, 220, 220),
+    purple: Color::Rgb(120, 50, 50),
+    cyan: Color::Rgb(140, 140, 160),
+    green: Color::Rgb(100, 160, 100),
+    pink: Color::Rgb(160, 100, 100),
+    orange: Color::Rgb(180, 140, 80),
+    red: Color::Rgb(180, 80, 80),
+    comment: Color::Rgb(90, 90, 90),
+    current_line: Color::Rgb(25, 25, 25),
+    selection: Color::Rgb(40, 35, 35),
+    user_msg: Color::Rgb(150, 130, 130),
+    assistant_msg: Color::Rgb(120, 50, 50),
+    tool_bg: Color::Rgb(12, 12, 12),
+    border: Color::Rgb(50, 50, 50),
 };
 
 pub struct Palette;

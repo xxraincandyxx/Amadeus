@@ -301,6 +301,13 @@ agent.restore_session(&session).await;
 
 Session files are stored in JSON or compressed JSON.gz format in `SESSION_LOG_DIR`.
 
+### Multi-Session Types
+
+The TUI supports two session types:
+
+1. **Independent Sessions** - Created via `/new-agent` command. Each has a fresh agent with empty history. Ideal for parallel, unrelated tasks.
+2. **Sub-Agent Sessions** - Created by the supervisor for delegated tasks. Organized hierarchically with parent-child relationships.
+
 ## Key Design Patterns
 
 1. **Actor-like Workers**: Workers are spawned as persistent configurations and managed by the Supervisor

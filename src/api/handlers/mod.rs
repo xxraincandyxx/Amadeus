@@ -90,6 +90,9 @@ pub mod skills;
 /// Approvals handler for tool approval flow.
 pub mod approvals;
 
+/// Agents handler for multi-agent management.
+pub mod agents;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -103,6 +106,9 @@ pub mod approvals;
 //
 // Or access via the module:
 //   use crate::api::handlers::chat::chat;
+pub use agents::{
+    agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent,
+};
 pub use approvals::{list_pending_approvals, register_approval_channel, submit_approval};
 pub use chat::chat;
 pub use config::{get_config, update_config};

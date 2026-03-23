@@ -1,11 +1,19 @@
 //! # File Tools
 //!
-//! File operations: read, write, and edit files safely.
+//! File operations: read, write, and edit files safely with concurrency control.
 //!
 //! ## Security
 //!
 //! All paths are validated to ensure they stay within the workspace directory.
 //! This prevents path traversal attacks (e.g., `../../../etc/passwd`).
+//!
+//! ## Concurrency Control
+//!
+//! When a FileLockManager is provided:
+//! - Read operations acquire shared locks (multiple readers allowed)
+//! - Write/edit operations acquire exclusive locks (blocks all readers/writers)
+//! - Read cache tracks modification times to detect external changes
+//! - Write/edit operations fail if file was modified since last read
 //!
 //! ## Tools
 //!
@@ -14,12 +22,18 @@
 //! - **edit_file**: Make surgical changes using exact string matching
 
 use std::path::{Component, PathBuf};
+use std::sync::Arc;
+use std::time::SystemTime;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::agent::config::Config;
+use crate::concurrency::FileLockManager;
+use crate::core::id::AgentId;
 use crate::error::{AgentError, Result};
 use crate::tools::schema::{edit_file_tool, read_file_tool, write_file_tool};
 use crate::tools::tool_trait::Tool;
@@ -45,10 +59,21 @@ pub struct EditFileInput {
     pub replace_all: bool,
 }
 
+/// Compute a simple hash of file content for cache validation.
+fn compute_content_hash(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Clone)]
 pub struct FileTools {
     workdir: PathBuf,
     max_output_bytes: usize,
+    /// Optional file lock manager for concurrent access control.
+    file_lock_manager: Option<Arc<FileLockManager>>,
+    /// Agent ID for this agent (used for file lock tracking).
+    agent_id: Option<AgentId>,
 }
 
 impl FileTools {
@@ -56,6 +81,22 @@ impl FileTools {
         Self {
             workdir: config.workdir.clone(),
             max_output_bytes: config.max_output_bytes,
+            file_lock_manager: None,
+            agent_id: None,
+        }
+    }
+
+    /// Create FileTools with file locking enabled.
+    pub fn from_config_with_locks(
+        config: &Config,
+        file_lock_manager: Option<Arc<FileLockManager>>,
+        agent_id: Option<AgentId>,
+    ) -> Self {
+        Self {
+            workdir: config.workdir.clone(),
+            max_output_bytes: config.max_output_bytes,
+            file_lock_manager,
+            agent_id,
         }
     }
 
@@ -63,6 +104,23 @@ impl FileTools {
         Self {
             workdir,
             max_output_bytes,
+            file_lock_manager: None,
+            agent_id: None,
+        }
+    }
+
+    /// Create with file locking.
+    pub fn new_with_locks(
+        workdir: PathBuf,
+        max_output_bytes: usize,
+        file_lock_manager: Arc<FileLockManager>,
+        agent_id: AgentId,
+    ) -> Self {
+        Self {
+            workdir,
+            max_output_bytes,
+            file_lock_manager: Some(file_lock_manager),
+            agent_id: Some(agent_id),
         }
     }
 
@@ -118,9 +176,49 @@ impl FileTools {
         }
     }
 
+    /// Get file modification time.
+    async fn get_modified_time(path: &PathBuf) -> Result<SystemTime> {
+        tokio::fs::metadata(path)
+            .await
+            .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))?
+            .modified()
+            .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))
+    }
+
     pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<String> {
         let fp = self.safe_path(path)?;
 
+        // If file locking is enabled, acquire read lock
+        if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
+            let path_str = fp.to_string_lossy().to_string();
+            let read_guard = manager.acquire_read(*agent_id, &path_str).await?;
+
+            let text = tokio::fs::read_to_string(&fp).await.map_err(|e| {
+                AgentError::Io(std::io::Error::other(format!(
+                    "Failed to read {}: {}",
+                    path, e
+                )))
+            })?;
+
+            // Get modification time and cache the read
+            let modified_at = Self::get_modified_time(&fp).await?;
+            let content_hash = compute_content_hash(&text);
+
+            // Record the read in the guard
+            read_guard
+                .record_read(modified_at, Some(content_hash))
+                .await;
+
+            let mut lines: Vec<&str> = text.lines().collect();
+            if let Some(lim) = limit {
+                if lim < lines.len() {
+                    lines = lines[..lim].to_vec();
+                }
+            }
+            return Ok(self.truncate_output(lines.join("\n")));
+        }
+
+        // Without locking
         let text = tokio::fs::read_to_string(&fp).await.map_err(|e| {
             AgentError::Io(std::io::Error::other(format!(
                 "Failed to read {}: {}",
@@ -143,6 +241,41 @@ impl FileTools {
     pub async fn write(&self, path: &str, content: &str) -> Result<String> {
         let fp = self.safe_path(path)?;
 
+        // If file locking is enabled, validate and acquire write lock
+        if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
+            let path_str = fp.to_string_lossy().to_string();
+
+            // First validate that file wasn't modified since last read
+            manager
+                .validate_read_freshness(*agent_id, &path_str)
+                .await?;
+
+            // Acquire exclusive write lock
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
+
+            if let Some(parent) = fp.parent() {
+                tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                    AgentError::Io(std::io::Error::other(format!(
+                        "Failed to create dirs: {}",
+                        e
+                    )))
+                })?;
+            }
+
+            tokio::fs::write(&fp, content).await.map_err(|e| {
+                AgentError::Io(std::io::Error::other(format!(
+                    "Failed to write {}: {}",
+                    path, e
+                )))
+            })?;
+
+            // Invalidate cache after write
+            write_guard.invalidate_after_write().await;
+
+            return Ok(format!("Wrote {} bytes to {}", content.len(), path));
+        }
+
+        // Without locking
         if let Some(parent) = fp.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
                 AgentError::Io(std::io::Error::other(format!(
@@ -171,6 +304,56 @@ impl FileTools {
     ) -> Result<String> {
         let fp = self.safe_path(path)?;
 
+        // If file locking is enabled, validate and acquire write lock
+        if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
+            let path_str = fp.to_string_lossy().to_string();
+
+            // First validate that file wasn't modified since last read
+            manager
+                .validate_read_freshness(*agent_id, &path_str)
+                .await?;
+
+            // Acquire exclusive write lock
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
+
+            let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
+                AgentError::Io(std::io::Error::other(format!(
+                    "Failed to read {}: {}",
+                    path, e
+                )))
+            })?;
+
+            if !content.contains(old_text) {
+                return Err(AgentError::TextNotFound {
+                    path: path.to_string(),
+                    snippet: if old_text.len() > 50 {
+                        format!("{}...", &old_text[..50])
+                    } else {
+                        old_text.to_string()
+                    },
+                });
+            }
+
+            let new_content = if replace_all {
+                content.replace(old_text, new_text)
+            } else {
+                content.replacen(old_text, new_text, 1)
+            };
+
+            tokio::fs::write(&fp, &new_content).await.map_err(|e| {
+                AgentError::Io(std::io::Error::other(format!(
+                    "Failed to write {}: {}",
+                    path, e
+                )))
+            })?;
+
+            // Invalidate cache after write
+            write_guard.invalidate_after_write().await;
+
+            return Ok(format!("Edited {}", path));
+        }
+
+        // Without locking
         let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
             AgentError::Io(std::io::Error::other(format!(
                 "Failed to read {}: {}",

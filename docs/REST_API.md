@@ -136,6 +136,96 @@ curl -X POST http://localhost:3000/tasks
 
 ---
 
+## 5. Multi-Agent Endpoints
+
+Amadeus supports multiple concurrent agents with different profiles (specializations). Use these endpoints to create and manage agents.
+
+### GET `/agents`
+List all active agents.
+
+**Example Request:**
+```bash
+curl http://localhost:3000/agents
+```
+
+**Response:**
+```json
+{
+  "agents": [
+    {
+      "id": "agent:uuid-1",
+      "name": "default-1",
+      "profile": "default",
+      "status": "idle",
+      "task_count": 0
+    }
+  ],
+  "active_agent_id": "agent:uuid-1"
+}
+```
+
+### POST `/agents`
+Create a new agent with a specific profile.
+
+**Request Body:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | String | (Optional) Custom name for the agent |
+| `profile` | String | Agent profile: "default", "debug", "docs", "review" |
+
+**Example Request:**
+```bash
+curl -X POST http://localhost:3000/agents \
+  -H "Content-Type: application/json" \
+  -d '{"name": "debugger", "profile": "debug"}'
+```
+
+**Response:**
+```json
+{
+  "agent": {
+    "id": "agent:uuid-2",
+    "name": "debugger",
+    "profile": "debug",
+    "status": "idle",
+    "task_count": 0
+  }
+}
+```
+
+### GET `/agents/:id`
+Get information about a specific agent.
+
+### DELETE `/agents/:id`
+Kill (remove) an agent. Note: Cannot kill the last remaining agent.
+
+### POST `/agents/:id/switch`
+Switch the active agent.
+
+**Request Body:**
+```json
+{
+  "agent_id": "agent:uuid-2"
+}
+```
+
+### POST `/agents/:id/chat`
+Send a message to a specific agent.
+
+**Request Body:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | String | The prompt to send |
+| `timeout_secs` | Integer | (Optional) Tool execution timeout |
+
+### GET `/agents/:id/stream`
+Stream events from a specific agent using SSE.
+
+**Query Parameters:**
+- `message`: The prompt (URL encoded)
+
+---
+
 ## Error Handling
 
 The API uses standard HTTP status codes and returns a structured JSON error response for 4xx and 5xx errors.
@@ -150,4 +240,4 @@ The API uses standard HTTP status codes and returns a structured JSON error resp
 ```
 
 ---
-*Last updated: 2026-02-27*
+*Last updated: 2026-03-20*

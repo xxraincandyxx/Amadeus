@@ -91,13 +91,17 @@ impl OpenAIClient {
         let base_url = base_url.unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
 
         // Create a configured HTTP client with connection pooling and timeouts
-        let client = Client::builder()
+        let mut builder = Client::builder()
             .pool_max_idle_per_host(5)
             .pool_idle_timeout(Duration::from_secs(30))
             .timeout(Duration::from_secs(120))
-            .connect_timeout(Duration::from_secs(10))
-            .build()
-            .expect("Failed to create HTTP client");
+            .connect_timeout(Duration::from_secs(10));
+
+        if std::env::var("AMADEUS_NO_PROXY").map(|v| v == "true" || v == "1").unwrap_or(true) {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().expect("Failed to create HTTP client");
 
         Self {
             client,
@@ -675,6 +679,13 @@ impl OpenAIClient {
                                 events.push(StreamEvent::TextDelta(content.to_string()));
                             }
 
+                            // Reasoning content delta (supported by some OpenAI-compatible APIs)
+                            if let Some(reasoning) =
+                                delta.get("reasoning_content").and_then(|v| v.as_str())
+                            {
+                                events.push(StreamEvent::ThinkingDelta(reasoning.to_string()));
+                            }
+
                             // Tool call details (can have start and delta in same chunk)
                             if let Some(tool_calls) =
                                 delta.get("tool_calls").and_then(|v| v.as_array())
@@ -721,7 +732,7 @@ impl OpenAIClient {
                             if finish_reason == "tool_calls" {
                                 events.push(StreamEvent::ToolCallDone(String::new()));
                             }
-                            events.push(StreamEvent::StopReason(finish_reason.to_string()));
+                            let mapped_reason = match finish_reason { "stop" => "end_turn", "tool_calls" => "tool_use", "length" => "max_tokens", _ => finish_reason }; events.push(StreamEvent::StopReason(mapped_reason.to_string()));
                         }
                     }
                 }
@@ -786,7 +797,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(
             &events[0],
-            StreamEvent::StopReason(reason) if reason == "stop"
+            StreamEvent::StopReason(reason) if reason == "end_turn"
         ));
     }
 }

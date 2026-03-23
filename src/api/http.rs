@@ -53,7 +53,7 @@
 // Router: The main router that maps paths to handlers
 // routing: Module with route builders (get, post, etc.)
 use axum::{
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Router,
 };
 
@@ -74,14 +74,18 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 // Internal dependencies
+use crate::agent::config::Config;
+use crate::agent::manager::AgentManager;
 use crate::agent::supervisor::Supervisor;
 use crate::api::handlers::{
-    chat, execute, get_config, get_history, get_session, handle_task, health,
-    list_pending_approvals, list_sessions, list_skills, restore_session, stream, submit_approval,
+    agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
+    get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
+    list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
     update_config,
 };
 use crate::client::LLMClient;
 use crate::error::Result;
+use tokio::sync::RwLock;
 
 /*
  * ============================================================================
@@ -96,6 +100,8 @@ use crate::error::Result;
 pub struct AppState<C: LLMClient> {
     /// The multi-agent supervisor instance.
     pub supervisor: Arc<Supervisor<C>>,
+    /// The multi-agent manager for standalone agent management.
+    pub agent_manager: Arc<RwLock<AgentManager<C>>>,
 }
 
 /*
@@ -145,11 +151,19 @@ pub struct AppState<C: LLMClient> {
 pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
     supervisor: Arc<Supervisor<C>>,
+    config: Arc<Config>,
 ) -> Result<()> {
     // -------------------------------------------------------------------------
     // CREATE SHARED STATE
     // -------------------------------------------------------------------------
-    let state = Arc::new(AppState { supervisor });
+    // Create AgentManager with a cloned client
+    let client = supervisor.client().clone();
+    let agent_manager = Arc::new(RwLock::new(AgentManager::new(client, config)));
+
+    let state = Arc::new(AppState {
+        supervisor,
+        agent_manager,
+    });
 
     // -------------------------------------------------------------------------
     // CREATE ROUTER
@@ -253,6 +267,23 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/history", get(get_history))
         // List available skills
         .route("/skills", get(list_skills))
+        // =====================================================================
+        // MULTI-AGENT ENDPOINTS
+        // =====================================================================
+        // List all agents
+        .route("/agents", get(list_agents))
+        // Create a new agent
+        .route("/agents", post(create_agent))
+        // Get info for a specific agent
+        .route("/agents/:id", get(get_agent))
+        // Delete (kill) an agent
+        .route("/agents/:id", delete(kill_agent))
+        // Switch to a different agent
+        .route("/agents/:id/switch", post(switch_agent))
+        // Chat with a specific agent
+        .route("/agents/:id/chat", post(agent_chat))
+        // Stream events from a specific agent
+        .route("/agents/:id/stream", get(agent_stream))
         // =====================================================================
         // APPROVAL FLOW
         // =====================================================================

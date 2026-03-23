@@ -135,8 +135,10 @@ async fn test_p2p_delegation() {
     };
 
     // 2. Setup Supervisor
-    let mut config = SupervisorConfig::default();
-    config.strategy = DispatchStrategy::CapabilityMatch;
+    let config = SupervisorConfig {
+        strategy: DispatchStrategy::CapabilityMatch,
+        ..Default::default()
+    };
 
     let mut supervisor = Supervisor::new(requester_client.clone(), config, create_test_config());
 

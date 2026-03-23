@@ -22,7 +22,7 @@ default = []
 
 # Testing/Examples
 api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
+tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
 test-utils = ["tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
@@ -40,6 +40,7 @@ full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-util
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
+urlencoding = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dotenvy = "0.15"

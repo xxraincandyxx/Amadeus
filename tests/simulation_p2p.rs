@@ -90,10 +90,12 @@ async fn test_high_concurrency_p2p() {
     let num_workers = 5;
     let num_tasks = 120; // More than the default queue limit (100)
 
-    let mut config = SupervisorConfig::default();
-    config.strategy = DispatchStrategy::LeastLoaded;
-    config.task_timeout = Duration::from_secs(10);
-    config.max_pending_tasks = 50; // Set a low limit to trigger overflow
+    let config = SupervisorConfig {
+        strategy: DispatchStrategy::LeastLoaded,
+        task_timeout: Duration::from_secs(10),
+        max_pending_tasks: 50, // Set a low limit to trigger overflow
+        ..Default::default()
+    };
 
     // We'll use a single client type but different instances if needed
     let base_client = SimulationMockClient {

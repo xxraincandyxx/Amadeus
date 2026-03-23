@@ -91,6 +91,7 @@ impl BashTool {
                 .arg("-c")
                 .arg(cmd)
                 .current_dir(&self.workdir)
+                .kill_on_drop(true)
                 .output()
                 .await?;
 
