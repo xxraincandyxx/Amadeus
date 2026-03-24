@@ -34,7 +34,7 @@ fn format_system_time(time: SystemTime) -> String {
     let datetime = DateTime::<Utc>::from_timestamp(secs as i64, nanos);
     datetime
         .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
-        .unwrap_or_else(|| format!("{}s", secs))
+        .unwrap_or_else(|| format!("{secs}s"))
 }
 
 /// Information about a cached file read.
@@ -153,7 +153,7 @@ impl FileLockManager {
             }
 
             if start.elapsed() >= timeout {
-                return Err(AgentError::Lock(format!("Timeout acquiring read lock for {}", path)));
+                return Err(AgentError::Lock(format!("Timeout acquiring read lock for {path}")));
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -189,7 +189,7 @@ impl FileLockManager {
             if writer_active || reader_count > 0 {
                 // Writer active or readers exist, wait
                 if start.elapsed() >= timeout {
-                    return Err(AgentError::Lock(format!("Timeout acquiring write lock for {}", path)));
+                    return Err(AgentError::Lock(format!("Timeout acquiring write lock for {path}")));
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 continue;
