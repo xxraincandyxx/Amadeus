@@ -206,7 +206,7 @@ impl FileTools {
 
             // Record the read in the guard
             read_guard
-                .record_read(modified_at, Some(content_hash))
+                .record_read(manager, modified_at, Some(content_hash))
                 .await;
 
             let mut lines: Vec<&str> = text.lines().collect();
@@ -270,7 +270,7 @@ impl FileTools {
             })?;
 
             // Invalidate cache after write
-            write_guard.invalidate_after_write().await;
+            write_guard.invalidate_after_write(manager).await;
 
             return Ok(format!("Wrote {} bytes to {}", content.len(), path));
         }
@@ -348,7 +348,7 @@ impl FileTools {
             })?;
 
             // Invalidate cache after write
-            write_guard.invalidate_after_write().await;
+            write_guard.invalidate_after_write(manager).await;
 
             return Ok(format!("Edited {}", path));
         }

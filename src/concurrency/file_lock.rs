@@ -15,7 +15,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant, SystemTime};
 
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::core::id::AgentId;
@@ -51,17 +51,16 @@ pub struct FileReadInfo {
 /// Per-file lock state.
 #[derive(Debug)]
 struct FileLock {
-    /// Number of active readers.
-    readers: AtomicUsize,
-    /// Mutex for exclusive writer access.
-    writer: Mutex<()>,
+    /// State encoding writer bit and reader count.
+    /// bit 0 = writer active (1 = active, 0 = inactive)
+    /// bits 1+ = reader count
+    state: AtomicUsize,
 }
 
 impl FileLock {
     fn new() -> Self {
         Self {
-            readers: AtomicUsize::new(0),
-            writer: Mutex::new(()),
+            state: AtomicUsize::new(0),
         }
     }
 }
@@ -115,7 +114,7 @@ impl FileLockManager {
     ///
     /// Multiple readers can hold the lock simultaneously.
     /// Returns a guard that must be dropped to release the lock.
-    pub async fn acquire_read(&self, agent_id: AgentId, path: &str) -> Result<FileReadGuard<'_>> {
+    pub async fn acquire_read(&self, agent_id: AgentId, path: &str) -> Result<FileReadGuard> {
         self.acquire_read_with_timeout(agent_id, path, self.default_timeout).await
     }
 
@@ -125,34 +124,46 @@ impl FileLockManager {
         agent_id: AgentId,
         path: &str,
         timeout: Duration,
-    ) -> Result<FileReadGuard<'_>> {
+    ) -> Result<FileReadGuard> {
         let lock = self.get_lock(path).await;
 
-        // Wait for any writer to finish
-        let timeout_result = tokio::time::timeout(timeout, lock.writer.lock()).await;
-        match timeout_result {
-            Ok(_) => {}
-            Err(_) => return Err(AgentError::Lock(format!("Timeout acquiring read lock for {}", path))),
+        // State encoding: bit 0 = writer active, bits 1+ = reader count
+        const WRITER_BIT: usize = 1;
+
+        // Wait for any writer to finish and increment reader count
+        let start = Instant::now();
+        loop {
+            let current = lock.state.load(Ordering::SeqCst);
+            let writer_active = (current & WRITER_BIT) != 0;
+            let reader_count = current >> 1;
+
+            if !writer_active {
+                // Try to increment reader count
+                let new = (reader_count + 1) << 1;
+                if lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                    debug!(agent_id = %agent_id, path = %path, "Acquired read lock");
+                    return Ok(FileReadGuard {
+                        agent_id,
+                        path: path.to_string(),
+                        lock: lock.clone(),
+                    });
+                }
+                // CAS failed, retry
+                continue;
+            }
+
+            if start.elapsed() >= timeout {
+                return Err(AgentError::Lock(format!("Timeout acquiring read lock for {}", path)));
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
         }
-
-        // Increment reader count
-        lock.readers.fetch_add(1, Ordering::SeqCst);
-
-        debug!(agent_id = %agent_id, path = %path, "Acquired read lock");
-
-        Ok(FileReadGuard {
-            manager: self,
-            agent_id,
-            path: path.to_string(),
-            lock: lock.clone(),
-        })
     }
 
     /// Acquire an exclusive (write) lock on a file.
     ///
     /// Blocks all readers and other writers.
     /// Returns a guard that must be dropped to release the lock.
-    pub async fn acquire_write(&self, agent_id: AgentId, path: &str) -> Result<FileWriteGuard<'_>> {
+    pub async fn acquire_write(&self, agent_id: AgentId, path: &str) -> Result<FileWriteGuard> {
         self.acquire_write_with_timeout(agent_id, path, self.default_timeout).await
     }
 
@@ -162,27 +173,39 @@ impl FileLockManager {
         agent_id: AgentId,
         path: &str,
         timeout: Duration,
-    ) -> Result<FileWriteGuard<'_>> {
+    ) -> Result<FileWriteGuard> {
         let lock = self.get_lock(path).await;
 
-        // Acquire exclusive writer lock (blocks readers too)
-        let timeout_result = tokio::time::timeout(timeout, lock.writer.lock()).await;
-        match timeout_result {
-            Ok(_) => {}
-            Err(_) => return Err(AgentError::Lock(format!("Timeout acquiring write lock for {}", path))),
+        // State encoding: bit 0 = writer active, bits 1+ = reader count
+        const WRITER_BIT: usize = 1;
+
+        // Acquire exclusive writer lock using CAS
+        let start = Instant::now();
+        loop {
+            let current = lock.state.load(Ordering::SeqCst);
+            let writer_active = (current & WRITER_BIT) != 0;
+            let reader_count = current >> 1;
+
+            if writer_active || reader_count > 0 {
+                // Writer active or readers exist, wait
+                if start.elapsed() >= timeout {
+                    return Err(AgentError::Lock(format!("Timeout acquiring write lock for {}", path)));
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+                continue;
+            }
+
+            // Try to set writer bit
+            let new = current | WRITER_BIT;
+            if lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                debug!(agent_id = %agent_id, path = %path, "Acquired write lock");
+                return Ok(FileWriteGuard {
+                    path: path.to_string(),
+                    lock: lock.clone(),
+                });
+            }
+            // CAS failed, retry
         }
-
-        // Wait for all readers to finish
-        while lock.readers.load(Ordering::SeqCst) > 0 {
-            tokio::time::sleep(Duration::from_millis(10)).await;
-        }
-
-        debug!(agent_id = %agent_id, path = %path, "Acquired write lock");
-
-        Ok(FileWriteGuard {
-            manager: self,
-            path: path.to_string(),
-        })
     }
 
     /// Validate that the file hasn't been modified since the agent last read it.
@@ -276,43 +299,66 @@ impl FileLockManager {
 
 /// Guard for releasing a read lock.
 #[derive(Debug)]
-pub struct FileReadGuard<'a> {
-    manager: &'a FileLockManager,
+pub struct FileReadGuard {
     agent_id: AgentId,
     path: String,
     lock: Arc<FileLock>,
 }
 
-impl<'a> FileReadGuard<'a> {
+impl FileReadGuard {
     /// Record that we read the file (for modification tracking).
     ///
     /// Call this after successfully reading the file content.
-    pub async fn record_read(self, modified_at: SystemTime, content_hash: Option<u64>) {
-        self.manager
+    pub async fn record_read(self, manager: &FileLockManager, modified_at: SystemTime, content_hash: Option<u64>) {
+        manager
             .cache_read(self.agent_id, &self.path, modified_at, content_hash)
             .await;
     }
 }
 
-impl Drop for FileReadGuard<'_> {
+impl Drop for FileReadGuard {
     fn drop(&mut self) {
-        self.lock.readers.fetch_sub(1, Ordering::SeqCst);
+        // Decrement reader count
+        loop {
+            let current = self.lock.state.load(Ordering::SeqCst);
+            let reader_count = current >> 1;
+            if reader_count == 0 {
+                return;
+            }
+            let new = (reader_count - 1) << 1;
+            if self.lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                return;
+            }
+        }
     }
 }
 
 /// Guard for releasing a write lock.
 #[derive(Debug)]
-pub struct FileWriteGuard<'a> {
-    manager: &'a FileLockManager,
+pub struct FileWriteGuard {
     path: String,
+    lock: Arc<FileLock>,
 }
 
-impl<'a> FileWriteGuard<'a> {
+impl FileWriteGuard {
     /// Invalidate caches for this file after writing.
     ///
     /// Call this after successfully writing to the file.
-    pub async fn invalidate_after_write(self) {
-        self.manager.invalidate_file_cache(&self.path).await;
+    pub async fn invalidate_after_write(self, manager: &FileLockManager) {
+        manager.invalidate_file_cache(&self.path).await;
+    }
+}
+
+impl Drop for FileWriteGuard {
+    fn drop(&mut self) {
+        // Clear writer bit
+        loop {
+            let current = self.lock.state.load(Ordering::SeqCst);
+            let new = current & !1; // Clear bit 0
+            if self.lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                return;
+            }
+        }
     }
 }
 
