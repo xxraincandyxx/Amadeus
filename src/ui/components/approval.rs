@@ -112,8 +112,7 @@ impl ApprovalDialog {
         // Title
         lines.push(Line::from(Span::styled(
             " Approval Required ",
-            Style::default()
-                .fg(colors.status.warning),
+            Style::default().fg(colors.status.warning),
         )));
 
         lines.push(Line::default());
@@ -142,9 +141,7 @@ impl ApprovalDialog {
             let (prefix, style) = if i == self.selected {
                 (
                     "► ",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .bg(colors.ui.dark),
+                    Style::default().fg(colors.text.primary).bg(colors.ui.dark),
                 )
             } else {
                 ("  ", Style::default().fg(colors.text.secondary))

@@ -97,7 +97,10 @@ impl OpenAIClient {
             .timeout(Duration::from_secs(120))
             .connect_timeout(Duration::from_secs(10));
 
-        if std::env::var("AMADEUS_NO_PROXY").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        if std::env::var("AMADEUS_NO_PROXY")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true)
+        {
             builder = builder.no_proxy();
         }
 
@@ -732,7 +735,13 @@ impl OpenAIClient {
                             if finish_reason == "tool_calls" {
                                 events.push(StreamEvent::ToolCallDone(String::new()));
                             }
-                            let mapped_reason = match finish_reason { "stop" => "end_turn", "tool_calls" => "tool_use", "length" => "max_tokens", _ => finish_reason }; events.push(StreamEvent::StopReason(mapped_reason.to_string()));
+                            let mapped_reason = match finish_reason {
+                                "stop" => "end_turn",
+                                "tool_calls" => "tool_use",
+                                "length" => "max_tokens",
+                                _ => finish_reason,
+                            };
+                            events.push(StreamEvent::StopReason(mapped_reason.to_string()));
                         }
                     }
                 }

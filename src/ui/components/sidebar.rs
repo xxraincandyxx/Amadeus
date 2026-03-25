@@ -146,9 +146,7 @@ impl FileSidebar {
                 };
 
                 let style = if actual_index == self.selected {
-                    Style::default()
-                        .fg(colors.text.link)
-                        .bg(colors.ui.dark)
+                    Style::default().fg(colors.text.link).bg(colors.ui.dark)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -167,10 +165,7 @@ impl FileSidebar {
         let list = List::new(items).block(
             Block::default()
                 .title(" EXPLORER ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -198,11 +193,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SHORTCUTS",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("SHORTCUTS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -220,11 +211,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SIDEBAR",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("SIDEBAR", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -238,11 +225,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "TOOLS",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("TOOLS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -267,11 +250,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "THEMES",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("THEMES", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -281,11 +260,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "CONTEXT",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("CONTEXT", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -309,11 +284,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SCROLLING",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("SCROLLING", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -331,11 +302,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SYSTEM",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("SYSTEM", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -351,10 +318,7 @@ impl HelpSidebar {
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .title(" COMMANDS ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -439,11 +403,7 @@ impl SkillSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SKILLS",
-                    Style::default()
-                        .fg(colors.text.primary),
-                ),
+                Span::styled("SKILLS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
         ];
@@ -476,9 +436,7 @@ impl SkillSidebar {
                 let is_selected = actual_index == self.selected;
 
                 let style = if is_selected {
-                    Style::default()
-                        .fg(colors.text.link)
-                        .bg(colors.ui.dark)
+                    Style::default().fg(colors.text.link).bg(colors.ui.dark)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -511,10 +469,7 @@ impl SkillSidebar {
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .title(" SKILLS ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -652,8 +607,7 @@ impl ContextSidebar {
             Span::styled(" ◈ ", Style::default().fg(colors.text.accent)),
             Span::styled(
                 &self.info.model_name,
-                Style::default()
-                    .fg(colors.text.primary),
+                Style::default().fg(colors.text.primary),
             ),
         ]));
         lines.push(Line::from(""));
@@ -673,8 +627,7 @@ impl ContextSidebar {
             Span::styled("  ", Style::default()),
             Span::styled(
                 "ESTIMATED USAGE BY CATEGORY",
-                Style::default()
-                    .fg(colors.ui.comment),
+                Style::default().fg(colors.ui.comment),
             ),
         ]));
         lines.push(Self::section_line(&colors));
@@ -745,11 +698,7 @@ impl ContextSidebar {
         // Tool details
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(
-                "TOOLS",
-                Style::default()
-                    .fg(colors.ui.comment),
-            ),
+            Span::styled("TOOLS", Style::default().fg(colors.ui.comment)),
         ]));
         lines.push(Line::from(""));
 
@@ -772,11 +721,7 @@ impl ContextSidebar {
         // Message details
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(
-                "MESSAGES",
-                Style::default()
-                    .fg(colors.ui.comment),
-            ),
+            Span::styled("MESSAGES", Style::default().fg(colors.ui.comment)),
         ]));
         lines.push(Line::from(""));
 
@@ -806,10 +751,7 @@ impl ContextSidebar {
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .title(" CONTEXT ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),

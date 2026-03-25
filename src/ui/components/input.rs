@@ -29,10 +29,7 @@ impl InputComponent {
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(colors.border.default))
                 .title(" ❯ PROMPT ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.text.accent),
-                ),
+                .title_style(Style::default().fg(colors.text.accent)),
         );
         textarea.set_style(Style::default().fg(colors.text.primary));
         textarea.set_cursor_style(
@@ -80,10 +77,7 @@ impl InputComponent {
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(colors.border.default))
                 .title(" ❯ PROMPT ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.text.accent),
-                ),
+                .title_style(Style::default().fg(colors.text.accent)),
         );
         self.textarea
             .set_style(Style::default().fg(colors.text.primary));
@@ -230,10 +224,7 @@ impl InputComponent {
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(colors.border.default))
                 .title(title)
-                .title_style(
-                    Style::default()
-                        .fg(colors.text.accent),
-                ),
+                .title_style(Style::default().fg(colors.text.accent)),
         );
 
         frame.render_widget(&self.textarea, area);
@@ -278,10 +269,7 @@ impl InputComponent {
                     .borders(Borders::TOP)
                     .border_style(Style::default().fg(colors.border.default))
                     .title(" ❯ PROMPT ")
-                    .title_style(
-                        Style::default()
-                            .fg(colors.text.accent),
-                    ),
+                    .title_style(Style::default().fg(colors.text.accent)),
             );
             self.textarea
                 .set_style(Style::default().fg(colors.text.primary));

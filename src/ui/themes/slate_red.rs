@@ -33,27 +33,27 @@ impl Theme for SlateRed {
             text: TextColors {
                 primary: Color::Rgb(220, 220, 220), // Off-white, not pure white
                 secondary: gray,
-                link: accent_red,                      // Red accent for links
-                accent: bright_red,                   // Red accent for emphasis
+                link: accent_red,                    // Red accent for links
+                accent: bright_red,                  // Red accent for emphasis
                 response: Color::Rgb(200, 200, 200), // Slightly dimmer for responses
             },
             background: BackgroundColors {
                 primary: bg_primary,
-                message: Color::Rgb(35, 35, 35),    // Subtle lift from primary
-                input: Color::Rgb(22, 22, 22),      // Slightly darker than primary
+                message: Color::Rgb(35, 35, 35), // Subtle lift from primary
+                input: Color::Rgb(22, 22, 22),   // Slightly darker than primary
                 diff: DiffColors {
-                    added: Color::Rgb(30, 50, 30), // Muted green — stays neutral
+                    added: Color::Rgb(30, 50, 30),   // Muted green — stays neutral
                     removed: Color::Rgb(60, 20, 20), // Muted red
                 },
             },
             border: BorderColors {
-                default: dark_gray,   // Neutral gray border
+                default: dark_gray,  // Neutral gray border
                 focused: accent_red, // Red accent on focus
             },
             ui: UiColors {
-                comment: gray,            // Neutral gray for comments
-                symbol: accent_red,       // Red accent for symbols (arrows, bullets)
-                dark: dark_gray,          // Neutral dark gray
+                comment: gray,      // Neutral gray for comments
+                symbol: accent_red, // Red accent for symbols (arrows, bullets)
+                dark: dark_gray,    // Neutral dark gray
                 gradient: [
                     Color::Rgb(30, 10, 10), // Very subtle red undertone in gradient
                     Color::Rgb(50, 15, 15),
@@ -61,9 +61,9 @@ impl Theme for SlateRed {
                 ],
             },
             status: StatusColors {
-                error: bright_red,                    // Semantic red for errors
-                success: Color::Rgb(70, 140, 70),    // Muted green
-                warning: Color::Rgb(160, 100, 30),  // Muted amber
+                error: bright_red,                 // Semantic red for errors
+                success: Color::Rgb(70, 140, 70),  // Muted green
+                warning: Color::Rgb(160, 100, 30), // Muted amber
             },
             scrollbar: ScrollbarColors {
                 thumb: dark_gray,

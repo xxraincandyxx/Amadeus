@@ -240,16 +240,11 @@ pub fn render_tool_group_with_limit(
 
         lines.push(Line::from(vec![
             Span::styled("  ", Style::default()),
-            Span::styled(
-                icon,
-                Style::default()
-                    .fg(status_color),
-            ),
+            Span::styled(icon, Style::default().fg(status_color)),
             Span::styled(" ", Style::default()),
             Span::styled(
                 truncate(&tool.name, body_width.saturating_sub(2)),
-                Style::default()
-                    .fg(colors.text.primary),
+                Style::default().fg(colors.text.primary),
             ),
         ]));
 

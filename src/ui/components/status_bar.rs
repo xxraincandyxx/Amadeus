@@ -160,11 +160,7 @@ impl StatusBar {
         // Thinking indicator
         if self.thinking {
             spans.push(Span::styled(" • ", Style::default().fg(colors.ui.dark)));
-            spans.push(Span::styled(
-                "⟡",
-                Style::default()
-                    .fg(colors.text.accent),
-            ));
+            spans.push(Span::styled("⟡", Style::default().fg(colors.text.accent)));
         }
 
         let line = Line::from(spans);

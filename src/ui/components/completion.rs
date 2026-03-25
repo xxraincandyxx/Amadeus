@@ -170,8 +170,7 @@ pub fn render_completion(
         .map(|(i, cmd)| {
             let is_selected = i == state.selected_index;
             let style = if is_selected {
-                Style::default()
-                    .fg(Color::LightCyan)
+                Style::default().fg(Color::LightCyan)
             } else {
                 Style::default().fg(Color::White)
             };
