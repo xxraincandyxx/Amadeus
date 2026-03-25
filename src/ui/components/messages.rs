@@ -1066,37 +1066,36 @@ impl MessagesComponent {
         const FULL_THRESHOLD: usize = 70;
 
         if width < COMPACT_THRESHOLD {
-            // Too narrow - no mascot
             return vec![];
         }
 
         if width < FULL_THRESHOLD {
-            // Medium width - show compact face (26 chars wide, centered)
-            let padding = " ".repeat((width - 26) / 2);
+            // Medium width - compact face (24 chars wide)
+            let padding = " ".repeat((width.saturating_sub(24)) / 2);
             return vec![
-                Line::from(Span::styled(format!("{}{}", padding, "        ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣼⢏⣠⣤⣘              "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⢰⣏                  "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⠸                  "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀⣀⣤⣴⠶⠶⣦⣤⣀"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀⣠⡾⠋⢁⣶⣿⠶"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀⣼⢏⣠⣤⣘"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀⢰⣏"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀⠸"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀"), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "⠀"), style)),
             ];
         }
 
-        // Wide width - show full robot art (40 chars wide, centered)
-        let padding = " ".repeat((width - 40) / 2);
+        // Wide width - full robot art (26 chars wide face)
+        let padding = " ".repeat((width.saturating_sub(26)) / 2);
         vec![
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣼⢏⣠⣤⣘              "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⢰⣏                  "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⠸                  "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣀⣴⣾⣿              "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "    ⣿⣴⣾⣿                "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⣀⣤⣴⠶⠶⣦⣤⣀"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⣠⡾⠋⢁⣶⣿⠶"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⣼⢏⣠⣤⣘"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⢰⣏"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⠸"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⠀⣀⣴⣾⣿"), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "⣿⣴⣾⣿"), style)),
         ]
     }
 
