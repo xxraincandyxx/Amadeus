@@ -1058,13 +1058,26 @@ impl MessagesComponent {
 
     fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
         let accent = colors.text.accent;
-        vec![Line::from(vec![Span::styled(
-            "⠀⡠⠒⢉⣉⠓⢦⡀⠀⢀⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣿⣷⣦⣀⠀⠀⠀⠀⢸⣿⣿⣷⡀⠀⠀⣠⣶⣾⣿⣿⣦⣄⠀⢸⣿⣇⣠⣶⣿⡿⠛⣠⣶⣿⣿⣿⣦⣄⠀
-⢰⢡⣤⡻⡿⣣⣤⢱⢠⣿⡿⠉⠀⠈⠙⣿⣿⢸⣿⣿⠀⠀⠀⠈⠙⠿⠿⠀⣾⣿⠋⠀⠀⠙⢻⣿⡇⠙⠻⣿⣷⣦⣀⠀⠀⠀⣸⣿⡏⠁⠀⠉⢻⣿⡇⢸⣿⣿⡿⠛⠁⠀⣼⣿⠏⠁⠀⠉⢻⣿⡇
-⠸⡈⠛⠳⡷⠛⠋⡸⠘⣿⣷⡀⠀⠀⠀⣿⣯⢨⣽⣿⣷⣦⣀⠀⠀⠀⠀⢿⣿⣄⠀⠀⠀⢸⣿⡅⣶⣶⡀⠙⠻⣿⣷⣤⡀⢻⣿⣇⡀⠀⠀⢸⣿⡇⢨⣿⣿⣷⣤⡀⠀⢻⣿⣆⡀⠀⠀⢸⣿⡅
-⠀⠑⠤⣄⣃⡤⠞⠁⠀⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠛⠙⠻⣿⣷⣦⡀⠀⠈⠻⠿⣿⣿⡷⢸⣿⡇⠹⣿⣿⣿⣿⣿⣿⣿⡇⠀⠙⠿⣿⣿⡿⢼⣿⡇⠘⠛⠋⠙⠿⣿⣷⣤⠙⠿⣿⣿⡿⢼⣿⡇",
-            Style::default().fg(accent),
-        )])]
+        let style = Style::default().fg(accent);
+        // User's braille robot art - 4 visual rows, each a separate Line
+        vec![
+            Line::from(vec![Span::styled(
+                "⠀⣠⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣷⣦⣀⢸⣿⣿⣷⣄⣠⣶⣾⣿⣿⣦⣄",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "⢰⢡⣤⡻⠿⣣⣤⢱⢠⣿⡿⠉⠈⠙⣿⣿⢸⣿⣿⠈⠙⠿⣿⣿⣷⣦⣄⣸⣿⡏⠉⠉⢻⣿⡇",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "⠸⠛⠳⠷⠛⠋⣸⠘⣿⣷⣀⣿⣯⢨⣽⣿⣷⣦⣀⣿⣷⣦⣄⢸⣿⣇⣀⢸⣿",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "⠑⠤⣄⣃⡤⠞⠁⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠙⠻⣿⣷⣦⠘⠻⠿⣿⣿⣿",
+                style,
+            )]),
+        ]
     }
 
     pub fn render_dashboard_lines(&self, width: u16) -> Vec<Line<'static>> {
