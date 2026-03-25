@@ -838,13 +838,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
             self.sync_inline_viewport(&mut terminal)?;
 
-            if self.messages.should_render_dashboard_to_history() {
-                let width = terminal.size()?.width;
-                let dashboard_lines = self.messages.render_dashboard_lines(width);
-                self.insert_lines_before(&mut terminal, dashboard_lines)?;
-                self.messages.mark_dashboard_rendered();
-            }
-
             self.flush_unrendered_history(&mut terminal)?;
 
             terminal.draw(|f| self.render(f))?;
@@ -1034,7 +1027,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         if self.streaming_buffer.is_empty() && !is_streaming {
-            return 0;
+            if !self.messages.is_empty() {
+                return 0;
+            }
+            return max_height.max(20);
         }
 
         let inner_width = width.saturating_sub(4) as usize;
@@ -1118,8 +1114,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let colors = crate::ui::get_colors();
         Line::from(vec![Span::styled(
             " Live ",
-            Style::default()
-                .fg(colors.text.accent),
+            Style::default().fg(colors.text.accent),
         )])
     }
 
@@ -1127,8 +1122,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let colors = crate::ui::get_colors();
         Line::from(vec![Span::styled(
             " Monitor ",
-            Style::default()
-                .fg(colors.text.accent),
+            Style::default().fg(colors.text.accent),
         )])
     }
 
@@ -1327,7 +1321,23 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let has_stream_text = !self.streaming_buffer.is_empty();
         let has_tool_activity = self.tool_monitor.has_running_tools();
         let has_pending_compaction = self.messages.is_compression_pending();
+        let has_messages = !self.messages.is_empty();
+
         if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
+            if !has_messages {
+                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
+                if !dashboard_lines.is_empty() {
+                    let block = Block::default()
+                        .title(" Welcome ")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(colors.border.focused));
+                    let inner = block.inner(area);
+                    frame.render_widget(block, area);
+                    if inner.width > 0 && inner.height > 0 {
+                        frame.render_widget(Paragraph::new(dashboard_lines), inner);
+                    }
+                }
+            }
             return;
         }
 
@@ -2067,17 +2077,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             }
             // Shift+Tab: Move up in completion list
             (KeyModifiers::SHIFT, KeyCode::Tab) => {
-                if self.stream_rx.is_none()
-                    && self.input.completion_is_visible() {
-                        self.input.completion_select_up();
-                    }
+                if self.stream_rx.is_none() && self.input.completion_is_visible() {
+                    self.input.completion_select_up();
+                }
             }
             // Ctrl+Down: Move down in completion list
             (KeyModifiers::CONTROL, KeyCode::Down) => {
-                if self.stream_rx.is_none()
-                    && self.input.completion_is_visible() {
-                        self.input.completion_select_down();
-                    }
+                if self.stream_rx.is_none() && self.input.completion_is_visible() {
+                    self.input.completion_select_down();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if self.stream_rx.is_none() {
@@ -3242,7 +3250,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .messages
                     .add_assistant(format!("[sub-agent] {}", summary.trim_end()));
             }
-            
+
             // Automatically switch back to parent session if the completed subagent was active
             if self.active_idx == child_idx {
                 self.switch_session(parent_idx);
@@ -3353,13 +3361,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 let session = self.active_session_mut();
                 session.poll_compaction_result();
                 session.sync_inline_viewport(&mut terminal)?;
-
-                if session.messages.should_render_dashboard_to_history() {
-                    let width = terminal.size()?.width;
-                    let dashboard_lines = session.messages.render_dashboard_lines(width);
-                    session.insert_lines_before(&mut terminal, dashboard_lines)?;
-                    session.messages.mark_dashboard_rendered();
-                }
 
                 session.flush_unrendered_history(&mut terminal)?;
             }

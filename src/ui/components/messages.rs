@@ -176,8 +176,6 @@ pub struct MessagesComponent {
     skip_next_assistant_history_item: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
-    /// Whether the dashboard has been printed to terminal history
-    dashboard_rendered: bool,
 }
 
 impl MessagesComponent {
@@ -196,7 +194,6 @@ impl MessagesComponent {
             last_rendered_turn: None,
             skip_next_assistant_history_item: false,
             scroll_offset: 0,
-            dashboard_rendered: false,
         }
     }
 
@@ -257,14 +254,6 @@ impl MessagesComponent {
             }
             self.last_rendered_index = self.items.len();
         }
-    }
-
-    pub fn should_render_dashboard_to_history(&self) -> bool {
-        !self.dashboard_rendered && self.items.is_empty() && self.streaming_text.is_none()
-    }
-
-    pub fn mark_dashboard_rendered(&mut self) {
-        self.dashboard_rendered = true;
     }
 
     pub fn should_prefix_current_turn(&self) -> bool {
@@ -353,8 +342,7 @@ impl MessagesComponent {
                 if include_prefix {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", turn),
-                        Style::default()
-                            .fg(colors.text.accent),
+                        Style::default().fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("   "));
@@ -491,8 +479,7 @@ impl MessagesComponent {
                     Span::styled(" ", Style::default().fg(colors.ui.dark)),
                     Span::styled(
                         format!("{}%", self.compaction_animator.progress()),
-                        Style::default()
-                            .fg(colors.text.secondary),
+                        Style::default().fg(colors.text.secondary),
                     ),
                 ]),
             ]);
@@ -817,8 +804,7 @@ impl MessagesComponent {
                 if i == 0 {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", self.current_turn),
-                        Style::default()
-                            .fg(colors.text.accent),
+                        Style::default().fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("    "));
@@ -885,8 +871,7 @@ impl MessagesComponent {
                     if i == 0 {
                         spans.push(Span::styled(
                             format!("✦ [{}] ", turn),
-                            Style::default()
-                                .fg(colors.text.accent),
+                            Style::default().fg(colors.text.accent),
                         ));
                     } else {
                         spans.push(Span::raw("   "));
@@ -1061,43 +1046,61 @@ impl MessagesComponent {
         let style = Style::default().fg(accent);
         let width = width as usize;
 
-        // Width thresholds for mascot display modes
-        const COMPACT_THRESHOLD: usize = 40;
-        const FULL_THRESHOLD: usize = 70;
+        const FACE_ART: [&str; 8] = [
+            "⠀⠀⠀⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+            "⠀⠀⣠⡾⠋⢁⣶⣿⣿⣶⡈⠙⢷⣄⠀⠀",
+            "⠀⣼⢏⣠⣤⣘⣿⣿⣿⡿⣃⣤⣄⡹⣧⠀",
+            "⢰⡏⣿⣿⣿⣿⡆⢹⡏⢰⣿⣿⣿⣿⢻⡆",
+            "⠸⣇⠙⠿⠿⢿⣧⣸⣇⣼⡿⠿⠿⠋⣼⠇",
+            "⠀⢻⣄⠀⠀⠀⠙⢿⡿⠋⠀⠀⠀⣠⡟⠀",
+            "⠀⠀⠙⢦⣄⠀⠀⢸⡇⠀⠀⣠⡴⠋⠀⠀",
+            "⠀⠀⠀⠀⠉⠛⠳⠶⠶⠞⠛⠉⠀⠀⠀⠀",
+        ];
 
-        if width < COMPACT_THRESHOLD {
+        const FULL_ART: [&str; 12] = [
+            "                          ⠀⠀⠀⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+            "                          ⠀⠀⣠⡾⠋⢁⣶⣿⣿⣶⡈⠙⢷⣄⠀⠀",
+            "                          ⠀⣼⢏⣠⣤⣘⣿⣿⣿⡿⣃⣤⣄⡹⣧⠀",
+            "                          ⢰⡏⣿⣿⣿⣿⡆⢹⡏⢰⣿⣿⣿⣿⢻⡆",
+            "                          ⠸⣇⠙⠿⠿⢿⣧⣸⣇⣼⡿⠿⠿⠋⣼⠇",
+            "                          ⠀⢻⣄⠀⠀⠀⠙⢿⡿⠋⠀⠀⠀⣠⡟⠀",
+            "                          ⠀⠀⠙⢦⣄⠀⠀⢸⡇⠀⠀⣠⡴⠋⠀⠀",
+            "                          ⠀⠀⠀⠀⠉⠛⠳⠶⠶⠞⠛⠉⠀⠀⠀⠀",
+            "⠀⢀⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣿⣷⣦⣀⠀⠀⠀⠀⢸⣿⣿⣷⡀⠀⠀⣠⣶⣾⣿⣿⣦⣄⠀⢸⣿⣇⣠⣶⣿⡿⠛⣠⣶⣿⣿⣿⣦⣄⠀",
+            "⢠⣿⡿⠉⠀⠈⠙⣿⣿⢸⣿⣿⠀⠀⠀⠈⠿⠿⠀⣾⣿⠋⠀⠀⠙⢻⣿⡇⠙⠻⣿⣷⣦⣀⠀⠀⠀⣸⣿⡏⠁⠀⠉⢻⣿⡇⢸⣿⣿⡿⠛⠁⠀⣼⣿⠏⠁⠀⠉⢻⣿⡇",
+            "⠘⣿⣷⡀⠀⠀⠀⣿⣯⢨⣽⣿⣷⣦⣀⠀⠀⠀⠀⢿⣿⣄⠀⠀⠀⢸⣿⡅⣶⣶⡀⠙⠻⣿⣷⣤⡀⢻⣿⣇⡀⠀⠀⢸⣿⡇⢨⣿⣿⣷⣤⡀⠀⢻⣿⣆⡀⠀⠀⢸⣿⡅",
+            "⠀⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠛⠙⠻⣿⣷⣦⡀⠀⠈⠻⠿⣿⣿⡷⢸⣿⡇⠹⣿⣿⣿⣿⣿⣿⣿⡇⠀⠙⠿⣿⣿⡿⢼⣿⡇⠘⠛⠋⠙⠿⣿⣷⣤⠙⠿⣿⣿⡿⢼⣿⡇",
+        ];
+
+        let face_width = FACE_ART
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        let full_width = FULL_ART
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+
+        let art: &[&str] = if width >= full_width {
+            &FULL_ART
+        } else if width >= face_width {
+            &FACE_ART
+        } else {
             return vec![];
-        }
+        };
 
-        if width < FULL_THRESHOLD {
-            // Medium width - compact face (8 rows, centered at 30 chars)
-            let padding = " ".repeat((width.saturating_sub(30)) / 2);
-            return vec![
-                Line::from(Span::styled(format!("{}{}", padding, "        ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣼⢏⣠⣤⣘              "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⢰⣏                  "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⠸                  "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
-                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
-            ];
-        }
+        let art_width = art
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        let padding = " ".repeat(width.saturating_sub(art_width) / 2);
 
-        // Wide width - full robot art (8 rows face + 4 rows braille body, centered at 30 chars)
-        let padding = " ".repeat((width.saturating_sub(30)) / 2);
-        vec![
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣼⢏⣠⣤⣘              "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⢰⣏                  "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⠸                  "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣀⣴⣾⣿              "), style)),
-            Line::from(Span::styled(format!("{}{}", padding, "    ⣿⣴⣾⣿                "), style)),
-        ]
+        art.iter()
+            .map(|line| Line::from(Span::styled(format!("{}{}", padding, line), style)))
+            .collect()
     }
 
     pub fn render_dashboard_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -1119,10 +1122,7 @@ impl MessagesComponent {
         // Header Title
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled(
-                " Amadeus v0.1.0 ",
-                Style::default().fg(accent),
-            ),
+            Span::styled(" Amadeus v0.1.0 ", Style::default().fg(accent)),
             Span::styled(
                 "─".repeat(width.saturating_sub(18)),
                 Style::default().fg(dark),
@@ -1174,10 +1174,7 @@ impl MessagesComponent {
 
         // Tips
         lines.push(Line::from(vec![
-            Span::styled(
-                " Tips for getting started ",
-                Style::default().fg(secondary),
-            ),
+            Span::styled(" Tips for getting started ", Style::default().fg(secondary)),
             Span::styled(
                 "─".repeat(width.saturating_sub(28)),
                 Style::default().fg(dark),
