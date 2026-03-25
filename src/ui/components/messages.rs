@@ -1058,36 +1058,13 @@ impl MessagesComponent {
 
     fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
         let accent = colors.text.accent;
-        let dark = colors.ui.dark;
-        vec![
-            Line::from(vec![Span::styled(
-                "   ■   ■   ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "  ■■■■■■■  ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![
-                Span::styled("  ■ ", Style::default().fg(accent)),
-                Span::styled("●", Style::default().fg(dark)),
-                Span::styled("   ", Style::default().fg(accent)),
-                Span::styled("●", Style::default().fg(dark)),
-                Span::styled(" ■  ", Style::default().fg(accent)),
-            ]),
-            Line::from(vec![Span::styled(
-                "  ■■■■■■■  ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "    ■ ■    ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "    ■ ■    ",
-                Style::default().fg(accent),
-            )]),
-        ]
+        vec![Line::from(vec![Span::styled(
+            "⠀⡠⠒⢉⣉⠓⢦⡀⠀⢀⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣿⣷⣦⣀⠀⠀⠀⠀⢸⣿⣿⣷⡀⠀⠀⣠⣶⣾⣿⣿⣦⣄⠀⢸⣿⣇⣠⣶⣿⡿⠛⣠⣶⣿⣿⣿⣦⣄⠀
+⢰⢡⣤⡻⡿⣣⣤⢱⢠⣿⡿⠉⠀⠈⠙⣿⣿⢸⣿⣿⠀⠀⠀⠈⠙⠿⠿⠀⣾⣿⠋⠀⠀⠙⢻⣿⡇⠙⠻⣿⣷⣦⣀⠀⠀⠀⣸⣿⡏⠁⠀⠉⢻⣿⡇⢸⣿⣿⡿⠛⠁⠀⣼⣿⠏⠁⠀⠉⢻⣿⡇
+⠸⡈⠛⠳⡷⠛⠋⡸⠘⣿⣷⡀⠀⠀⠀⣿⣯⢨⣽⣿⣷⣦⣀⠀⠀⠀⠀⢿⣿⣄⠀⠀⠀⢸⣿⡅⣶⣶⡀⠙⠻⣿⣷⣤⡀⢻⣿⣇⡀⠀⠀⢸⣿⡇⢨⣿⣿⣷⣤⡀⠀⢻⣿⣆⡀⠀⠀⢸⣿⡅
+⠀⠑⠤⣄⣃⡤⠞⠁⠀⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠛⠙⠻⣿⣷⣦⡀⠀⠈⠻⠿⣿⣿⡷⢸⣿⡇⠹⣿⣿⣿⣿⣿⣿⣿⡇⠀⠙⠿⣿⣿⡿⢼⣿⡇⠘⠛⠋⠙⠿⣿⣷⣤⠙⠿⣿⣿⡿⢼⣿⡇",
+            Style::default().fg(accent),
+        )])]
     }
 
     pub fn render_dashboard_lines(&self, width: u16) -> Vec<Line<'static>> {
