@@ -1071,81 +1071,32 @@ impl MessagesComponent {
         }
 
         if width < FULL_THRESHOLD {
-            // Medium width - show compact face
+            // Medium width - show compact face (26 chars wide, centered)
+            let padding = " ".repeat((width - 26) / 2);
             return vec![
-                Line::from(vec![Span::styled(
-                    "        ⠀⣀⣤⣴⠶⠶⣦⣤⣀        ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀⣠⡾⠋⢁⣶⣿⠶          ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀⣼⢏⣠⣤⣘              ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀⢰⣏                  ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀⠸                  ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀                      ",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀                      ",
-                    style,
-                )]),
+                Line::from(Span::styled(format!("{}{}", padding, "        ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣼⢏⣠⣤⣘              "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⢰⣏                  "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀⠸                  "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
+                Line::from(Span::styled(format!("{}{}", padding, "    ⠀                      "), style)),
             ];
         }
 
-        // Wide width - show full robot art
+        // Wide width - show full robot art (40 chars wide, centered)
+        let padding = " ".repeat((width - 40) / 2);
         vec![
-            Line::from(vec![Span::styled(
-                "                          ⠀⣀⣤⣴⠶⠶⣦⣤⣀        ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀⣠⡾⠋⢁⣶⣿⠶          ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀⣼⢏⣠⣤⣘              ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀⢰⣏                  ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀⠸                  ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀                      ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀                      ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "                          ⠀                      ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "    ⠀⣀⣴⣾⣿              ",
-                style,
-            )]),
-            Line::from(vec![Span::styled(
-                "    ⣿⣴⣾⣿                ",
-                style,
-            )]),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣀⣤⣴⠶⠶⣦⣤⣀        "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣠⡾⠋⢁⣶⣿⠶          "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⣼⢏⣠⣤⣘              "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⢰⣏                  "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀⠸                  "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "                          ⠀                      "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "    ⠀⣀⣴⣾⣿              "), style)),
+            Line::from(Span::styled(format!("{}{}", padding, "    ⣿⣴⣾⣿                "), style)),
         ]
     }
 
@@ -1189,9 +1140,9 @@ impl MessagesComponent {
         );
         lines.push(Line::from(""));
 
-        // Mascot
+        // Mascot (already centered in get_mascot)
         for line in self.get_mascot(&colors, width as u16) {
-            lines.push(line.alignment(ratatui::layout::Alignment::Center));
+            lines.push(line);
         }
         lines.push(Line::from(""));
 
