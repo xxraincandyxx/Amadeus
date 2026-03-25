@@ -1071,38 +1071,34 @@ impl MessagesComponent {
         }
 
         if width < FULL_THRESHOLD {
-            // Medium width - show compact face (bottom half of art)
+            // Medium width - show compact face
             return vec![
                 Line::from(vec![Span::styled(
-                    "    ⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+                    "        ⠀⣀⣤⣴⠶⠶⣦⣤⣀        ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⣠⡾⠋⢁⣶⣿⠶⡈⠙⢷⣄",
+                    "    ⠀⣠⡾⠋⢁⣶⣿⠶          ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⣼⢏⣠⣤⣘⣿⠿⣃⣤⣄⣹",
+                    "    ⠀⣼⢏⣠⣤⣘              ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⢰⣏⣿⣿⣿⠆⢹⠏⢰⣿⣿",
+                    "    ⠀⢰⣏                  ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⠸⣇⠙⠿⣿⠿⣧⣸⣇⣼⣿",
+                    "    ⠀⠸                  ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⠀⢻⣄⠀⠀⠙⢿⠋⠀⣠⣿",
+                    "    ⠀                      ",
                     style,
                 )]),
                 Line::from(vec![Span::styled(
-                    "    ⠀⠀⠀⠙⢦⣄⠀⢸⠁⣠⡴⠋",
-                    style,
-                )]),
-                Line::from(vec![Span::styled(
-                    "    ⠀⠀⠀⠀⠉⠛⠳⠶⠞⠛⠉",
+                    "    ⠀                      ",
                     style,
                 )]),
             ];
@@ -1111,43 +1107,43 @@ impl MessagesComponent {
         // Wide width - show full robot art
         vec![
             Line::from(vec![Span::styled(
-                "    ⠀⣠⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+                "                          ⠀⣀⣤⣴⠶⠶⣦⣤⣀        ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⣠⡾⠋⢁⣶⣿⠶⡈⠙⢷⣄",
+                "                          ⠀⣠⡾⠋⢁⣶⣿⠶          ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⣼⢏⣠⣤⣘⣿⠿⣃⣤⣄⣹",
+                "                          ⠀⣼⢏⣠⣤⣘              ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⢰⣏⣿⣿⣿⠆⢹⠏⢰⣿⣿",
+                "                          ⠀⢰⣏                  ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⠸⣇⠙⠿⣿⠿⣧⣸⣇⣼⣿",
+                "                          ⠀⠸                  ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⠀⢻⣄⠀⠀⠙⢿⠋⠀⣠⣿",
+                "                          ⠀                      ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⠀⠀⠙⢦⣄⠀⢸⠁⣠⡴⠋",
+                "                          ⠀                      ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⠀⠀⠀⠉⠛⠳⠶⠞⠛⠉",
+                "                          ⠀                      ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⠀⣠⣴⠶⠶⣦⣤⣀⠀",
+                "    ⠀⣀⣴⣾⣿              ",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "    ⣴⠶⠶⣦⣤⣀⣀",
+                "    ⣿⣴⣾⣿                ",
                 style,
             )]),
         ]
