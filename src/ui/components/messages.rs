@@ -1056,25 +1056,98 @@ impl MessagesComponent {
         }
     }
 
-    fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
+    fn get_mascot(&self, colors: &crate::ui::SemanticColors, width: u16) -> Vec<Line<'static>> {
         let accent = colors.text.accent;
         let style = Style::default().fg(accent);
-        // User's braille robot art - 4 visual rows, each a separate Line
+        let width = width as usize;
+
+        // Width thresholds for mascot display modes
+        const COMPACT_THRESHOLD: usize = 40;
+        const FULL_THRESHOLD: usize = 70;
+
+        if width < COMPACT_THRESHOLD {
+            // Too narrow - no mascot
+            return vec![];
+        }
+
+        if width < FULL_THRESHOLD {
+            // Medium width - show compact face (bottom half of art)
+            return vec![
+                Line::from(vec![Span::styled(
+                    "    ⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⣠⡾⠋⢁⣶⣿⠶⡈⠙⢷⣄",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⣼⢏⣠⣤⣘⣿⠿⣃⣤⣄⣹",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⢰⣏⣿⣿⣿⠆⢹⠏⢰⣿⣿",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⠸⣇⠙⠿⣿⠿⣧⣸⣇⣼⣿",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⠀⢻⣄⠀⠀⠙⢿⠋⠀⣠⣿",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⠀⠀⠙⢦⣄⠀⢸⠁⣠⡴⠋",
+                    style,
+                )]),
+                Line::from(vec![Span::styled(
+                    "    ⠀⠀⠀⠀⠉⠛⠳⠶⠞⠛⠉",
+                    style,
+                )]),
+            ];
+        }
+
+        // Wide width - show full robot art
         vec![
             Line::from(vec![Span::styled(
-                "⠀⣠⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣷⣦⣀⢸⣿⣿⣷⣄⣠⣶⣾⣿⣿⣦⣄",
+                "    ⠀⣠⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "⢰⢡⣤⡻⠿⣣⣤⢱⢠⣿⡿⠉⠈⠙⣿⣿⢸⣿⣿⠈⠙⠿⣿⣿⣷⣦⣄⣸⣿⡏⠉⠉⢻⣿⡇",
+                "    ⠀⣠⡾⠋⢁⣶⣿⠶⡈⠙⢷⣄",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "⠸⠛⠳⠷⠛⠋⣸⠘⣿⣷⣀⣿⣯⢨⣽⣿⣷⣦⣀⣿⣷⣦⣄⢸⣿⣇⣀⢸⣿",
+                "    ⠀⣼⢏⣠⣤⣘⣿⠿⣃⣤⣄⣹",
                 style,
             )]),
             Line::from(vec![Span::styled(
-                "⠑⠤⣄⣃⡤⠞⠁⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠙⠻⣿⣷⣦⠘⠻⠿⣿⣿⣿",
+                "    ⠀⢰⣏⣿⣿⣿⠆⢹⠏⢰⣿⣿",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⠀⠸⣇⠙⠿⣿⠿⣧⣸⣇⣼⣿",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⠀⠀⢻⣄⠀⠀⠙⢿⠋⠀⣠⣿",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⠀⠀⠀⠙⢦⣄⠀⢸⠁⣠⡴⠋",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⠀⠀⠀⠀⠉⠛⠳⠶⠞⠛⠉",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⠀⣠⣴⠶⠶⣦⣤⣀⠀",
+                style,
+            )]),
+            Line::from(vec![Span::styled(
+                "    ⣴⠶⠶⣦⣤⣀⣀",
                 style,
             )]),
         ]
@@ -1121,7 +1194,7 @@ impl MessagesComponent {
         lines.push(Line::from(""));
 
         // Mascot
-        for line in self.get_mascot(&colors) {
+        for line in self.get_mascot(&colors, width as u16) {
             lines.push(line.alignment(ratatui::layout::Alignment::Center));
         }
         lines.push(Line::from(""));
