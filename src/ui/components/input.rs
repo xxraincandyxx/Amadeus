@@ -31,8 +31,7 @@ impl InputComponent {
                 .title(" ❯ PROMPT ")
                 .title_style(
                     Style::default()
-                        .fg(colors.text.accent)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.accent),
                 ),
         );
         textarea.set_style(Style::default().fg(colors.text.primary));
@@ -83,8 +82,7 @@ impl InputComponent {
                 .title(" ❯ PROMPT ")
                 .title_style(
                     Style::default()
-                        .fg(colors.text.accent)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.accent),
                 ),
         );
         self.textarea
@@ -234,8 +232,7 @@ impl InputComponent {
                 .title(title)
                 .title_style(
                     Style::default()
-                        .fg(colors.text.accent)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.accent),
                 ),
         );
 
@@ -283,8 +280,7 @@ impl InputComponent {
                     .title(" ❯ PROMPT ")
                     .title_style(
                         Style::default()
-                            .fg(colors.text.accent)
-                            .add_modifier(Modifier::BOLD),
+                            .fg(colors.text.accent),
                     ),
             );
             self.textarea

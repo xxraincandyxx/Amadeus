@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -163,8 +163,7 @@ impl StatusBar {
             spans.push(Span::styled(
                 "⟡",
                 Style::default()
-                    .fg(colors.text.accent)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.text.accent),
             ));
         }
 

@@ -354,8 +354,7 @@ impl MessagesComponent {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", turn),
                         Style::default()
-                            .fg(colors.text.accent)
-                            .add_modifier(Modifier::BOLD),
+                            .fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("   "));
@@ -493,8 +492,7 @@ impl MessagesComponent {
                     Span::styled(
                         format!("{}%", self.compaction_animator.progress()),
                         Style::default()
-                            .fg(colors.text.secondary)
-                            .add_modifier(Modifier::BOLD),
+                            .fg(colors.text.secondary),
                     ),
                 ]),
             ]);
@@ -820,8 +818,7 @@ impl MessagesComponent {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", self.current_turn),
                         Style::default()
-                            .fg(colors.text.accent)
-                            .add_modifier(Modifier::BOLD),
+                            .fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("    "));
@@ -861,8 +858,7 @@ impl MessagesComponent {
                             format!("> [{}] ", turn),
                             Style::default()
                                 .fg(colors.text.link)
-                                .bg(colors.background.message)
-                                .add_modifier(Modifier::BOLD),
+                                .bg(colors.background.message),
                         ));
                     } else {
                         spans.push(Span::styled(
@@ -890,8 +886,7 @@ impl MessagesComponent {
                         spans.push(Span::styled(
                             format!("✦ [{}] ", turn),
                             Style::default()
-                                .fg(colors.text.accent)
-                                .add_modifier(Modifier::BOLD),
+                                .fg(colors.text.accent),
                         ));
                     } else {
                         spans.push(Span::raw("   "));
@@ -1116,7 +1111,7 @@ impl MessagesComponent {
         lines.push(Line::from(vec![
             Span::styled(
                 " Amadeus v0.1.0 ",
-                Style::default().fg(accent).add_modifier(Modifier::BOLD),
+                Style::default().fg(accent),
             ),
             Span::styled(
                 "─".repeat(width.saturating_sub(18)),
@@ -1129,7 +1124,7 @@ impl MessagesComponent {
         lines.push(
             Line::from(vec![Span::styled(
                 "Welcome back!",
-                Style::default().fg(primary).add_modifier(Modifier::BOLD),
+                Style::default().fg(primary),
             )])
             .alignment(ratatui::layout::Alignment::Center),
         );
@@ -1171,7 +1166,7 @@ impl MessagesComponent {
         lines.push(Line::from(vec![
             Span::styled(
                 " Tips for getting started ",
-                Style::default().fg(secondary).add_modifier(Modifier::BOLD),
+                Style::default().fg(secondary),
             ),
             Span::styled(
                 "─".repeat(width.saturating_sub(28)),

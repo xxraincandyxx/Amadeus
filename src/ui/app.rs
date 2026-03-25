@@ -14,7 +14,7 @@ use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
     Terminal, TerminalOptions, Viewport,
@@ -1119,8 +1119,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Line::from(vec![Span::styled(
             " Live ",
             Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
+                .fg(colors.text.accent),
         )])
     }
 
@@ -1129,8 +1128,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Line::from(vec![Span::styled(
             " Monitor ",
             Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
+                .fg(colors.text.accent),
         )])
     }
 

@@ -4,7 +4,7 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
+    style::{Color, Style},
     widgets::{Block, Borders, List, ListItem},
 };
 
@@ -172,7 +172,6 @@ pub fn render_completion(
             let style = if is_selected {
                 Style::default()
                     .fg(Color::LightCyan)
-                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };

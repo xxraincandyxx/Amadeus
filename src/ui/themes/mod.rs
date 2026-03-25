@@ -6,6 +6,7 @@ pub mod default_light;
 pub mod dracula;
 pub mod github_dark;
 pub mod github_light;
+pub mod slate_red;
 pub mod solarized_dark;
 pub mod solarized_light;
 
@@ -17,6 +18,7 @@ pub use default_light::DefaultLight;
 pub use dracula::Dracula;
 pub use github_dark::GitHubDark;
 pub use github_light::GitHubLight;
+pub use slate_red::SlateRed;
 pub use solarized_dark::SolarizedDark;
 pub use solarized_light::SolarizedLight;
 

@@ -243,15 +243,13 @@ pub fn render_tool_group_with_limit(
             Span::styled(
                 icon,
                 Style::default()
-                    .fg(status_color)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(status_color),
             ),
             Span::styled(" ", Style::default()),
             Span::styled(
                 truncate(&tool.name, body_width.saturating_sub(2)),
                 Style::default()
-                    .fg(colors.text.primary)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.text.primary),
             ),
         ]));
 

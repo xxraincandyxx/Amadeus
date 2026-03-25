@@ -4,7 +4,7 @@
 
 use ratatui::{
     layout::{Alignment, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame,
@@ -113,8 +113,7 @@ impl ApprovalDialog {
         lines.push(Line::from(Span::styled(
             " Approval Required ",
             Style::default()
-                .fg(colors.status.warning)
-                .add_modifier(Modifier::BOLD),
+                .fg(colors.status.warning),
         )));
 
         lines.push(Line::default());
@@ -145,8 +144,7 @@ impl ApprovalDialog {
                     "► ",
                     Style::default()
                         .fg(colors.text.primary)
-                        .bg(colors.ui.dark)
-                        .add_modifier(Modifier::BOLD),
+                        .bg(colors.ui.dark),
                 )
             } else {
                 ("  ", Style::default().fg(colors.text.secondary))

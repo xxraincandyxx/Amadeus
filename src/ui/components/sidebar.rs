@@ -149,7 +149,6 @@ impl FileSidebar {
                     Style::default()
                         .fg(colors.text.link)
                         .bg(colors.ui.dark)
-                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -170,8 +169,7 @@ impl FileSidebar {
                 .title(" EXPLORER ")
                 .title_style(
                     Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.ui.comment),
                 )
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
@@ -203,8 +201,7 @@ impl HelpSidebar {
                 Span::styled(
                     "SHORTCUTS",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -226,8 +223,7 @@ impl HelpSidebar {
                 Span::styled(
                     "SIDEBAR",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -245,8 +241,7 @@ impl HelpSidebar {
                 Span::styled(
                     "TOOLS",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -275,8 +270,7 @@ impl HelpSidebar {
                 Span::styled(
                     "THEMES",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -290,8 +284,7 @@ impl HelpSidebar {
                 Span::styled(
                     "CONTEXT",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -319,8 +312,7 @@ impl HelpSidebar {
                 Span::styled(
                     "SCROLLING",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -342,8 +334,7 @@ impl HelpSidebar {
                 Span::styled(
                     "SYSTEM",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -362,8 +353,7 @@ impl HelpSidebar {
                 .title(" COMMANDS ")
                 .title_style(
                     Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.ui.comment),
                 )
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
@@ -452,8 +442,7 @@ impl SkillSidebar {
                 Span::styled(
                     "SKILLS",
                     Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.text.primary),
                 ),
             ]),
             Line::from(""),
@@ -490,7 +479,6 @@ impl SkillSidebar {
                     Style::default()
                         .fg(colors.text.link)
                         .bg(colors.ui.dark)
-                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -525,8 +513,7 @@ impl SkillSidebar {
                 .title(" SKILLS ")
                 .title_style(
                     Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.ui.comment),
                 )
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
@@ -666,8 +653,7 @@ impl ContextSidebar {
             Span::styled(
                 &self.info.model_name,
                 Style::default()
-                    .fg(colors.text.primary)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.text.primary),
             ),
         ]));
         lines.push(Line::from(""));
@@ -688,8 +674,7 @@ impl ContextSidebar {
             Span::styled(
                 "ESTIMATED USAGE BY CATEGORY",
                 Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.ui.comment),
             ),
         ]));
         lines.push(Self::section_line(&colors));
@@ -763,8 +748,7 @@ impl ContextSidebar {
             Span::styled(
                 "TOOLS",
                 Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.ui.comment),
             ),
         ]));
         lines.push(Line::from(""));
@@ -791,8 +775,7 @@ impl ContextSidebar {
             Span::styled(
                 "MESSAGES",
                 Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
+                    .fg(colors.ui.comment),
             ),
         ]));
         lines.push(Line::from(""));
@@ -825,8 +808,7 @@ impl ContextSidebar {
                 .title(" CONTEXT ")
                 .title_style(
                     Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
+                        .fg(colors.ui.comment),
                 )
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
