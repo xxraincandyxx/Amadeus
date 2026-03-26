@@ -777,11 +777,6 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;
                             current_tool = Some((id.clone(), name.clone(), String::new()));
-                            yield Ok(AgentEvent::ToolStart {
-                                id,
-                                name,
-                                parent_id: None,
-                            });
                         }
 
                         StreamEvent::ToolCallDelta { arguments } => {
@@ -916,6 +911,22 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                     }
 
+                                    let command = if name == "bash" {
+                                        input
+                                            .get("command")
+                                            .and_then(|value| value.as_str())
+                                            .map(String::from)
+                                    } else {
+                                        None
+                                    };
+
+                                    yield Ok(AgentEvent::ToolStart {
+                                        id: id.clone(),
+                                        name: name.clone(),
+                                        command: command.clone(),
+                                        parent_id: None,
+                                    });
+
                                     if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
@@ -1046,6 +1057,22 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         );
                                     }
                                 } else if !blocked {
+                                    let command = if name == "bash" {
+                                        input
+                                            .get("command")
+                                            .and_then(|value| value.as_str())
+                                            .map(String::from)
+                                    } else {
+                                        None
+                                    };
+
+                                    yield Ok(AgentEvent::ToolStart {
+                                        id: id.clone(),
+                                        name: name.clone(),
+                                        command: command.clone(),
+                                        parent_id: None,
+                                    });
+
                                     if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
@@ -1444,6 +1471,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         Ok(AgentEvent::ToolStart {
                             id: child_id,
                             name,
+                            command,
                             parent_id,
                         }) => {
                             let _ = tx
@@ -1452,6 +1480,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     AgentEvent::ToolStart {
                                         id: child_id,
                                         name,
+                                        command,
                                         parent_id,
                                     },
                                 ))
@@ -1590,10 +1619,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => AgentEvent::ToolStart {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 name,
+                command,
                 parent_id: Some(
                     parent_id
                         .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))

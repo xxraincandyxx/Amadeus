@@ -218,6 +218,8 @@ pub enum AgentEventData {
     ToolStart {
         id: String,
         name: String,
+        #[serde(default)]
+        command: Option<String>,
         parent_id: Option<String>,
     },
     ToolInputDelta {
@@ -287,10 +289,12 @@ impl From<crate::agent::events::AgentEvent> for AgentEventData {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => AgentEventData::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             },
             AgentEvent::ToolInputDelta {
@@ -378,6 +382,7 @@ impl From<crate::agent::events::AgentEvent> for AgentEventData {
             } => AgentEventData::ToolStart {
                 id,
                 name: format!("sub_agent:depth{}", depth),
+                command: None,
                 parent_id: None,
             },
         }

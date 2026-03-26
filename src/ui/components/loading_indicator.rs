@@ -13,22 +13,126 @@ pub enum StreamingState {
 pub struct LoadingIndicator {
     spinner: GeminiSpinner,
     phrase_cycler: PhraseCycler,
+    scramble: ScrambleTextAnimator,
     streaming_state: StreamingState,
     start_time: Option<Instant>,
     active_tool_count: usize,
 }
 
-const SLIDING_BLOCK_FRAMES: &[&str] = &[
-    "[=     ]", "[ =    ]", "[  =   ]", "[   =  ]", "[    = ]", "[     =]", "[    = ]", "[   =  ]",
-    "[  =   ]", "[ =    ]",
-];
-const ANIMATION_SLOWDOWN_FACTOR: usize = 3;
+const SCRAMBLE_CHARS: &str = "!<>-_\\/[]{}=+*^?#________";
+const DOT_FRAMES: [&str; 3] = [".", "..", "..."];
+
+#[derive(Debug, Clone)]
+struct ScrambleCell {
+    from: char,
+    to: char,
+    start: usize,
+    end: usize,
+}
+
+#[derive(Debug, Default)]
+struct ScrambleTextAnimator {
+    target: String,
+    previous_text: String,
+    frame: usize,
+    cells: Vec<ScrambleCell>,
+}
+
+impl ScrambleTextAnimator {
+    fn set_target(&mut self, new_target: &str) {
+        if self.target == new_target && !self.cells.is_empty() {
+            return;
+        }
+
+        let old_text = if self.target.is_empty() {
+            self.previous_text.clone()
+        } else {
+            self.render_plain_text()
+        };
+        let old_chars: Vec<char> = old_text.chars().collect();
+        let new_chars: Vec<char> = new_target.chars().collect();
+        let length = old_chars.len().max(new_chars.len());
+
+        self.target = new_target.to_string();
+        self.frame = 0;
+        self.cells = (0..length)
+            .map(|index| {
+                let start = (index * 3) % 12;
+                let end = start + 8 + (index % 7);
+                ScrambleCell {
+                    from: old_chars.get(index).copied().unwrap_or(' '),
+                    to: new_chars.get(index).copied().unwrap_or(' '),
+                    start,
+                    end,
+                }
+            })
+            .collect();
+    }
+
+    fn clear(&mut self) {
+        self.previous_text.clear();
+        self.target.clear();
+        self.frame = 0;
+        self.cells.clear();
+    }
+
+    fn tick(&mut self) {
+        if !self.cells.is_empty() {
+            self.frame += 1;
+            if self.frame > self.max_end_frame() {
+                self.previous_text = self.target.clone();
+            }
+        }
+    }
+
+    fn render(&self) -> String {
+        if self.cells.is_empty() {
+            return self.target.clone();
+        }
+
+        let scramble_chars: Vec<char> = SCRAMBLE_CHARS.chars().collect();
+        self.cells
+            .iter()
+            .enumerate()
+            .map(|(index, cell)| {
+                if self.frame >= cell.end {
+                    cell.to
+                } else if self.frame >= cell.start {
+                    let scramble_index =
+                        (self.frame + index.saturating_mul(7)) % scramble_chars.len().max(1);
+                    scramble_chars
+                        .get(scramble_index)
+                        .copied()
+                        .unwrap_or(cell.to)
+                } else {
+                    cell.from
+                }
+            })
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    }
+
+    fn render_plain_text(&self) -> String {
+        self.cells
+            .iter()
+            .map(|cell| cell.to)
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    }
+
+    fn max_end_frame(&self) -> usize {
+        self.cells.iter().map(|cell| cell.end).max().unwrap_or(0)
+    }
+}
 
 impl LoadingIndicator {
     pub fn new() -> Self {
         Self {
             spinner: GeminiSpinner::new(),
             phrase_cycler: PhraseCycler::default(),
+            scramble: ScrambleTextAnimator::default(),
             streaming_state: StreamingState::Idle,
             start_time: None,
             active_tool_count: 0,
@@ -47,6 +151,7 @@ impl LoadingIndicator {
             self.spinner.stop();
             self.phrase_cycler.reset();
             self.clear_activity_context();
+            self.scramble.clear();
         }
 
         if state == StreamingState::WaitingForConfirmation {
@@ -54,6 +159,7 @@ impl LoadingIndicator {
         }
 
         self.streaming_state = state;
+        self.sync_scramble_target();
     }
 
     pub fn streaming_state(&self) -> StreamingState {
@@ -66,6 +172,7 @@ impl LoadingIndicator {
 
     pub fn tick(&mut self) {
         self.spinner.tick();
+        self.scramble.tick();
 
         let is_responding = self.streaming_state == StreamingState::Responding;
         self.phrase_cycler.tick(is_responding);
@@ -83,30 +190,41 @@ impl LoadingIndicator {
         count: usize,
     ) {
         self.active_tool_count = count;
+        self.sync_scramble_target();
     }
 
     pub fn clear_activity_context(&mut self) {
         self.active_tool_count = 0;
+        self.sync_scramble_target();
     }
 
-    fn sliding_block_frame(&self) -> &'static str {
-        let idx =
-            (self.spinner.frame_index() / ANIMATION_SLOWDOWN_FACTOR) % SLIDING_BLOCK_FRAMES.len();
-        SLIDING_BLOCK_FRAMES[idx]
+    fn dot_frame(&self) -> &'static str {
+        DOT_FRAMES[self.spinner.frame_index() % DOT_FRAMES.len()]
+    }
+
+    fn current_status_label(&self) -> Option<&'static str> {
+        match self.streaming_state {
+            StreamingState::Idle => None,
+            StreamingState::WaitingForConfirmation => None,
+            StreamingState::Responding => Some(if self.active_tool_count > 0 {
+                "working"
+            } else {
+                "responding"
+            }),
+        }
+    }
+
+    fn sync_scramble_target(&mut self) {
+        if let Some(label) = self.current_status_label() {
+            self.scramble.set_target(label);
+        }
     }
 
     pub fn prompt_hint(&self) -> Option<String> {
         match self.streaming_state {
             StreamingState::Idle => None,
             StreamingState::WaitingForConfirmation => Some("awaiting approval".to_string()),
-            StreamingState::Responding => {
-                let status = if self.active_tool_count > 0 {
-                    "working"
-                } else {
-                    "responding"
-                };
-                Some(format!("{status} {}", self.sliding_block_frame()))
-            }
+            StreamingState::Responding => Some(format!("{} {}", self.scramble.render(), self.dot_frame())),
         }
     }
 
@@ -126,7 +244,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn prompt_hint_uses_slower_sliding_animation() {
+    fn prompt_hint_uses_dot_animation_without_sliding_blocks() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(Some("bash".to_string()), None, None, 1);
@@ -139,8 +257,56 @@ mod tests {
         indicator.tick();
         let fourth = indicator.prompt_hint();
 
-        assert_eq!(first, second);
-        assert_eq!(second, third);
-        assert_ne!(third, fourth);
+        assert!(first.as_deref().is_some_and(|hint| hint.ends_with('.')));
+        assert!(second.as_deref().is_some_and(|hint| hint.ends_with("..")));
+        assert!(third.as_deref().is_some_and(|hint| hint.ends_with("...")));
+        assert!(fourth.as_deref().is_some_and(|hint| hint.ends_with('.')));
+        assert!(first.as_deref().is_some_and(|hint| !hint.contains('[')));
+    }
+
+    #[test]
+    fn prompt_hint_scramble_eventually_converges_to_target_label() {
+        let mut indicator = LoadingIndicator::new();
+        indicator.set_streaming_state(StreamingState::Responding);
+        indicator.set_activity_context(None, None, None, 1);
+
+        for _ in 0..32 {
+            indicator.tick();
+        }
+
+        let hint = indicator.prompt_hint().expect("prompt hint should be active");
+        assert!(hint.starts_with("working "));
+    }
+
+    #[test]
+    fn prompt_hint_retargets_scramble_when_activity_changes() {
+        let mut indicator = LoadingIndicator::new();
+        indicator.set_streaming_state(StreamingState::Responding);
+
+        for _ in 0..32 {
+            indicator.tick();
+        }
+        let before = indicator.prompt_hint().expect("prompt hint should exist");
+        assert!(before.starts_with("responding "));
+
+        indicator.set_activity_context(None, None, None, 1);
+        for _ in 0..32 {
+            indicator.tick();
+        }
+
+        let after = indicator.prompt_hint().expect("prompt hint should exist");
+        assert!(after.starts_with("working "));
+    }
+
+    #[test]
+    fn waiting_confirmation_prompt_hint_stays_static() {
+        let mut indicator = LoadingIndicator::new();
+        indicator.set_streaming_state(StreamingState::WaitingForConfirmation);
+        let first = indicator.prompt_hint();
+        indicator.tick();
+        let second = indicator.prompt_hint();
+
+        assert_eq!(first.as_deref(), Some("awaiting approval"));
+        assert_eq!(second.as_deref(), Some("awaiting approval"));
     }
 }

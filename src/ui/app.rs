@@ -145,14 +145,19 @@ struct ToolMonitorNode {
 }
 
 impl ToolMonitorNode {
-    fn new(_id: String, name: String, parent_id: Option<String>) -> Self {
+    fn new(
+        _id: String,
+        name: String,
+        parent_id: Option<String>,
+        progress_message: Option<String>,
+    ) -> Self {
         Self {
             name,
             parent_id,
             input: String::new(),
             output: String::new(),
             status: MonitorStatus::Pending,
-            progress_message: None,
+            progress_message,
             progress_percent: None,
             children: Vec::new(),
         }
@@ -207,11 +212,17 @@ impl ToolMonitorState {
         true
     }
 
-    fn start_tool(&mut self, id: String, name: String, parent_id: Option<String>) {
+    fn start_tool(
+        &mut self,
+        id: String,
+        name: String,
+        parent_id: Option<String>,
+        progress_message: Option<String>,
+    ) {
         let parent_for_node = parent_id.clone();
-        self.nodes
-            .entry(id.clone())
-            .or_insert_with(|| ToolMonitorNode::new(id.clone(), name, parent_for_node));
+        self.nodes.entry(id.clone()).or_insert_with(|| {
+            ToolMonitorNode::new(id.clone(), name, parent_for_node, progress_message)
+        });
 
         if let Some(parent_id) = parent_id {
             if let Some(parent) = self.nodes.get_mut(&parent_id) {
@@ -1554,6 +1565,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => {
                 if render_to_terminal {
@@ -1561,12 +1573,16 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 }
                 self.status_bar.set_thinking(true);
                 let tool_name = name.clone();
-                self.tool_monitor
-                    .start_tool(id.clone(), name.clone(), parent_id.clone());
+                self.tool_monitor.start_tool(
+                    id.clone(),
+                    name.clone(),
+                    parent_id.clone(),
+                    command.clone(),
+                );
                 self.loading_indicator.set_tool_activity_phrase(&tool_name);
                 self.sync_activity_chrome();
                 if parent_id.is_none() {
-                    self.messages.start_tool(id, name, None);
+                    self.messages.start_tool(id, name, command);
                 }
             }
 
@@ -3606,7 +3622,7 @@ mod tests {
     #[test]
     fn tool_monitor_clears_when_all_tools_complete() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "bash".to_string(), None);
+        monitor.start_tool("root".to_string(), "bash".to_string(), None, None);
         monitor.complete("root", "done".to_string(), false);
 
         assert!(monitor.clear_if_idle());
@@ -3616,11 +3632,12 @@ mod tests {
     #[test]
     fn tool_monitor_stays_visible_while_nested_tool_runs() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
             Some("root".to_string()),
+            None,
         );
         monitor.complete("root", "waiting".to_string(), false);
 
@@ -3635,11 +3652,12 @@ mod tests {
     #[test]
     fn active_snapshot_prefers_running_selection_then_running_descendant() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
             Some("root".to_string()),
+            None,
         );
         monitor.complete("root", "delegating".to_string(), false);
 
@@ -3782,7 +3800,7 @@ mod tests {
         let session = active_session_mut(&mut app);
         session
             .tool_monitor
-            .start_tool("tool-1".to_string(), "bash".to_string(), None);
+            .start_tool("tool-1".to_string(), "bash".to_string(), None, None);
         session
             .tool_monitor
             .update_progress("tool-1", "counting lines".to_string(), Some(42));
@@ -3802,6 +3820,36 @@ mod tests {
 
         assert!(rendered.contains("Monitor"));
         assert!(rendered.contains("bash"));
+    }
+
+    #[test]
+    fn render_shows_bash_command_in_tool_monitor_preview_on_start() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.tool_monitor.start_tool(
+            "tool-1".to_string(),
+            "bash".to_string(),
+            None,
+            Some("cargo test".to_string()),
+        );
+        session
+            .loading_indicator
+            .set_streaming_state(StreamingState::Responding);
+        session.sync_activity_chrome();
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("bash"));
+        assert!(rendered.contains("cargo test"));
     }
 
     #[test]
@@ -3844,8 +3892,8 @@ mod tests {
 
         let mut monitor = ToolMonitorState::new(16);
         let mut prefix = false;
-        monitor.start_tool("root-1".to_string(), "bash".to_string(), None);
-        monitor.start_tool("root-2".to_string(), "read".to_string(), None);
+        monitor.start_tool("root-1".to_string(), "bash".to_string(), None, None);
+        monitor.start_tool("root-2".to_string(), "read".to_string(), None, None);
 
         assert!(apply_navigation_step(
             &mut monitor,
