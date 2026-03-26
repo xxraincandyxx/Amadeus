@@ -1361,15 +1361,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             if !has_messages {
                 let dashboard_lines = self.messages.render_dashboard_lines(area.width);
                 if !dashboard_lines.is_empty() {
-                    let block = Block::default()
-                        .title(" Welcome ")
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(colors.border.focused));
-                    let inner = block.inner(area);
-                    frame.render_widget(block, area);
-                    if inner.width > 0 && inner.height > 0 {
-                        frame.render_widget(Paragraph::new(dashboard_lines), inner);
-                    }
+                    frame.render_widget(Paragraph::new(dashboard_lines), area);
                 }
             }
             return;
@@ -3736,6 +3728,29 @@ mod tests {
 
         assert!(rendered.contains("footer ok"));
         assert!(rendered.contains("thinking"));
+    }
+
+    #[test]
+    fn render_startup_dashboard_matches_history_style_without_border() {
+        let backend = TestBackend::new(90, 20);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let first_row = (0..buffer.area.width)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect::<String>();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("Welcome back!"));
+        assert!(!first_row.contains("Welcome"));
     }
 
     #[test]

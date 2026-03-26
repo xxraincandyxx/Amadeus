@@ -213,6 +213,17 @@ impl MessagesComponent {
         let mut last_turn = self.last_rendered_turn;
         let mut skipped_streamed_assistant = false;
 
+        if self.last_rendered_index == 0
+            && self.last_rendered_turn.is_none()
+            && !self.items.is_empty()
+        {
+            let dashboard_lines = self.render_dashboard_lines(width);
+            if !dashboard_lines.is_empty() {
+                lines.extend(dashboard_lines);
+                lines.push(Line::from(""));
+            }
+        }
+
         for item in self.items[self.last_rendered_index..].iter() {
             let should_skip = !skipped_streamed_assistant
                 && self.skip_next_assistant_history_item
@@ -1461,6 +1472,23 @@ mod tests {
 
         let assistant_lines = messages.take_unrendered_lines(100);
         assert!(assistant_lines.is_empty());
+    }
+
+    #[test]
+    fn test_take_unrendered_lines_prepends_dashboard_before_first_turn() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        let lines = messages.take_unrendered_lines(100);
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Welcome back!"));
+        assert!(rendered.contains("turn 1"));
+        assert!(rendered.contains("Hello"));
     }
 
     #[test]

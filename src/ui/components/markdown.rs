@@ -442,6 +442,93 @@ fn is_list_item(line: &str) -> bool {
     trimmed.starts_with("- ") || trimmed.starts_with("* ")
 }
 
+fn is_table_row(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.starts_with('|') && trimmed.ends_with('|') && trimmed.matches('|').count() >= 3
+}
+
+fn parse_table_row(line: &str) -> Vec<String> {
+    line.trim()
+        .trim_start_matches('|')
+        .trim_end_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().to_string())
+        .collect()
+}
+
+fn is_table_separator(line: &str) -> bool {
+    if !is_table_row(line) {
+        return false;
+    }
+
+    let cells = parse_table_row(line);
+    !cells.is_empty()
+        && cells.iter().all(|cell| {
+            let trimmed = cell.trim();
+            !trimmed.is_empty() && trimmed.chars().all(|c| matches!(c, '-' | ':' | ' '))
+        })
+}
+
+fn render_table_lines(
+    header: &[String],
+    rows: &[Vec<String>],
+    colors: &crate::ui::semantic_colors::SemanticColors,
+) -> Vec<Line<'static>> {
+    let column_count = header
+        .len()
+        .max(rows.iter().map(|row| row.len()).max().unwrap_or(0));
+    if column_count == 0 {
+        return Vec::new();
+    }
+
+    let mut widths = vec![0usize; column_count];
+    for (idx, cell) in header.iter().enumerate() {
+        widths[idx] = widths[idx].max(cell.width());
+    }
+    for row in rows {
+        for (idx, cell) in row.iter().enumerate() {
+            widths[idx] = widths[idx].max(cell.width());
+        }
+    }
+
+    let render_row = |cells: &[String], is_header: bool| {
+        let mut spans = Vec::new();
+        spans.push(Span::styled("| ", Style::default().fg(colors.ui.comment)));
+
+        for col in 0..column_count {
+            let cell = cells.get(col).map(String::as_str).unwrap_or("");
+            let padding = widths[col].saturating_sub(cell.width());
+            let mut style = Style::default().fg(colors.text.primary);
+            if is_header {
+                style = style.add_modifier(Modifier::BOLD);
+            }
+            spans.push(Span::styled(cell.to_string(), style));
+            if padding > 0 {
+                spans.push(Span::styled(
+                    " ".repeat(padding),
+                    Style::default().fg(colors.text.primary),
+                ));
+            }
+            spans.push(Span::styled(" |", Style::default().fg(colors.ui.comment)));
+            if col + 1 < column_count {
+                spans.push(Span::raw(" "));
+            }
+        }
+
+        Line::from(spans)
+    };
+
+    let separator_cells: Vec<String> = widths.iter().map(|width| "-".repeat(*width)).collect();
+    let mut lines = vec![
+        render_row(header, true),
+        render_row(&separator_cells, false),
+    ];
+    for row in rows {
+        lines.push(render_row(row, false));
+    }
+    lines
+}
+
 pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
     let segments = detect_code_blocks(content);
     let colors = get_colors();
@@ -467,6 +554,23 @@ pub fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
                     if line.trim().is_empty() {
                         lines.push(Line::from(""));
                         i += 1;
+                        continue;
+                    }
+
+                    if i + 1 < input_lines.len()
+                        && is_table_row(line)
+                        && is_table_separator(input_lines[i + 1])
+                    {
+                        let header = parse_table_row(line);
+                        let mut rows = Vec::new();
+                        i += 2;
+
+                        while i < input_lines.len() && is_table_row(input_lines[i]) {
+                            rows.push(parse_table_row(input_lines[i]));
+                            i += 1;
+                        }
+
+                        lines.extend(render_table_lines(&header, &rows, &colors));
                         continue;
                     }
 
@@ -641,5 +745,32 @@ mod tests {
         // Test that segments are properly detected
         let segments = detect_code_blocks("Text\n```rust\ncode\n```\nMore text");
         assert_eq!(segments.len(), 3);
+    }
+
+    #[test]
+    fn test_markdown_table_renders_aligned_columns() {
+        let result = render_markdown(
+            "| Name | Role |\n|------|------|\n| Alice | Engineer |\n| Bob | Designer |",
+            100,
+        );
+        let rendered = result
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("| Name  | Role     |")));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("| Alice | Engineer |")));
+        assert!(rendered
+            .iter()
+            .any(|line| line.contains("| Bob   | Designer |")));
     }
 }
