@@ -50,6 +50,40 @@ const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
 
+/// Convert a character with SHIFT modifier to its shifted counterpart.
+/// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
+fn apply_shift_modifier(c: char) -> char {
+    match c {
+        // Letters - use ASCII uppercase
+        'a'..='z' => c.to_ascii_uppercase(),
+        // Numbers with shift
+        '1' => '!',
+        '2' => '@',
+        '3' => '#',
+        '4' => '$',
+        '5' => '%',
+        '6' => '^',
+        '7' => '&',
+        '8' => '*',
+        '9' => '(',
+        '0' => ')',
+        // Punctuation
+        '`' => '~',
+        '-' => '_',
+        '=' => '+',
+        '[' => '{',
+        ']' => '}',
+        '\\' => '|',
+        ';' => ':',
+        '\'' => '"',
+        ',' => '<',
+        '.' => '>',
+        '/' => '?',
+        // Already shifted or non-shiftable characters pass through
+        _ => c,
+    }
+}
+
 struct StreamingBuffer {
     text: String,
     last_flush: Instant,
@@ -1908,7 +1942,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 if self.stream_rx.is_none() {
                     self.restore_input_focus();
                     let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        c.to_ascii_uppercase()
+                        apply_shift_modifier(c)
                     } else {
                         c
                     };
@@ -2247,7 +2281,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
                     let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        c.to_ascii_uppercase()
+                        apply_shift_modifier(c)
                     } else {
                         c
                     };
