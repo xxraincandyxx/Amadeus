@@ -1355,18 +1355,21 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let has_stream_text = !self.streaming_buffer.is_empty();
         let has_tool_activity = self.tool_monitor.has_running_tools();
         let has_pending_compaction = self.messages.is_compression_pending();
+        let has_messages = !self.messages.is_empty();
 
         if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
-            let dashboard_lines = self.messages.render_dashboard_lines(area.width);
-            if !dashboard_lines.is_empty() {
-                let block = Block::default()
-                    .title(" Welcome ")
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(colors.border.focused));
-                let inner = block.inner(area);
-                frame.render_widget(block, area);
-                if inner.width > 0 && inner.height > 0 {
-                    frame.render_widget(Paragraph::new(dashboard_lines), inner);
+            if !has_messages {
+                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
+                if !dashboard_lines.is_empty() {
+                    let block = Block::default()
+                        .title(" Welcome ")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(colors.border.focused));
+                    let inner = block.inner(area);
+                    frame.render_widget(block, area);
+                    if inner.width > 0 && inner.height > 0 {
+                        frame.render_widget(Paragraph::new(dashboard_lines), inner);
+                    }
                 }
             }
             return;
