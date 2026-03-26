@@ -1907,6 +1907,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
                     self.restore_input_focus();
+                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    };
                     self.input.handle_char(c);
                 }
             }
@@ -2241,6 +2246,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
+                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        c.to_ascii_uppercase()
+                    } else {
+                        c
+                    };
                     self.input.handle_char(c);
                 }
             }
