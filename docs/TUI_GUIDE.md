@@ -327,6 +327,7 @@ The bottom status line displays:
 | `SESSION_LOG_DIR` | none | Path to save conversation logs |
 | `SESSION_LOG_COMPRESS` | `false` | Enable Gzip compression for logs |
 | `AMADEUS_TOOL_MONITOR_LINES` | `16` | Height of tool monitor (min: 6) |
+| `AMADEUS_TRY_PROMPT` | `how does src/main.rs work?` | Example text inside the `Try "…"` input hint (English) |
 | `SANDBOX` | none | Sandbox type (`docker`, `podman`, `sandbox-exec`) |
 
 ### Session Logging
