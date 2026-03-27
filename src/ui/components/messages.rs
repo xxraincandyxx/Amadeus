@@ -174,6 +174,8 @@ pub struct MessagesComponent {
     last_rendered_index: usize,
     last_rendered_turn: Option<usize>,
     skip_next_assistant_history_item: bool,
+    /// Skip the welcome/dashboard block on the next scrollback flush (after multi-session switch).
+    suppress_dashboard_on_next_scrollback_flush: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
 }
@@ -193,8 +195,19 @@ impl MessagesComponent {
             last_rendered_index: 0,
             last_rendered_turn: None,
             skip_next_assistant_history_item: false,
+            suppress_dashboard_on_next_scrollback_flush: false,
             scroll_offset: 0,
         }
+    }
+
+    /// Reset scrollback rendering state after the host terminal's shared scrollback was cleared
+    /// (e.g. switching agent sessions). The next `take_unrendered_lines` will re-emit committed
+    /// history without duplicating streamed assistant lines.
+    pub fn reset_scrollback_cursor_for_session_switch(&mut self) {
+        self.last_rendered_index = 0;
+        self.last_rendered_turn = None;
+        self.skip_next_assistant_history_item = false;
+        self.suppress_dashboard_on_next_scrollback_flush = !self.items.is_empty();
     }
 
     /// Get the current turn number
@@ -216,6 +229,7 @@ impl MessagesComponent {
         if self.last_rendered_index == 0
             && self.last_rendered_turn.is_none()
             && !self.items.is_empty()
+            && !self.suppress_dashboard_on_next_scrollback_flush
         {
             let dashboard_lines = self.render_dashboard_lines(width);
             if !dashboard_lines.is_empty() {
@@ -223,6 +237,7 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
         }
+        self.suppress_dashboard_on_next_scrollback_flush = false;
 
         for item in self.items[self.last_rendered_index..].iter() {
             let should_skip = !skipped_streamed_assistant

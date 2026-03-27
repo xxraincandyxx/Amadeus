@@ -21,6 +21,8 @@ pub struct LoadingIndicator {
 
 const SCRAMBLE_CHARS: &str = "!<>-_\\/[]{}=+*^?#________";
 const DOT_FRAMES: [&str; 3] = [".", "..", "..."];
+const SCRAMBLE_TICK_SLOWDOWN: usize = 6;
+const DOT_TICK_SLOWDOWN: usize = 12;
 
 #[derive(Debug, Clone)]
 struct ScrambleCell {
@@ -35,6 +37,7 @@ struct ScrambleTextAnimator {
     target: String,
     previous_text: String,
     frame: usize,
+    tick_accumulator: usize,
     cells: Vec<ScrambleCell>,
 }
 
@@ -55,6 +58,7 @@ impl ScrambleTextAnimator {
 
         self.target = new_target.to_string();
         self.frame = 0;
+        self.tick_accumulator = 0;
         self.cells = (0..length)
             .map(|index| {
                 let start = (index * 3) % 12;
@@ -73,11 +77,18 @@ impl ScrambleTextAnimator {
         self.previous_text.clear();
         self.target.clear();
         self.frame = 0;
+        self.tick_accumulator = 0;
         self.cells.clear();
     }
 
     fn tick(&mut self) {
         if !self.cells.is_empty() {
+            self.tick_accumulator += 1;
+            if self.tick_accumulator < SCRAMBLE_TICK_SLOWDOWN {
+                return;
+            }
+
+            self.tick_accumulator = 0;
             self.frame += 1;
             if self.frame > self.max_end_frame() {
                 self.previous_text = self.target.clone();
@@ -199,7 +210,7 @@ impl LoadingIndicator {
     }
 
     fn dot_frame(&self) -> &'static str {
-        DOT_FRAMES[self.spinner.frame_index() % DOT_FRAMES.len()]
+        DOT_FRAMES[(self.spinner.frame_index() / DOT_TICK_SLOWDOWN) % DOT_FRAMES.len()]
     }
 
     fn current_status_label(&self) -> Option<&'static str> {
@@ -256,11 +267,20 @@ mod tests {
         let third = indicator.prompt_hint();
         indicator.tick();
         let fourth = indicator.prompt_hint();
+        indicator.tick();
+        let fifth = indicator.prompt_hint();
+        indicator.tick();
+        let sixth = indicator.prompt_hint();
+        indicator.tick();
+        let seventh = indicator.prompt_hint();
 
         assert!(first.as_deref().is_some_and(|hint| hint.ends_with('.')));
-        assert!(second.as_deref().is_some_and(|hint| hint.ends_with("..")));
-        assert!(third.as_deref().is_some_and(|hint| hint.ends_with("...")));
-        assert!(fourth.as_deref().is_some_and(|hint| hint.ends_with('.')));
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+        assert!(fourth.as_deref().is_some_and(|hint| hint.ends_with("..")));
+        assert_eq!(fourth, fifth);
+        assert_eq!(fifth, sixth);
+        assert!(seventh.as_deref().is_some_and(|hint| hint.ends_with("...")));
         assert!(first.as_deref().is_some_and(|hint| !hint.contains('[')));
     }
 
@@ -270,7 +290,7 @@ mod tests {
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(None, None, None, 1);
 
-        for _ in 0..32 {
+        for _ in 0..96 {
             indicator.tick();
         }
 
@@ -283,14 +303,14 @@ mod tests {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
 
-        for _ in 0..32 {
+        for _ in 0..96 {
             indicator.tick();
         }
         let before = indicator.prompt_hint().expect("prompt hint should exist");
         assert!(before.starts_with("responding "));
 
         indicator.set_activity_context(None, None, None, 1);
-        for _ in 0..32 {
+        for _ in 0..96 {
             indicator.tick();
         }
 
@@ -308,5 +328,37 @@ mod tests {
 
         assert_eq!(first.as_deref(), Some("awaiting approval"));
         assert_eq!(second.as_deref(), Some("awaiting approval"));
+    }
+
+    #[test]
+    fn scramble_animator_advances_frames_more_slowly() {
+        let mut animator = ScrambleTextAnimator::default();
+        animator.set_target("working");
+
+        animator.tick();
+        animator.tick();
+        assert_eq!(animator.frame, 0);
+
+        animator.tick();
+        assert_eq!(animator.frame, 1);
+    }
+
+    #[test]
+    fn dot_animation_advances_more_slowly() {
+        let mut indicator = LoadingIndicator::new();
+        indicator.set_streaming_state(StreamingState::Responding);
+
+        let first = indicator.prompt_hint().expect("prompt hint should exist");
+        indicator.tick();
+        let second = indicator.prompt_hint().expect("prompt hint should exist");
+        indicator.tick();
+        let third = indicator.prompt_hint().expect("prompt hint should exist");
+        indicator.tick();
+        let fourth = indicator.prompt_hint().expect("prompt hint should exist");
+
+        assert!(first.ends_with('.'));
+        assert_eq!(first, second);
+        assert_eq!(second, third);
+        assert!(fourth.ends_with(".."));
     }
 }

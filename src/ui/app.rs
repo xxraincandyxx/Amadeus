@@ -1,14 +1,16 @@
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
+    cursor::MoveTo,
     event::{
         KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 use futures::StreamExt;
 use ratatui::{
@@ -49,6 +51,10 @@ const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+/// Retries for rebuilding the inline [`Terminal`] after clearing scrollback (tmux can fail DSR
+/// cursor queries briefly after `ClearType::Purge`).
+const INLINE_TERMINAL_RECREATE_RETRIES: usize = 8;
+const INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS: u64 = 35;
 
 /// Convert a character with SHIFT modifier to its shifted counterpart.
 /// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
@@ -245,6 +251,24 @@ impl ToolMonitorState {
     fn append_input(&mut self, id: &str, delta: &str) {
         if let Some(node) = self.nodes.get_mut(id) {
             node.input.push_str(delta);
+        }
+    }
+
+    fn refresh_bash_command_preview(&mut self, id: &str) {
+        let Some(node) = self.nodes.get_mut(id) else {
+            return;
+        };
+
+        if node.name != "bash" {
+            return;
+        }
+
+        let Ok(input) = serde_json::from_str::<serde_json::Value>(&node.input) else {
+            return;
+        };
+
+        if let Some(command) = input.get("command").and_then(|value| value.as_str()) {
+            node.progress_message = Some(command.to_string());
         }
     }
 
@@ -1685,6 +1709,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
             AgentEvent::ToolInputDelta { id, delta, .. } => {
                 self.tool_monitor.append_input(&id, &delta);
+                self.tool_monitor.refresh_bash_command_preview(&id);
                 self.status_bar.set_thinking(true);
                 self.sync_activity_chrome();
             }
@@ -2698,6 +2723,9 @@ pub struct App<C: LLMClient> {
     model_name: String,
     next_session_id: usize,
     next_sub_label: usize,
+    /// When true, next run-loop tick rebuilds the inline terminal and replays the active session's
+    /// scrollback so sessions do not share one host scrollback buffer.
+    pending_terminal_reset: bool,
     pending_close: Option<(usize, Instant)>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
@@ -2726,6 +2754,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             model_name,
             next_session_id: 1,
             next_sub_label: 1,
+            pending_terminal_reset: false,
             pending_close: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
@@ -2966,10 +2995,72 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return;
         }
         self.active_idx = next_idx;
+        self.pending_terminal_reset = true;
         let session = self.active_session_mut();
         session.is_background = false;
         session.footer.set_background(false);
         session.maybe_show_next_approval();
+    }
+
+    fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+        let terminal_size = crossterm::terminal::size()?;
+        let initial_height = self
+            .active_session()
+            .max_shelf_height_for_terminal(terminal_size.1);
+        let stdout = std::io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(initial_height),
+            },
+        )
+    }
+
+    fn recycle_terminal_after_session_switch(
+        &mut self,
+        terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+        if !self.pending_terminal_reset {
+            return Ok(terminal);
+        }
+        self.pending_terminal_reset = false;
+        self.active_session_mut()
+            .messages
+            .reset_scrollback_cursor_for_session_switch();
+        drop(terminal);
+        let mut out = std::io::stdout();
+        execute!(
+            out,
+            Clear(ClearType::Purge),
+            Clear(ClearType::All),
+            MoveTo(0, 0)
+        )?;
+        out.flush()?;
+
+        let mut last_err: Option<std::io::Error> = None;
+        for attempt in 0..INLINE_TERMINAL_RECREATE_RETRIES {
+            if attempt > 0 {
+                std::thread::sleep(Duration::from_millis(
+                    INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS,
+                ));
+            }
+            match self.new_inline_terminal() {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    warn!(attempt, %e, "recreate inline terminal after session switch failed");
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err
+            .unwrap_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "inline terminal recreate failed with no error detail",
+                )
+            })
+            .into())
     }
 
     fn handle_global_key(
@@ -3382,19 +3473,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn run_loop(&mut self) -> Result<()> {
-        let terminal_size = crossterm::terminal::size()?;
-        let initial_height = self
-            .active_session()
-            .max_shelf_height_for_terminal(terminal_size.1);
-
-        let stdout = std::io::stdout();
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(initial_height),
-            },
-        )?;
+        let mut terminal = self.new_inline_terminal()?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
@@ -3408,6 +3487,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     self.pending_close = None;
                 }
             }
+
+            terminal = self.recycle_terminal_after_session_switch(terminal)?;
 
             {
                 let session = self.active_session_mut();
