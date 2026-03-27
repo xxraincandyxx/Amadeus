@@ -777,6 +777,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;
                             current_tool = Some((id.clone(), name.clone(), String::new()));
+                            yield Ok(AgentEvent::ToolStart {
+                                id,
+                                name,
+                                command: None,
+                                parent_id: None,
+                            });
                         }
 
                         StreamEvent::ToolCallDelta { arguments } => {
@@ -911,22 +917,6 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                     }
 
-                                    let command = if name == "bash" {
-                                        input
-                                            .get("command")
-                                            .and_then(|value| value.as_str())
-                                            .map(String::from)
-                                    } else {
-                                        None
-                                    };
-
-                                    yield Ok(AgentEvent::ToolStart {
-                                        id: id.clone(),
-                                        name: name.clone(),
-                                        command: command.clone(),
-                                        parent_id: None,
-                                    });
-
                                     if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
@@ -949,6 +939,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         heartbeat.set_missed_tick_behavior(
                                             tokio::time::MissedTickBehavior::Delay,
                                         );
+                                        heartbeat.tick().await;
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
@@ -1057,22 +1048,6 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         );
                                     }
                                 } else if !blocked {
-                                    let command = if name == "bash" {
-                                        input
-                                            .get("command")
-                                            .and_then(|value| value.as_str())
-                                            .map(String::from)
-                                    } else {
-                                        None
-                                    };
-
-                                    yield Ok(AgentEvent::ToolStart {
-                                        id: id.clone(),
-                                        name: name.clone(),
-                                        command: command.clone(),
-                                        parent_id: None,
-                                    });
-
                                     if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
@@ -1095,6 +1070,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         heartbeat.set_missed_tick_behavior(
                                             tokio::time::MissedTickBehavior::Delay,
                                         );
+                                        heartbeat.tick().await;
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
@@ -1357,6 +1333,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut heartbeat =
                     interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
                 heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                heartbeat.tick().await;
 
                 let tool_name = name.clone();
                 let exec = Agent::<C>::execute_tool_call(&tools, &hooks, id.clone(), name, input);
@@ -1441,6 +1418,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut is_error = false;
         let mut heartbeat = interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        heartbeat.tick().await;
 
         loop {
             tokio::select! {
