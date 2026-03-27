@@ -1,7 +1,8 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    widgets::{Block, Borders},
+    text::{Line, Span},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use tui_textarea::{CursorMove, TextArea};
@@ -9,6 +10,24 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::components::completion::{render_completion, CompletionState};
 use crate::ui::get_colors;
+
+/// Example text inside the `Try "…"` hint (configurable, English UI).
+const TRY_PROMPT_ENV: &str = "AMADEUS_TRY_PROMPT";
+const DEFAULT_TRY_PROMPT: &str = "how does src/main.rs work?";
+
+fn try_prompt_from_env() -> String {
+    match std::env::var(TRY_PROMPT_ENV) {
+        Ok(s) => {
+            let t = s.trim().to_string();
+            if t.is_empty() {
+                DEFAULT_TRY_PROMPT.to_string()
+            } else {
+                t
+            }
+        }
+        Err(_) => DEFAULT_TRY_PROMPT.to_string(),
+    }
+}
 
 pub struct InputComponent {
     textarea: TextArea<'static>,
@@ -24,13 +43,7 @@ impl InputComponent {
         let mut textarea = TextArea::default();
         let colors = get_colors();
 
-        textarea.set_block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(colors.border.default))
-                .title(" ❯ PROMPT ")
-                .title_style(Style::default().fg(colors.text.accent)),
-        );
+        textarea.set_block(Self::textarea_block());
         textarea.set_style(Style::default().fg(colors.text.primary));
         textarea.set_cursor_style(
             Style::default()
@@ -42,7 +55,7 @@ impl InputComponent {
                 .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
-        textarea.set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
+        textarea.set_placeholder_text("Type a message... (Enter: send, Alt+Enter: newline)");
 
         Self {
             textarea,
@@ -69,16 +82,17 @@ impl InputComponent {
         self.current_draft.clear();
     }
 
+    fn textarea_block() -> Block<'static> {
+        let colors = get_colors();
+        Block::default()
+            .borders(Borders::NONE)
+            .style(Style::default().bg(colors.background.input))
+    }
+
     fn setup_textarea(&mut self) {
         let colors = get_colors();
 
-        self.textarea.set_block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(colors.border.default))
-                .title(" ❯ PROMPT ")
-                .title_style(Style::default().fg(colors.text.accent)),
-        );
+        self.textarea.set_block(Self::textarea_block());
         self.textarea
             .set_style(Style::default().fg(colors.text.primary));
         self.textarea.set_cursor_style(
@@ -92,7 +106,7 @@ impl InputComponent {
                 .add_modifier(Modifier::ITALIC),
         );
         self.textarea
-            .set_placeholder_text(" Type a message... (Enter: send, Alt+Enter: newline)");
+            .set_placeholder_text("Type a message... (Enter: send, Alt+Enter: newline)");
     }
 
     pub fn history_up(&mut self) {
@@ -198,41 +212,87 @@ impl InputComponent {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        if area.height < 3 {
+        let colors = get_colors();
+        let rule_style = Style::default().fg(colors.ui.dark);
+        let hint_height = u16::from(self.status_hint.is_some());
+        let chrome_rows = 3 + hint_height;
+        if area.height < chrome_rows.saturating_add(1) {
             return;
         }
 
-        // Update title with stats
-        let colors = get_colors();
-        let (chars, lines) = self.get_stats();
-        let multi_indicator = if lines > 1 { " [multi]" } else { "" };
-        let mut title = format!(
-            " ❯ PROMPT [{} chars, {} line{}]{} ",
-            chars,
-            lines,
-            if lines == 1 { "" } else { "s" },
-            multi_indicator
+        let mut constraints: Vec<Constraint> = vec![
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ];
+        if self.status_hint.is_some() {
+            constraints.push(Constraint::Length(1));
+        }
+        constraints.push(Constraint::Min(1));
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints(constraints)
+            .split(area);
+
+        let w = area.width.max(1) as usize;
+        let rule: String = "─".repeat(w);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(rule.clone(), rule_style))),
+            chunks[0],
         );
+
+        let (chars, line_count) = self.get_stats();
+        let line_word = if line_count == 1 { "line" } else { "lines" };
+        let stats_str = format!("{chars} ch · {line_count} {line_word}");
+        let stats_w = stats_str.width().min(w.saturating_sub(4)) as u16;
+        let try_row = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(stats_w)])
+            .split(chunks[1]);
+
+        let example = try_prompt_from_env();
+        let try_line = Line::from(vec![
+            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+            Span::styled("Try \"", Style::default().fg(colors.text.secondary)),
+            Span::styled(example, Style::default().fg(colors.text.primary)),
+            Span::styled("\"", Style::default().fg(colors.text.secondary)),
+        ]);
+        frame.render_widget(
+            Paragraph::new(try_line).alignment(Alignment::Left),
+            try_row[0],
+        );
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                stats_str,
+                Style::default().fg(colors.ui.comment),
+            )))
+            .alignment(Alignment::Right),
+            try_row[1],
+        );
+
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(rule, rule_style))),
+            chunks[2],
+        );
+
+        let editor_idx = if self.status_hint.is_some() { 4 } else { 3 };
         if let Some(hint) = &self.status_hint {
-            title.push_str("• ");
-            title.push_str(hint);
-            title.push(' ');
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    format!("  {hint}"),
+                    Style::default().fg(colors.text.secondary),
+                ))),
+                chunks[3],
+            );
         }
 
-        self.textarea.set_block(
-            Block::default()
-                .borders(Borders::TOP)
-                .border_style(Style::default().fg(colors.border.default))
-                .title(title)
-                .title_style(Style::default().fg(colors.text.accent)),
-        );
+        self.textarea.set_block(Self::textarea_block());
+        frame.render_widget(&self.textarea, chunks[editor_idx]);
 
-        frame.render_widget(&self.textarea, area);
-
-        // Render completion popup
         let input_text = self.textarea.lines().join("\n");
         if self.completion.update(&input_text) {
-            render_completion(frame, area, &self.completion, area);
+            render_completion(frame, area, &self.completion, chunks[editor_idx]);
         }
     }
 
@@ -259,20 +319,9 @@ impl InputComponent {
     /// Apply the selected completion (replace input with command).
     pub fn apply_completion(&mut self) {
         if let Some(cmd) = self.completion.selected() {
-            // Replace current input with the command
             let lines: Vec<String> = vec![cmd.name.clone()];
             self.textarea = TextArea::new(lines);
-            // Re-setup the textarea styling
-            let colors = get_colors();
-            self.textarea.set_block(
-                Block::default()
-                    .borders(Borders::TOP)
-                    .border_style(Style::default().fg(colors.border.default))
-                    .title(" ❯ PROMPT ")
-                    .title_style(Style::default().fg(colors.text.accent)),
-            );
-            self.textarea
-                .set_style(Style::default().fg(colors.text.primary));
+            self.setup_textarea();
         }
     }
 
@@ -281,10 +330,10 @@ impl InputComponent {
         let line_count = lines.len();
         let max_line_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
 
-        let height_by_lines = line_count + 2;
-        let height_by_width = (max_line_width / 80) + 2;
-
-        (height_by_lines.max(height_by_width) as u16).clamp(4, 12)
+        let editor_h = (line_count as u16 + 1).max(2);
+        let editor_h = editor_h.max((max_line_width / 80) as u16 + 1);
+        let chrome = 3 + u16::from(self.status_hint.is_some());
+        (chrome + editor_h).clamp(6, 15)
     }
 
     /// Get input statistics: (character count, line count)
@@ -402,7 +451,7 @@ mod tests {
     #[test]
     fn test_height_minimum() {
         let input = InputComponent::new();
-        assert!(input.height() >= 4);
+        assert!(input.height() >= 6);
     }
 
     #[test]
