@@ -4,9 +4,11 @@
 
 use ratatui::{
     layout::Rect,
-    style::{Color, Style},
+    style::{Modifier, Style},
     widgets::{Block, Borders, List, ListItem},
 };
+
+use crate::ui::get_colors;
 
 /// A command available for auto-completion.
 #[derive(Debug, Clone)]
@@ -134,7 +136,7 @@ impl Default for CompletionState {
     }
 }
 
-/// Render the completion popup.
+/// Render the completion popup (minimal, theme-driven—Claude-style flat list).
 pub fn render_completion(
     frame: &mut ratatui::Frame,
     area: Rect,
@@ -145,24 +147,20 @@ pub fn render_completion(
         return;
     }
 
-    // Limit to showing max 6 items
+    let colors = get_colors();
     let max_items = 6.min(state.matches.len());
-    let height = (max_items + 2) as u16; // +2 for header
+    let list_rows = max_items as u16;
+    let popup_y = input_rect
+        .y
+        .saturating_add(input_rect.height)
+        .saturating_add(1);
+    let available_h = area.height.saturating_sub(popup_y);
+    let popup_height = (list_rows.saturating_add(1)).min(available_h).max(2);
+    let target_w = input_rect.width.clamp(24, 72);
+    let popup_width = target_w.min(area.width.saturating_sub(input_rect.x));
+    let popup_area = Rect::new(input_rect.x, popup_y, popup_width, popup_height);
 
-    // Position below input
-    let popup_y = input_rect.y + input_rect.height + 1;
-    let popup_height = area.height.saturating_sub(popup_y).min(height);
-    let popup_width = 60.min(input_rect.width);
-
-    let popup_area = Rect::new(
-        input_rect.x,
-        popup_y,
-        input_rect.x + popup_width,
-        popup_y + popup_height,
-    );
-
-    // Build list items
-    let items: Vec<ListItem> = state
+    let items: Vec<ListItem<'static>> = state
         .matches
         .iter()
         .take(max_items)
@@ -170,15 +168,18 @@ pub fn render_completion(
         .map(|(i, cmd)| {
             let is_selected = i == state.selected_index;
             let style = if is_selected {
-                Style::default().fg(Color::LightCyan)
+                Style::default()
+                    .fg(colors.text.primary)
+                    .bg(colors.background.message)
+                    .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(colors.text.secondary)
             };
 
             let content = if let Some(usage) = &cmd.usage {
-                format!("{}  -  {}", cmd.name, usage)
+                format!("{}  {}", cmd.name, usage)
             } else {
-                format!("{}  -  {}", cmd.name, cmd.description)
+                format!("{}  {}", cmd.name, cmd.description)
             };
 
             ListItem::new(content).style(style)
@@ -188,11 +189,16 @@ pub fn render_completion(
     let list = List::new(items)
         .block(
             Block::default()
-                .title(" Commands ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .borders(Borders::TOP | Borders::LEFT | Borders::RIGHT)
+                .border_style(Style::default().fg(colors.ui.dark))
+                .style(Style::default().bg(colors.background.input)),
         )
-        .style(Style::default().fg(Color::White));
+        .highlight_style(
+            Style::default()
+                .fg(colors.text.primary)
+                .bg(colors.background.message)
+                .add_modifier(Modifier::BOLD),
+        );
 
     frame.render_widget(list, popup_area);
 }

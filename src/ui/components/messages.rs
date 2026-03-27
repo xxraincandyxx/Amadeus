@@ -468,47 +468,22 @@ impl MessagesComponent {
 
     pub fn render_pending_compaction_preview(
         &self,
-        max_width: usize,
+        _max_width: usize,
     ) -> Option<Vec<Line<'static>>> {
         let compression = self.pending_compression.as_ref()?;
         let colors = get_colors();
 
         if compression.status == CompressionStatus::Pending && self.compaction_animator.is_active()
         {
-            let spinner_color = self.compaction_animator.get_animated_color();
-            let progress_color = self.compaction_animator.get_progress_color();
+            let pulse = self.compaction_animator.spinner_frame();
+            let msg = self.compaction_animator.current_message();
+            let pct = self.compaction_animator.progress();
             let elapsed = self.compaction_animator.elapsed_string();
-            let bar_width = max_width.saturating_sub(16).clamp(8, 32);
-
-            return Some(vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{} ", self.compaction_animator.spinner_frame()),
-                        Style::default().fg(spinner_color),
-                    ),
-                    Span::styled(
-                        self.compaction_animator.current_message(),
-                        Style::default()
-                            .fg(colors.status.warning)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(elapsed, Style::default().fg(colors.text.secondary)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        self.compaction_animator
-                            .render_progress_bar_smooth(bar_width),
-                        Style::default().fg(progress_color),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        format!("{}%", self.compaction_animator.progress()),
-                        Style::default().fg(colors.text.secondary),
-                    ),
-                ]),
-            ]);
+            let line = format!("  {msg}{pulse}  ·  {pct}%  ·  {elapsed}");
+            return Some(vec![Line::from(vec![Span::styled(
+                line,
+                Style::default().fg(colors.text.secondary),
+            )])]);
         }
 
         let color = match compression.status {
@@ -1407,7 +1382,7 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
 
-        assert!(rendered.contains("Compacting conversation history"));
+        assert!(rendered.contains("Compacting context"));
         assert!(rendered.contains("%"));
     }
 
