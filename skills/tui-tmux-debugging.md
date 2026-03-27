@@ -65,6 +65,13 @@ tmux-cli kill --pane=remote-cli-session:1
 rm -rf /tmp/amadeus_debug_env
 ```
 
+## Amadeus-specific notes (inline viewport / multi-session)
+
+- **Shared scrollback:** Amadeus uses ratatui `Viewport::Inline` and `insert_before`; switching agent sessions clears host scrollback and rebuilds the `Terminal`. In **tmux**, `ClearType::Purge` can briefly break cursor position queries (DSR); the app retries `Terminal::with_options` a few times after a flush + short sleep.
+- **Blank `capture-pane`:** If the pane looks empty but `pgrep amadeus` shows a process, confirm the TTY matches: `lsof /dev/ttysXXX` for the tmux pane vs `lsof -p $(pgrep amadeus) | grep tty`. Stale PIDs on other TTYs are often a local IDE terminal, not the tmux pane.
+- **Automation keys:** `tmux-cli` does not expose every chord; use `tmux send-keys -t <target> C-]` / `C-[` for session switching when needed.
+- **Grepping captures:** Use `tmux capture-pane -p -e | strings` when the UI uses styling that strips poorly with plain `grep`.
+
 ## Useful TUI Debugging Scenarios
 
 1.  **Testing Deadlocks/Hangs:** Send a task that requires long background processing or recursive tool calls. If the app hangs, use `tmux-cli capture` to read the UI state and `ps aux | grep amadeus` to check child processes.
