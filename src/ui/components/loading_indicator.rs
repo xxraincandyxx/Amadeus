@@ -22,7 +22,8 @@ pub struct LoadingIndicator {
 const SCRAMBLE_CHARS: &str = "!<>-_\\/[]{}=+*^?#________";
 const DOT_FRAMES: [&str; 3] = [".", "..", "..."];
 const SCRAMBLE_TICK_SLOWDOWN: usize = 6;
-const DOT_TICK_SLOWDOWN: usize = 12;
+/// Spinner frame wraps every 10 ticks; keep this ≤10 so dot phases advance each cycle.
+const DOT_TICK_SLOWDOWN: usize = 4;
 
 #[derive(Debug, Clone)]
 struct ScrambleCell {
@@ -235,7 +236,9 @@ impl LoadingIndicator {
         match self.streaming_state {
             StreamingState::Idle => None,
             StreamingState::WaitingForConfirmation => Some("awaiting approval".to_string()),
-            StreamingState::Responding => Some(format!("{} {}", self.scramble.render(), self.dot_frame())),
+            StreamingState::Responding => {
+                Some(format!("{} {}", self.scramble.render(), self.dot_frame()))
+            }
         }
     }
 
@@ -254,34 +257,41 @@ impl Default for LoadingIndicator {
 mod tests {
     use super::*;
 
+    /// Dots suffix after scramble text (`"{scramble} {dots}"`).
+    fn dot_suffix(hint: &str) -> &str {
+        hint.rsplit_once(' ').map(|(_, d)| d).unwrap_or(hint)
+    }
+
     #[test]
     fn prompt_hint_uses_dot_animation_without_sliding_blocks() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(Some("bash".to_string()), None, None, 1);
 
-        let first = indicator.prompt_hint();
+        let first = indicator.prompt_hint().expect("hint");
+        for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
+            indicator.tick();
+        }
+        assert_eq!(
+            dot_suffix(&first),
+            dot_suffix(&indicator.prompt_hint().expect("hint"))
+        );
         indicator.tick();
-        let second = indicator.prompt_hint();
-        indicator.tick();
-        let third = indicator.prompt_hint();
-        indicator.tick();
-        let fourth = indicator.prompt_hint();
-        indicator.tick();
-        let fifth = indicator.prompt_hint();
-        indicator.tick();
-        let sixth = indicator.prompt_hint();
-        indicator.tick();
-        let seventh = indicator.prompt_hint();
+        let two_dots = indicator.prompt_hint().expect("hint");
+        assert_eq!(dot_suffix(&two_dots), "..");
 
-        assert!(first.as_deref().is_some_and(|hint| hint.ends_with('.')));
-        assert_eq!(first, second);
-        assert_eq!(second, third);
-        assert!(fourth.as_deref().is_some_and(|hint| hint.ends_with("..")));
-        assert_eq!(fourth, fifth);
-        assert_eq!(fifth, sixth);
-        assert!(seventh.as_deref().is_some_and(|hint| hint.ends_with("...")));
-        assert!(first.as_deref().is_some_and(|hint| !hint.contains('[')));
+        for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
+            indicator.tick();
+        }
+        assert_eq!(
+            dot_suffix(&two_dots),
+            dot_suffix(&indicator.prompt_hint().expect("hint"))
+        );
+        indicator.tick();
+        let three_dots = indicator.prompt_hint().expect("hint");
+        assert_eq!(dot_suffix(&three_dots), "...");
+
+        assert!(!first.contains('['));
     }
 
     #[test]
@@ -290,11 +300,13 @@ mod tests {
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(None, None, None, 1);
 
-        for _ in 0..96 {
+        for _ in 0..800 {
             indicator.tick();
         }
 
-        let hint = indicator.prompt_hint().expect("prompt hint should be active");
+        let hint = indicator
+            .prompt_hint()
+            .expect("prompt hint should be active");
         assert!(hint.starts_with("working "));
     }
 
@@ -303,14 +315,14 @@ mod tests {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
 
-        for _ in 0..96 {
+        for _ in 0..800 {
             indicator.tick();
         }
         let before = indicator.prompt_hint().expect("prompt hint should exist");
         assert!(before.starts_with("responding "));
 
         indicator.set_activity_context(None, None, None, 1);
-        for _ in 0..96 {
+        for _ in 0..800 {
             indicator.tick();
         }
 
@@ -335,8 +347,9 @@ mod tests {
         let mut animator = ScrambleTextAnimator::default();
         animator.set_target("working");
 
-        animator.tick();
-        animator.tick();
+        for _ in 0..5 {
+            animator.tick();
+        }
         assert_eq!(animator.frame, 0);
 
         animator.tick();
@@ -349,16 +362,16 @@ mod tests {
         indicator.set_streaming_state(StreamingState::Responding);
 
         let first = indicator.prompt_hint().expect("prompt hint should exist");
+        for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
+            indicator.tick();
+        }
+        assert_eq!(
+            dot_suffix(&first),
+            dot_suffix(&indicator.prompt_hint().expect("prompt hint should exist"))
+        );
         indicator.tick();
-        let second = indicator.prompt_hint().expect("prompt hint should exist");
-        indicator.tick();
-        let third = indicator.prompt_hint().expect("prompt hint should exist");
-        indicator.tick();
-        let fourth = indicator.prompt_hint().expect("prompt hint should exist");
-
-        assert!(first.ends_with('.'));
-        assert_eq!(first, second);
-        assert_eq!(second, third);
-        assert!(fourth.ends_with(".."));
+        let with_two_dots = indicator.prompt_hint().expect("prompt hint should exist");
+        assert_eq!(dot_suffix(&first), ".");
+        assert_eq!(dot_suffix(&with_two_dots), "..");
     }
 }
