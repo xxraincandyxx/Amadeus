@@ -495,9 +495,9 @@ fn render_table_lines(
         let mut spans = Vec::new();
         spans.push(Span::styled("| ", Style::default().fg(colors.ui.comment)));
 
-        for col in 0..column_count {
+        for (col, col_width) in widths.iter().enumerate().take(column_count) {
             let cell = cells.get(col).map(String::as_str).unwrap_or("");
-            let padding = widths[col].saturating_sub(cell.width());
+            let padding = col_width.saturating_sub(cell.width());
             let mut style = Style::default().fg(colors.text.primary);
             if is_header {
                 style = style.add_modifier(Modifier::BOLD);

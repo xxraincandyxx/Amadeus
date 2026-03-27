@@ -54,14 +54,14 @@ struct FileLock {
     /// Number of active readers.
     readers: AtomicUsize,
     /// Mutex for exclusive writer access.
-  writer: Arc<Mutex<()>>,
+    writer: Arc<Mutex<()>>,
 }
 
 impl FileLock {
     fn new() -> Self {
         Self {
             readers: AtomicUsize::new(0),
-      writer: Arc::new(Mutex::new(())),
+            writer: Arc::new(Mutex::new(())),
         }
     }
 }
@@ -131,19 +131,19 @@ impl FileLockManager {
         let lock = self.get_lock(path).await;
 
         // Wait for any writer to finish
-    let writer_guard = match tokio::time::timeout(timeout, lock.writer.lock()).await {
-      Ok(guard) => guard,
+        let writer_guard = match tokio::time::timeout(timeout, lock.writer.lock()).await {
+            Ok(guard) => guard,
             Err(_) => {
                 return Err(AgentError::Lock(format!(
                     "Timeout acquiring read lock for {}",
                     path
                 )))
             }
-    };
+        };
 
         // Increment reader count
         lock.readers.fetch_add(1, Ordering::SeqCst);
-    drop(writer_guard);
+        drop(writer_guard);
 
         debug!(agent_id = %agent_id, path = %path, "Acquired read lock");
 
@@ -174,15 +174,16 @@ impl FileLockManager {
         let lock = self.get_lock(path).await;
 
         // Acquire exclusive writer lock (blocks readers too)
-    let writer_guard = match tokio::time::timeout(timeout, lock.writer.clone().lock_owned()).await {
-      Ok(guard) => guard,
-            Err(_) => {
-                return Err(AgentError::Lock(format!(
-                    "Timeout acquiring write lock for {}",
-                    path
-                )))
-            }
-    };
+        let writer_guard =
+            match tokio::time::timeout(timeout, lock.writer.clone().lock_owned()).await {
+                Ok(guard) => guard,
+                Err(_) => {
+                    return Err(AgentError::Lock(format!(
+                        "Timeout acquiring write lock for {}",
+                        path
+                    )))
+                }
+            };
 
         // Wait for all readers to finish
         while lock.readers.load(Ordering::SeqCst) > 0 {
@@ -194,7 +195,7 @@ impl FileLockManager {
         Ok(FileWriteGuard {
             manager: self,
             path: path.to_string(),
-      _writer_guard: writer_guard,
+            _writer_guard: writer_guard,
         })
     }
 
@@ -319,7 +320,7 @@ impl Drop for FileReadGuard<'_> {
 pub struct FileWriteGuard<'a> {
     manager: &'a FileLockManager,
     path: String,
-  _writer_guard: OwnedMutexGuard<()>,
+    _writer_guard: OwnedMutexGuard<()>,
 }
 
 impl<'a> FileWriteGuard<'a> {

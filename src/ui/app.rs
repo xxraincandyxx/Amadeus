@@ -3055,10 +3055,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
         Err(last_err
             .unwrap_or_else(|| {
-                std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "inline terminal recreate failed with no error detail",
-                )
+                std::io::Error::other("inline terminal recreate failed with no error detail")
             })
             .into())
     }
