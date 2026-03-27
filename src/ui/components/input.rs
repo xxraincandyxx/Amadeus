@@ -29,6 +29,11 @@ fn try_prompt_from_env() -> String {
     }
 }
 
+/// Claude Code–style placeholder: same line as `❯`, sample replaces when user types.
+fn composer_placeholder() -> String {
+    format!("Try \"{}\"", try_prompt_from_env())
+}
+
 pub struct InputComponent {
     textarea: TextArea<'static>,
     history: Vec<String>,
@@ -55,7 +60,7 @@ impl InputComponent {
                 .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
-        textarea.set_placeholder_text("Type a message... (Enter: send, Alt+Enter: newline)");
+        textarea.set_placeholder_text(composer_placeholder());
 
         Self {
             textarea,
@@ -105,8 +110,7 @@ impl InputComponent {
                 .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
-        self.textarea
-            .set_placeholder_text("Type a message... (Enter: send, Alt+Enter: newline)");
+        self.textarea.set_placeholder_text(composer_placeholder());
     }
 
     pub fn history_up(&mut self) {
@@ -215,25 +219,28 @@ impl InputComponent {
         let colors = get_colors();
         let rule_style = Style::default().fg(colors.ui.dark);
         let hint_height = u16::from(self.status_hint.is_some());
-        let chrome_rows = 3 + hint_height;
-        if area.height < chrome_rows.saturating_add(1) {
+        // Claude Code: ─ / ❯+composer / ─ / ? for shortcuts (tmux-cli reference).
+        let fixed_rows = 4u16.saturating_add(hint_height);
+        if area.height < fixed_rows.saturating_add(1) {
             return;
         }
 
-        let mut constraints: Vec<Constraint> = vec![
-            Constraint::Length(1),
-            Constraint::Length(1),
-            Constraint::Length(1),
-        ];
+        let mut constraints: Vec<Constraint> = vec![Constraint::Length(1)];
         if self.status_hint.is_some() {
             constraints.push(Constraint::Length(1));
         }
         constraints.push(Constraint::Min(1));
+        constraints.push(Constraint::Length(1));
+        constraints.push(Constraint::Length(1));
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints(constraints)
             .split(area);
+
+        let shortcuts_idx = chunks.len().saturating_sub(1);
+        let bottom_rule_idx = chunks.len().saturating_sub(2);
+        let inner_idx = chunks.len().saturating_sub(3);
 
         let w = area.width.max(1) as usize;
         let rule: String = "─".repeat(w);
@@ -242,57 +249,74 @@ impl InputComponent {
             chunks[0],
         );
 
-        let (chars, line_count) = self.get_stats();
-        let line_word = if line_count == 1 { "line" } else { "lines" };
-        let stats_str = format!("{chars} ch · {line_count} {line_word}");
-        let stats_w = stats_str.width().min(w.saturating_sub(4)) as u16;
-        let try_row = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(1), Constraint::Length(stats_w)])
-            .split(chunks[1]);
-
-        let example = try_prompt_from_env();
-        let try_line = Line::from(vec![
-            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
-            Span::styled("Try \"", Style::default().fg(colors.text.secondary)),
-            Span::styled(example, Style::default().fg(colors.text.primary)),
-            Span::styled("\"", Style::default().fg(colors.text.secondary)),
-        ]);
-        frame.render_widget(
-            Paragraph::new(try_line).alignment(Alignment::Left),
-            try_row[0],
-        );
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                stats_str,
-                Style::default().fg(colors.ui.comment),
-            )))
-            .alignment(Alignment::Right),
-            try_row[1],
-        );
-
-        frame.render_widget(
-            Paragraph::new(Line::from(Span::styled(rule, rule_style))),
-            chunks[2],
-        );
-
-        let editor_idx = if self.status_hint.is_some() { 4 } else { 3 };
         if let Some(hint) = &self.status_hint {
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     format!("  {hint}"),
                     Style::default().fg(colors.text.secondary),
                 ))),
-                chunks[3],
+                chunks[1],
             );
         }
 
+        let inner = chunks[inner_idx];
         self.textarea.set_block(Self::textarea_block());
-        frame.render_widget(&self.textarea, chunks[editor_idx]);
+        self.textarea.set_placeholder_text(composer_placeholder());
+
+        const PROMPT: &str = "❯ ";
+        let gutter_w = (PROMPT.width() as u16).clamp(1, inner.width);
+        let ta_w = inner.width.saturating_sub(gutter_w);
+        if ta_w == 0 || inner.height == 0 {
+            return;
+        }
+        let ta_rect = Rect {
+            x: inner.x.saturating_add(gutter_w),
+            y: inner.y,
+            width: ta_w,
+            height: inner.height,
+        };
+        let prompt_rect = Rect {
+            x: inner.x,
+            y: inner.y,
+            width: gutter_w,
+            height: 1.min(inner.height),
+        };
+
+        frame.render_widget(&self.textarea, ta_rect);
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                PROMPT,
+                Style::default().fg(colors.text.accent),
+            )))
+            .alignment(Alignment::Left),
+            prompt_rect,
+        );
+
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(rule, rule_style))),
+            chunks[bottom_rule_idx],
+        );
 
         let input_text = self.textarea.lines().join("\n");
-        if self.completion.update(&input_text) {
-            render_completion(frame, area, &self.completion, chunks[editor_idx]);
+        let comp_visible = self.completion.update(&input_text);
+        if !comp_visible {
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(
+                    "  ? for shortcuts",
+                    Style::default().fg(colors.ui.comment),
+                ))),
+                chunks[shortcuts_idx],
+            );
+        }
+
+        if comp_visible {
+            render_completion(
+                frame,
+                area,
+                &self.completion,
+                ta_rect,
+                Some(chunks[shortcuts_idx]),
+            );
         }
     }
 
@@ -332,7 +356,8 @@ impl InputComponent {
 
         let editor_h = (line_count as u16 + 1).max(2);
         let editor_h = editor_h.max((max_line_width / 80) as u16 + 1);
-        let chrome = 3 + u16::from(self.status_hint.is_some());
+        // Top rule + optional status + bottom rule + shortcuts row, plus composer body.
+        let chrome = 4u16.saturating_add(u16::from(self.status_hint.is_some()));
         (chrome + editor_h).clamp(6, 15)
     }
 
