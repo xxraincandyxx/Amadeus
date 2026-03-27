@@ -3848,7 +3848,7 @@ mod tests {
             .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
             .collect::<String>();
 
-        assert!(rendered.contains("Welcome back!"));
+        assert!(rendered.contains("Amadeus v0.1.0"));
         assert!(!first_row.contains("Welcome"));
     }
 

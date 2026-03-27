@@ -1140,7 +1140,6 @@ impl MessagesComponent {
 
         let accent = colors.text.accent;
         let dark = colors.ui.dark;
-        let primary = colors.text.primary;
         let secondary = colors.text.secondary;
         let comment = colors.ui.comment;
         let link = colors.text.link;
@@ -1154,16 +1153,6 @@ impl MessagesComponent {
                 Style::default().fg(dark),
             ),
         ]));
-        lines.push(Line::from(""));
-
-        // Welcome
-        lines.push(
-            Line::from(vec![Span::styled(
-                "Welcome back!",
-                Style::default().fg(primary),
-            )])
-            .alignment(ratatui::layout::Alignment::Center),
-        );
         lines.push(Line::from(""));
 
         // Mascot (already centered in get_mascot)
@@ -1501,7 +1490,7 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
 
-        assert!(rendered.contains("Welcome back!"));
+        assert!(rendered.contains("Amadeus v0.1.0"));
         assert!(rendered.contains("turn 1"));
         assert!(rendered.contains("Hello"));
     }
