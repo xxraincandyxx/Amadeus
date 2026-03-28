@@ -3023,14 +3023,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         session.maybe_show_next_approval();
     }
 
-    fn new_inline_terminal(&self, minimal: bool) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+    fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
         let terminal_size = crossterm::terminal::size()?;
-        let initial_height = if minimal {
-            3u16
-        } else {
-            self.active_session()
-                .max_shelf_height_for_terminal(terminal_size.1)
-        };
+        let initial_height = self.active_session()
+            .max_shelf_height_for_terminal(terminal_size.1);
         let stdout = std::io::stdout();
         let backend = CrosstermBackend::new(stdout);
         Terminal::with_options(
@@ -3053,14 +3049,15 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .messages
             .reset_scrollback_cursor_for_session_switch();
         drop(terminal);
+
         let mut out = std::io::stdout();
         execute!(
             out,
-            Clear(ClearType::Purge),
             Clear(ClearType::All),
             MoveTo(0, 0)
         )?;
         out.flush()?;
+        std::thread::sleep(Duration::from_millis(50));
 
         let mut last_err: Option<std::io::Error> = None;
         for attempt in 0..INLINE_TERMINAL_RECREATE_RETRIES {
@@ -3069,7 +3066,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS,
                 ));
             }
-            match self.new_inline_terminal(true) {
+            match self.new_inline_terminal() {
                 Ok(t) => return Ok(t),
                 Err(e) => {
                     warn!(attempt, %e, "recreate inline terminal after session switch failed");
@@ -3500,7 +3497,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn run_loop(&mut self) -> Result<()> {
-        let mut terminal = self.new_inline_terminal(false)?;
+        let mut terminal = self.new_inline_terminal()?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
