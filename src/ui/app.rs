@@ -2642,7 +2642,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
-        let input_height = self.input.height();
+        let input_height = self.input.height().saturating_add(self.input.completion_height());
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 2;
 

@@ -8,7 +8,7 @@ use ratatui::{
 use tui_textarea::{CursorMove, TextArea};
 use unicode_width::UnicodeWidthStr;
 
-use crate::ui::components::completion::{render_completion, CompletionState};
+use crate::ui::components::completion::{render_completion_lines, CompletionState};
 use crate::ui::get_colors;
 
 /// Example text inside the `Try "…"` hint (configurable, English UI).
@@ -219,9 +219,16 @@ impl InputComponent {
         let colors = get_colors();
         let rule_style = Style::default().fg(colors.ui.dark);
         let hint_height = u16::from(self.status_hint.is_some());
-        // Claude Code: ─ / ❯+composer / ─ / ? for shortcuts (tmux-cli reference).
-        // Non-inner rows: top rule + optional status + bottom rule + shortcuts.
-        let non_inner = 3u16.saturating_add(hint_height);
+
+        let input_text = self.textarea.lines().join("\n");
+        let comp_visible = self.completion.update(&input_text);
+        let comp_rows = if comp_visible {
+            self.completion.visible_count() as u16
+        } else {
+            0
+        };
+
+        let non_inner = 3u16.saturating_add(hint_height).saturating_add(comp_rows);
         if area.height <= non_inner {
             return;
         }
@@ -230,6 +237,9 @@ impl InputComponent {
         let mut constraints: Vec<Constraint> = vec![Constraint::Length(1)];
         if self.status_hint.is_some() {
             constraints.push(Constraint::Length(1));
+        }
+        if comp_rows > 0 {
+            constraints.push(Constraint::Length(comp_rows));
         }
         constraints.push(Constraint::Length(inner_h));
         constraints.push(Constraint::Length(1));
@@ -240,25 +250,50 @@ impl InputComponent {
             .constraints(constraints)
             .split(area);
 
-        let shortcuts_idx = chunks.len().saturating_sub(1);
-        let bottom_rule_idx = chunks.len().saturating_sub(2);
-        let inner_idx = chunks.len().saturating_sub(3);
+        let mut idx = 0;
+        let top_rule_idx = idx;
+        idx += 1;
+        let hint_idx = if self.status_hint.is_some() {
+            let h = idx;
+            idx += 1;
+            Some(h)
+        } else {
+            None
+        };
+        let comp_idx = if comp_rows > 0 {
+            let c = idx;
+            idx += 1;
+            Some(c)
+        } else {
+            None
+        };
+        let inner_idx = idx;
+        idx += 1;
+        let bottom_rule_idx = idx;
+        idx += 1;
+        let shortcuts_idx = idx;
 
         let w = area.width.max(1) as usize;
         let rule: String = "─".repeat(w);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(rule.clone(), rule_style))),
-            chunks[0],
+            chunks[top_rule_idx],
         );
 
-        if let Some(hint) = &self.status_hint {
-            frame.render_widget(
-                Paragraph::new(Line::from(Span::styled(
-                    format!("  {hint}"),
-                    Style::default().fg(colors.text.secondary),
-                ))),
-                chunks[1],
-            );
+        if let Some(hi) = hint_idx {
+            if let Some(hint) = &self.status_hint {
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        format!("  {hint}"),
+                        Style::default().fg(colors.text.secondary),
+                    ))),
+                    chunks[hi],
+                );
+            }
+        }
+
+        if let Some(ci) = comp_idx {
+            render_completion_lines(frame, chunks[ci], &self.completion);
         }
 
         let inner = chunks[inner_idx];
@@ -299,8 +334,6 @@ impl InputComponent {
             chunks[bottom_rule_idx],
         );
 
-        let input_text = self.textarea.lines().join("\n");
-        let comp_visible = self.completion.update(&input_text);
         if !comp_visible {
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
@@ -308,16 +341,6 @@ impl InputComponent {
                     Style::default().fg(colors.ui.comment),
                 ))),
                 chunks[shortcuts_idx],
-            );
-        }
-
-        if comp_visible {
-            render_completion(
-                frame,
-                area,
-                &self.completion,
-                ta_rect,
-                Some(chunks[shortcuts_idx]),
             );
         }
     }
@@ -358,7 +381,6 @@ impl InputComponent {
 
     pub fn height(&self) -> u16 {
         let lines = self.textarea.lines();
-        // ~usable columns inside composer (prompt gutter already excluded in layout).
         const INNER_COLS: usize = 76;
         fn line_visual_rows(line: &str, cols: usize) -> u16 {
             let w = line.width();
@@ -376,10 +398,17 @@ impl InputComponent {
             editor_h = 1;
         }
 
-        // Top rule + optional status + bottom rule + shortcuts — not part of typing band.
         let chrome = 3u16.saturating_add(u16::from(self.status_hint.is_some()));
         let total = chrome.saturating_add(editor_h);
         total.max(chrome.saturating_add(1)).min(15)
+    }
+
+    pub fn completion_height(&self) -> u16 {
+        if self.completion.is_visible() {
+            self.completion.visible_count() as u16
+        } else {
+            0
+        }
     }
 
     /// Get input statistics: (character count, line count)
