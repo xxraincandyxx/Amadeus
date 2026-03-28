@@ -2115,6 +2115,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        if self.input.is_shortcuts_visible() {
+            self.input.show_shortcuts(false);
+            return Ok(());
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_input().await?;
@@ -2312,6 +2317,20 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             }
             (KeyModifiers::SHIFT, KeyCode::End) => {
                 self.messages.scroll_to_bottom();
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) => {
+                if self.stream_rx.is_none() && self.input.get_input().trim().is_empty() {
+                    self.input.show_shortcuts(true);
+                } else if self.stream_rx.is_none() {
+                    self.input.handle_char('?');
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::Char('/')) => {
+                if self.stream_rx.is_none() && self.input.get_input().trim().is_empty() {
+                    self.input.show_shortcuts(true);
+                } else if self.stream_rx.is_none() {
+                    self.input.handle_char('?');
+                }
             }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
@@ -3004,11 +3023,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         session.maybe_show_next_approval();
     }
 
-    fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+    fn new_inline_terminal(&self, minimal: bool) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
         let terminal_size = crossterm::terminal::size()?;
-        let initial_height = self
-            .active_session()
-            .max_shelf_height_for_terminal(terminal_size.1);
+        let initial_height = if minimal {
+            3u16
+        } else {
+            self.active_session()
+                .max_shelf_height_for_terminal(terminal_size.1)
+        };
         let stdout = std::io::stdout();
         let backend = CrosstermBackend::new(stdout);
         Terminal::with_options(
@@ -3047,7 +3069,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS,
                 ));
             }
-            match self.new_inline_terminal() {
+            match self.new_inline_terminal(true) {
                 Ok(t) => return Ok(t),
                 Err(e) => {
                     warn!(attempt, %e, "recreate inline terminal after session switch failed");
@@ -3068,19 +3090,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
         match (key.modifiers, key.code) {
-            (KeyModifiers::CONTROL, KeyCode::Char(']')) => {
-                let next_idx = (self.active_idx + 1) % self.sessions.len();
-                self.switch_session(next_idx);
-                return Ok(true);
+            (KeyModifiers::CONTROL, KeyCode::Char('5')) => {
+                if self.sessions.len() > 1 {
+                    let next_idx = (self.active_idx + 1) % self.sessions.len();
+                    self.switch_session(next_idx);
+                    return Ok(true);
+                }
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('[')) => {
-                let next_idx = if self.active_idx == 0 {
-                    self.sessions.len().saturating_sub(1)
-                } else {
-                    self.active_idx - 1
-                };
-                self.switch_session(next_idx);
-                return Ok(true);
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                let session = &self.sessions[self.active_idx];
+                let is_idle = session.stream_rx.is_none() && session.mode == AppMode::Normal;
+                if is_idle && self.sessions.len() > 1 {
+                    let next_idx = if self.active_idx == 0 {
+                        self.sessions.len().saturating_sub(1)
+                    } else {
+                        self.active_idx - 1
+                    };
+                    self.switch_session(next_idx);
+                    return Ok(true);
+                }
             }
             (KeyModifiers::CONTROL, KeyCode::Backspace) => {
                 self.close_active_session(terminal)?;
@@ -3472,7 +3500,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn run_loop(&mut self) -> Result<()> {
-        let mut terminal = self.new_inline_terminal()?;
+        let mut terminal = self.new_inline_terminal(false)?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
@@ -3762,6 +3790,68 @@ mod tests {
             ),
             Some("i".to_string())
         );
+    }
+
+    #[test]
+    fn switch_session_advances_to_next() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        assert_eq!(app.active_idx, 0);
+
+        app.switch_session(1);
+        assert_eq!(app.active_idx, 1);
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn switch_session_wraps_to_previous() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        app.active_idx = 1;
+
+        app.switch_session(0);
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
+    fn switch_session_sets_pending_reset() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        assert!(!app.pending_terminal_reset);
+
+        app.switch_session(1);
+        assert!(app.pending_terminal_reset);
+        assert_eq!(app.active_idx, 1);
     }
 
     #[test]

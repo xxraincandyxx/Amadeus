@@ -41,6 +41,7 @@ pub struct InputComponent {
     current_draft: String,
     status_hint: Option<String>,
     completion: CompletionState,
+    shortcuts_visible: bool,
 }
 
 impl InputComponent {
@@ -69,6 +70,7 @@ impl InputComponent {
             current_draft: String::new(),
             status_hint: None,
             completion: CompletionState::new(),
+            shortcuts_visible: false,
         }
     }
 
@@ -212,6 +214,65 @@ impl InputComponent {
         self.textarea.delete_next_word();
     }
 
+    fn shortcuts_lines(width: u16) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let key_style = Style::default().fg(colors.text.accent);
+        let desc_style = Style::default().fg(colors.text.secondary);
+
+        let shortcuts: &[&[(&str, &str)]] = &[
+            &[
+                ("Enter", "Send message"),
+                ("Ctrl+C", "Cancel / Exit"),
+                ("Alt+B", "Files sidebar"),
+            ],
+            &[
+                ("Ctrl+Enter", "New line"),
+                ("Esc", "Normal mode"),
+                ("Alt+S", "Skills sidebar"),
+            ],
+            &[
+                ("Up/Down", "History"),
+                ("Ctrl+O", "Expand tools"),
+                ("Ctrl+]", "Next session"),
+            ],
+            &[
+                ("Tab", "Accept completion"),
+                ("Ctrl+K", "Compact history"),
+                ("Esc", "Prev session"),
+            ],
+            &[
+                ("Shift+Tab", "Prev completion"),
+                ("Ctrl+Bksp", "Close session"),
+                ("Shift+Up/Dn", "Scroll"),
+            ],
+        ];
+
+        let col_w = (width as usize) / 3;
+        let mut lines = Vec::with_capacity(shortcuts.len());
+        for row in shortcuts {
+            let mut spans = Vec::new();
+            for (ci, (key, desc)) in row.iter().enumerate() {
+                if ci > 0 {
+                    spans.push(Span::raw(" "));
+                }
+                let key_part = format!(" {:<14}", key);
+                let desc_part = desc.to_string();
+                let cell = format!("{}{}", key_part, desc_part);
+                let padded = if cell.len() < col_w {
+                    format!("{:<width$}", cell, width = col_w)
+                } else {
+                    cell
+                };
+                let split = key_part.len();
+                spans.push(Span::styled(padded[..split].to_string(), key_style));
+                spans.push(Span::styled(padded[split..].to_string(), desc_style));
+            }
+            lines.push(Line::from(spans));
+        }
+
+        lines
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let colors = get_colors();
         let rule_style = Style::default().fg(colors.ui.dark);
@@ -276,6 +337,16 @@ impl InputComponent {
             Paragraph::new(Line::from(Span::styled(rule.clone(), rule_style))),
             chunks[top_rule_idx],
         );
+
+        if self.shortcuts_visible {
+            let shortcut_lines = Self::shortcuts_lines(area.width);
+            frame.render_widget(Paragraph::new(shortcut_lines), chunks[inner_idx]);
+            frame.render_widget(
+                Paragraph::new(Line::from(Span::styled(rule, rule_style))),
+                chunks[bottom_rule_idx],
+            );
+            return;
+        }
 
         if let Some(hi) = hint_idx {
             if let Some(hint) = &self.status_hint {
@@ -377,6 +448,12 @@ impl InputComponent {
     }
 
     pub fn height(&self) -> u16 {
+        if self.shortcuts_visible {
+            const SHORTCUT_ROWS: u16 = 5;
+            const SHORTCUT_CHROME: u16 = 4;
+            return SHORTCUT_ROWS.saturating_add(SHORTCUT_CHROME);
+        }
+
         let lines = self.textarea.lines();
         const INNER_COLS: usize = 76;
         fn line_visual_rows(line: &str, cols: usize) -> u16 {
@@ -418,6 +495,14 @@ impl InputComponent {
 
     pub fn set_status_hint(&mut self, hint: Option<String>) {
         self.status_hint = hint;
+    }
+
+    pub fn show_shortcuts(&mut self, visible: bool) {
+        self.shortcuts_visible = visible;
+    }
+
+    pub fn is_shortcuts_visible(&self) -> bool {
+        self.shortcuts_visible
     }
 }
 
@@ -587,6 +672,31 @@ mod tests {
 
         // Should have inserted 'x' before 'c'
         assert!(input.get_input().contains('x'));
+    }
+
+    #[test]
+    fn test_shortcuts_overlay_default_off() {
+        let input = InputComponent::new();
+        assert!(!input.shortcuts_visible);
+    }
+
+    #[test]
+    fn test_toggle_shortcuts_overlay() {
+        let mut input = InputComponent::new();
+        input.show_shortcuts(true);
+        assert!(input.shortcuts_visible);
+        input.show_shortcuts(false);
+        assert!(!input.shortcuts_visible);
+    }
+
+    #[test]
+    fn test_render_shortcuts_overlay_lines() {
+        let lines = InputComponent::shortcuts_lines(80);
+        assert!(!lines.is_empty(), "should produce shortcut lines");
+        assert!(
+            lines.len() >= 3,
+            "should have at least 3 rows for 3-column layout"
+        );
     }
 
     #[test]
