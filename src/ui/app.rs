@@ -2140,15 +2140,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.collapse_all_tools();
                 }
             }
-            // Tab: Accept command completion OR switch agent
             (KeyModifiers::NONE, KeyCode::Tab) => {
                 if self.stream_rx.is_none() {
                     if self.input.completion_is_visible() {
                         self.input.apply_completion();
-                    } else {
-                        // Switch to next agent (placeholder - requires API connection)
-                        self.footer
-                            .set_status_message("Tab: Agent switch (API not connected)");
+                    } else if self.input.get_input().starts_with('/') {
+                        self.input.force_show_completion();
                     }
                 }
             }

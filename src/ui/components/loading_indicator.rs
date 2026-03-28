@@ -97,7 +97,7 @@ impl ScrambleTextAnimator {
                 // After convergence the string is static; re-seed noise→target so input
                 // chrome keeps scrambling while still settling on the same label.
                 let past = self.frame.saturating_sub(max_end);
-                const RESTART_INTERVAL: usize = 56;
+                const RESTART_INTERVAL: usize = 24;
                 if past > 0 && past.is_multiple_of(RESTART_INTERVAL) {
                     self.kick_noise_scramble_same_target();
                 }
@@ -295,7 +295,7 @@ impl LoadingIndicator {
                 if s.is_empty() {
                     None
                 } else {
-                    Some(s)
+                    Some(format!("{s} {}", self.dot_frame()))
                 }
             }
         }
@@ -386,8 +386,12 @@ mod tests {
         }
 
         let hint = indicator.input_chrome_hint().expect("input chrome");
-        assert_eq!(hint, "working");
-        assert!(!hint.ends_with('.'));
+        assert!(!hint.is_empty());
+        let dot_suffix = hint.rsplit_once(' ').map(|(_, d)| d).unwrap_or("");
+        assert!(
+            [".", "..", "..."].contains(&dot_suffix),
+            "dot suffix was: {dot_suffix} in hint: {hint}"
+        );
     }
 
     #[test]
@@ -422,10 +426,10 @@ mod tests {
         for _ in 0..800 {
             indicator.tick();
         }
-        assert_eq!(
-            indicator.input_chrome_hint().as_deref(),
-            Some("awaiting approval")
-        );
+        let hint = indicator.input_chrome_hint().expect("hint");
+        assert!(hint.starts_with("awaiting approval"));
+        let dot_suffix = hint.trim_start_matches("awaiting approval").trim();
+        assert!([".", "..", "..."].contains(&dot_suffix));
     }
 
     #[test]

@@ -96,7 +96,7 @@ impl CompletionState {
         self.selected_index = 0;
 
         // Show popup if there are matches and user typed a command prefix
-        self.visible = !self.matches.is_empty() && input.len() > 1;
+        self.visible = !self.matches.is_empty() && !input.is_empty();
         self.visible
     }
 
@@ -138,14 +138,14 @@ impl Default for CompletionState {
 
 /// Render the completion popup (minimal, theme-driven—Claude-style flat list).
 ///
-/// `popup_below`: when set, the list is placed directly under this rect (e.g. the bottom
-/// `─` rule of the composer). Otherwise it is placed one row under `input_rect`.
+/// The popup floats **above** `input_rect` so it doesn't collide with the status
+/// bar / footer that sit below the composer.
 pub fn render_completion(
     frame: &mut ratatui::Frame,
     area: Rect,
     state: &CompletionState,
     input_rect: Rect,
-    popup_below: Option<Rect>,
+    _popup_below: Option<Rect>,
 ) {
     if !state.is_visible() || state.matches.is_empty() {
         return;
@@ -154,17 +154,10 @@ pub fn render_completion(
     let colors = get_colors();
     let max_items = 6.min(state.matches.len());
     let list_rows = max_items as u16;
-    let popup_y = match popup_below {
-        Some(r) => r.y.saturating_add(r.height),
-        None => input_rect
-            .y
-            .saturating_add(input_rect.height)
-            .saturating_add(1),
-    };
-    let available_h = area.height.saturating_sub(popup_y);
-    let popup_height = (list_rows.saturating_add(1)).min(available_h).max(2);
+    let popup_height = list_rows.saturating_add(1).max(2);
     let target_w = input_rect.width.clamp(24, 72);
     let popup_width = target_w.min(area.width.saturating_sub(input_rect.x));
+    let popup_y = input_rect.y.saturating_sub(popup_height);
     let popup_area = Rect::new(input_rect.x, popup_y, popup_width, popup_height);
 
     let items: Vec<ListItem<'static>> = state

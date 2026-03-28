@@ -342,6 +342,11 @@ impl InputComponent {
         self.completion.select_down();
     }
 
+    pub fn force_show_completion(&mut self) {
+        let input = self.get_input();
+        self.completion.update(&input);
+    }
+
     /// Apply the selected completion (replace input with command).
     pub fn apply_completion(&mut self) {
         if let Some(cmd) = self.completion.selected() {
