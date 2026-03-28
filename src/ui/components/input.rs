@@ -88,10 +88,7 @@ impl InputComponent {
     }
 
     fn textarea_block() -> Block<'static> {
-        let colors = get_colors();
-        Block::default()
-            .borders(Borders::NONE)
-            .style(Style::default().bg(colors.background.input))
+        Block::default().borders(Borders::NONE)
     }
 
     fn setup_textarea(&mut self) {
