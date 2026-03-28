@@ -993,6 +993,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         // Force immediate redraw to show streaming progress
                         self.flush_unrendered_history(&mut terminal)?;
                         self.sync_inline_viewport(&mut terminal)?;
+                        // Agent branch can starve `AppEvent::Tick`; advance loading animation every draw.
+                        self.loading_indicator.tick();
+                        self.sync_prompt_status_hint();
                         terminal.draw(|f| self.render(f))?;
                     } else {
                         self.stream_rx = None;
@@ -3639,6 +3642,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                         session.flush_unrendered_history(&mut terminal)?;
                         session.sync_inline_viewport(&mut terminal)?;
+                        session.loading_indicator.tick();
+                        session.sync_prompt_status_hint();
                         let completed = terminal.draw(|f| {
                             let breadcrumb = self.build_breadcrumb();
                             let session = &mut self.sessions[self.active_idx];

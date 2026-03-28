@@ -91,10 +91,54 @@ impl ScrambleTextAnimator {
 
             self.tick_accumulator = 0;
             self.frame += 1;
-            if self.frame > self.max_end_frame() {
+            let max_end = self.max_end_frame();
+            if self.frame > max_end {
                 self.previous_text = self.target.clone();
+                // After convergence the string is static; re-seed noise→target so input
+                // chrome keeps scrambling while still settling on the same label.
+                let past = self.frame.saturating_sub(max_end);
+                const RESTART_INTERVAL: usize = 56;
+                if past > 0 && past.is_multiple_of(RESTART_INTERVAL) {
+                    self.kick_noise_scramble_same_target();
+                }
             }
         }
+    }
+
+    /// Re-run scramble animation toward the existing `target` (decoy `from` glyphs).
+    fn kick_noise_scramble_same_target(&mut self) {
+        if self.target.is_empty() {
+            return;
+        }
+        let target = self.target.clone();
+        let scramble_chars: Vec<char> = SCRAMBLE_CHARS.chars().collect();
+        let n = target.chars().count().max(1);
+        let noise: String = (0..n)
+            .map(|i| {
+                scramble_chars
+                    .get(i % scramble_chars.len().max(1))
+                    .copied()
+                    .unwrap_or('?')
+            })
+            .collect();
+        let old_chars: Vec<char> = noise.chars().collect();
+        let new_chars: Vec<char> = target.chars().collect();
+        let length = old_chars.len().max(new_chars.len());
+
+        self.frame = 0;
+        self.tick_accumulator = 0;
+        self.cells = (0..length)
+            .map(|index| {
+                let start = (index * 3) % 12;
+                let end = start + 8 + (index % 7);
+                ScrambleCell {
+                    from: old_chars.get(index).copied().unwrap_or(' '),
+                    to: new_chars.get(index).copied().unwrap_or(' '),
+                    start,
+                    end,
+                }
+            })
+            .collect();
     }
 
     fn render(&self) -> String {
