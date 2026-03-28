@@ -220,16 +220,18 @@ impl InputComponent {
         let rule_style = Style::default().fg(colors.ui.dark);
         let hint_height = u16::from(self.status_hint.is_some());
         // Claude Code: ─ / ❯+composer / ─ / ? for shortcuts (tmux-cli reference).
-        let fixed_rows = 4u16.saturating_add(hint_height);
-        if area.height < fixed_rows.saturating_add(1) {
+        // Non-inner rows: top rule + optional status + bottom rule + shortcuts.
+        let non_inner = 3u16.saturating_add(hint_height);
+        if area.height <= non_inner {
             return;
         }
+        let inner_h = area.height.saturating_sub(non_inner).max(1);
 
         let mut constraints: Vec<Constraint> = vec![Constraint::Length(1)];
         if self.status_hint.is_some() {
             constraints.push(Constraint::Length(1));
         }
-        constraints.push(Constraint::Min(1));
+        constraints.push(Constraint::Length(inner_h));
         constraints.push(Constraint::Length(1));
         constraints.push(Constraint::Length(1));
 
@@ -351,14 +353,28 @@ impl InputComponent {
 
     pub fn height(&self) -> u16 {
         let lines = self.textarea.lines();
-        let line_count = lines.len();
-        let max_line_width = lines.iter().map(|l| l.width()).max().unwrap_or(0);
+        // ~usable columns inside composer (prompt gutter already excluded in layout).
+        const INNER_COLS: usize = 76;
+        fn line_visual_rows(line: &str, cols: usize) -> u16 {
+            let w = line.width();
+            if w == 0 {
+                return 1;
+            }
+            ((w.saturating_add(cols).saturating_sub(1)) / cols).max(1) as u16
+        }
 
-        let editor_h = (line_count as u16 + 1).max(2);
-        let editor_h = editor_h.max((max_line_width / 80) as u16 + 1);
-        // Top rule + optional status + bottom rule + shortcuts row, plus composer body.
-        let chrome = 4u16.saturating_add(u16::from(self.status_hint.is_some()));
-        (chrome + editor_h).clamp(6, 15)
+        let mut editor_h: u16 = 0;
+        for line in lines.iter() {
+            editor_h = editor_h.saturating_add(line_visual_rows(line, INNER_COLS));
+        }
+        if editor_h == 0 {
+            editor_h = 1;
+        }
+
+        // Top rule + optional status + bottom rule + shortcuts — not part of typing band.
+        let chrome = 3u16.saturating_add(u16::from(self.status_hint.is_some()));
+        let total = chrome.saturating_add(editor_h);
+        total.max(chrome.saturating_add(1)).min(15)
     }
 
     /// Get input statistics: (character count, line count)
@@ -476,7 +492,8 @@ mod tests {
     #[test]
     fn test_height_minimum() {
         let input = InputComponent::new();
-        assert!(input.height() >= 6);
+        // top + inner(1) + bottom + shortcuts = 4 when no status hint
+        assert!(input.height() >= 4);
     }
 
     #[test]
