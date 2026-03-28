@@ -1201,11 +1201,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .tool_monitor
             .active_snapshot()
             .map(|snapshot| {
-                let mut text = format!(
-                    "{} {}",
-                    snapshot.tool_name,
-                    self.loading_indicator.prompt_hint().unwrap_or_default()
-                );
+                let dots = self.loading_indicator.loading_dot_suffix();
+                let status_tail = self
+                    .loading_indicator
+                    .viewport_loading_line()
+                    .unwrap_or_else(|| format!("working {dots}"));
+                let mut text = format!("{} {}", snapshot.tool_name, status_tail);
                 if let Some(progress) = snapshot.progress_percent {
                     text.push_str(&format!(" • {progress}%"));
                 }
@@ -1317,7 +1318,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         self.input
-            .set_status_hint(self.loading_indicator.prompt_hint());
+            .set_status_hint(self.loading_indicator.input_chrome_hint());
     }
 
     fn flush_unrendered_history(
@@ -1448,10 +1449,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         if !has_stream_text {
+            let dots = self.loading_indicator.loading_dot_suffix();
             let hint = self
                 .loading_indicator
-                .prompt_hint()
-                .unwrap_or_else(|| "responding".to_string());
+                .viewport_loading_line()
+                .unwrap_or_else(|| format!("responding {dots}"));
             let line = Line::from(vec![Span::styled(
                 hint,
                 Style::default().fg(colors.text.secondary),

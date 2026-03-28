@@ -227,19 +227,53 @@ impl LoadingIndicator {
     }
 
     fn sync_scramble_target(&mut self) {
-        if let Some(label) = self.current_status_label() {
-            self.scramble.set_target(label);
+        match self.streaming_state {
+            StreamingState::Idle => {
+                self.scramble.clear();
+            }
+            StreamingState::WaitingForConfirmation => {
+                self.scramble.set_target("awaiting approval");
+            }
+            StreamingState::Responding => {
+                if let Some(label) = self.current_status_label() {
+                    self.scramble.set_target(label);
+                }
+            }
         }
     }
 
-    pub fn prompt_hint(&self) -> Option<String> {
+    /// Scramble-only text for the **input** status row (above the composer). No dot suffix.
+    pub fn input_chrome_hint(&self) -> Option<String> {
         match self.streaming_state {
             StreamingState::Idle => None,
-            StreamingState::WaitingForConfirmation => Some("awaiting approval".to_string()),
-            StreamingState::Responding => {
-                Some(format!("{} {}", self.scramble.render(), self.dot_frame()))
+            StreamingState::WaitingForConfirmation | StreamingState::Responding => {
+                let s = self.scramble.render();
+                if s.is_empty() {
+                    None
+                } else {
+                    Some(s)
+                }
             }
         }
+    }
+
+    /// Live viewport / monitor: **plain** status label + `.` / `..` / `...` only (no scramble).
+    pub fn viewport_loading_line(&self) -> Option<String> {
+        match self.streaming_state {
+            StreamingState::Idle => None,
+            StreamingState::WaitingForConfirmation => {
+                Some(format!("awaiting approval {}", self.dot_frame()))
+            }
+            StreamingState::Responding => {
+                let label = self.current_status_label().unwrap_or("responding");
+                Some(format!("{label} {}", self.dot_frame()))
+            }
+        }
+    }
+
+    /// Animated `.` / `..` / `...` suffix (for fallbacks when state is idle but UI still wants dots).
+    pub fn loading_dot_suffix(&self) -> &'static str {
+        self.dot_frame()
     }
 
     pub fn get_elapsed_secs(&self) -> u64 {
@@ -257,27 +291,30 @@ impl Default for LoadingIndicator {
 mod tests {
     use super::*;
 
-    /// Dots suffix after scramble text (`"{scramble} {dots}"`).
-    fn dot_suffix(hint: &str) -> &str {
-        hint.rsplit_once(' ').map(|(_, d)| d).unwrap_or(hint)
+    /// Last whitespace-delimited token (the dot suffix in `responding ..`).
+    fn dot_suffix(line: &str) -> &str {
+        line.rsplit_once(' ').map(|(_, d)| d).unwrap_or(line)
     }
 
     #[test]
-    fn prompt_hint_uses_dot_animation_without_sliding_blocks() {
+    fn viewport_loading_line_is_plain_label_plus_dots_only() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(Some("bash".to_string()), None, None, 1);
 
-        let first = indicator.prompt_hint().expect("hint");
+        let first = indicator.viewport_loading_line().expect("line");
+        assert!(first.starts_with("working "));
+        assert!([".", "..", "..."].contains(&dot_suffix(&first)));
+
         for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
             indicator.tick();
         }
         assert_eq!(
             dot_suffix(&first),
-            dot_suffix(&indicator.prompt_hint().expect("hint"))
+            dot_suffix(&indicator.viewport_loading_line().expect("line"))
         );
         indicator.tick();
-        let two_dots = indicator.prompt_hint().expect("hint");
+        let two_dots = indicator.viewport_loading_line().expect("line");
         assert_eq!(dot_suffix(&two_dots), "..");
 
         for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
@@ -285,17 +322,17 @@ mod tests {
         }
         assert_eq!(
             dot_suffix(&two_dots),
-            dot_suffix(&indicator.prompt_hint().expect("hint"))
+            dot_suffix(&indicator.viewport_loading_line().expect("line"))
         );
         indicator.tick();
-        let three_dots = indicator.prompt_hint().expect("hint");
+        let three_dots = indicator.viewport_loading_line().expect("line");
         assert_eq!(dot_suffix(&three_dots), "...");
 
         assert!(!first.contains('['));
     }
 
     #[test]
-    fn prompt_hint_scramble_eventually_converges_to_target_label() {
+    fn input_chrome_hint_scrambles_to_working_without_dot_suffix() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
         indicator.set_activity_context(None, None, None, 1);
@@ -304,21 +341,20 @@ mod tests {
             indicator.tick();
         }
 
-        let hint = indicator
-            .prompt_hint()
-            .expect("prompt hint should be active");
-        assert!(hint.starts_with("working "));
+        let hint = indicator.input_chrome_hint().expect("input chrome");
+        assert_eq!(hint, "working");
+        assert!(!hint.ends_with('.'));
     }
 
     #[test]
-    fn prompt_hint_retargets_scramble_when_activity_changes() {
+    fn viewport_relabels_when_tool_activity_changes() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
 
         for _ in 0..800 {
             indicator.tick();
         }
-        let before = indicator.prompt_hint().expect("prompt hint should exist");
+        let before = indicator.viewport_loading_line().expect("line");
         assert!(before.starts_with("responding "));
 
         indicator.set_activity_context(None, None, None, 1);
@@ -326,20 +362,26 @@ mod tests {
             indicator.tick();
         }
 
-        let after = indicator.prompt_hint().expect("prompt hint should exist");
+        let after = indicator.viewport_loading_line().expect("line");
         assert!(after.starts_with("working "));
     }
 
     #[test]
-    fn waiting_confirmation_prompt_hint_stays_static() {
+    fn waiting_confirmation_input_scrambles_viewport_adds_dots() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::WaitingForConfirmation);
-        let first = indicator.prompt_hint();
-        indicator.tick();
-        let second = indicator.prompt_hint();
 
-        assert_eq!(first.as_deref(), Some("awaiting approval"));
-        assert_eq!(second.as_deref(), Some("awaiting approval"));
+        let v = indicator.viewport_loading_line().expect("viewport");
+        assert!(v.starts_with("awaiting approval "));
+        assert!([".", "..", "..."].contains(&dot_suffix(&v)));
+
+        for _ in 0..800 {
+            indicator.tick();
+        }
+        assert_eq!(
+            indicator.input_chrome_hint().as_deref(),
+            Some("awaiting approval")
+        );
     }
 
     #[test]
@@ -357,20 +399,20 @@ mod tests {
     }
 
     #[test]
-    fn dot_animation_advances_more_slowly() {
+    fn dot_animation_advances_more_slowly_on_viewport_line() {
         let mut indicator = LoadingIndicator::new();
         indicator.set_streaming_state(StreamingState::Responding);
 
-        let first = indicator.prompt_hint().expect("prompt hint should exist");
+        let first = indicator.viewport_loading_line().expect("line");
         for _ in 0..(DOT_TICK_SLOWDOWN - 1) {
             indicator.tick();
         }
         assert_eq!(
             dot_suffix(&first),
-            dot_suffix(&indicator.prompt_hint().expect("prompt hint should exist"))
+            dot_suffix(&indicator.viewport_loading_line().expect("line"))
         );
         indicator.tick();
-        let with_two_dots = indicator.prompt_hint().expect("prompt hint should exist");
+        let with_two_dots = indicator.viewport_loading_line().expect("line");
         assert_eq!(dot_suffix(&first), ".");
         assert_eq!(dot_suffix(&with_two_dots), "..");
     }
