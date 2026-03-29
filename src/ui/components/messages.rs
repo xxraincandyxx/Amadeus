@@ -816,7 +816,7 @@ impl MessagesComponent {
                 let mut spans = Vec::new();
                 if i == 0 {
                     spans.push(Span::styled(
-                        format!("✦ [{}] ", self.current_turn),
+                        format!("[{}] ", self.current_turn),
                         Style::default().fg(colors.text.accent),
                     ));
                 } else {
@@ -1065,6 +1065,17 @@ impl MessagesComponent {
     ) -> Vec<Line<'static>> {
         let colors = get_colors();
         let mut lines = Vec::new();
+
+        // Visual separator to distinguish context report from conversation history
+        lines.push(Line::from(vec![
+            Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
+            Span::styled(
+                " context ",
+                Style::default().fg(colors.ui.comment),
+            ),
+            Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
+        ]));
+        lines.push(Line::from(""));
 
         let used = info.used_tokens();
         let total = info.context_window_size as usize;
