@@ -2448,8 +2448,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     total_tokens: system_prompt_tokens + tools_tokens,
                     system_prompt_tokens,
                     tools_tokens,
+                    mcp_tools_tokens: 0,
+                    memory_files_tokens: 0,
+                    skills_tokens: 0,
                     conversation_tokens: 0,
                     tool_details,
+                    mcp_tool_details: Vec::new(),
+                    memory_file_details: Vec::new(),
+                    skill_details: Vec::new(),
                     message_details: Vec::new(),
                 }
             }
@@ -2484,8 +2490,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             total_tokens,
             system_prompt_tokens,
             tools_tokens,
+            mcp_tools_tokens: 0,
+            memory_files_tokens: 0,
+            skills_tokens: 0,
             conversation_tokens,
             tool_details,
+            mcp_tool_details: Vec::new(),
+            memory_file_details: Vec::new(),
+            skill_details: Vec::new(),
             message_details,
         }
     }
@@ -2518,7 +2530,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             if command == "/context" {
                 self.input.clear();
                 let info = self.build_context_info();
-                self.messages.add_context_report(info);
+                let turn = self.messages.current_turn();
+                self.messages.add_context_report(info, turn);
                 return Ok(());
             }
             if command == "/new-agent" {

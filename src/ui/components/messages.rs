@@ -138,6 +138,7 @@ pub enum HistoryItem {
     /// Inline context usage report (like Claude Code /context)
     ContextReport {
         info: crate::ui::components::ContextInfo,
+        turn: usize,
     },
 }
 
@@ -158,8 +159,8 @@ impl HistoryItem {
         Self::Compression { compression }
     }
 
-    pub fn context_report(info: crate::ui::components::ContextInfo) -> Self {
-        Self::ContextReport { info }
+    pub fn context_report(info: crate::ui::components::ContextInfo, turn: usize) -> Self {
+        Self::ContextReport { info, turn }
     }
 }
 
@@ -345,8 +346,8 @@ impl MessagesComponent {
             .push(HistoryItem::subagent_prompt(content, depth, turn));
     }
 
-    pub fn add_context_report(&mut self, info: crate::ui::components::ContextInfo) {
-        self.items.push(HistoryItem::context_report(info));
+    pub fn add_context_report(&mut self, info: crate::ui::components::ContextInfo, turn: usize) {
+        self.items.push(HistoryItem::context_report(info, turn));
     }
 
     pub fn update_streaming_text(&mut self, text: &str) {
@@ -960,8 +961,8 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
-            HistoryItem::ContextReport { info } => {
-                lines.extend(Self::render_context_report(info, content_width));
+            HistoryItem::ContextReport { info, turn } => {
+                lines.extend(Self::render_context_report(info, *turn, content_width));
             }
 
             HistoryItem::Thinking {
@@ -1017,7 +1018,7 @@ impl MessagesComponent {
             HistoryItem::Thinking { turn, .. } => Some(*turn),
             HistoryItem::ToolGroup { turn, .. } => Some(*turn),
             HistoryItem::Compression { .. } => None,
-            HistoryItem::ContextReport { .. } => None,
+            HistoryItem::ContextReport { turn, .. } => Some(*turn),
         }
     }
 
@@ -1061,23 +1062,12 @@ impl MessagesComponent {
 
     fn render_context_report(
         info: &crate::ui::components::ContextInfo,
+        turn: usize,
         _content_width: usize,
     ) -> Vec<Line<'static>> {
         let colors = get_colors();
         let mut lines = Vec::new();
 
-        // Visual separator to distinguish context report from conversation history
-        lines.push(Line::from(vec![
-            Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
-            Span::styled(
-                " context ",
-                Style::default().fg(colors.ui.comment),
-            ),
-            Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
-        ]));
-        lines.push(Line::from(""));
-
-        let used = info.used_tokens();
         let total = info.context_window_size as usize;
         let pct = info.usage_percent();
 
@@ -1091,6 +1081,14 @@ impl MessagesComponent {
         let buffer_tokens = (total as f64 * buffer_pct / 100.0) as usize;
         let free_tokens = (total as f64 * free_pct / 100.0) as usize;
 
+        // ── Header line (matching turn indicator style) ──
+        lines.push(Line::from(vec![Span::styled(
+            format!("> [{}] /context", turn),
+            Style::default()
+                .fg(colors.text.link)
+                .bg(colors.background.message),
+        )]));
+
         // ── Block bar (10 chars, each = 10%) ──
         let bar_width = 10usize;
         let used_chars = ((pct as f64 / 100.0) * bar_width as f64).round() as usize;
@@ -1103,35 +1101,33 @@ impl MessagesComponent {
         let buffer_color = ratatui::style::Color::Rgb(100, 100, 100);
         let empty_color = colors.ui.dark;
 
-        let mut bar_spans = vec![Span::raw("     ")];
+        // ── Context Usage Header ──
+        // Block bar with position indicator at start
+        let mut bar_spans = vec![Span::styled("⛀ ", Style::default().fg(colors.text.accent))];
         bar_spans.push(Span::styled(
-            "⛁ ".repeat(used_chars),
+            format!("{} ", "⛁".repeat(used_chars)),
             Style::default().fg(fill_color),
         ));
         bar_spans.push(Span::styled(
-            "⛝ ".repeat(buffer_chars),
+            format!("{} ", "⛝".repeat(buffer_chars)),
             Style::default().fg(buffer_color),
         ));
         bar_spans.push(Span::styled(
-            "⛶ ".repeat(free_chars),
+            format!("{} ", "⛶".repeat(free_chars)),
             Style::default().fg(empty_color),
         ));
-
-        // Model name on the same line
         bar_spans.push(Span::styled(
-            format!(" · {}", &info.model_name),
+            format!("  {}", &info.model_name),
             Style::default().fg(colors.text.primary),
         ));
-
         lines.push(Line::from(bar_spans));
 
-        // Token count line
+        // Token count on next line
         lines.push(Line::from(vec![
-            Span::raw("     "),
             Span::styled(
                 format!(
-                    "{} / {} tokens ({}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(used),
+                    "    {} / {} tokens ({}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.used_tokens()),
                     crate::ui::components::ContextInfo::fmt_tokens(total),
                     pct,
                 ),
@@ -1141,19 +1137,15 @@ impl MessagesComponent {
 
         lines.push(Line::from(""));
 
-        // Category header
+        // ── Category breakdown ──
         lines.push(Line::from(vec![
-            Span::raw("     "),
-            Span::styled(
-                "Estimated usage by category",
-                Style::default().fg(colors.ui.comment),
-            ),
+            Span::styled("  Estimated usage by category", Style::default().fg(colors.ui.comment)),
         ]));
 
         // System prompt
         let sys_pct = info.pct_of(info.system_prompt_tokens);
         lines.push(Line::from(vec![
-            Span::raw("     ⛁ "),
+            Span::raw("  ⛁ "),
             Span::styled("System prompt", Style::default().fg(colors.text.primary)),
             Span::styled(
                 format!(
@@ -1165,10 +1157,10 @@ impl MessagesComponent {
             ),
         ]));
 
-        // Tools
+        // System tools
         let tools_pct = info.pct_of(info.tools_tokens);
         lines.push(Line::from(vec![
-            Span::raw("     ⛁ "),
+            Span::raw("  ⛁ "),
             Span::styled("System tools", Style::default().fg(colors.text.primary)),
             Span::styled(
                 format!(
@@ -1180,10 +1172,55 @@ impl MessagesComponent {
             ),
         ]));
 
-        // Conversation (Messages)
+        // MCP tools
+        let mcp_pct = info.pct_of(info.mcp_tools_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("  ⛁ "),
+            Span::styled("MCP tools", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.mcp_tools_tokens),
+                    mcp_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Memory files
+        let mem_pct = info.pct_of(info.memory_files_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("  ⛁ "),
+            Span::styled("Memory files", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.memory_files_tokens),
+                    mem_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Skills
+        let skills_pct = info.pct_of(info.skills_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("  ⛁ "),
+            Span::styled("Skills", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.skills_tokens),
+                    skills_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Messages
         let conv_pct = info.pct_of(info.conversation_tokens);
         lines.push(Line::from(vec![
-            Span::raw("     ⛁ "),
+            Span::raw("  ⛁ "),
             Span::styled("Messages", Style::default().fg(colors.text.primary)),
             Span::styled(
                 format!(
@@ -1197,7 +1234,7 @@ impl MessagesComponent {
 
         // Free space
         lines.push(Line::from(vec![
-            Span::raw("     ⛶ "),
+            Span::raw("  ⛶ "),
             Span::styled("Free space", Style::default().fg(colors.text.primary)),
             Span::styled(
                 format!(
@@ -1211,7 +1248,7 @@ impl MessagesComponent {
 
         // Autocompact buffer
         lines.push(Line::from(vec![
-            Span::raw("     ⛝ "),
+            Span::raw("  ⛝ "),
             Span::styled(
                 "Autocompact buffer",
                 Style::default().fg(colors.text.primary),
@@ -1228,15 +1265,107 @@ impl MessagesComponent {
 
         lines.push(Line::from(""));
 
-        // Tool details if available
-        if !info.tool_details.is_empty() {
+        // ── MCP tools section ──
+        lines.push(Line::from(vec![
+            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+            Span::styled("MCP tools", Style::default().fg(colors.text.primary)),
+            Span::styled(" · /mcp", Style::default().fg(colors.ui.comment)),
+        ]));
+        if info.mcp_tool_details.is_empty() {
             lines.push(Line::from(vec![
-                Span::raw("     "),
-                Span::styled("Tools", Style::default().fg(colors.text.accent)),
+                Span::raw("  └ "),
+                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
             ]));
+        } else {
+            for (name, tokens) in &info.mcp_tool_details {
+                lines.push(Line::from(vec![
+                    Span::raw("  └ "),
+                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(
+                            ": {} tokens",
+                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
+                        ),
+                        Style::default().fg(colors.text.secondary),
+                    ),
+                ]));
+            }
+        }
+
+        lines.push(Line::from(""));
+
+        // ── Memory files section ──
+        lines.push(Line::from(vec![
+            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+            Span::styled("Memory files", Style::default().fg(colors.text.primary)),
+            Span::styled(" · /memory", Style::default().fg(colors.ui.comment)),
+        ]));
+        if info.memory_file_details.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("  └ "),
+                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
+            ]));
+        } else {
+            for (name, tokens) in &info.memory_file_details {
+                lines.push(Line::from(vec![
+                    Span::raw("  └ "),
+                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(
+                            ": {} tokens",
+                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
+                        ),
+                        Style::default().fg(colors.text.secondary),
+                    ),
+                ]));
+            }
+        }
+
+        lines.push(Line::from(""));
+
+        // ── Skills section ──
+        lines.push(Line::from(vec![
+            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+            Span::styled("Skills", Style::default().fg(colors.text.primary)),
+            Span::styled(" · /skills", Style::default().fg(colors.ui.comment)),
+        ]));
+        if info.skill_details.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("  └ "),
+                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
+            ]));
+        } else {
+            for (name, tokens) in &info.skill_details {
+                lines.push(Line::from(vec![
+                    Span::raw("  └ "),
+                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(
+                            ": {} tokens",
+                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
+                        ),
+                        Style::default().fg(colors.text.secondary),
+                    ),
+                ]));
+            }
+        }
+
+        lines.push(Line::from(""));
+
+        // ── User section (from .amadeus/skills/) ──
+        lines.push(Line::from(vec![
+            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+            Span::styled("User", Style::default().fg(colors.text.primary)),
+        ]));
+        if info.tool_details.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("  └ "),
+                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
+            ]));
+        } else {
             for (name, tokens) in &info.tool_details {
                 lines.push(Line::from(vec![
-                    Span::raw("     └ "),
+                    Span::raw("  └ "),
                     Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
                     Span::styled(
                         format!(

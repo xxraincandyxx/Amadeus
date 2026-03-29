@@ -487,10 +487,22 @@ pub struct ContextInfo {
     pub system_prompt_tokens: usize,
     /// Tool definitions tokens
     pub tools_tokens: usize,
+    /// MCP tools tokens (placeholder)
+    pub mcp_tools_tokens: usize,
+    /// Memory files tokens (placeholder)
+    pub memory_files_tokens: usize,
+    /// Skills tokens (placeholder)
+    pub skills_tokens: usize,
     /// Conversation history tokens
     pub conversation_tokens: usize,
     /// Per-tool token estimates (name, estimated schema tokens)
     pub tool_details: Vec<(String, usize)>,
+    /// MCP tool details (placeholder)
+    pub mcp_tool_details: Vec<(String, usize)>,
+    /// Memory file details (placeholder)
+    pub memory_file_details: Vec<(String, usize)>,
+    /// Skill details (name, estimated tokens)
+    pub skill_details: Vec<(String, usize)>,
     /// Per-message token estimates (role, estimated tokens)
     pub message_details: Vec<(String, usize)>,
 }
