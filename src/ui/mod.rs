@@ -38,7 +38,7 @@ pub use event::{AppEvent, EventHandler};
 pub use repl::Repl;
 
 pub use components::{
-    ContextInfo, ContextSidebar, FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar,
+    ContextInfo, FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar,
     InputComponent, LoadingIndicator, MessagesComponent, PhraseCycler, PhraseMode, SandboxStatus,
     Sidebar, SidebarKind, StreamingState,
 };

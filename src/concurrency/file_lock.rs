@@ -11,8 +11,8 @@
 //! - **Timeout Support**: Configurable lock acquisition timeout
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::RwLock;
@@ -28,7 +28,7 @@ fn format_system_time(time: SystemTime) -> String {
         .unwrap_or_default();
     let secs = duration_since_epoch.as_secs();
     let nanos = duration_since_epoch.subsec_nanos();
-    
+
     // Convert to chrono DateTime for formatting
     use chrono::{DateTime, Utc};
     let datetime = DateTime::<Utc>::from_timestamp(secs as i64, nanos);
@@ -103,7 +103,8 @@ impl FileLockManager {
 
     /// Get or create a file lock for the given path.
     async fn get_lock(&self, path: &str) -> Arc<FileLock> {
-        let mut locks: tokio::sync::RwLockWriteGuard<'_, HashMap<String, Arc<FileLock>>> = self.locks.write().await;
+        let mut locks: tokio::sync::RwLockWriteGuard<'_, HashMap<String, Arc<FileLock>>> =
+            self.locks.write().await;
         locks
             .entry(path.to_string())
             .or_insert_with(|| Arc::new(FileLock::new()))
@@ -218,10 +219,11 @@ impl FileLockManager {
         if let Some(agent_cache) = cache.get(&agent_id) {
             if let Some(read_info) = agent_cache.get(path) {
                 // Get current file modification time
-                let current_modified = tokio::fs::metadata(path)
-                    .await
-                    .and_then(|m| m.modified())
-                    .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))?;
+                let current_modified =
+                    tokio::fs::metadata(path)
+                        .await
+                        .and_then(|m| m.modified())
+                        .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))?;
 
                 if current_modified > read_info.modified_at {
                     return Err(AgentError::FileModified {
@@ -288,7 +290,7 @@ impl FileLockManager {
 
     /// Clone the file lock manager if it exists.
     pub fn clone_manager(&self) -> Option<Arc<FileLockManager>> {
-        None  // Placeholder - Arc is already cloned via clone()
+        None // Placeholder - Arc is already cloned via clone()
     }
 
     /// Check if file locking is enabled.
@@ -443,10 +445,7 @@ mod tests {
         let file_path = temp_dir.path().join("test.txt");
 
         std::fs::write(&file_path, "original").unwrap();
-        let modified_at = std::fs::metadata(&file_path)
-            .unwrap()
-            .modified()
-            .unwrap();
+        let modified_at = std::fs::metadata(&file_path).unwrap().modified().unwrap();
 
         // Read and cache
         {
@@ -464,7 +463,9 @@ mod tests {
         std::fs::write(&file_path, "modified").unwrap();
 
         // Validation should fail
-        let result = manager.validate_read_freshness(agent, file_path.to_str().unwrap()).await;
+        let result = manager
+            .validate_read_freshness(agent, file_path.to_str().unwrap())
+            .await;
         assert!(result.is_err());
     }
 }

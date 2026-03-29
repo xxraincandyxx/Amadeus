@@ -1,20 +1,22 @@
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
+    cursor::MoveTo,
     event::{
         KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 use futures::StreamExt;
 use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Widget},
     Terminal, TerminalOptions, Viewport,
@@ -30,7 +32,7 @@ use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::components::{
-    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, ContextSidebar, FileSidebar,
+    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar,
     Footer, HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
     StreamingState,
 };
@@ -49,6 +51,44 @@ const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+/// Retries for rebuilding the inline [`Terminal`] after clearing scrollback (tmux can fail DSR
+/// cursor queries briefly after `ClearType::Purge`).
+const INLINE_TERMINAL_RECREATE_RETRIES: usize = 8;
+const INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS: u64 = 35;
+
+/// Convert a character with SHIFT modifier to its shifted counterpart.
+/// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
+fn apply_shift_modifier(c: char) -> char {
+    match c {
+        // Letters - use ASCII uppercase
+        'a'..='z' => c.to_ascii_uppercase(),
+        // Numbers with shift
+        '1' => '!',
+        '2' => '@',
+        '3' => '#',
+        '4' => '$',
+        '5' => '%',
+        '6' => '^',
+        '7' => '&',
+        '8' => '*',
+        '9' => '(',
+        '0' => ')',
+        // Punctuation
+        '`' => '~',
+        '-' => '_',
+        '=' => '+',
+        '[' => '{',
+        ']' => '}',
+        '\\' => '|',
+        ';' => ':',
+        '\'' => '"',
+        ',' => '<',
+        '.' => '>',
+        '/' => '?',
+        // Already shifted or non-shiftable characters pass through
+        _ => c,
+    }
+}
 
 struct StreamingBuffer {
     text: String,
@@ -111,14 +151,19 @@ struct ToolMonitorNode {
 }
 
 impl ToolMonitorNode {
-    fn new(_id: String, name: String, parent_id: Option<String>) -> Self {
+    fn new(
+        _id: String,
+        name: String,
+        parent_id: Option<String>,
+        progress_message: Option<String>,
+    ) -> Self {
         Self {
             name,
             parent_id,
             input: String::new(),
             output: String::new(),
             status: MonitorStatus::Pending,
-            progress_message: None,
+            progress_message,
             progress_percent: None,
             children: Vec::new(),
         }
@@ -173,11 +218,17 @@ impl ToolMonitorState {
         true
     }
 
-    fn start_tool(&mut self, id: String, name: String, parent_id: Option<String>) {
+    fn start_tool(
+        &mut self,
+        id: String,
+        name: String,
+        parent_id: Option<String>,
+        progress_message: Option<String>,
+    ) {
         let parent_for_node = parent_id.clone();
-        self.nodes
-            .entry(id.clone())
-            .or_insert_with(|| ToolMonitorNode::new(id.clone(), name, parent_for_node));
+        self.nodes.entry(id.clone()).or_insert_with(|| {
+            ToolMonitorNode::new(id.clone(), name, parent_for_node, progress_message)
+        });
 
         if let Some(parent_id) = parent_id {
             if let Some(parent) = self.nodes.get_mut(&parent_id) {
@@ -200,6 +251,24 @@ impl ToolMonitorState {
     fn append_input(&mut self, id: &str, delta: &str) {
         if let Some(node) = self.nodes.get_mut(id) {
             node.input.push_str(delta);
+        }
+    }
+
+    fn refresh_bash_command_preview(&mut self, id: &str) {
+        let Some(node) = self.nodes.get_mut(id) else {
+            return;
+        };
+
+        if node.name != "bash" {
+            return;
+        }
+
+        let Ok(input) = serde_json::from_str::<serde_json::Value>(&node.input) else {
+            return;
+        };
+
+        if let Some(command) = input.get("command").and_then(|value| value.as_str()) {
+            node.progress_message = Some(command.to_string());
         }
     }
 
@@ -838,13 +907,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
             self.sync_inline_viewport(&mut terminal)?;
 
-            if self.messages.should_render_dashboard_to_history() {
-                let width = terminal.size()?.width;
-                let dashboard_lines = self.messages.render_dashboard_lines(width);
-                self.insert_lines_before(&mut terminal, dashboard_lines)?;
-                self.messages.mark_dashboard_rendered();
-            }
-
             self.flush_unrendered_history(&mut terminal)?;
 
             terminal.draw(|f| self.render(f))?;
@@ -931,6 +993,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         // Force immediate redraw to show streaming progress
                         self.flush_unrendered_history(&mut terminal)?;
                         self.sync_inline_viewport(&mut terminal)?;
+                        // Agent branch can starve `AppEvent::Tick`; advance loading animation every draw.
+                        self.loading_indicator.tick();
+                        self.sync_prompt_status_hint();
                         terminal.draw(|f| self.render(f))?;
                     } else {
                         self.stream_rx = None;
@@ -1034,7 +1099,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         if self.streaming_buffer.is_empty() && !is_streaming {
-            return 0;
+            if !self.messages.is_empty() {
+                return 0;
+            }
+            return max_height.max(20);
         }
 
         let inner_width = width.saturating_sub(4) as usize;
@@ -1118,9 +1186,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let colors = crate::ui::get_colors();
         Line::from(vec![Span::styled(
             " Live ",
-            Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(colors.text.accent),
         )])
     }
 
@@ -1128,9 +1194,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let colors = crate::ui::get_colors();
         Line::from(vec![Span::styled(
             " Monitor ",
-            Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
+            Style::default().fg(colors.text.accent),
         )])
     }
 
@@ -1140,11 +1204,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .tool_monitor
             .active_snapshot()
             .map(|snapshot| {
-                let mut text = format!(
-                    "{} {}",
-                    snapshot.tool_name,
-                    self.loading_indicator.prompt_hint().unwrap_or_default()
-                );
+                let dots = self.loading_indicator.loading_dot_suffix();
+                let status_tail = self
+                    .loading_indicator
+                    .viewport_loading_line()
+                    .unwrap_or_else(|| format!("working {dots}"));
+                let mut text = format!("{} {}", snapshot.tool_name, status_tail);
                 if let Some(progress) = snapshot.progress_percent {
                     text.push_str(&format!(" • {progress}%"));
                 }
@@ -1256,7 +1321,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         self.input
-            .set_status_hint(self.loading_indicator.prompt_hint());
+            .set_status_hint(self.loading_indicator.input_chrome_hint());
     }
 
     fn flush_unrendered_history(
@@ -1329,7 +1394,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let has_stream_text = !self.streaming_buffer.is_empty();
         let has_tool_activity = self.tool_monitor.has_running_tools();
         let has_pending_compaction = self.messages.is_compression_pending();
+        let has_messages = !self.messages.is_empty();
+
         if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
+            if !has_messages {
+                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
+                if !dashboard_lines.is_empty() {
+                    frame.render_widget(Paragraph::new(dashboard_lines), area);
+                }
+            }
             return;
         }
 
@@ -1379,10 +1452,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         if !has_stream_text {
+            let dots = self.loading_indicator.loading_dot_suffix();
             let hint = self
                 .loading_indicator
-                .prompt_hint()
-                .unwrap_or_else(|| "responding".to_string());
+                .viewport_loading_line()
+                .unwrap_or_else(|| format!("responding {dots}"));
             let line = Line::from(vec![Span::styled(
                 hint,
                 Style::default().fg(colors.text.secondary),
@@ -1520,6 +1594,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => {
                 if render_to_terminal {
@@ -1527,12 +1602,16 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 }
                 self.status_bar.set_thinking(true);
                 let tool_name = name.clone();
-                self.tool_monitor
-                    .start_tool(id.clone(), name.clone(), parent_id.clone());
+                self.tool_monitor.start_tool(
+                    id.clone(),
+                    name.clone(),
+                    parent_id.clone(),
+                    command.clone(),
+                );
                 self.loading_indicator.set_tool_activity_phrase(&tool_name);
                 self.sync_activity_chrome();
                 if parent_id.is_none() {
-                    self.messages.start_tool(id, name, None);
+                    self.messages.start_tool(id, name, command);
                 }
             }
 
@@ -1635,6 +1714,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
             AgentEvent::ToolInputDelta { id, delta, .. } => {
                 self.tool_monitor.append_input(&id, &delta);
+                self.tool_monitor.refresh_bash_command_preview(&id);
                 self.status_bar.set_thinking(true);
                 self.sync_activity_chrome();
             }
@@ -1899,6 +1979,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
                     self.restore_input_focus();
+                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        apply_shift_modifier(c)
+                    } else {
+                        c
+                    };
                     self.input.handle_char(c);
                 }
             }
@@ -2030,6 +2115,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        if self.input.is_shortcuts_visible() {
+            self.input.show_shortcuts(false);
+            return Ok(());
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_input().await?;
@@ -2055,31 +2145,26 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.collapse_all_tools();
                 }
             }
-            // Tab: Accept command completion OR switch agent
             (KeyModifiers::NONE, KeyCode::Tab) => {
                 if self.stream_rx.is_none() {
                     if self.input.completion_is_visible() {
                         self.input.apply_completion();
-                    } else {
-                        // Switch to next agent (placeholder - requires API connection)
-                        self.footer
-                            .set_status_message("Tab: Agent switch (API not connected)");
+                    } else if self.input.get_input().starts_with('/') {
+                        self.input.force_show_completion();
                     }
                 }
             }
             // Shift+Tab: Move up in completion list
             (KeyModifiers::SHIFT, KeyCode::Tab) => {
-                if self.stream_rx.is_none()
-                    && self.input.completion_is_visible() {
-                        self.input.completion_select_up();
-                    }
+                if self.stream_rx.is_none() && self.input.completion_is_visible() {
+                    self.input.completion_select_up();
+                }
             }
             // Ctrl+Down: Move down in completion list
             (KeyModifiers::CONTROL, KeyCode::Down) => {
-                if self.stream_rx.is_none()
-                    && self.input.completion_is_visible() {
-                        self.input.completion_select_down();
-                    }
+                if self.stream_rx.is_none() && self.input.completion_is_visible() {
+                    self.input.completion_select_down();
+                }
             }
             (KeyModifiers::NONE, KeyCode::Up) => {
                 if self.stream_rx.is_none() {
@@ -2233,8 +2318,27 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::SHIFT, KeyCode::End) => {
                 self.messages.scroll_to_bottom();
             }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) => {
+                if self.stream_rx.is_none() && self.input.get_input().trim().is_empty() {
+                    self.input.show_shortcuts(true);
+                } else if self.stream_rx.is_none() {
+                    self.input.handle_char('?');
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::Char('/')) => {
+                if self.stream_rx.is_none() && self.input.get_input().trim().is_empty() {
+                    self.input.show_shortcuts(true);
+                } else if self.stream_rx.is_none() {
+                    self.input.handle_char('?');
+                }
+            }
             (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
                 if self.stream_rx.is_none() {
+                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                        apply_shift_modifier(c)
+                    } else {
+                        c
+                    };
                     self.input.handle_char(c);
                 }
             }
@@ -2287,7 +2391,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (Some(Sidebar::Files(_)), SidebarKind::Files) => None,
             (Some(Sidebar::Help(_)), SidebarKind::Help) => None,
             (Some(Sidebar::Skills(_)), SidebarKind::Skills) => None,
-            (Some(Sidebar::Context(_)), SidebarKind::Context) => None,
             (_, SidebarKind::Files) => Some(Sidebar::Files(FileSidebar::new(self.workdir.clone()))),
             (_, SidebarKind::Help) => Some(Sidebar::Help(HelpSidebar::new())),
             (_, SidebarKind::Skills) => {
@@ -2299,10 +2402,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 Some(Sidebar::Skills(crate::ui::components::SkillSidebar::new(
                     skills.into_skills(),
                 )))
-            }
-            (_, SidebarKind::Context) => {
-                let info = self.build_context_info();
-                Some(Sidebar::Context(ContextSidebar::new(info)))
             }
         };
     }
@@ -2415,7 +2514,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             }
             if command == "/context" {
                 self.input.clear();
-                self.toggle_sidebar(SidebarKind::Context);
+                let info = self.build_context_info();
+                self.messages.add_context_report(info);
                 return Ok(());
             }
             if command == "/new-agent" {
@@ -2557,7 +2657,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
-        let input_height = self.input.height();
+        let input_height = self.input.height().saturating_add(self.input.completion_height());
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 2;
 
@@ -2623,7 +2723,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 Sidebar::Files(s) => s.render(frame, sidebar_area),
                 Sidebar::Help(s) => s.render(frame, sidebar_area),
                 Sidebar::Skills(s) => s.render(frame, sidebar_area),
-                Sidebar::Context(s) => s.render(frame, sidebar_area),
             }
         } else {
             self.sidebar_area = Rect::default();
@@ -2640,6 +2739,9 @@ pub struct App<C: LLMClient> {
     model_name: String,
     next_session_id: usize,
     next_sub_label: usize,
+    /// When true, next run-loop tick rebuilds the inline terminal and replays the active session's
+    /// scrollback so sessions do not share one host scrollback buffer.
+    pending_terminal_reset: bool,
     pending_close: Option<(usize, Instant)>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
@@ -2668,6 +2770,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             model_name,
             next_session_id: 1,
             next_sub_label: 1,
+            pending_terminal_reset: false,
             pending_close: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
@@ -2908,10 +3011,69 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return;
         }
         self.active_idx = next_idx;
+        self.pending_terminal_reset = true;
         let session = self.active_session_mut();
         session.is_background = false;
         session.footer.set_background(false);
         session.maybe_show_next_approval();
+    }
+
+    fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+        let terminal_size = crossterm::terminal::size()?;
+        let initial_height = self.active_session()
+            .max_shelf_height_for_terminal(terminal_size.1);
+        let stdout = std::io::stdout();
+        let backend = CrosstermBackend::new(stdout);
+        Terminal::with_options(
+            backend,
+            TerminalOptions {
+                viewport: Viewport::Inline(initial_height),
+            },
+        )
+    }
+
+    fn recycle_terminal_after_session_switch(
+        &mut self,
+        terminal: Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
+        if !self.pending_terminal_reset {
+            return Ok(terminal);
+        }
+        self.pending_terminal_reset = false;
+        self.active_session_mut()
+            .messages
+            .reset_scrollback_cursor_for_session_switch();
+        drop(terminal);
+
+        let mut out = std::io::stdout();
+        execute!(
+            out,
+            Clear(ClearType::All),
+            MoveTo(0, 0)
+        )?;
+        out.flush()?;
+        std::thread::sleep(Duration::from_millis(50));
+
+        let mut last_err: Option<std::io::Error> = None;
+        for attempt in 0..INLINE_TERMINAL_RECREATE_RETRIES {
+            if attempt > 0 {
+                std::thread::sleep(Duration::from_millis(
+                    INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS,
+                ));
+            }
+            match self.new_inline_terminal() {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    warn!(attempt, %e, "recreate inline terminal after session switch failed");
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err
+            .unwrap_or_else(|| {
+                std::io::Error::other("inline terminal recreate failed with no error detail")
+            })
+            .into())
     }
 
     fn handle_global_key(
@@ -2920,19 +3082,25 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
         match (key.modifiers, key.code) {
-            (KeyModifiers::CONTROL, KeyCode::Char(']')) => {
-                let next_idx = (self.active_idx + 1) % self.sessions.len();
-                self.switch_session(next_idx);
-                return Ok(true);
+            (KeyModifiers::CONTROL, KeyCode::Char('5')) => {
+                if self.sessions.len() > 1 {
+                    let next_idx = (self.active_idx + 1) % self.sessions.len();
+                    self.switch_session(next_idx);
+                    return Ok(true);
+                }
             }
-            (KeyModifiers::CONTROL, KeyCode::Char('[')) => {
-                let next_idx = if self.active_idx == 0 {
-                    self.sessions.len().saturating_sub(1)
-                } else {
-                    self.active_idx - 1
-                };
-                self.switch_session(next_idx);
-                return Ok(true);
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                let session = &self.sessions[self.active_idx];
+                let is_idle = session.stream_rx.is_none() && session.mode == AppMode::Normal;
+                if is_idle && self.sessions.len() > 1 {
+                    let next_idx = if self.active_idx == 0 {
+                        self.sessions.len().saturating_sub(1)
+                    } else {
+                        self.active_idx - 1
+                    };
+                    self.switch_session(next_idx);
+                    return Ok(true);
+                }
             }
             (KeyModifiers::CONTROL, KeyCode::Backspace) => {
                 self.close_active_session(terminal)?;
@@ -3244,7 +3412,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                     .messages
                     .add_assistant(format!("[sub-agent] {}", summary.trim_end()));
             }
-            
+
             // Automatically switch back to parent session if the completed subagent was active
             if self.active_idx == child_idx {
                 self.switch_session(parent_idx);
@@ -3324,19 +3492,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     async fn run_loop(&mut self) -> Result<()> {
-        let terminal_size = crossterm::terminal::size()?;
-        let initial_height = self
-            .active_session()
-            .max_shelf_height_for_terminal(terminal_size.1);
-
-        let stdout = std::io::stdout();
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(initial_height),
-            },
-        )?;
+        let mut terminal = self.new_inline_terminal()?;
 
         let mut events = EventHandler::new(Duration::from_millis(100));
         loop {
@@ -3351,17 +3507,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 }
             }
 
+            terminal = self.recycle_terminal_after_session_switch(terminal)?;
+
             {
                 let session = self.active_session_mut();
                 session.poll_compaction_result();
                 session.sync_inline_viewport(&mut terminal)?;
-
-                if session.messages.should_render_dashboard_to_history() {
-                    let width = terminal.size()?.width;
-                    let dashboard_lines = session.messages.render_dashboard_lines(width);
-                    session.insert_lines_before(&mut terminal, dashboard_lines)?;
-                    session.messages.mark_dashboard_rendered();
-                }
 
                 session.flush_unrendered_history(&mut terminal)?;
             }
@@ -3508,6 +3659,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
                         session.flush_unrendered_history(&mut terminal)?;
                         session.sync_inline_viewport(&mut terminal)?;
+                        session.loading_indicator.tick();
+                        session.sync_prompt_status_hint();
                         let completed = terminal.draw(|f| {
                             let breadcrumb = self.build_breadcrumb();
                             let session = &mut self.sessions[self.active_idx];
@@ -3571,7 +3724,7 @@ mod tests {
     #[test]
     fn tool_monitor_clears_when_all_tools_complete() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "bash".to_string(), None);
+        monitor.start_tool("root".to_string(), "bash".to_string(), None, None);
         monitor.complete("root", "done".to_string(), false);
 
         assert!(monitor.clear_if_idle());
@@ -3581,11 +3734,12 @@ mod tests {
     #[test]
     fn tool_monitor_stays_visible_while_nested_tool_runs() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
             Some("root".to_string()),
+            None,
         );
         monitor.complete("root", "waiting".to_string(), false);
 
@@ -3600,11 +3754,12 @@ mod tests {
     #[test]
     fn active_snapshot_prefers_running_selection_then_running_descendant() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None);
+        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
             Some("root".to_string()),
+            None,
         );
         monitor.complete("root", "delegating".to_string(), false);
 
@@ -3627,6 +3782,68 @@ mod tests {
             ),
             Some("i".to_string())
         );
+    }
+
+    #[test]
+    fn switch_session_advances_to_next() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        assert_eq!(app.active_idx, 0);
+
+        app.switch_session(1);
+        assert_eq!(app.active_idx, 1);
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn switch_session_wraps_to_previous() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        app.active_idx = 1;
+
+        app.switch_session(0);
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
+    fn switch_session_sets_pending_reset() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        assert!(!app.pending_terminal_reset);
+
+        app.switch_session(1);
+        assert!(app.pending_terminal_reset);
+        assert_eq!(app.active_idx, 1);
     }
 
     #[test]
@@ -3696,6 +3913,29 @@ mod tests {
     }
 
     #[test]
+    fn render_startup_dashboard_matches_history_style_without_border() {
+        let backend = TestBackend::new(90, 20);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let first_row = (0..buffer.area.width)
+            .map(|x| buffer[(x, 0)].symbol().to_string())
+            .collect::<String>();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("Amadeus v0.1.0"));
+        assert!(!first_row.contains("Welcome"));
+    }
+
+    #[test]
     fn render_shows_pending_compaction_in_live_viewport() {
         let backend = TestBackend::new(90, 12);
         let mut terminal = Terminal::new(backend).expect("test terminal");
@@ -3724,7 +3964,7 @@ mod tests {
         let session = active_session_mut(&mut app);
         session
             .tool_monitor
-            .start_tool("tool-1".to_string(), "bash".to_string(), None);
+            .start_tool("tool-1".to_string(), "bash".to_string(), None, None);
         session
             .tool_monitor
             .update_progress("tool-1", "counting lines".to_string(), Some(42));
@@ -3744,6 +3984,36 @@ mod tests {
 
         assert!(rendered.contains("Monitor"));
         assert!(rendered.contains("bash"));
+    }
+
+    #[test]
+    fn render_shows_bash_command_in_tool_monitor_preview_on_start() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.tool_monitor.start_tool(
+            "tool-1".to_string(),
+            "bash".to_string(),
+            None,
+            Some("cargo test".to_string()),
+        );
+        session
+            .loading_indicator
+            .set_streaming_state(StreamingState::Responding);
+        session.sync_activity_chrome();
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("bash"));
+        assert!(rendered.contains("cargo test"));
     }
 
     #[test]
@@ -3786,8 +4056,8 @@ mod tests {
 
         let mut monitor = ToolMonitorState::new(16);
         let mut prefix = false;
-        monitor.start_tool("root-1".to_string(), "bash".to_string(), None);
-        monitor.start_tool("root-2".to_string(), "read".to_string(), None);
+        monitor.start_tool("root-1".to_string(), "bash".to_string(), None, None);
+        monitor.start_tool("root-2".to_string(), "read".to_string(), None, None);
 
         assert!(apply_navigation_step(
             &mut monitor,

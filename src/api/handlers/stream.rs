@@ -80,6 +80,8 @@ pub struct ToolStartEvent {
     pub id: String,
     /// Name of the tool being executed.
     pub name: String,
+    /// Shell command, when available for bash executions.
+    pub command: Option<String>,
     /// Parent tool call ID for nested execution.
     pub parent_id: Option<String>,
 }
@@ -250,12 +252,14 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                 Ok(AgentEvent::ToolStart {
                     id,
                     name,
+                    command,
                     parent_id,
                 }) => Some(Ok(Event::default()
                     .event("tool_start")
                     .json_data(ToolStartEvent {
                         id,
                         name,
+                        command,
                         parent_id,
                     })
                     .unwrap())),

@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -264,8 +264,7 @@ impl Footer {
                 "⏳ BG ",
                 Style::default()
                     .fg(colors.background.primary)
-                    .bg(colors.status.warning)
-                    .add_modifier(Modifier::BOLD),
+                    .bg(colors.status.warning),
             ));
         }
 

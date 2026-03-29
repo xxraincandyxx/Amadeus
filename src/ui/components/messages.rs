@@ -135,6 +135,10 @@ pub enum HistoryItem {
     Compression {
         compression: CompressionItem,
     },
+    /// Inline context usage report (like Claude Code /context)
+    ContextReport {
+        info: crate::ui::components::ContextInfo,
+    },
 }
 
 impl HistoryItem {
@@ -152,6 +156,10 @@ impl HistoryItem {
 
     pub fn compression(compression: CompressionItem) -> Self {
         Self::Compression { compression }
+    }
+
+    pub fn context_report(info: crate::ui::components::ContextInfo) -> Self {
+        Self::ContextReport { info }
     }
 }
 
@@ -174,10 +182,10 @@ pub struct MessagesComponent {
     last_rendered_index: usize,
     last_rendered_turn: Option<usize>,
     skip_next_assistant_history_item: bool,
+    /// Skip the welcome/dashboard block on the next scrollback flush (after multi-session switch).
+    suppress_dashboard_on_next_scrollback_flush: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
-    /// Whether the dashboard has been printed to terminal history
-    dashboard_rendered: bool,
 }
 
 impl MessagesComponent {
@@ -195,9 +203,19 @@ impl MessagesComponent {
             last_rendered_index: 0,
             last_rendered_turn: None,
             skip_next_assistant_history_item: false,
+            suppress_dashboard_on_next_scrollback_flush: false,
             scroll_offset: 0,
-            dashboard_rendered: false,
         }
+    }
+
+    /// Reset scrollback rendering state after the host terminal's shared scrollback was cleared
+    /// (e.g. switching agent sessions). The next `take_unrendered_lines` will re-emit committed
+    /// history without duplicating streamed assistant lines.
+    pub fn reset_scrollback_cursor_for_session_switch(&mut self) {
+        self.last_rendered_index = 0;
+        self.last_rendered_turn = None;
+        self.skip_next_assistant_history_item = false;
+        self.suppress_dashboard_on_next_scrollback_flush = !self.items.is_empty();
     }
 
     /// Get the current turn number
@@ -215,6 +233,19 @@ impl MessagesComponent {
         let mut lines = Vec::new();
         let mut last_turn = self.last_rendered_turn;
         let mut skipped_streamed_assistant = false;
+
+        if self.last_rendered_index == 0
+            && self.last_rendered_turn.is_none()
+            && !self.items.is_empty()
+            && !self.suppress_dashboard_on_next_scrollback_flush
+        {
+            let dashboard_lines = self.render_dashboard_lines(width);
+            if !dashboard_lines.is_empty() {
+                lines.extend(dashboard_lines);
+                lines.push(Line::from(""));
+            }
+        }
+        self.suppress_dashboard_on_next_scrollback_flush = false;
 
         for item in self.items[self.last_rendered_index..].iter() {
             let should_skip = !skipped_streamed_assistant
@@ -257,14 +288,6 @@ impl MessagesComponent {
             }
             self.last_rendered_index = self.items.len();
         }
-    }
-
-    pub fn should_render_dashboard_to_history(&self) -> bool {
-        !self.dashboard_rendered && self.items.is_empty() && self.streaming_text.is_none()
-    }
-
-    pub fn mark_dashboard_rendered(&mut self) {
-        self.dashboard_rendered = true;
     }
 
     pub fn should_prefix_current_turn(&self) -> bool {
@@ -322,6 +345,10 @@ impl MessagesComponent {
             .push(HistoryItem::subagent_prompt(content, depth, turn));
     }
 
+    pub fn add_context_report(&mut self, info: crate::ui::components::ContextInfo) {
+        self.items.push(HistoryItem::context_report(info));
+    }
+
     pub fn update_streaming_text(&mut self, text: &str) {
         debug!(text_len = text.len(), "Updating streaming text");
         self.streaming_text = if text.is_empty() {
@@ -353,9 +380,7 @@ impl MessagesComponent {
                 if include_prefix {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", turn),
-                        Style::default()
-                            .fg(colors.text.accent)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("   "));
@@ -455,49 +480,22 @@ impl MessagesComponent {
 
     pub fn render_pending_compaction_preview(
         &self,
-        max_width: usize,
+        _max_width: usize,
     ) -> Option<Vec<Line<'static>>> {
         let compression = self.pending_compression.as_ref()?;
         let colors = get_colors();
 
         if compression.status == CompressionStatus::Pending && self.compaction_animator.is_active()
         {
-            let spinner_color = self.compaction_animator.get_animated_color();
-            let progress_color = self.compaction_animator.get_progress_color();
+            let pulse = self.compaction_animator.spinner_frame();
+            let msg = self.compaction_animator.current_message();
+            let pct = self.compaction_animator.progress();
             let elapsed = self.compaction_animator.elapsed_string();
-            let bar_width = max_width.saturating_sub(16).clamp(8, 32);
-
-            return Some(vec![
-                Line::from(vec![
-                    Span::styled(
-                        format!("{} ", self.compaction_animator.spinner_frame()),
-                        Style::default().fg(spinner_color),
-                    ),
-                    Span::styled(
-                        self.compaction_animator.current_message(),
-                        Style::default()
-                            .fg(colors.status.warning)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(elapsed, Style::default().fg(colors.text.secondary)),
-                ]),
-                Line::from(vec![
-                    Span::styled("  ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        self.compaction_animator
-                            .render_progress_bar_smooth(bar_width),
-                        Style::default().fg(progress_color),
-                    ),
-                    Span::styled(" ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        format!("{}%", self.compaction_animator.progress()),
-                        Style::default()
-                            .fg(colors.text.secondary)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]),
-            ]);
+            let line = format!("  {msg}{pulse}  ·  {pct}%  ·  {elapsed}");
+            return Some(vec![Line::from(vec![Span::styled(
+                line,
+                Style::default().fg(colors.text.secondary),
+            )])]);
         }
 
         let color = match compression.status {
@@ -819,9 +817,7 @@ impl MessagesComponent {
                 if i == 0 {
                     spans.push(Span::styled(
                         format!("✦ [{}] ", self.current_turn),
-                        Style::default()
-                            .fg(colors.text.accent)
-                            .add_modifier(Modifier::BOLD),
+                        Style::default().fg(colors.text.accent),
                     ));
                 } else {
                     spans.push(Span::raw("    "));
@@ -861,8 +857,7 @@ impl MessagesComponent {
                             format!("> [{}] ", turn),
                             Style::default()
                                 .fg(colors.text.link)
-                                .bg(colors.background.message)
-                                .add_modifier(Modifier::BOLD),
+                                .bg(colors.background.message),
                         ));
                     } else {
                         spans.push(Span::styled(
@@ -889,9 +884,7 @@ impl MessagesComponent {
                     if i == 0 {
                         spans.push(Span::styled(
                             format!("✦ [{}] ", turn),
-                            Style::default()
-                                .fg(colors.text.accent)
-                                .add_modifier(Modifier::BOLD),
+                            Style::default().fg(colors.text.accent),
                         ));
                     } else {
                         spans.push(Span::raw("   "));
@@ -967,6 +960,10 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
+            HistoryItem::ContextReport { info } => {
+                lines.extend(Self::render_context_report(info, content_width));
+            }
+
             HistoryItem::Thinking {
                 content,
                 is_collapsed,
@@ -1020,6 +1017,7 @@ impl MessagesComponent {
             HistoryItem::Thinking { turn, .. } => Some(*turn),
             HistoryItem::ToolGroup { turn, .. } => Some(*turn),
             HistoryItem::Compression { .. } => None,
+            HistoryItem::ContextReport { .. } => None,
         }
     }
 
@@ -1061,38 +1059,248 @@ impl MessagesComponent {
         }
     }
 
-    fn get_mascot(&self, colors: &crate::ui::SemanticColors) -> Vec<Line<'static>> {
+    fn render_context_report(
+        info: &crate::ui::components::ContextInfo,
+        _content_width: usize,
+    ) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let mut lines = Vec::new();
+
+        let used = info.used_tokens();
+        let total = info.context_window_size as usize;
+        let pct = info.usage_percent();
+
+        // Autocompact buffer (fixed reservation for compaction headroom)
+        let compaction_threshold: f64 = 75.0; // matches CompactionConfig default
+        let max_buffer: f64 = 100.0 - compaction_threshold; // 25% max
+        let used_f: f64 = pct as f64;
+        let remaining: f64 = (100.0 - used_f).max(0.0);
+        let buffer_pct: f64 = max_buffer.min(remaining);
+        let free_pct: f64 = remaining - buffer_pct;
+        let buffer_tokens = (total as f64 * buffer_pct / 100.0) as usize;
+        let free_tokens = (total as f64 * free_pct / 100.0) as usize;
+
+        // ── Block bar (10 chars, each = 10%) ──
+        let bar_width = 10usize;
+        let used_chars = ((pct as f64 / 100.0) * bar_width as f64).round() as usize;
+        let buffer_chars = ((buffer_pct / 100.0) * bar_width as f64).round() as usize;
+        let free_chars = bar_width
+            .saturating_sub(used_chars)
+            .saturating_sub(buffer_chars);
+
+        let fill_color = ratatui::style::Color::Rgb(133, 153, 0);
+        let buffer_color = ratatui::style::Color::Rgb(100, 100, 100);
+        let empty_color = colors.ui.dark;
+
+        let mut bar_spans = vec![Span::raw("     ")];
+        bar_spans.push(Span::styled(
+            "⛁ ".repeat(used_chars),
+            Style::default().fg(fill_color),
+        ));
+        bar_spans.push(Span::styled(
+            "⛝ ".repeat(buffer_chars),
+            Style::default().fg(buffer_color),
+        ));
+        bar_spans.push(Span::styled(
+            "⛶ ".repeat(free_chars),
+            Style::default().fg(empty_color),
+        ));
+
+        // Model name on the same line
+        bar_spans.push(Span::styled(
+            format!(" · {}", &info.model_name),
+            Style::default().fg(colors.text.primary),
+        ));
+
+        lines.push(Line::from(bar_spans));
+
+        // Token count line
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            Span::styled(
+                format!(
+                    "{} / {} tokens ({}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(used),
+                    crate::ui::components::ContextInfo::fmt_tokens(total),
+                    pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+
+        // Category header
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            Span::styled(
+                "Estimated usage by category",
+                Style::default().fg(colors.ui.comment),
+            ),
+        ]));
+
+        // System prompt
+        let sys_pct = info.pct_of(info.system_prompt_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("System prompt", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.system_prompt_tokens),
+                    sys_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Tools
+        let tools_pct = info.pct_of(info.tools_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("System tools", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.tools_tokens),
+                    tools_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Conversation (Messages)
+        let conv_pct = info.pct_of(info.conversation_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("Messages", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.conversation_tokens),
+                    conv_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Free space
+        lines.push(Line::from(vec![
+            Span::raw("     ⛶ "),
+            Span::styled("Free space", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(free_tokens),
+                    free_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Autocompact buffer
+        lines.push(Line::from(vec![
+            Span::raw("     ⛝ "),
+            Span::styled(
+                "Autocompact buffer",
+                Style::default().fg(colors.text.primary),
+            ),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(buffer_tokens),
+                    buffer_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+
+        // Tool details if available
+        if !info.tool_details.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("     "),
+                Span::styled("Tools", Style::default().fg(colors.text.accent)),
+            ]));
+            for (name, tokens) in &info.tool_details {
+                lines.push(Line::from(vec![
+                    Span::raw("     └ "),
+                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(
+                            ": {} tokens",
+                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
+                        ),
+                        Style::default().fg(colors.text.secondary),
+                    ),
+                ]));
+            }
+        }
+
+        lines
+    }
+
+    fn get_mascot(&self, colors: &crate::ui::SemanticColors, width: u16) -> Vec<Line<'static>> {
         let accent = colors.text.accent;
-        let dark = colors.ui.dark;
-        vec![
-            Line::from(vec![Span::styled(
-                "   ■   ■   ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "  ■■■■■■■  ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![
-                Span::styled("  ■ ", Style::default().fg(accent)),
-                Span::styled("●", Style::default().fg(dark)),
-                Span::styled("   ", Style::default().fg(accent)),
-                Span::styled("●", Style::default().fg(dark)),
-                Span::styled(" ■  ", Style::default().fg(accent)),
-            ]),
-            Line::from(vec![Span::styled(
-                "  ■■■■■■■  ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "    ■ ■    ",
-                Style::default().fg(accent),
-            )]),
-            Line::from(vec![Span::styled(
-                "    ■ ■    ",
-                Style::default().fg(accent),
-            )]),
-        ]
+        let style = Style::default().fg(accent);
+        let width = width as usize;
+
+        const FACE_ART: [&str; 8] = [
+            "⠀⠀⠀⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+            "⠀⠀⣠⡾⠋⢁⣶⣿⣿⣶⡈⠙⢷⣄⠀⠀",
+            "⠀⣼⢏⣠⣤⣘⣿⣿⣿⡿⣃⣤⣄⡹⣧⠀",
+            "⢰⡏⣿⣿⣿⣿⡆⢹⡏⢰⣿⣿⣿⣿⢻⡆",
+            "⠸⣇⠙⠿⠿⢿⣧⣸⣇⣼⡿⠿⠿⠋⣼⠇",
+            "⠀⢻⣄⠀⠀⠀⠙⢿⡿⠋⠀⠀⠀⣠⡟⠀",
+            "⠀⠀⠙⢦⣄⠀⠀⢸⡇⠀⠀⣠⡴⠋⠀⠀",
+            "⠀⠀⠀⠀⠉⠛⠳⠶⠶⠞⠛⠉⠀⠀⠀⠀",
+        ];
+
+        const FULL_ART: [&str; 12] = [
+            "                          ⠀⠀⠀⠀⣀⣤⣴⠶⠶⣦⣤⣀⠀⠀⠀⠀",
+            "                          ⠀⠀⣠⡾⠋⢁⣶⣿⣿⣶⡈⠙⢷⣄⠀⠀",
+            "                          ⠀⣼⢏⣠⣤⣘⣿⣿⣿⡿⣃⣤⣄⡹⣧⠀",
+            "                          ⢰⡏⣿⣿⣿⣿⡆⢹⡏⢰⣿⣿⣿⣿⢻⡆",
+            "                          ⠸⣇⠙⠿⠿⢿⣧⣸⣇⣼⡿⠿⠿⠋⣼⠇",
+            "                          ⠀⢻⣄⠀⠀⠀⠙⢿⡿⠋⠀⠀⠀⣠⡟⠀",
+            "                          ⠀⠀⠙⢦⣄⠀⠀⢸⡇⠀⠀⣠⡴⠋⠀⠀",
+            "                          ⠀⠀⠀⠀⠉⠛⠳⠶⠶⠞⠛⠉⠀⠀⠀⠀",
+            "⠀⢀⣴⣾⣿⣿⣷⣤⡀⢸⣿⣿⣿⣿⣿⣿⣿⣦⠀⢀⣤⣶⣿⣿⣷⣦⣀⠀⠀⠀⠀⢸⣿⣿⣷⡀⠀⠀⣠⣶⣾⣿⣿⣦⣄⠀⢸⣿⣇⣠⣶⣿⡿⠛⣠⣶⣿⣿⣿⣦⣄⠀",
+            "⢠⣿⡿⠉⠀⠈⠙⣿⣿⢸⣿⣿⠀⠀⠀⠈⠿⠿⠀⣾⣿⠋⠀⠀⠙⢻⣿⡇⠙⠻⣿⣷⣦⣀⠀⠀⠀⣸⣿⡏⠁⠀⠉⢻⣿⡇⢸⣿⣿⡿⠛⠁⠀⣼⣿⠏⠁⠀⠉⢻⣿⡇",
+            "⠘⣿⣷⡀⠀⠀⠀⣿⣯⢨⣽⣿⣷⣦⣀⠀⠀⠀⠀⢿⣿⣄⠀⠀⠀⢸⣿⡅⣶⣶⡀⠙⠻⣿⣷⣤⡀⢻⣿⣇⡀⠀⠀⢸⣿⡇⢨⣿⣿⣷⣤⡀⠀⢻⣿⣆⡀⠀⠀⢸⣿⡅",
+            "⠀⠈⠻⢿⣿⣿⠧⣿⣿⠘⠛⠛⠙⠻⣿⣷⣦⡀⠀⠈⠻⠿⣿⣿⡷⢸⣿⡇⠹⣿⣿⣿⣿⣿⣿⣿⡇⠀⠙⠿⣿⣿⡿⢼⣿⡇⠘⠛⠋⠙⠿⣿⣷⣤⠙⠿⣿⣿⡿⢼⣿⡇",
+        ];
+
+        let face_width = FACE_ART
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        let full_width = FULL_ART
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+
+        let art: &[&str] = if width >= full_width {
+            &FULL_ART
+        } else if width >= face_width {
+            &FACE_ART
+        } else {
+            return vec![];
+        };
+
+        let art_width = art
+            .iter()
+            .map(|line| line.chars().count())
+            .max()
+            .unwrap_or(0);
+        let padding = " ".repeat(width.saturating_sub(art_width) / 2);
+
+        art.iter()
+            .map(|line| Line::from(Span::styled(format!("{}{}", padding, line), style)))
+            .collect()
     }
 
     pub fn render_dashboard_lines(&self, width: u16) -> Vec<Line<'static>> {
@@ -1106,7 +1314,6 @@ impl MessagesComponent {
 
         let accent = colors.text.accent;
         let dark = colors.ui.dark;
-        let primary = colors.text.primary;
         let secondary = colors.text.secondary;
         let comment = colors.ui.comment;
         let link = colors.text.link;
@@ -1114,10 +1321,7 @@ impl MessagesComponent {
         // Header Title
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
-            Span::styled(
-                " Amadeus v0.1.0 ",
-                Style::default().fg(accent).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(" Amadeus v0.1.0 ", Style::default().fg(accent)),
             Span::styled(
                 "─".repeat(width.saturating_sub(18)),
                 Style::default().fg(dark),
@@ -1125,19 +1329,9 @@ impl MessagesComponent {
         ]));
         lines.push(Line::from(""));
 
-        // Welcome
-        lines.push(
-            Line::from(vec![Span::styled(
-                "Welcome back!",
-                Style::default().fg(primary).add_modifier(Modifier::BOLD),
-            )])
-            .alignment(ratatui::layout::Alignment::Center),
-        );
-        lines.push(Line::from(""));
-
-        // Mascot
-        for line in self.get_mascot(&colors) {
-            lines.push(line.alignment(ratatui::layout::Alignment::Center));
+        // Mascot (already centered in get_mascot)
+        for line in self.get_mascot(&colors, width as u16) {
+            lines.push(line);
         }
         lines.push(Line::from(""));
 
@@ -1169,10 +1363,7 @@ impl MessagesComponent {
 
         // Tips
         lines.push(Line::from(vec![
-            Span::styled(
-                " Tips for getting started ",
-                Style::default().fg(secondary).add_modifier(Modifier::BOLD),
-            ),
+            Span::styled(" Tips for getting started ", Style::default().fg(secondary)),
             Span::styled(
                 "─".repeat(width.saturating_sub(28)),
                 Style::default().fg(dark),
@@ -1390,7 +1581,7 @@ mod tests {
             .map(|cell| cell.symbol())
             .collect::<String>();
 
-        assert!(rendered.contains("Compacting conversation history"));
+        assert!(rendered.contains("Compacting context"));
         assert!(rendered.contains("%"));
     }
 
@@ -1459,6 +1650,23 @@ mod tests {
 
         let assistant_lines = messages.take_unrendered_lines(100);
         assert!(assistant_lines.is_empty());
+    }
+
+    #[test]
+    fn test_take_unrendered_lines_prepends_dashboard_before_first_turn() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+
+        let lines = messages.take_unrendered_lines(100);
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Amadeus v0.1.0"));
+        assert!(rendered.contains("turn 1"));
+        assert!(rendered.contains("Hello"));
     }
 
     #[test]

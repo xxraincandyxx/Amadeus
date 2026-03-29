@@ -57,6 +57,7 @@ pub enum AgentEvent {
     ToolStart {
         id: String,
         name: String,
+        command: Option<String>,
         parent_id: Option<String>,
     },
     ToolInputDelta {
@@ -214,6 +215,7 @@ mod tests {
         let event = AgentEvent::ToolStart {
             id: "tool_1".to_string(),
             name: "bash".to_string(),
+            command: Some("cargo test".to_string()),
             parent_id: None,
         };
 
@@ -221,10 +223,12 @@ mod tests {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => {
                 assert_eq!(id, "tool_1");
                 assert_eq!(name, "bash");
+                assert_eq!(command.as_deref(), Some("cargo test"));
                 assert!(parent_id.is_none());
             }
             _ => panic!("Expected ToolStart"),

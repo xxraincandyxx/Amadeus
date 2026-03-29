@@ -135,7 +135,6 @@ You specialize in code reviews and quality assessment.
     }
 }
 
-
 impl std::fmt::Display for AgentProfile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.display_name())

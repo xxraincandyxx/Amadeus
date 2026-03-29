@@ -1,22 +1,21 @@
-//! # Command Completion Component
-//!
-//! Provides auto-completion for slash commands in the TUI.
-
 use ratatui::{
     layout::Rect,
-    style::{Color, Modifier, Style},
-    widgets::{Block, Borders, List, ListItem},
+    style::Style,
+    text::{Line, Span},
+    widgets::Paragraph,
+    Frame,
 };
 
-/// A command available for auto-completion.
+use crate::ui::get_colors;
+
+const CMD_COL_WIDTH: usize = 32;
+const MAX_VISIBLE_ITEMS: usize = 6;
+const ELLIPSIS: &str = "…";
+
 #[derive(Debug, Clone)]
 pub struct Command {
-    /// The command name (e.g., "/new-agent")
     pub name: String,
-    /// Brief description of what the command does
     pub description: String,
-    /// Detailed usage info
-    pub usage: Option<String>,
 }
 
 impl Command {
@@ -24,39 +23,26 @@ impl Command {
         Self {
             name: name.to_string(),
             description: description.to_string(),
-            usage: None,
         }
-    }
-
-    pub fn with_usage(mut self, usage: &str) -> Self {
-        self.usage = Some(usage.to_string());
-        self
     }
 }
 
-/// Returns all available commands.
 pub fn get_available_commands() -> Vec<Command> {
     vec![
-        Command::new("/new-agent", "Create a new agent with a specific profile")
-            .with_usage("/new-agent [profile] - Profiles: default, debug, docs, review"),
-        Command::new("/agents", "List all active agents"),
-        Command::new("/kill", "Kill an agent by name or ID").with_usage("/kill <agent-name>"),
         Command::new("/compact", "Trigger context compaction"),
         Command::new("/compress", "Trigger context compaction"),
         Command::new("/context", "Toggle context sidebar"),
         Command::new("/help", "Show available commands"),
+        Command::new("/kill", "Kill an agent by name or ID"),
+        Command::new("/new-agent", "Create a new agent with a specific profile"),
+        Command::new("/agents", "List all active agents"),
     ]
 }
 
-/// State for command auto-completion.
 pub struct CompletionState {
-    /// All available commands
     commands: Vec<Command>,
-    /// Filtered commands matching current input
     matches: Vec<Command>,
-    /// Index of the selected match
     selected_index: usize,
-    /// Whether completion popup is visible
     visible: bool,
 }
 
@@ -71,60 +57,53 @@ impl CompletionState {
         }
     }
 
-    /// Update completion based on current input.
-    /// Returns true if completion should be shown.
     pub fn update(&mut self, input: &str) -> bool {
         let input = input.trim();
 
-        // Only show completion for commands starting with /
         if !input.starts_with('/') {
             self.visible = false;
             return false;
         }
 
-        // Filter commands
+        let query = input.to_lowercase();
+
         self.matches = self
             .commands
             .iter()
-            .filter(|cmd| cmd.name.to_lowercase().starts_with(&input.to_lowercase()))
+            .filter(|cmd| {
+                let name = cmd.name.to_lowercase();
+                name.contains(&query) || cmd.description.to_lowercase().contains(&query)
+            })
             .cloned()
             .collect();
 
-        // Reset selection
         self.selected_index = 0;
-
-        // Show popup if there are matches and user typed a command prefix
-        self.visible = !self.matches.is_empty() && input.len() > 1;
+        self.visible = !self.matches.is_empty() && !input.is_empty();
         self.visible
     }
 
-    /// Move selection up.
     pub fn select_up(&mut self) {
         if !self.matches.is_empty() {
             self.selected_index = self.selected_index.saturating_sub(1);
         }
     }
 
-    /// Move selection down.
     pub fn select_down(&mut self) {
         if !self.matches.is_empty() {
             self.selected_index = (self.selected_index + 1) % self.matches.len();
         }
     }
 
-    /// Get the currently selected command.
     pub fn selected(&self) -> Option<&Command> {
         self.matches.get(self.selected_index)
     }
 
-    /// Check if completion is visible.
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
-    /// Get the number of matches.
-    pub fn _match_count(&self) -> usize {
-        self.matches.len()
+    pub fn visible_count(&self) -> usize {
+        MAX_VISIBLE_ITEMS.min(self.matches.len())
     }
 }
 
@@ -134,67 +113,53 @@ impl Default for CompletionState {
     }
 }
 
-/// Render the completion popup.
-pub fn render_completion(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    state: &CompletionState,
-    input_rect: Rect,
-) {
-    if !state.is_visible() || state.matches.is_empty() {
+fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let end = s
+            .char_indices()
+            .nth(max_len.saturating_sub(1))
+            .map(|(i, _)| i)
+            .unwrap_or(s.len());
+        format!("{}{ELLIPSIS}", &s[..end])
+    }
+}
+
+pub fn render_completion_lines(frame: &mut Frame, area: Rect, state: &CompletionState) {
+    if !state.is_visible() || state.matches.is_empty() || area.height == 0 {
         return;
     }
 
-    // Limit to showing max 6 items
-    let max_items = 6.min(state.matches.len());
-    let height = (max_items + 2) as u16; // +2 for header
+    let colors = get_colors();
+    let width = area.width as usize;
+    let desc_width = width.saturating_sub(CMD_COL_WIDTH).saturating_sub(4);
 
-    // Position below input
-    let popup_y = input_rect.y + input_rect.height + 1;
-    let popup_height = area.height.saturating_sub(popup_y).min(height);
-    let popup_width = 60.min(input_rect.width);
-
-    let popup_area = Rect::new(
-        input_rect.x,
-        popup_y,
-        input_rect.x + popup_width,
-        popup_y + popup_height,
-    );
-
-    // Build list items
-    let items: Vec<ListItem> = state
+    let lines: Vec<Line<'static>> = state
         .matches
         .iter()
-        .take(max_items)
+        .take(MAX_VISIBLE_ITEMS)
         .enumerate()
         .map(|(i, cmd)| {
+            let name = format!("{:width$}", cmd.name, width = CMD_COL_WIDTH);
+            let desc = if desc_width > 0 {
+                truncate_with_ellipsis(&cmd.description, desc_width)
+            } else {
+                String::new()
+            };
+
             let is_selected = i == state.selected_index;
             let style = if is_selected {
                 Style::default()
-                    .fg(Color::LightCyan)
-                    .add_modifier(Modifier::BOLD)
+                    .fg(colors.text.primary)
+                    .bg(colors.background.message)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(colors.text.secondary)
             };
 
-            let content = if let Some(usage) = &cmd.usage {
-                format!("{}  -  {}", cmd.name, usage)
-            } else {
-                format!("{}  -  {}", cmd.name, cmd.description)
-            };
-
-            ListItem::new(content).style(style)
+            Line::from(Span::styled(format!("  {name}{desc}"), style))
         })
         .collect();
 
-    let list = List::new(items)
-        .block(
-            Block::default()
-                .title(" Commands ")
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::DarkGray)),
-        )
-        .style(Style::default().fg(Color::White));
-
-    frame.render_widget(list, popup_area);
+    frame.render_widget(Paragraph::new(lines), area);
 }
