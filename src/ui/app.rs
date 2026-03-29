@@ -32,7 +32,7 @@ use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::components::{
-    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, ContextSidebar, FileSidebar,
+    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar,
     Footer, HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
     StreamingState,
 };
@@ -2391,7 +2391,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (Some(Sidebar::Files(_)), SidebarKind::Files) => None,
             (Some(Sidebar::Help(_)), SidebarKind::Help) => None,
             (Some(Sidebar::Skills(_)), SidebarKind::Skills) => None,
-            (Some(Sidebar::Context(_)), SidebarKind::Context) => None,
             (_, SidebarKind::Files) => Some(Sidebar::Files(FileSidebar::new(self.workdir.clone()))),
             (_, SidebarKind::Help) => Some(Sidebar::Help(HelpSidebar::new())),
             (_, SidebarKind::Skills) => {
@@ -2403,10 +2402,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 Some(Sidebar::Skills(crate::ui::components::SkillSidebar::new(
                     skills.into_skills(),
                 )))
-            }
-            (_, SidebarKind::Context) => {
-                let info = self.build_context_info();
-                Some(Sidebar::Context(ContextSidebar::new(info)))
             }
         };
     }
@@ -2519,7 +2514,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             }
             if command == "/context" {
                 self.input.clear();
-                self.toggle_sidebar(SidebarKind::Context);
+                let info = self.build_context_info();
+                self.messages.add_context_report(info);
                 return Ok(());
             }
             if command == "/new-agent" {
@@ -2727,7 +2723,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 Sidebar::Files(s) => s.render(frame, sidebar_area),
                 Sidebar::Help(s) => s.render(frame, sidebar_area),
                 Sidebar::Skills(s) => s.render(frame, sidebar_area),
-                Sidebar::Context(s) => s.render(frame, sidebar_area),
             }
         } else {
             self.sidebar_area = Rect::default();

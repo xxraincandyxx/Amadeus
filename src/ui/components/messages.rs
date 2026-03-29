@@ -135,6 +135,10 @@ pub enum HistoryItem {
     Compression {
         compression: CompressionItem,
     },
+    /// Inline context usage report (like Claude Code /context)
+    ContextReport {
+        info: crate::ui::components::ContextInfo,
+    },
 }
 
 impl HistoryItem {
@@ -152,6 +156,10 @@ impl HistoryItem {
 
     pub fn compression(compression: CompressionItem) -> Self {
         Self::Compression { compression }
+    }
+
+    pub fn context_report(info: crate::ui::components::ContextInfo) -> Self {
+        Self::ContextReport { info }
     }
 }
 
@@ -335,6 +343,10 @@ impl MessagesComponent {
         let turn = self.current_turn;
         self.items
             .push(HistoryItem::subagent_prompt(content, depth, turn));
+    }
+
+    pub fn add_context_report(&mut self, info: crate::ui::components::ContextInfo) {
+        self.items.push(HistoryItem::context_report(info));
     }
 
     pub fn update_streaming_text(&mut self, text: &str) {
@@ -948,6 +960,10 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
+            HistoryItem::ContextReport { info } => {
+                lines.extend(Self::render_context_report(info, content_width));
+            }
+
             HistoryItem::Thinking {
                 content,
                 is_collapsed,
@@ -1001,6 +1017,7 @@ impl MessagesComponent {
             HistoryItem::Thinking { turn, .. } => Some(*turn),
             HistoryItem::ToolGroup { turn, .. } => Some(*turn),
             HistoryItem::Compression { .. } => None,
+            HistoryItem::ContextReport { .. } => None,
         }
     }
 
@@ -1040,6 +1057,188 @@ impl MessagesComponent {
             }
             CompressionStatus::Pending => "Compacting chat history...".to_string(),
         }
+    }
+
+    fn render_context_report(
+        info: &crate::ui::components::ContextInfo,
+        _content_width: usize,
+    ) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let mut lines = Vec::new();
+
+        let used = info.used_tokens();
+        let total = info.context_window_size as usize;
+        let pct = info.usage_percent();
+
+        // Autocompact buffer (fixed reservation for compaction headroom)
+        let compaction_threshold: f64 = 75.0; // matches CompactionConfig default
+        let max_buffer: f64 = 100.0 - compaction_threshold; // 25% max
+        let used_f: f64 = pct as f64;
+        let remaining: f64 = (100.0 - used_f).max(0.0);
+        let buffer_pct: f64 = max_buffer.min(remaining);
+        let free_pct: f64 = remaining - buffer_pct;
+        let buffer_tokens = (total as f64 * buffer_pct / 100.0) as usize;
+        let free_tokens = (total as f64 * free_pct / 100.0) as usize;
+
+        // ── Block bar (10 chars, each = 10%) ──
+        let bar_width = 10usize;
+        let used_chars = ((pct as f64 / 100.0) * bar_width as f64).round() as usize;
+        let buffer_chars = ((buffer_pct / 100.0) * bar_width as f64).round() as usize;
+        let free_chars = bar_width
+            .saturating_sub(used_chars)
+            .saturating_sub(buffer_chars);
+
+        let fill_color = ratatui::style::Color::Rgb(133, 153, 0);
+        let buffer_color = ratatui::style::Color::Rgb(100, 100, 100);
+        let empty_color = colors.ui.dark;
+
+        let mut bar_spans = vec![Span::raw("     ")];
+        bar_spans.push(Span::styled(
+            "⛁ ".repeat(used_chars),
+            Style::default().fg(fill_color),
+        ));
+        bar_spans.push(Span::styled(
+            "⛝ ".repeat(buffer_chars),
+            Style::default().fg(buffer_color),
+        ));
+        bar_spans.push(Span::styled(
+            "⛶ ".repeat(free_chars),
+            Style::default().fg(empty_color),
+        ));
+
+        // Model name on the same line
+        bar_spans.push(Span::styled(
+            format!(" · {}", &info.model_name),
+            Style::default().fg(colors.text.primary),
+        ));
+
+        lines.push(Line::from(bar_spans));
+
+        // Token count line
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            Span::styled(
+                format!(
+                    "{} / {} tokens ({}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(used),
+                    crate::ui::components::ContextInfo::fmt_tokens(total),
+                    pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+
+        // Category header
+        lines.push(Line::from(vec![
+            Span::raw("     "),
+            Span::styled(
+                "Estimated usage by category",
+                Style::default().fg(colors.ui.comment),
+            ),
+        ]));
+
+        // System prompt
+        let sys_pct = info.pct_of(info.system_prompt_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("System prompt", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.system_prompt_tokens),
+                    sys_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Tools
+        let tools_pct = info.pct_of(info.tools_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("System tools", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.tools_tokens),
+                    tools_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Conversation (Messages)
+        let conv_pct = info.pct_of(info.conversation_tokens);
+        lines.push(Line::from(vec![
+            Span::raw("     ⛁ "),
+            Span::styled("Messages", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(info.conversation_tokens),
+                    conv_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Free space
+        lines.push(Line::from(vec![
+            Span::raw("     ⛶ "),
+            Span::styled("Free space", Style::default().fg(colors.text.primary)),
+            Span::styled(
+                format!(
+                    ": {} ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(free_tokens),
+                    free_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        // Autocompact buffer
+        lines.push(Line::from(vec![
+            Span::raw("     ⛝ "),
+            Span::styled(
+                "Autocompact buffer",
+                Style::default().fg(colors.text.primary),
+            ),
+            Span::styled(
+                format!(
+                    ": {} tokens ({:.1}%)",
+                    crate::ui::components::ContextInfo::fmt_tokens(buffer_tokens),
+                    buffer_pct,
+                ),
+                Style::default().fg(colors.text.secondary),
+            ),
+        ]));
+
+        lines.push(Line::from(""));
+
+        // Tool details if available
+        if !info.tool_details.is_empty() {
+            lines.push(Line::from(vec![
+                Span::raw("     "),
+                Span::styled("Tools", Style::default().fg(colors.text.accent)),
+            ]));
+            for (name, tokens) in &info.tool_details {
+                lines.push(Line::from(vec![
+                    Span::raw("     └ "),
+                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::styled(
+                        format!(
+                            ": {} tokens",
+                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
+                        ),
+                        Style::default().fg(colors.text.secondary),
+                    ),
+                ]));
+            }
+        }
+
+        lines
     }
 
     fn get_mascot(&self, colors: &crate::ui::SemanticColors, width: u16) -> Vec<Line<'static>> {
