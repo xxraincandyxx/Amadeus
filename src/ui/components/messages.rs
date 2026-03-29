@@ -1097,27 +1097,37 @@ impl MessagesComponent {
             .saturating_sub(used_chars)
             .saturating_sub(buffer_chars);
 
-        let fill_color = ratatui::style::Color::Rgb(133, 153, 0);
-        let buffer_color = ratatui::style::Color::Rgb(100, 100, 100);
-        let empty_color = colors.ui.dark;
+        // ── Block bar (10 chars, each = 10%) ──
+        // Use spaces between symbols so they're visually separated
+        let make_bar = |sym: &str, n: usize| -> String {
+            if n == 0 {
+                String::new()
+            } else {
+                std::iter::repeat(sym).take(n).collect::<Vec<_>>().join(" ")
+            }
+        };
 
-        // ── Context Usage Header ──
-        // Block bar with position indicator at start
-        let mut bar_spans = vec![Span::styled("⛀ ", Style::default().fg(colors.text.accent))];
+        let fill_bar = make_bar("⛁", used_chars);
+        let buffer_bar = make_bar("⛝", buffer_chars);
+        let empty_bar = make_bar("⛶", free_chars);
+        let mut all_parts: Vec<String> = vec![String::from("⛀")];
+        if !fill_bar.is_empty() {
+            all_parts.push(fill_bar);
+        }
+        if !buffer_bar.is_empty() {
+            all_parts.push(buffer_bar);
+        }
+        if !empty_bar.is_empty() {
+            all_parts.push(empty_bar);
+        }
+        let bar_str = all_parts.join(" ");
+
+        let mut bar_spans = vec![Span::styled(
+            format!("{}  ", bar_str),
+            Style::default().fg(colors.text.secondary),
+        )];
         bar_spans.push(Span::styled(
-            format!("{} ", "⛁".repeat(used_chars)),
-            Style::default().fg(fill_color),
-        ));
-        bar_spans.push(Span::styled(
-            format!("{} ", "⛝".repeat(buffer_chars)),
-            Style::default().fg(buffer_color),
-        ));
-        bar_spans.push(Span::styled(
-            format!("{} ", "⛶".repeat(free_chars)),
-            Style::default().fg(empty_color),
-        ));
-        bar_spans.push(Span::styled(
-            format!("  {}", &info.model_name),
+            format!("  {}", info.model_name),
             Style::default().fg(colors.text.primary),
         ));
         lines.push(Line::from(bar_spans));
