@@ -4,31 +4,29 @@
 
 ## Project Overview
 
-**Amadeus** is a Rust SDK for building AI agents with LLM support. It provides:
+**Amadeus** is a Rust SDK for building AI agents with LLM support.
 - Multi-provider compatibility (Anthropic Claude, OpenAI GPT)
-- Streaming responses with real-time event streams
-- Extensible tool system (bash, file ops, web, sub-agents)
+- Streaming responses, extensible tool system (bash, file ops, web, sub-agents)
 - Terminal UI (ratatui) and HTTP API (axum) interfaces
-- Multi-agent coordination via Supervisor/Worker pattern
-
-The project follows the ReAct (Reason + Act) pattern for agent orchestration.
+- Multi-agent coordination via Supervisor/Worker pattern (ReAct loop)
 
 ---
 
 ## Quick Reference
 
-| Task | Command |
-|------|---------|
-| Build (dev) | `cargo build --features full` |
-| Build (release) | `cargo build --release --features full` |
-| Run TUI | `cargo run --features full` |
-| Run HTTP server | `cargo run --features full -- --server [PORT]` |
-| Run tests | `cargo test --features full` |
-| Run tests with output | `cargo test --features full -- --nocapture` |
-| Run specific test | `cargo test --test <name> --features full` |
-| Format | `cargo fmt --all` |
-| Lint | `cargo clippy --all-features -- -D warnings` |
-| Full verification | `./verify.sh` |
+| Task                    | Command                                          |
+|-------------------------|--------------------------------------------------|
+| Build (dev)             | `cargo build --features full`                    |
+| Build (release)         | `cargo build --release --features full`          |
+| Run TUI                 | `cargo run --features full`                      |
+| Run HTTP server         | `cargo run --features full -- --server [PORT]`   |
+| Run tests               | `cargo test --features full`                     |
+| Run tests with output   | `cargo test --features full -- --nocapture`      |
+| Run specific test       | `cargo test --test <name> --features full`       |
+| Run single unit test    | `cargo test <test_fn_name> --features full`      |
+| Format                  | `cargo fmt --all`                                |
+| Lint                    | `cargo clippy --all-features -- -D warnings`     |
+| Full verification       | `./verify.sh`                                    |
 
 **Critical**: Always use `--features full` for development. The crate has no default features.
 
@@ -36,120 +34,57 @@ The project follows the ReAct (Reason + Act) pattern for agent orchestration.
 
 ## Feature Flags
 
-| Flag | Description |
-|------|-------------|
-| `tui` | Terminal UI (ratatui-based) |
-| `api` | HTTP server (axum-based), implies `supervisor` |
-| `concurrency` | Lock management primitives |
-| `supervisor` | Multi-agent orchestration, implies `concurrency` |
-| `mesh` | Distributed agent coordination, implies `supervisor` |
-| `context` | Context management |
-| `test-utils` | Test utilities (tempfile) |
-| `full` | All features enabled |
+`tui` (ratatui UI), `api` (axum HTTP server, implies `supervisor`), `concurrency` (lock primitives),
+`supervisor` (multi-agent orchestration, implies `concurrency`), `mesh` (distributed, implies `supervisor`),
+`context` (context management), `test-utils` (tempfile helpers), `full` (all features).
 
-Feature flag chain: `mesh` → `supervisor` → `concurrency`
-
----
-
-## Project Structure
-
-```
-src/
-├── agent/           # Agent orchestration
-│   ├── loop_agent.rs    # Core Agent loop (ReAct pattern)
-│   ├── supervisor.rs    # Multi-agent supervisor
-│   ├── worker.rs        # Worker agent implementation
-│   ├── compaction.rs    # Context compaction for long conversations
-│   ├── config.rs        # Configuration loading
-│   ├── events.rs        # Event types (AgentEvent, ToolCall)
-│   ├── messages.rs      # Message types (ContentBlock, Message)
-│   └── mesh.rs          # Distributed mesh coordination
-├── client/          # LLM provider clients
-│   ├── mod.rs           # LLMClient trait definition
-│   ├── anthropic.rs     # Anthropic API implementation
-│   └── openai.rs        # OpenAI API implementation
-├── tools/           # Tool system
-│   ├── tool_trait.rs    # Tool trait definition
-│   ├── registry.rs      # Dynamic tool registry
-│   ├── bash.rs          # Shell command execution
-│   ├── file.rs          # File operations (read, write, edit)
-│   ├── glob.rs          # Pattern-based file matching
-│   ├── grep.rs          # Content search
-│   ├── web.rs           # Web fetching
-│   ├── peer.rs          # Peer-to-peer communication
-│   ├── sub_agent.rs     # Recursive sub-agent spawning
-│   └── todo.rs          # Task management
-├── policy/          # Approval system (Auto/Ask/Strict modes)
-├── hooks/           # Extensibility hooks
-├── skills/          # Reusable prompt templates
-├── mcp/             # Model Context Protocol support
-├── ui/              # Terminal UI (ratatui)
-├── api/             # HTTP API (axum)
-├── benchmark/       # Benchmark and evaluation pipeline
-├── concurrency/     # Lock management (feature-gated)
-├── core/            # Core primitives (IDs, events)
-├── test_utils/      # Test utilities (feature-gated)
-├── error.rs         # Error types (thiserror)
-├── context.rs       # Project context loading
-├── prompts.rs       # System prompts
-└── lib.rs           # Public API re-exports
-
-tests/               # Integration tests
-├── mock_llm.rs          # Mock LLM client for testing
-├── mocks/               # Shared mock utilities
-├── scenarios/           # Reusable scenario helpers
-├── unit/                # Unit tests
-└── *_test.rs            # Integration test files
-```
+Chain: `mesh` → `supervisor` → `concurrency`
 
 ---
 
 ## Code Style
 
-### Naming Conventions
-- **Files/Modules/Functions**: `snake_case`
-- **Types/Traits**: `PascalCase`
-- **Constants/Statics**: `SCREAMING_SNAKE_CASE`
-
-### Formatting
-- **Indentation**: 2 spaces (Google Rust Style Guide)
-- **Imports**: Grouped as `std` → `third-party` → `crate modules`, separated by blank lines
-- **Line length**: Follow `cargo fmt` defaults
+### Naming & Formatting
+- **Files/Modules/Functions**: `snake_case` | **Types/Traits**: `PascalCase` | **Constants**: `SCREAMING_SNAKE_CASE`
+- **Indentation**: 2 spaces (Google Rust Style Guide). No `rustfmt.toml` — rely on `cargo fmt` defaults.
+- **Imports**: Group as `std` → `third-party` → `crate modules`, separated by blank lines.
 
 ### Error Handling
-- Use `crate::error::Result<T>` (aliased `thiserror`)
-- Never use `unwrap()` in production code paths
-- `expect()` and `unwrap()` allowed in tests only (enforced by clippy.toml)
+- Use `crate::error::Result<T>` (defined via `thiserror` in `src/error.rs`).
+- **Never** use `unwrap()` in production code. `unwrap()`/`expect()` allowed in tests only (`clippy.toml` enforces this).
 
-### Async Patterns
-- Use `tokio` runtime throughout
-- Leverage `join_all` for parallel tool execution
-- Prefer generic traits over dynamic dispatch for performance-critical code
+### Async & Performance
+- Use `tokio` runtime throughout. Use `join_all` for parallel tool execution.
+- Prefer generic traits (`Agent<C: LLMClient>`) over dynamic dispatch for performance.
+- Minimize heap allocations; use `Arc<T>` for shared ownership, `RwLock<T>` for interior mutability.
+
+### Documentation
+- Every public function needs a doc comment. Private functions doc comments encouraged.
+- Document Args, Returns, and any non-obvious complexity.
+
+### Agent Behavior Rules
+- **No comments in code** unless explicitly requested by the user.
+- Do not run destructive shell commands (`sudo`, `rm -rf /`, writing to `.env`/`.pem`/`.key` are blocked).
+- Always run `cargo check --features full` and relevant tests after changes.
 
 ---
 
-## Key Architecture Patterns
+## Key Architecture
 
-### 1. Agent Loop (ReAct Pattern)
-Located in `src/agent/loop_agent.rs`:
-1. User prompt → Add to history
-2. Call LLM → Parse response
-3. If text: emit event, continue
-4. If tool call: policy check → execute/deny → add result to history
-5. Loop until stop reason
+### Agent Loop (ReAct Pattern) — `src/agent/loop_agent.rs`
+User prompt → LLM call → parse response → if text: emit event | if tool: policy check → execute → add result → loop.
 
-### 2. Generic Client Pattern
+### LLM Client Trait — `src/client/mod.rs`
 ```rust
-pub struct Agent<C: LLMClient> {
-    client: Arc<C>,
-    // ...
+pub trait LLMClient: Send + Sync {
+    async fn create_message(...) -> Result<(String, Vec<ContentBlock>)>;
+    async fn create_message_stream(...) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
 }
 ```
-The agent is generic over LLM provider, enabling zero-cost provider switching.
+Implemented for Anthropic and OpenAI. `Agent<C>` is generic over provider.
 
-### 3. Tool Trait
+### Tool Trait — `src/tools/tool_trait.rs`
 ```rust
-#[async_trait]
 pub trait Tool: Send + Sync {
     fn name(&self) -> &'static str;
     fn schema(&self) -> &'static Value;
@@ -157,140 +92,41 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-### 4. Policy System
-Three modes in `src/policy/mod.rs`:
-- **Auto**: Execute all tools automatically
-- **Ask** (default): Dangerous operations require approval
-- **Strict**: All tools require approval
-
-Blocked patterns: `sudo`, `chmod 777`, `rm -rf /`, writing to `.env`/`.pem`/`.key`
-
-### 5. Builder Pattern
-```rust
-let agent = Agent::builder(client, config)
-    .with_tools(registry)
-    .with_policy(policy)
-    .build()?;
-```
+### Policy System — `src/policy/mod.rs`
+Three modes: **Auto** (all automatic), **Ask** (default, dangerous ops require approval), **Strict** (all require approval).
 
 ---
 
-## Testing Strategy
+## Testing
 
-### Mock-First Testing
-- Use `tests/mock_llm.rs` for deterministic testing without API calls
-- HTTP mocking via `mockito` or `wiremock` (dev-dependencies)
+- **Mock-first**: Use `tests/mock_llm.rs` for deterministic testing. HTTP mocking via `mockito`/`wiremock`.
+- **Unit tests**: Inline in `src/` modules (`#[cfg(test)] mod tests`).
+- **Integration tests**: In `tests/` directory. Some require specific features (check `Cargo.toml` `[[test]]` `required-features`).
+- **Test naming**: Name files by behavior: `tool_approval_test.rs`, `stress_memory_test.rs`.
 
-### Test Categories
-| Type | Location | Pattern |
-|------|----------|---------|
-| Unit | Inline in `src/` modules | `#[cfg(test)] mod tests` |
-| Integration | `tests/` directory | Separate `[[test]]` targets in Cargo.toml |
-| Feature-gated | Both | `#[cfg(feature = "...")]` |
-
-### Running Tests
-```bash
-# All tests
-cargo test --features full
-
-# Specific integration test
-cargo test --test agent_integration_test --features full
-
-# With output
-cargo test --features full -- --nocapture
-```
-
-### Test Naming
-Name test files by behavior or subsystem: `tool_approval_test.rs`, `stress_memory_test.rs`
+### Key integration test files
+`agent_integration_test.rs`, `e2e_product_flow.rs`, `p2p_test.rs`, `simulation_p2p.rs`, `compaction_test.rs`, `mock_functional_test.rs`, `tool_approval_test.rs`, `streaming_scenarios_test.rs`
 
 ---
 
-## Environment Configuration
+## Environment & Security
 
-Copy `.env.example` to `.env`:
-
-```bash
-# Provider selection
-PROVIDER=anthropic  # or "openai"
-
-# API Keys
-ANTHROPIC_API_KEY=sk-ant-xxx
-OPENAI_API_KEY=sk-xxx
-
-# Optional: API proxies
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-OPENAI_BASE_URL=https://api.openai.com/v1
-
-# Model selection
-MODEL_ID=claude-sonnet-4-5-20250929
-
-# Session logging
-SESSION_LOG_DIR=logs/sessions
-SESSION_LOG_COMPRESS=true
-```
-
-**Security**: Never commit real API keys or modified `.env` files.
-
----
-
-## Commit Guidelines
-
-Recent history uses Conventional Commit style with scopes:
-- `feat(ui): add multi-session support`
-- `fix(agent): handle stream timeout correctly`
-- `style(agent): format imports`
-- `docs(arch): init ARCH.md`
-
-Keep commits small and reviewable.
+Copy `.env.example` to `.env`. Set `PROVIDER`, API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), optional base URLs, model ID, `SESSION_LOG_DIR`.
+**Never** commit real API keys or modified `.env` files.
 
 ---
 
 ## Important Files
 
-| File | Purpose |
-|------|---------|
-| `src/lib.rs` | Library entry point, public API re-exports |
-| `src/main.rs` | Binary entry (TUI and server modes) |
-| `src/agent/loop_agent.rs` | Core agent loop implementation |
-| `src/agent/supervisor.rs` | Multi-agent supervisor |
-| `src/policy/mod.rs` | Approval/policy system |
-| `src/tools/tool_trait.rs` | Tool trait definition |
-| `src/error.rs` | Error types |
-| `Cargo.toml` | Dependencies and feature flags |
-| `verify.sh` | CI verification script |
-| `CLAUDE.md` | Extended project documentation |
-| `docs/ARCHITECTURE.md` | Architecture diagrams and details |
+`src/lib.rs` (public API), `src/main.rs` (entry point), `src/agent/loop_agent.rs` (core loop),
+`src/agent/supervisor.rs` (multi-agent), `src/policy/mod.rs` (policy), `src/tools/tool_trait.rs` (tool trait),
+`src/error.rs` (error types), `Cargo.toml`, `verify.sh`, `CLAUDE.md`, `docs/ARCHITECTURE.md`
 
 ---
 
-## Common Gotchas
-
-1. **Feature flags are required**: Running `cargo build` without features produces minimal output. Always use `--features full` for development.
-
-2. **Test isolation**: Some tests require specific features. Check `Cargo.toml` for `required-features` on test targets.
-
-3. **Path safety**: File tools validate paths don't escape workspace. Tests should use `tempfile` for isolated paths.
-
-4. **Stream handling**: LLM responses can be streamed or non-streamed. Both code paths must be tested.
-
-5. **Clippy strictness**: CI runs `cargo clippy --all-features -- -D warnings`. All warnings are errors.
-
----
-
-## Example Prompts for Agents
-
-- "Run the full test suite and summarize any failures"
-- "Add a unit test for `src/agent/compaction.rs` covering token threshold behavior"
-- "Run `./verify.sh` and fix any issues found"
-- "Implement a new tool following the pattern in `src/tools/bash.rs`"
-- "Add error handling for the new API endpoint in `src/api/handlers/`"
-
----
-
-## Where to Find More
+## More Documentation
 
 - **CLAUDE.md**: Extended commands, architecture details, session management
-- **docs/ARCHITECTURE.md**: Architecture diagrams and data flow
 - **GEMINI.md**: Performance mandates and defensive engineering guidelines
 - **.github/copilot-instructions.md**: Quick reference for GitHub Copilot
 - **docs/**: Design notes (REST API, TUI guide, test flow, etc.)
