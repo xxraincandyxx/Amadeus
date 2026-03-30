@@ -1098,34 +1098,49 @@ impl MessagesComponent {
             .saturating_sub(buffer_chars);
 
         // ── Block bar (10 chars, each = 10%) ──
-        // Use spaces between symbols so they're visually separated
-        let make_bar = |sym: &str, n: usize| -> String {
-            if n == 0 {
-                String::new()
-            } else {
-                std::iter::repeat(sym).take(n).collect::<Vec<_>>().join(" ")
-            }
-        };
-
-        let fill_bar = make_bar("⛁", used_chars);
-        let buffer_bar = make_bar("⛝", buffer_chars);
-        let empty_bar = make_bar("⛶", free_chars);
-        let mut all_parts: Vec<String> = vec![String::from("⛀")];
-        if !fill_bar.is_empty() {
-            all_parts.push(fill_bar);
-        }
-        if !buffer_bar.is_empty() {
-            all_parts.push(buffer_bar);
-        }
-        if !empty_bar.is_empty() {
-            all_parts.push(empty_bar);
-        }
-        let bar_str = all_parts.join(" ");
+        // Build segments with individual colors
+        let fill_color = ratatui::style::Color::Rgb(133, 153, 0); // Green
+        let buffer_color = ratatui::style::Color::Rgb(120, 120, 120); // Gray
+        let empty_color = colors.ui.dark;
 
         let mut bar_spans = vec![Span::styled(
-            format!("{}  ", bar_str),
-            Style::default().fg(colors.text.secondary),
+            "⛀ ",
+            Style::default().fg(colors.text.accent),
         )];
+
+        if used_chars > 0 {
+            let filled = (0..used_chars)
+                .map(|_| "⛁")
+                .collect::<Vec<_>>()
+                .join(" ");
+            bar_spans.push(Span::styled(
+                format!("{} ", filled),
+                Style::default().fg(fill_color),
+            ));
+        }
+
+        if buffer_chars > 0 {
+            let buffered = (0..buffer_chars)
+                .map(|_| "⛝")
+                .collect::<Vec<_>>()
+                .join(" ");
+            bar_spans.push(Span::styled(
+                format!("{} ", buffered),
+                Style::default().fg(buffer_color),
+            ));
+        }
+
+        if free_chars > 0 {
+            let empty = (0..free_chars)
+                .map(|_| "⛶")
+                .collect::<Vec<_>>()
+                .join(" ");
+            bar_spans.push(Span::styled(
+                format!("{} ", empty),
+                Style::default().fg(empty_color),
+            ));
+        }
+
         bar_spans.push(Span::styled(
             format!("  {}", info.model_name),
             Style::default().fg(colors.text.primary),
