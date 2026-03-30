@@ -45,6 +45,7 @@ const DEFAULT_VIEWPORT_HEIGHT_PERCENT: u16 = 32;
 const DEFAULT_SHELF_HEIGHT: u16 = 6;
 const MIN_LIVE_VIEWPORT_WIDTH: u16 = 4;
 const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
+const MIN_DASHBOARD_HEIGHT: u16 = 20;
 const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
 const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
@@ -1398,9 +1399,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
             if !has_messages {
-                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
-                if !dashboard_lines.is_empty() {
-                    frame.render_widget(Paragraph::new(dashboard_lines), area);
+                if area.height >= MIN_DASHBOARD_HEIGHT {
+                    let dashboard_lines = self.messages.render_dashboard_lines(area.width);
+                    if !dashboard_lines.is_empty() {
+                        frame.render_widget(Paragraph::new(dashboard_lines), area);
+                    }
                 }
             }
             return;
