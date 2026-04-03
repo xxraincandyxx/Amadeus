@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::agent::config::Config;
+use crate::tools::bash::{classify_command, BashCommandKind};
 
 /// Approval mode for tool execution.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -138,6 +139,14 @@ impl Policy {
                 if self.is_auto_denied(tool, input) {
                     return true;
                 }
+                if tool == "bash" {
+                    match self.bash_command_kind(input) {
+                        BashCommandKind::ReadOnly => {}
+                        BashCommandKind::WorkspaceWrite | BashCommandKind::Destructive => {
+                            return true;
+                        }
+                    }
+                }
                 // Check dangerous patterns
                 self.is_dangerous(tool, input)
             }
@@ -176,6 +185,14 @@ impl Policy {
         false
     }
 
+    fn bash_command_kind(&self, input: &Value) -> BashCommandKind {
+        input
+            .get("command")
+            .and_then(|value| value.as_str())
+            .map(classify_command)
+            .unwrap_or(BashCommandKind::ReadOnly)
+    }
+
     /// Extract a string from input for pattern checking.
     fn extract_check_string(&self, input: &Value) -> String {
         // For bash tool, check the command
@@ -196,6 +213,18 @@ impl Policy {
 
         if self.is_auto_denied(tool, input) {
             return format!("Tool '{}' is in the auto-deny list", tool);
+        }
+
+        if tool == "bash" {
+            match self.bash_command_kind(input) {
+                BashCommandKind::WorkspaceWrite => {
+                    return format!("Tool '{}' requires approval for workspace-write command", tool);
+                }
+                BashCommandKind::Destructive => {
+                    return format!("Tool '{}' requires approval for destructive command", tool);
+                }
+                BashCommandKind::ReadOnly => {}
+            }
         }
 
         for (pattern_tool, regex) in &self.dangerous_regex_cache {
@@ -304,5 +333,31 @@ mod tests {
         assert!(!policy.needs_approval("glob", &serde_json::json!({"pattern": "*.rs"})));
         assert!(!policy.needs_approval("grep", &serde_json::json!({"pattern": "test"})));
         assert!(!policy.needs_approval("todo", &serde_json::json!({"items": []})));
+    }
+
+    #[test]
+    fn test_bash_workspace_write_requires_approval() {
+        let policy = Policy::new();
+
+        assert!(policy.needs_approval(
+            "bash",
+            &serde_json::json!({"command": "echo hi > out.txt"})
+        ));
+        assert!(policy.needs_approval(
+            "bash",
+            &serde_json::json!({"command": "sed -i 's/old/new/' file.txt"})
+        ));
+    }
+
+    #[test]
+    fn test_bash_workspace_write_reason_is_specific() {
+        let policy = Policy::new();
+
+        let reason = policy.approval_reason(
+            "bash",
+            &serde_json::json!({"command": "echo hi > out.txt"}),
+        );
+
+        assert!(reason.contains("workspace-write"));
     }
 }

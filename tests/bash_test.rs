@@ -1,5 +1,5 @@
 use amadeus::error::AgentError;
-use amadeus::tools::bash::BashTool;
+use amadeus::tools::bash::{classify_command, BashCommandKind, BashTool};
 use amadeus::tools::tool_trait::Tool;
 use serde_json::json;
 use std::fs;
@@ -249,4 +249,34 @@ async fn test_bash_output_truncation() {
     let result = tool.execute(input).await.unwrap();
     assert!(result.len() > 100);
     assert!(result.contains("truncated"));
+}
+
+#[test]
+fn test_classify_bash_read_only_command() {
+    assert_eq!(classify_command("ls -la"), BashCommandKind::ReadOnly);
+}
+
+#[test]
+fn test_classify_bash_workspace_write_command() {
+    assert_eq!(
+        classify_command("echo hi > out.txt"),
+        BashCommandKind::WorkspaceWrite
+    );
+    assert_eq!(
+        classify_command("sed -i 's/old/new/' file.txt"),
+        BashCommandKind::WorkspaceWrite
+    );
+}
+
+#[test]
+fn test_classify_bash_destructive_command() {
+    assert_eq!(classify_command("rm -rf /"), BashCommandKind::Destructive);
+}
+
+#[test]
+fn test_classify_bash_nested_path_delete_is_not_destructive() {
+    assert_eq!(
+        classify_command("rm -rf /tmp/test_agent_dir_12345"),
+        BashCommandKind::ReadOnly
+    );
 }

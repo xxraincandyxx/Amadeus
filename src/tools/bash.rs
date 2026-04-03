@@ -27,6 +27,40 @@ pub struct BashInput {
     pub command: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BashCommandKind {
+    ReadOnly,
+    WorkspaceWrite,
+    Destructive,
+}
+
+fn deletes_filesystem_root(command: &str) -> bool {
+    let normalized = command.trim();
+
+    normalized == "rm -rf /"
+        || normalized.starts_with("rm -rf / ")
+        || normalized.contains("; rm -rf /")
+}
+
+pub fn classify_command(command: &str) -> BashCommandKind {
+    let normalized = command.trim();
+
+    if deletes_filesystem_root(normalized)
+        || normalized.contains(" mkfs")
+        || normalized.starts_with("mkfs")
+    {
+        BashCommandKind::Destructive
+    } else if normalized.contains(">")
+        || normalized.contains(">>")
+        || normalized.contains("sed -i")
+        || normalized.contains("chmod ")
+    {
+        BashCommandKind::WorkspaceWrite
+    } else {
+        BashCommandKind::ReadOnly
+    }
+}
+
 pub struct BashTool {
     timeout_secs: u64,
     workdir: String,
@@ -59,11 +93,10 @@ impl BashTool {
     }
 
     fn is_blocked(&self, command: &str) -> bool {
-        self.blocked_commands.iter().any(|blocked| {
+        matches!(classify_command(command), BashCommandKind::Destructive)
+            || self.blocked_commands.iter().any(|blocked| {
             if blocked == "rm -rf /" {
-                command == "rm -rf /"
-                    || command.starts_with("rm -rf / ")
-                    || command.contains("; rm -rf /")
+                deletes_filesystem_root(command)
             } else {
                 command.contains(blocked)
             }
