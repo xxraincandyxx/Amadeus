@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use amadeus::agent::events::{AgentEvent, ApprovalRequest, RunResult};
+use amadeus::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult};
 use amadeus::agent::messages::Message;
 
 #[derive(Debug, Clone)]
@@ -14,8 +14,17 @@ pub struct TimestampedEvent {
 #[derive(Debug, Clone)]
 pub struct EventTimeline {
     events: Vec<TimestampedEvent>,
+    approval_decisions: Vec<TimestampedApprovalDecision>,
     history_snapshot: Vec<Message>,
     start: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct TimestampedApprovalDecision {
+    pub request_id: String,
+    pub tool: String,
+    pub decision: ApprovalDecision,
+    pub elapsed: Duration,
 }
 
 impl Default for EventTimeline {
@@ -28,6 +37,7 @@ impl EventTimeline {
     pub fn new() -> Self {
         Self {
             events: Vec::new(),
+            approval_decisions: Vec::new(),
             history_snapshot: Vec::new(),
             start: Instant::now(),
         }
@@ -42,6 +52,20 @@ impl EventTimeline {
 
     pub fn set_history_snapshot(&mut self, history: Vec<Message>) {
         self.history_snapshot = history;
+    }
+
+    pub fn push_approval_decision(
+        &mut self,
+        request_id: String,
+        tool: String,
+        decision: ApprovalDecision,
+    ) {
+        self.approval_decisions.push(TimestampedApprovalDecision {
+            request_id,
+            tool,
+            decision,
+            elapsed: self.start.elapsed(),
+        });
     }
 
     pub fn raw_events(&self) -> Vec<AgentEvent> {
@@ -195,6 +219,10 @@ impl EventTimeline {
         self.events
             .iter()
             .any(|e| matches!(&e.event, AgentEvent::ApprovalRequired { .. }))
+    }
+
+    pub fn approval_decisions(&self) -> &[TimestampedApprovalDecision] {
+        &self.approval_decisions
     }
 
     // --- Token usage ---

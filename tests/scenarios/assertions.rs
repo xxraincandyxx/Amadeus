@@ -197,6 +197,29 @@ pub fn assert_timeline_approval_for_tool(tl: &EventTimeline, tool_name: &str) {
     );
 }
 
+pub fn assert_timeline_has_approval_decision(tl: &EventTimeline, tool_name: &str, approve: bool) {
+    let found = tl.approval_decisions().iter().any(|decision| {
+        decision.tool == tool_name
+            && matches!(
+                (decision.decision, approve),
+                (amadeus::agent::events::ApprovalDecision::Approve, true)
+                    | (amadeus::agent::events::ApprovalDecision::AlwaysApprove, true)
+                    | (amadeus::agent::events::ApprovalDecision::Deny, false)
+            )
+    });
+
+    assert!(
+        found,
+        "Expected approval decision for tool '{}' with approve={}, found {:?}",
+        tool_name,
+        approve,
+        tl.approval_decisions()
+            .iter()
+            .map(|decision| format!("{}:{:?}", decision.tool, decision.decision))
+            .collect::<Vec<_>>()
+    );
+}
+
 pub fn assert_timeline_has_token_usage(tl: &EventTimeline) {
     assert!(
         !tl.token_usage_events().is_empty(),
