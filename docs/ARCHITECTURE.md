@@ -12,6 +12,8 @@ Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It 
 - P2P recursive delegation through `PeerTool` for inter-agent collaboration
 - Resilient error handling with deadlock prevention and saturation management
 
+Parity with the `refs/claw-code-parity` reference is treated as a behavioral testing problem. Architecture and README claims should only describe flows that are covered by automated tests in this repository.
+
 ---
 
 ## High-Level Architecture

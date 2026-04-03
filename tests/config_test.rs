@@ -33,3 +33,10 @@ fn test_config_workdir_type() {
     let config = Config::load().unwrap();
     assert!(!config.workdir.as_os_str().is_empty());
 }
+
+#[test]
+fn parity_doc_exists_and_mentions_reference_baseline() {
+    let doc = std::fs::read_to_string("docs/PARITY.md").expect("docs/PARITY.md must exist");
+    assert!(doc.contains("refs/claw-code-parity/rust/PARITY.md"));
+    assert!(doc.contains("Behavioral gaps"));
+}
