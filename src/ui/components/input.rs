@@ -233,15 +233,15 @@ impl InputComponent {
             &[
                 ("Up/Down", "History"),
                 ("Ctrl+O", "Expand tools"),
-                ("Ctrl+]", "Next session"),
+                ("Ctrl+]", "To sub-agent"),
             ],
             &[
-                ("Tab", "Accept completion"),
+                ("Tab", "Next session"),
                 ("Ctrl+K", "Compact history"),
-                ("Esc", "Prev session"),
+                ("Ctrl+[", "To parent"),
             ],
             &[
-                ("Shift+Tab", "Prev completion"),
+                ("Shift+Tab", "Prev session"),
                 ("Ctrl+Bksp", "Close session"),
                 ("Shift+Up/Dn", "Scroll"),
             ],

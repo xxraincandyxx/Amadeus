@@ -2549,7 +2549,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 - `/new-agent`: Spawn new agent session
 - `/test`: Run integration tests
 - `Ctrl+C` / `Esc`: Cancel active stream
-- `Ctrl+]` / `Ctrl+[`: Switch sessions
+- `Tab` / `Shift+Tab`: Switch sessions
+- `Ctrl+]` / `Ctrl+[`: Switch to child / parent session
 - `Ctrl+Backspace`: Close active session";
                 self.messages.add_assistant(help_text.to_string());
                 return Ok(());
@@ -3034,6 +3035,50 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         session.maybe_show_next_approval();
     }
 
+    fn switch_to_next_session(&mut self) -> bool {
+        if self.sessions.len() <= 1 {
+            return false;
+        }
+        let next_idx = (self.active_idx + 1) % self.sessions.len();
+        self.switch_session(next_idx);
+        true
+    }
+
+    fn switch_to_previous_session(&mut self) -> bool {
+        if self.sessions.len() <= 1 {
+            return false;
+        }
+        let next_idx = if self.active_idx == 0 {
+            self.sessions.len().saturating_sub(1)
+        } else {
+            self.active_idx - 1
+        };
+        self.switch_session(next_idx);
+        true
+    }
+
+    fn switch_to_parent_session(&mut self) -> bool {
+        let Some(parent_idx) = self.sessions[self.active_idx].parent_session_id else {
+            return false;
+        };
+        self.switch_session(parent_idx);
+        true
+    }
+
+    fn switch_to_child_session(&mut self) -> bool {
+        let child_idx = self
+            .sessions
+            .iter()
+            .enumerate()
+            .find_map(|(idx, session)| (session.parent_session_id == Some(self.active_idx)).then_some(idx));
+
+        let Some(child_idx) = child_idx else {
+            return false;
+        };
+        self.switch_session(child_idx);
+        true
+    }
+
     fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
         let terminal_size = crossterm::terminal::size()?;
         let initial_height = self.active_session()
@@ -3098,23 +3143,37 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
         match (key.modifiers, key.code) {
-            (KeyModifiers::CONTROL, KeyCode::Char('5')) => {
-                if self.sessions.len() > 1 {
-                    let next_idx = (self.active_idx + 1) % self.sessions.len();
-                    self.switch_session(next_idx);
+            (KeyModifiers::NONE, KeyCode::Tab) => {
+                let session = &self.sessions[self.active_idx];
+                let should_defer_to_completion = session.stream_rx.is_none()
+                    && (session.input.completion_is_visible()
+                        || session.input.get_input().starts_with('/'));
+                if !should_defer_to_completion && self.switch_to_next_session() {
+                    return Ok(true);
+                }
+            }
+            (_, KeyCode::BackTab) => {
+                let session = &self.sessions[self.active_idx];
+                let should_defer_to_completion =
+                    session.stream_rx.is_none() && session.input.completion_is_visible();
+                if !should_defer_to_completion && self.switch_to_previous_session() {
+                    return Ok(true);
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('5' | ']')) => {
+                if self.switch_to_child_session() {
+                    return Ok(true);
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('[')) => {
+                if self.switch_to_parent_session() {
                     return Ok(true);
                 }
             }
             (KeyModifiers::NONE, KeyCode::Esc) => {
                 let session = &self.sessions[self.active_idx];
                 let is_idle = session.stream_rx.is_none() && session.mode == AppMode::Normal;
-                if is_idle && self.sessions.len() > 1 {
-                    let next_idx = if self.active_idx == 0 {
-                        self.sessions.len().saturating_sub(1)
-                    } else {
-                        self.active_idx - 1
-                    };
-                    self.switch_session(next_idx);
+                if is_idle && self.switch_to_previous_session() {
                     return Ok(true);
                 }
             }
@@ -3863,6 +3922,122 @@ mod tests {
     }
 
     #[test]
+    fn switch_to_next_session_wraps() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        app.active_idx = 1;
+
+        assert!(app.switch_to_next_session());
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
+    fn switch_to_previous_session_wraps() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+
+        assert!(app.switch_to_previous_session());
+        assert_eq!(app.active_idx, 1);
+    }
+
+    #[test]
+    fn switch_to_parent_session_moves_to_parent() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            1,
+        );
+        session2.parent_session_id = Some(0);
+        app.sessions.push(session2);
+        app.active_idx = 1;
+
+        assert!(app.switch_to_parent_session());
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
+    fn switch_to_parent_session_noops_for_root() {
+        let mut app = test_app();
+
+        assert!(!app.switch_to_parent_session());
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
+    fn switch_to_child_session_moves_to_first_direct_child() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut child = Session::new(
+            agent.clone(),
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            1,
+        );
+        child.parent_session_id = Some(0);
+        let mut grandchild = Session::new(
+            agent.clone(),
+            PathBuf::from("."),
+            "test-model".to_string(),
+            2,
+            "grandchild".to_string(),
+            2,
+        );
+        grandchild.parent_session_id = Some(1);
+        let mut second_child = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            3,
+            "child-2".to_string(),
+            1,
+        );
+        second_child.parent_session_id = Some(0);
+        app.sessions.push(child);
+        app.sessions.push(grandchild);
+        app.sessions.push(second_child);
+
+        assert!(app.switch_to_child_session());
+        assert_eq!(app.active_idx, 1);
+    }
+
+    #[test]
+    fn switch_to_child_session_noops_without_child() {
+        let mut app = test_app();
+
+        assert!(!app.switch_to_child_session());
+        assert_eq!(app.active_idx, 0);
+    }
+
+    #[test]
     fn resolved_done_text_uses_subagent_output_when_result_is_empty() {
         let mut last_subagent_output = Some("delegated answer".to_string());
         assert_eq!(
@@ -3918,6 +4093,59 @@ mod tests {
 
         assert!(session.input.is_shortcuts_visible());
         assert!(session.input.get_input().is_empty());
+    }
+
+    #[test]
+    fn tab_global_switches_session_when_completion_is_not_active() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+
+        let handled = app
+            .handle_global_key(KeyEvent::from(KeyCode::Tab), &mut terminal)
+            .expect("global tab should succeed");
+
+        assert!(handled);
+        assert_eq!(app.active_idx, 1);
+    }
+
+    #[test]
+    fn tab_global_defers_to_completion_popup() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+        let session = active_session_mut(&mut app);
+        session.input.handle_char('/');
+        session.input.force_show_completion();
+
+        let handled = app
+            .handle_global_key(KeyEvent::from(KeyCode::Tab), &mut terminal)
+            .expect("global tab should succeed");
+
+        assert!(!handled);
+        assert_eq!(app.active_idx, 0);
     }
 
     #[test]

@@ -164,8 +164,10 @@ When viewing the tool monitor in the live viewport:
 
 | Shortcut | Action |
 |----------|--------|
-| `Ctrl+]` | Switch to next session |
-| `Ctrl+[` | Switch to previous session |
+| `Tab` | Switch to next session |
+| `Shift+Tab` | Switch to previous session |
+| `Ctrl+]` | Switch to first direct sub-agent |
+| `Ctrl+[` | Switch to parent session |
 | `Ctrl+Backspace` | Close current sub-agent session |
 
 ### Vim Mode
@@ -393,8 +395,9 @@ During generation, rotating phrases appear:
 
 ### Multi-Agent Workflows
 1. Sub-agents spawn automatically for delegated tasks
-2. Switch sessions with `Ctrl+]/[`
-3. Close sub-sessions with `Ctrl+Backspace`
+2. Switch sibling sessions with `Tab` and `Shift+Tab`
+3. Jump between parent and child sessions with `Ctrl+[` and `Ctrl+]`
+4. Close sub-sessions with `Ctrl+Backspace`
 
 ### Clean Exit
 Always use `Ctrl+C` or `q` to quit - this ensures:
