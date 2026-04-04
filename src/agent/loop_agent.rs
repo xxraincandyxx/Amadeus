@@ -780,6 +780,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             yield Ok(AgentEvent::ToolStart {
                                 id,
                                 name,
+                                command: None,
                                 parent_id: None,
                             });
                         }
@@ -938,6 +939,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         heartbeat.set_missed_tick_behavior(
                                             tokio::time::MissedTickBehavior::Delay,
                                         );
+                                        heartbeat.tick().await;
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
@@ -1068,6 +1070,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         heartbeat.set_missed_tick_behavior(
                                             tokio::time::MissedTickBehavior::Delay,
                                         );
+                                        heartbeat.tick().await;
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
@@ -1330,6 +1333,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut heartbeat =
                     interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
                 heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+                heartbeat.tick().await;
 
                 let tool_name = name.clone();
                 let exec = Agent::<C>::execute_tool_call(&tools, &hooks, id.clone(), name, input);
@@ -1414,6 +1418,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let mut is_error = false;
         let mut heartbeat = interval(std::time::Duration::from_millis(TOOL_HEARTBEAT_INTERVAL_MS));
         heartbeat.set_missed_tick_behavior(MissedTickBehavior::Delay);
+        heartbeat.tick().await;
 
         loop {
             tokio::select! {
@@ -1444,6 +1449,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         Ok(AgentEvent::ToolStart {
                             id: child_id,
                             name,
+                            command,
                             parent_id,
                         }) => {
                             let _ = tx
@@ -1452,6 +1458,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     AgentEvent::ToolStart {
                                         id: child_id,
                                         name,
+                                        command,
                                         parent_id,
                                     },
                                 ))
@@ -1590,10 +1597,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             AgentEvent::ToolStart {
                 id,
                 name,
+                command,
                 parent_id,
             } => AgentEvent::ToolStart {
                 id: Agent::<C>::namespace_tool_id(scope_id, &id),
                 name,
+                command,
                 parent_id: Some(
                     parent_id
                         .map(|value| Agent::<C>::namespace_tool_id(scope_id, &value))

@@ -140,7 +140,10 @@ impl AnthropicClient {
 
         // Disable proxy by default to avoid issues with local proxies breaking connections,
         // unless AMADEUS_NO_PROXY is explicitly set to false/0
-        if std::env::var("AMADEUS_NO_PROXY").map(|v| v == "true" || v == "1").unwrap_or(true) {
+        if std::env::var("AMADEUS_NO_PROXY")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true)
+        {
             builder = builder.no_proxy();
         }
 

@@ -34,7 +34,7 @@ pub fn render_agent_panel<B: ratatui::backend::Backend>(
             let content = format!("{} {} {} {}", prefix, agent.name, status, agent.profile);
 
             ListItem::new(content).style(if i == active_index {
-                Style::default().fg(Color::LightCyan).add_modifier(Modifier::BOLD)
+                Style::default().fg(Color::LightCyan)
             } else {
                 Style::default()
             })

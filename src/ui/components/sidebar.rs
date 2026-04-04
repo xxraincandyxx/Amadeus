@@ -18,14 +18,12 @@ pub enum SidebarKind {
     Files,
     Help,
     Skills,
-    Context,
 }
 
 pub enum Sidebar {
     Files(FileSidebar),
     Help(HelpSidebar),
     Skills(SkillSidebar),
-    Context(ContextSidebar),
 }
 
 pub struct FileSidebar {
@@ -146,10 +144,7 @@ impl FileSidebar {
                 };
 
                 let style = if actual_index == self.selected {
-                    Style::default()
-                        .fg(colors.text.link)
-                        .bg(colors.ui.dark)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(colors.text.link).bg(colors.ui.dark)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -168,11 +163,7 @@ impl FileSidebar {
         let list = List::new(items).block(
             Block::default()
                 .title(" EXPLORER ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -200,12 +191,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SHORTCUTS",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("SHORTCUTS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -223,12 +209,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SIDEBAR",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("SIDEBAR", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -242,12 +223,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "TOOLS",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("TOOLS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -272,12 +248,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "THEMES",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("THEMES", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -287,12 +258,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "CONTEXT",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("CONTEXT", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -316,12 +282,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SCROLLING",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("SCROLLING", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -339,12 +300,7 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SYSTEM",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("SYSTEM", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -360,11 +316,7 @@ impl HelpSidebar {
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .title(" COMMANDS ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -449,12 +401,7 @@ impl SkillSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
-                    "SKILLS",
-                    Style::default()
-                        .fg(colors.text.primary)
-                        .add_modifier(Modifier::BOLD),
-                ),
+                Span::styled("SKILLS", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
         ];
@@ -487,10 +434,7 @@ impl SkillSidebar {
                 let is_selected = actual_index == self.selected;
 
                 let style = if is_selected {
-                    Style::default()
-                        .fg(colors.text.link)
-                        .bg(colors.ui.dark)
-                        .add_modifier(Modifier::BOLD)
+                    Style::default().fg(colors.text.link).bg(colors.ui.dark)
                 } else {
                     Style::default().fg(colors.text.primary)
                 };
@@ -523,11 +467,7 @@ impl SkillSidebar {
         let paragraph = Paragraph::new(lines).block(
             Block::default()
                 .title(" SKILLS ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
-                )
+                .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
                 .style(Style::default().bg(colors.background.primary)),
@@ -547,10 +487,22 @@ pub struct ContextInfo {
     pub system_prompt_tokens: usize,
     /// Tool definitions tokens
     pub tools_tokens: usize,
+    /// MCP tools tokens (placeholder)
+    pub mcp_tools_tokens: usize,
+    /// Memory files tokens (placeholder)
+    pub memory_files_tokens: usize,
+    /// Skills tokens (placeholder)
+    pub skills_tokens: usize,
     /// Conversation history tokens
     pub conversation_tokens: usize,
     /// Per-tool token estimates (name, estimated schema tokens)
     pub tool_details: Vec<(String, usize)>,
+    /// MCP tool details (placeholder)
+    pub mcp_tool_details: Vec<(String, usize)>,
+    /// Memory file details (placeholder)
+    pub memory_file_details: Vec<(String, usize)>,
+    /// Skill details (name, estimated tokens)
+    pub skill_details: Vec<(String, usize)>,
     /// Per-message token estimates (role, estimated tokens)
     pub message_details: Vec<(String, usize)>,
 }
@@ -576,7 +528,7 @@ impl ContextInfo {
     }
 
     /// Percentage of the context window used by a token count.
-    fn pct_of(&self, tokens: usize) -> f64 {
+    pub fn pct_of(&self, tokens: usize) -> f64 {
         if self.context_window_size == 0 {
             return 0.0;
         }
@@ -584,7 +536,7 @@ impl ContextInfo {
     }
 
     /// Format a token count for display.
-    fn fmt_tokens(n: usize) -> String {
+    pub fn fmt_tokens(n: usize) -> String {
         if n >= 1_000_000 {
             format!("{:.1}M", n as f64 / 1_000_000.0)
         } else if n >= 1000 {
@@ -592,260 +544,5 @@ impl ContextInfo {
         } else {
             n.to_string()
         }
-    }
-}
-
-/// Sidebar showing context window usage breakdown.
-pub struct ContextSidebar {
-    info: ContextInfo,
-}
-
-impl ContextSidebar {
-    pub fn new(info: ContextInfo) -> Self {
-        Self { info }
-    }
-
-    fn render_bar(&self, width: u16) -> Line<'static> {
-        let bar_width = (width as usize).min(24);
-        let pct = self.info.usage_percent();
-        let filled = ((pct as usize) * bar_width) / 100;
-        let empty = bar_width.saturating_sub(filled);
-
-        let fill_style = if pct >= 90 {
-            Style::default().fg(ratatui::style::Color::Rgb(220, 50, 47))
-        } else if pct >= 70 {
-            Style::default().fg(ratatui::style::Color::Rgb(181, 137, 0))
-        } else {
-            Style::default().fg(ratatui::style::Color::Rgb(133, 153, 0))
-        };
-
-        let mut spans = vec![
-            Span::styled("█".repeat(filled), fill_style),
-            Span::styled(
-                "░".repeat(empty),
-                Style::default().fg(ratatui::style::Color::Rgb(88, 88, 88)),
-            ),
-        ];
-
-        spans.push(Span::raw(" "));
-        spans.push(Span::styled(
-            format!("{}%", pct),
-            if pct >= 90 {
-                Style::default().fg(ratatui::style::Color::Rgb(220, 50, 47))
-            } else if pct >= 70 {
-                Style::default().fg(ratatui::style::Color::Rgb(181, 137, 0))
-            } else {
-                Style::default().fg(ratatui::style::Color::Rgb(147, 161, 161))
-            },
-        ));
-
-        Line::from(spans)
-    }
-
-    fn section_line(colors: &crate::ui::semantic_colors::SemanticColors) -> Line<'static> {
-        Line::from(vec![
-            Span::styled("   ", Style::default()),
-            Span::styled("---", Style::default().fg(colors.ui.dark)),
-        ])
-    }
-
-    pub fn render(&self, frame: &mut Frame, area: Rect) {
-        if area.width < 16 {
-            return;
-        }
-
-        let colors = get_colors();
-        let content_width = area.width.saturating_sub(2) as usize;
-        let visible_lines = area.height.saturating_sub(2) as usize;
-        let mut lines: Vec<Line> = Vec::new();
-
-        // Title + model
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            Span::styled(" ◈ ", Style::default().fg(colors.text.accent)),
-            Span::styled(
-                &self.info.model_name,
-                Style::default()
-                    .fg(colors.text.primary)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(""));
-
-        // Usage bar
-        let used = ContextInfo::fmt_tokens(self.info.used_tokens());
-        let total = ContextInfo::fmt_tokens(self.info.context_window_size as usize);
-        lines.push(Line::from(vec![Span::styled(
-            format!(" {} / {} tokens", used, total),
-            Style::default().fg(colors.text.secondary),
-        )]));
-        lines.push(self.render_bar(area.width.saturating_sub(2)));
-        lines.push(Line::from(""));
-
-        // Breakdown sections
-        lines.push(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "ESTIMATED USAGE BY CATEGORY",
-                Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Self::section_line(&colors));
-
-        // System prompt
-        let sys_pct = self.info.pct_of(self.info.system_prompt_tokens);
-        lines.push(Line::from(vec![
-            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
-            Span::styled("System Prompt", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    ContextInfo::fmt_tokens(self.info.system_prompt_tokens),
-                    sys_pct
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Tools
-        let tools_pct = self.info.pct_of(self.info.tools_tokens);
-        lines.push(Line::from(vec![
-            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
-            Span::styled("Tools", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    ContextInfo::fmt_tokens(self.info.tools_tokens),
-                    tools_pct
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Conversation
-        let conv_pct = self.info.pct_of(self.info.conversation_tokens);
-        lines.push(Line::from(vec![
-            Span::styled("  ○ ", Style::default().fg(colors.text.accent)),
-            Span::styled("Conversation", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    ContextInfo::fmt_tokens(self.info.conversation_tokens),
-                    conv_pct
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Free space
-        let free = self.info.free_tokens();
-        let free_pct = self.info.pct_of(free);
-        lines.push(Line::from(vec![
-            Span::styled("  ○ ", Style::default().fg(colors.status.success)),
-            Span::styled("Free Space", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    ContextInfo::fmt_tokens(free),
-                    free_pct
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        lines.push(Self::section_line(&colors));
-
-        // Tool details
-        lines.push(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "TOOLS",
-                Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(""));
-
-        for (name, tokens) in &self.info.tool_details {
-            lines.push(Line::from(vec![
-                Span::styled("    └ ", Style::default().fg(colors.ui.dark)),
-                Span::styled(
-                    truncate_str(name, content_width.saturating_sub(20)),
-                    Style::default().fg(colors.text.primary),
-                ),
-                Span::styled(
-                    format!(": {}", ContextInfo::fmt_tokens(*tokens)),
-                    Style::default().fg(colors.text.secondary),
-                ),
-            ]));
-        }
-
-        lines.push(Self::section_line(&colors));
-
-        // Message details
-        lines.push(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(
-                "MESSAGES",
-                Style::default()
-                    .fg(colors.ui.comment)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]));
-        lines.push(Line::from(""));
-
-        for (role, tokens) in &self.info.message_details {
-            let icon = match role.as_str() {
-                "system" => "SYS",
-                "user" => "USR",
-                "assistant" => "AST",
-                _ => "???",
-            };
-            lines.push(Line::from(vec![
-                Span::styled("    └ ", Style::default().fg(colors.ui.dark)),
-                Span::styled(icon, Style::default().fg(colors.text.link)),
-                Span::styled(
-                    truncate_str(
-                        &format!(" {}: {}", role, ContextInfo::fmt_tokens(*tokens)),
-                        content_width.saturating_sub(20),
-                    ),
-                    Style::default().fg(colors.text.secondary),
-                ),
-            ]));
-        }
-
-        // Trim to visible lines
-        lines = lines.into_iter().take(visible_lines).collect();
-
-        let paragraph = Paragraph::new(lines).block(
-            Block::default()
-                .title(" CONTEXT ")
-                .title_style(
-                    Style::default()
-                        .fg(colors.ui.comment)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .borders(Borders::RIGHT)
-                .border_style(Style::default().fg(colors.border.default))
-                .style(Style::default().bg(colors.background.primary)),
-        );
-
-        frame.render_widget(paragraph, area);
-    }
-}
-
-/// Truncate a string to fit within `max` character cells.
-fn truncate_str(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(max.saturating_sub(1)).collect();
-        format!("{}…", truncated)
     }
 }

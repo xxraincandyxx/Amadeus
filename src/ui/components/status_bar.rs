@@ -1,6 +1,6 @@
 use ratatui::{
     layout::Rect,
-    style::{Modifier, Style},
+    style::Style,
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -160,12 +160,7 @@ impl StatusBar {
         // Thinking indicator
         if self.thinking {
             spans.push(Span::styled(" • ", Style::default().fg(colors.ui.dark)));
-            spans.push(Span::styled(
-                "⟡",
-                Style::default()
-                    .fg(colors.text.accent)
-                    .add_modifier(Modifier::BOLD),
-            ));
+            spans.push(Span::styled("⟡", Style::default().fg(colors.text.accent)));
         }
 
         let line = Line::from(spans);

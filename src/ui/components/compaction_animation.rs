@@ -9,18 +9,11 @@ const PROGRESS_FILLED: &str = "█";
 const PROGRESS_EMPTY: &str = "░";
 const PROGRESS_PARTIAL: [&str; 8] = ["", "▏", "▎", "▍", "▌", "▋", "▊", "▉"];
 
-/// Animation frames for the leading indicator
-const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+/// Subtle pulse (single-line status, Claude-style minimal UI)
+const SPINNER_FRAMES: [&str; 4] = [".", "..", "...", ""];
 
-/// Cycling messages for compaction progress
-const COMPACTION_MESSAGES: [&str; 6] = [
-    "Compacting conversation history",
-    "Summarizing context",
-    "Optimizing token usage",
-    "Processing messages",
-    "Reducing context size",
-    "Compressing history",
-];
+/// Single status line; avoid rotating marketing-style copy
+const COMPACTION_MESSAGES: [&str; 1] = ["Compacting context"];
 
 /// Minimum time to show the animation (prevents flashing)
 const MIN_DISPLAY_DURATION: Duration = Duration::from_millis(800);
