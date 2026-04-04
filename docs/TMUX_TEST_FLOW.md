@@ -90,7 +90,7 @@ Expected anchors:
 - `Amadeus v0.1.0`
 - `Try "how does src/main.rs work?"`
 - `? for shortcuts`
-- `root>`
+- `[root]`
 
 Expected absences:
 - `Tips for getting started`
@@ -133,7 +133,7 @@ Purpose: validate independent session creation and traversal.
 Steps:
 1. Send `/new-agent`.
 2. Wait for idle.
-3. Capture the footer breadcrumb.
+3. Capture the footer session tabs.
 4. Send a literal tab through `tmux-cli`:
    ```bash
    tmux-cli send "\t" --pane=<pane> --enter=False
@@ -143,7 +143,7 @@ Steps:
 7. Capture.
 
 Expected anchors:
-- breadcrumb changes from `root>` to `root ▸ session1>`
+- session tabs change from `[root] session1` to `root [session1]`
 - `Tab` switches away from the current session
 - `Shift+Tab` switches back
 - the capture taken immediately after a switch is never blank
@@ -151,6 +151,20 @@ Expected anchors:
 Regression checkpoint:
 - capture immediately after a literal `Tab` sent with `tmux-cli send "\t" --enter=False`
 - if the pane is blank, the switch path cleared the terminal without completing the redraw in the same event cycle
+- if the transcript appears more than once after switching back into a populated session, the switch path replayed committed history without purging shared scrollback
+
+Populated-session regression:
+1. Create `session1`.
+2. Send `hello?` and wait for the assistant response.
+3. Capture the session and note a stable reply line.
+4. Switch back to `root`.
+5. Switch again into `session1`.
+6. Capture immediately after the second switch.
+
+Expected anchors:
+- the active label is `root [session1]`
+- the assistant reply appears exactly once
+- `turn 1` appears once for that turn
 
 Notes:
 - Prefer `tmux-cli send "\t" --enter=False` for `Tab` in remote sessions.

@@ -2759,6 +2759,7 @@ pub struct App<C: LLMClient> {
     /// When true, next run-loop tick rebuilds the inline terminal and replays the active session's
     /// scrollback so sessions do not share one host scrollback buffer.
     pending_terminal_reset: bool,
+    pending_reset_from_history: bool,
     pending_close: Option<(usize, Instant)>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
@@ -2788,6 +2789,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             next_session_id: 1,
             next_sub_label: 1,
             pending_terminal_reset: false,
+            pending_reset_from_history: false,
             pending_close: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
@@ -2988,7 +2990,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         &mut self.sessions[self.active_idx]
     }
 
-    fn build_breadcrumb(&self) -> String {
+    fn build_session_tabs(&self) -> String {
         let mut parts = Vec::new();
         for (idx, session) in self.sessions.iter().enumerate() {
             let mut label = session.session_label.clone();
@@ -3002,15 +3004,15 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             if session.last_error.is_some() {
                 marker.push('!');
             }
-            if idx == self.active_idx {
-                marker.push('>');
-            }
             if !marker.is_empty() {
                 label.push_str(&marker);
             }
+            if idx == self.active_idx {
+                label = format!("[{label}]");
+            }
             parts.push(label);
         }
-        parts.join(" ▸ ")
+        parts.join(" ")
     }
 
     fn update_background_flags(&mut self) {
@@ -3027,6 +3029,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if next_idx >= self.sessions.len() || next_idx == self.active_idx {
             return;
         }
+        self.pending_reset_from_history = !self.sessions[self.active_idx].messages.is_empty();
         self.active_idx = next_idx;
         self.pending_terminal_reset = true;
         let session = self.active_session_mut();
@@ -3101,17 +3104,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             return Ok(terminal);
         }
         self.pending_terminal_reset = false;
+        self.pending_reset_from_history = false;
         self.active_session_mut()
             .messages
             .reset_scrollback_cursor_for_session_switch();
         drop(terminal);
 
         let mut out = std::io::stdout();
-        execute!(
-            out,
-            Clear(ClearType::All),
-            MoveTo(0, 0)
-        )?;
+        execute!(out, Clear(ClearType::Purge), Clear(ClearType::All), MoveTo(0, 0))?;
         out.flush()?;
         std::thread::sleep(Duration::from_millis(50));
 
@@ -3149,13 +3149,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         }
 
         let completed = terminal.draw(|f| {
-            let breadcrumb = self.build_breadcrumb();
+            let breadcrumb = self.build_session_tabs();
             let session = &mut self.sessions[self.active_idx];
             session.footer.set_session_breadcrumb(Some(breadcrumb));
             session.render(f);
         })?;
         self.record_tui_frame_from_buffer(completed.area, completed.buffer);
         Ok(())
+    }
+
+    fn should_finish_session_switch_immediately(&self) -> bool {
+        self.pending_terminal_reset
+            && !self.pending_reset_from_history
+            && self.active_session().messages.is_empty()
     }
 
     fn finish_session_switch(
@@ -3168,10 +3174,16 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         if !std::io::stdout().is_terminal() {
             self.pending_terminal_reset = false;
+            self.pending_reset_from_history = false;
+            return Ok(());
+        }
+
+        if !self.should_finish_session_switch_immediately() {
             return Ok(());
         }
 
         self.pending_terminal_reset = false;
+        self.pending_reset_from_history = false;
         self.active_session_mut()
             .messages
             .reset_scrollback_cursor_for_session_switch();
@@ -3643,7 +3655,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             }
 
             let completed = terminal.draw(|f| {
-                let breadcrumb = self.build_breadcrumb();
+                let breadcrumb = self.build_session_tabs();
                 let session = &mut self.sessions[self.active_idx];
                 session.footer.set_session_breadcrumb(Some(breadcrumb));
                 session.render(f);
@@ -3697,6 +3709,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         };
                         if needs_new_agent {
                             self.spawn_new_session()?;
+                            self.finish_session_switch(&mut terminal)?;
                         }
                         if session_stream_rx.is_some() {
                             stream_rx = session_stream_rx;
@@ -3787,7 +3800,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         session.loading_indicator.tick();
                         session.sync_prompt_status_hint();
                         let completed = terminal.draw(|f| {
-                            let breadcrumb = self.build_breadcrumb();
+                            let breadcrumb = self.build_session_tabs();
                             let session = &mut self.sessions[self.active_idx];
                             session.footer.set_session_breadcrumb(Some(breadcrumb));
                             session.render(f);
@@ -4008,6 +4021,103 @@ mod tests {
 
         assert!(app.switch_to_previous_session());
         assert_eq!(app.active_idx, 1);
+    }
+
+    #[test]
+    fn session_tabs_bracket_only_the_active_session() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session2.last_error = Some("boom".to_string());
+        app.sessions.push(session2);
+
+        assert_eq!(app.build_session_tabs(), "[root] session1!");
+        app.active_idx = 1;
+        assert_eq!(app.build_session_tabs(), "root [session1!]");
+    }
+
+    #[test]
+    fn empty_sessions_can_redraw_immediately_after_switch() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        app.sessions.push(session2);
+        app.switch_session(1);
+
+        assert!(app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn populated_sessions_require_full_switch_reset() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session2.messages.add_user("hello?".to_string());
+        app.sessions.push(session2);
+        app.switch_session(1);
+
+        assert!(!app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn switching_away_from_populated_session_still_requires_full_reset() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session2.messages.add_user("hello?".to_string());
+        app.sessions.push(session2);
+        app.active_idx = 1;
+        app.switch_session(0);
+
+        assert!(app.pending_reset_from_history);
+        assert!(!app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn spawn_new_session_creates_an_empty_active_session_ready_for_immediate_redraw() {
+        let mut app = test_app();
+
+        app.spawn_new_session().expect("spawn new session should succeed");
+
+        assert_eq!(app.active_idx, 1);
+        assert_eq!(app.sessions[1].session_label, "session1");
+        assert!(app.sessions[1].messages.is_empty());
+        assert!(app.should_finish_session_switch_immediately());
     }
 
     #[test]
