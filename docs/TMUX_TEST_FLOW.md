@@ -134,7 +134,10 @@ Steps:
 1. Send `/new-agent`.
 2. Wait for idle.
 3. Capture the footer breadcrumb.
-4. Send raw `Tab`.
+4. Send a literal tab through `tmux-cli`:
+   ```bash
+   tmux-cli send "\t" --pane=<pane> --enter=False
+   ```
 5. Capture.
 6. Send raw `Shift+Tab` or `BTab`.
 7. Capture.
@@ -143,9 +146,15 @@ Expected anchors:
 - breadcrumb changes from `root>` to `root ▸ session1>`
 - `Tab` switches away from the current session
 - `Shift+Tab` switches back
+- the capture taken immediately after a switch is never blank
+
+Regression checkpoint:
+- capture immediately after a literal `Tab` sent with `tmux-cli send "\t" --enter=False`
+- if the pane is blank, the switch path cleared the terminal without completing the redraw in the same event cycle
 
 Notes:
-- When `tmux-cli` misses a chord, fall back to `tmux send-keys -t <pane> ...`.
+- Prefer `tmux-cli send "\t" --enter=False` for `Tab` in remote sessions.
+- `tmux send-keys` can be flaky for `Tab`/`Ctrl+I` in remote tmux-cli sessions; use it mainly for chords that tmux-cli cannot express cleanly.
 
 ### 5. Parent and Child Session Traversal
 

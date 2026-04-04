@@ -1,5 +1,5 @@
 use std::collections::{HashMap, VecDeque};
-use std::io::Write;
+use std::io::{IsTerminal, Write};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -3137,18 +3137,64 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             .into())
     }
 
+    fn redraw_active_session(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        {
+            let session = self.active_session_mut();
+            session.poll_compaction_result();
+            session.sync_inline_viewport(terminal)?;
+            session.flush_unrendered_history(terminal)?;
+        }
+
+        let completed = terminal.draw(|f| {
+            let breadcrumb = self.build_breadcrumb();
+            let session = &mut self.sessions[self.active_idx];
+            session.footer.set_session_breadcrumb(Some(breadcrumb));
+            session.render(f);
+        })?;
+        self.record_tui_frame_from_buffer(completed.area, completed.buffer);
+        Ok(())
+    }
+
+    fn finish_session_switch(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        if !self.pending_terminal_reset {
+            return Ok(());
+        }
+
+        if !std::io::stdout().is_terminal() {
+            self.pending_terminal_reset = false;
+            return Ok(());
+        }
+
+        self.pending_terminal_reset = false;
+        self.active_session_mut()
+            .messages
+            .reset_scrollback_cursor_for_session_switch();
+        terminal.clear()?;
+        execute!(std::io::stdout(), MoveTo(0, 0))?;
+        self.redraw_active_session(terminal)?;
+        Ok(())
+    }
+
     fn handle_global_key(
         &mut self,
         key: crossterm::event::KeyEvent,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<bool> {
         match (key.modifiers, key.code) {
-            (KeyModifiers::NONE, KeyCode::Tab) => {
+            (KeyModifiers::NONE, KeyCode::Tab)
+            | (KeyModifiers::CONTROL, KeyCode::Char('i' | 'I')) => {
                 let session = &self.sessions[self.active_idx];
                 let should_defer_to_completion = session.stream_rx.is_none()
                     && (session.input.completion_is_visible()
                         || session.input.get_input().starts_with('/'));
                 if !should_defer_to_completion && self.switch_to_next_session() {
+                    self.finish_session_switch(terminal)?;
                     return Ok(true);
                 }
             }
@@ -3157,16 +3203,19 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 let should_defer_to_completion =
                     session.stream_rx.is_none() && session.input.completion_is_visible();
                 if !should_defer_to_completion && self.switch_to_previous_session() {
+                    self.finish_session_switch(terminal)?;
                     return Ok(true);
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('5' | ']')) => {
                 if self.switch_to_child_session() {
+                    self.finish_session_switch(terminal)?;
                     return Ok(true);
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('[')) => {
                 if self.switch_to_parent_session() {
+                    self.finish_session_switch(terminal)?;
                     return Ok(true);
                 }
             }
@@ -3174,6 +3223,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 let session = &self.sessions[self.active_idx];
                 let is_idle = session.stream_rx.is_none() && session.mode == AppMode::Normal;
                 if is_idle && self.switch_to_previous_session() {
+                    self.finish_session_switch(terminal)?;
                     return Ok(true);
                 }
             }
@@ -4118,6 +4168,60 @@ mod tests {
 
         assert!(handled);
         assert_eq!(app.active_idx, 1);
+        assert!(!app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn tab_global_finishes_session_reset_immediately() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+
+        app.handle_global_key(KeyEvent::from(KeyCode::Tab), &mut terminal)
+            .expect("global tab should succeed");
+
+        assert_eq!(app.active_idx, 1);
+        assert!(!app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn ctrl_i_global_switches_session_as_tab_alias() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "child".to_string(),
+            0,
+        );
+        app.sessions.push(session2);
+
+        let handled = app
+            .handle_global_key(
+                KeyEvent::new(KeyCode::Char('i'), KeyModifiers::CONTROL),
+                &mut terminal,
+            )
+            .expect("global ctrl+i should succeed");
+
+        assert!(handled);
+        assert_eq!(app.active_idx, 1);
+        assert!(!app.pending_terminal_reset);
     }
 
     #[test]
