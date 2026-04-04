@@ -2,6 +2,7 @@
 name = "amadeus"
 version = "0.1.0"
 edition = "2021"
+default-run = "amadeus"
 description = "AI Agent SDK - Core building blocks for building AI agents"
 license = "MIT"
 repository = "https://github.com/xxraincandyxx/Amadeus"

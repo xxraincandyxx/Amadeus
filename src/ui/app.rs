@@ -3716,7 +3716,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 mod tests {
     use super::{App, MonitorStatus, Session, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{backend::TestBackend, Terminal};
+    use ratatui::{backend::{CrosstermBackend, TestBackend}, Terminal};
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -3901,6 +3901,22 @@ mod tests {
             .expect("normal key handling should succeed");
 
         assert!(session.should_quit);
+        assert!(session.input.get_input().is_empty());
+    }
+
+    #[tokio::test]
+    async fn question_mark_opens_shortcuts_overlay_when_input_is_empty() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        session
+            .handle_input_key(KeyEvent::from(KeyCode::Char('?')), &mut terminal)
+            .await
+            .expect("question mark handling should succeed");
+
+        assert!(session.input.is_shortcuts_visible());
         assert!(session.input.get_input().is_empty());
     }
 

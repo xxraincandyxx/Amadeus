@@ -18,6 +18,12 @@
    cargo run --features full
    ```
 
+   If you launch the TUI through `tmux-cli`, send single-key shortcuts without the
+   default Enter suffix. For example:
+   ```bash
+   tmux-cli send "?" --pane=<pane> --enter=False
+   ```
+
 ### First Steps
 
 1. Type a prompt and press `Enter` to send
