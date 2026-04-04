@@ -45,7 +45,7 @@ const DEFAULT_VIEWPORT_HEIGHT_PERCENT: u16 = 32;
 const DEFAULT_SHELF_HEIGHT: u16 = 6;
 const MIN_LIVE_VIEWPORT_WIDTH: u16 = 4;
 const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
-const MIN_DASHBOARD_HEIGHT: u16 = 20;
+const MIN_DASHBOARD_HEIGHT: u16 = 6;
 const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
 const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
@@ -1386,7 +1386,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     }
 
     fn render_live_viewport(&mut self, frame: &mut ratatui::Frame, area: Rect) {
-        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_LIVE_VIEWPORT_HEIGHT {
+        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_DASHBOARD_HEIGHT {
             return;
         }
 
@@ -3029,6 +3029,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         if next_idx >= self.sessions.len() || next_idx == self.active_idx {
             return;
         }
+        let switching_to_empty = self.sessions[next_idx].messages.is_empty();
         self.pending_reset_from_history = !self.sessions[self.active_idx].messages.is_empty();
         self.active_idx = next_idx;
         self.pending_terminal_reset = true;
@@ -3036,6 +3037,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         session.is_background = false;
         session.footer.set_background(false);
         session.maybe_show_next_approval();
+        if switching_to_empty {
+            self.pending_reset_from_history = false;
+        }
     }
 
     fn switch_to_next_session(&mut self) -> bool {
@@ -3166,7 +3170,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     fn finish_session_switch(
         &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+        _terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     ) -> Result<()> {
         if !self.pending_terminal_reset {
             return Ok(());
@@ -3187,9 +3191,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.active_session_mut()
             .messages
             .reset_scrollback_cursor_for_session_switch();
-        terminal.clear()?;
-        execute!(std::io::stdout(), MoveTo(0, 0))?;
-        self.redraw_active_session(terminal)?;
         Ok(())
     }
 
@@ -4086,7 +4087,7 @@ mod tests {
     }
 
     #[test]
-    fn switching_away_from_populated_session_still_requires_full_reset() {
+    fn switching_away_from_populated_session_to_empty_allows_immediate_redraw() {
         let mut app = test_app();
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
         let agent = Agent::builder(client, Arc::new(Config::default())).build();
@@ -4103,8 +4104,8 @@ mod tests {
         app.active_idx = 1;
         app.switch_session(0);
 
-        assert!(app.pending_reset_from_history);
-        assert!(!app.should_finish_session_switch_immediately());
+        assert!(!app.pending_reset_from_history);
+        assert!(app.should_finish_session_switch_immediately());
         assert!(app.pending_terminal_reset);
     }
 
@@ -4118,6 +4119,75 @@ mod tests {
         assert_eq!(app.sessions[1].session_label, "session1");
         assert!(app.sessions[1].messages.is_empty());
         assert!(app.should_finish_session_switch_immediately());
+    }
+
+    #[test]
+    fn switching_from_populated_to_empty_session_allows_immediate_redraw() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session1 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session1.messages.add_user("hello?".to_string());
+        app.sessions.push(session1);
+        app.active_idx = 1;
+
+        app.switch_session(0);
+
+        assert!(!app.pending_reset_from_history);
+        assert!(app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn switching_between_empty_sessions_allows_immediate_redraw() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        app.sessions.push(session2);
+
+        app.switch_session(1);
+
+        assert!(!app.pending_reset_from_history);
+        assert!(app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn switching_to_populated_session_defers_redraw() {
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session2.messages.add_user("hello?".to_string());
+        app.sessions.push(session2);
+
+        app.switch_session(1);
+
+        assert!(!app.pending_reset_from_history);
+        assert!(!app.should_finish_session_switch_immediately());
+        assert!(app.pending_terminal_reset);
     }
 
     #[test]

@@ -148,10 +148,17 @@ Expected anchors:
 - `Shift+Tab` switches back
 - the capture taken immediately after a switch is never blank
 
-Regression checkpoint:
+Regression checkpoint — blank screen after switch:
 - capture immediately after a literal `Tab` sent with `tmux-cli send "\t" --enter=False`
 - if the pane is blank, the switch path cleared the terminal without completing the redraw in the same event cycle
-- if the transcript appears more than once after switching back into a populated session, the switch path replayed committed history without purging shared scrollback
+- the fix: `switch_session` clears `pending_reset_from_history` when switching to an empty session so `finish_session_switch` always runs an immediate redraw for empty targets
+- verify: `switching_from_populated_to_empty_session_allows_immediate_redraw` unit test passes
+
+Regression checkpoint — dashboard flicker on empty session switch:
+- after switching to an empty session, the dashboard (`Amadeus v0.1.0`, mascot art) must remain visible
+- the dashboard must not appear briefly then vanish on the next tick
+- verify: `switching_between_empty_sessions_allows_immediate_redraw` unit test passes
+- verify: `switching_from_empty_to_populated_session_defers_redraw` unit test passes
 
 Populated-session regression:
 1. Create `session1`.
