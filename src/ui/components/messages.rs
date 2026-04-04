@@ -1526,36 +1526,6 @@ impl MessagesComponent {
         );
         lines.push(Line::from(""));
 
-        // Tips
-        lines.push(Line::from(vec![
-            Span::styled(" Tips for getting started ", Style::default().fg(secondary)),
-            Span::styled(
-                "─".repeat(width.saturating_sub(28)),
-                Style::default().fg(dark),
-            ),
-        ]));
-
-        lines.push(Line::from(vec![
-            Span::styled("  • Try ", Style::default().fg(secondary)),
-            Span::styled("/help", Style::default().fg(accent)),
-            Span::styled(" to see available commands", Style::default().fg(secondary)),
-        ]));
-
-        lines.push(Line::from(vec![
-            Span::styled("  • Press ", Style::default().fg(secondary)),
-            Span::styled("Esc", Style::default().fg(accent)),
-            Span::styled(
-                " to switch between Input and Normal modes",
-                Style::default().fg(secondary),
-            ),
-        ]));
-
-        lines.push(Line::from(""));
-        lines.push(Line::from(Span::styled(
-            "─".repeat(width),
-            Style::default().fg(dark),
-        )));
-
         lines
     }
 
@@ -1830,6 +1800,8 @@ mod tests {
             .join("\n");
 
         assert!(rendered.contains("Amadeus v0.1.0"));
+        assert!(!rendered.contains("Tips for getting started"));
+        assert!(!rendered.contains("/help"));
         assert!(rendered.contains("turn 1"));
         assert!(rendered.contains("Hello"));
     }

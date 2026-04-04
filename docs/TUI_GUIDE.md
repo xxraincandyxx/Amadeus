@@ -24,6 +24,9 @@
    tmux-cli send "?" --pane=<pane> --enter=False
    ```
 
+   For a detailed coding-agent debugging and acceptance workflow, see
+   [TMUX_TEST_FLOW.md](./TMUX_TEST_FLOW.md).
+
 ### First Steps
 
 1. Type a prompt and press `Enter` to send
