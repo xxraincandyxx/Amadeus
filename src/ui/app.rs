@@ -4191,7 +4191,8 @@ mod tests {
             .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
             .collect::<String>();
 
-        assert!(rendered.contains("Amadeus v0.1.0"));
+        assert!(rendered.contains("Try \"how does src/main.rs work?\""));
+        assert!(rendered.contains("? for shortcuts"));
         assert!(!first_row.contains("Welcome"));
     }
 
