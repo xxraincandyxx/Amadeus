@@ -9,6 +9,8 @@
 # - cmd: verify.sh
 # uses:
 # - cmd: cargo
+# - cmd: python3
+# - cmd: scripts/check_source_headers.py
 # invariants:
 # - Script command flow remains non-interactive and order-dependent.
 # side_effects:
@@ -22,6 +24,9 @@ set -e
 
 # Amadeus SDK Sanity Verification Script
 # This script catches build-system, formatting, and feature-flag errors.
+
+echo "🧾 Checking source-file headers..."
+python3 scripts/check_source_headers.py
 
 echo "🎨 Checking formatting..."
 cargo fmt --all -- --check

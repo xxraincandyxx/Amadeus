@@ -15,7 +15,6 @@
 // - cmd: cargo test --features full
 // @end-amadeus-header
 
-
 //! TUI Snapshot Testing Infrastructure
 //!
 //! Complete visual regression testing for the terminal UI.

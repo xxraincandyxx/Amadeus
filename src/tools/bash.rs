@@ -123,12 +123,12 @@ impl BashTool {
     fn is_blocked(&self, command: &str) -> bool {
         matches!(classify_command(command), BashCommandKind::Destructive)
             || self.blocked_commands.iter().any(|blocked| {
-            if blocked == "rm -rf /" {
-                deletes_filesystem_root(command)
-            } else {
-                command.contains(blocked)
-            }
-        })
+                if blocked == "rm -rf /" {
+                    deletes_filesystem_root(command)
+                } else {
+                    command.contains(blocked)
+                }
+            })
     }
 
     fn truncate_output(&self, output: String) -> String {

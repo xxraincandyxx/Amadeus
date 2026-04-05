@@ -274,11 +274,7 @@ impl LoadingIndicator {
 
     fn dot_frame(&self) -> &'static str {
         let i = (self.spinner.frame_index() / DOT_TICK_SLOWDOWN) % DOT_FRAMES.len();
-        match i {
-            0 => ".  ",
-            1 => ".. ",
-            _ => "...",
-        }
+        DOT_FRAMES[i]
     }
 
     fn current_status_label(&self) -> Option<&'static str> {

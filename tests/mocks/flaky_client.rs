@@ -20,7 +20,6 @@
 // - cmd: cargo test flaky_client --features full
 // @end-amadeus-header
 
-
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;

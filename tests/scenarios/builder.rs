@@ -21,7 +21,6 @@
 // - cmd: cargo test builder --features full
 // @end-amadeus-header
 
-
 use amadeus::client::StreamEvent;
 use serde_json::Value;
 use std::collections::VecDeque;

@@ -62,8 +62,8 @@ use crate::agent::loop_agent::{create_approval_channels, Agent};
 use crate::client::LLMClient;
 use crate::error::Result;
 use crate::ui::components::{
-    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar,
-    Footer, HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
+    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar, Footer,
+    HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
     StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
@@ -1428,12 +1428,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let has_messages = !self.messages.is_empty();
 
         if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
-            if !has_messages {
-                if area.height >= MIN_DASHBOARD_HEIGHT {
-                    let dashboard_lines = self.messages.render_dashboard_lines(area.width);
-                    if !dashboard_lines.is_empty() {
-                        frame.render_widget(Paragraph::new(dashboard_lines), area);
-                    }
+            if !has_messages && area.height >= MIN_DASHBOARD_HEIGHT {
+                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
+                if !dashboard_lines.is_empty() {
+                    frame.render_widget(Paragraph::new(dashboard_lines), area);
                 }
             }
             return;
@@ -2704,7 +2702,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     fn render(&mut self, frame: &mut ratatui::Frame) {
         let size = frame.area();
 
-        let input_height = self.input.height().saturating_add(self.input.completion_height());
+        let input_height = self
+            .input
+            .height()
+            .saturating_add(self.input.completion_height());
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 2;
 
@@ -3103,11 +3104,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 
     fn switch_to_child_session(&mut self) -> bool {
-        let child_idx = self
-            .sessions
-            .iter()
-            .enumerate()
-            .find_map(|(idx, session)| (session.parent_session_id == Some(self.active_idx)).then_some(idx));
+        let child_idx = self.sessions.iter().enumerate().find_map(|(idx, session)| {
+            (session.parent_session_id == Some(self.active_idx)).then_some(idx)
+        });
 
         let Some(child_idx) = child_idx else {
             return false;
@@ -3118,7 +3117,8 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     fn new_inline_terminal(&self) -> std::io::Result<Terminal<CrosstermBackend<std::io::Stdout>>> {
         let terminal_size = crossterm::terminal::size()?;
-        let initial_height = self.active_session()
+        let initial_height = self
+            .active_session()
             .max_shelf_height_for_terminal(terminal_size.1);
         let stdout = std::io::stdout();
         let backend = CrosstermBackend::new(stdout);
@@ -3145,7 +3145,12 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         drop(terminal);
 
         let mut out = std::io::stdout();
-        execute!(out, Clear(ClearType::Purge), Clear(ClearType::All), MoveTo(0, 0))?;
+        execute!(
+            out,
+            Clear(ClearType::Purge),
+            Clear(ClearType::All),
+            MoveTo(0, 0)
+        )?;
         out.flush()?;
         std::thread::sleep(Duration::from_millis(50));
 
@@ -3169,27 +3174,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                 std::io::Error::other("inline terminal recreate failed with no error detail")
             })
             .into())
-    }
-
-    fn redraw_active_session(
-        &mut self,
-        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
-    ) -> Result<()> {
-        {
-            let session = self.active_session_mut();
-            session.poll_compaction_result();
-            session.sync_inline_viewport(terminal)?;
-            session.flush_unrendered_history(terminal)?;
-        }
-
-        let completed = terminal.draw(|f| {
-            let breadcrumb = self.build_session_tabs();
-            let session = &mut self.sessions[self.active_idx];
-            session.footer.set_session_breadcrumb(Some(breadcrumb));
-            session.render(f);
-        })?;
-        self.record_tui_frame_from_buffer(completed.area, completed.buffer);
-        Ok(())
     }
 
     fn should_finish_session_switch_immediately(&self) -> bool {
@@ -3869,7 +3853,10 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 mod tests {
     use super::{App, MonitorStatus, Session, ToolMonitorState};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-    use ratatui::{backend::{CrosstermBackend, TestBackend}, Terminal};
+    use ratatui::{
+        backend::{CrosstermBackend, TestBackend},
+        Terminal,
+    };
     use std::path::PathBuf;
     use std::sync::Arc;
 
@@ -4143,7 +4130,8 @@ mod tests {
     fn spawn_new_session_creates_an_empty_active_session_ready_for_immediate_redraw() {
         let mut app = test_app();
 
-        app.spawn_new_session().expect("spawn new session should succeed");
+        app.spawn_new_session()
+            .expect("spawn new session should succeed");
 
         assert_eq!(app.active_idx, 1);
         assert_eq!(app.sessions[1].session_label, "session1");

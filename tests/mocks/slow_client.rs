@@ -20,7 +20,6 @@
 // - cmd: cargo test slow_client --features full
 // @end-amadeus-header
 
-
 use std::pin::Pin;
 use std::time::Duration;
 

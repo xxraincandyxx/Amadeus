@@ -16,7 +16,7 @@ Amadeus is a production-ready AI agent framework that provides:
 - **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
 - **Multi-Agent Coordination**: Supervisor/worker pattern for complex tasks
 
-Parity progress against the `refs/claw-code-parity` reference is tracked in `docs/PARITY.md` and only advanced when covered by automated tests.
+Parity progress against the `refs/claw-code-parity` reference is tracked in `docs/EVALUATION.md` and only advanced when covered by automated tests.
 
 ## Installation
 

@@ -26,7 +26,6 @@
 // - cmd: cargo test p2p_test --features full
 // @end-amadeus-header
 
-
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;

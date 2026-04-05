@@ -23,7 +23,6 @@
 // - cmd: cargo test assertions --features full
 // @end-amadeus-header
 
-
 use amadeus::agent::events::AgentEvent;
 
 use super::timeline::EventTimeline;
@@ -227,7 +226,10 @@ pub fn assert_timeline_has_approval_decision(tl: &EventTimeline, tool_name: &str
             && matches!(
                 (decision.decision, approve),
                 (amadeus::agent::events::ApprovalDecision::Approve, true)
-                    | (amadeus::agent::events::ApprovalDecision::AlwaysApprove, true)
+                    | (
+                        amadeus::agent::events::ApprovalDecision::AlwaysApprove,
+                        true
+                    )
                     | (amadeus::agent::events::ApprovalDecision::Deny, false)
             )
     });

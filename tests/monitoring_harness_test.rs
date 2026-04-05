@@ -27,11 +27,11 @@ mod mocks;
 
 use mocks::ScenarioMockClient;
 use scenarios::{
-    assert_timeline_event_labels, assert_timeline_has_thinking, assert_timeline_has_token_usage,
-    assert_timeline_has_approval, assert_timeline_has_approval_decision,
-    assert_timeline_history_len, assert_timeline_history_roles, assert_timeline_is_done,
-    assert_timeline_text_contains, assert_timeline_thinking_contains, assert_timeline_tool_count,
-    assert_timeline_tool_names, ScenarioBuilder, ScenarioRunner,
+    assert_timeline_event_labels, assert_timeline_has_approval,
+    assert_timeline_has_approval_decision, assert_timeline_has_thinking,
+    assert_timeline_has_token_usage, assert_timeline_history_len, assert_timeline_history_roles,
+    assert_timeline_is_done, assert_timeline_text_contains, assert_timeline_thinking_contains,
+    assert_timeline_tool_count, assert_timeline_tool_names, ScenarioBuilder, ScenarioRunner,
 };
 
 #[tokio::test]
@@ -196,8 +196,9 @@ async fn scenario_runner_can_script_approval_decisions() {
 
 #[tokio::test]
 async fn scenario_runner_supports_fixture_backed_approval_scenarios() {
-    let client = ScenarioMockClient::from_json(include_str!("fixtures/scenarios/approval_roundtrip.json"))
-        .expect("fixture should deserialize");
+    let client =
+        ScenarioMockClient::from_json(include_str!("fixtures/scenarios/approval_roundtrip.json"))
+            .expect("fixture should deserialize");
 
     let scenario = ScenarioBuilder::new("approval_roundtrip_fixture")
         .description("Drive approval decisions with fixture-backed LLM output")

@@ -2,7 +2,8 @@
 // summary: Registry for tool discovery, schema exposure, and execution lookup.
 // layer: tools
 // status: active
-// feature_flags: none
+// feature_flags:
+// - concurrency
 // provides:
 // - module: crate::tools::registry
 // - type: crate::tools::registry::ToolRegistry
@@ -39,10 +40,13 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::agent::config::Config;
+#[cfg(feature = "concurrency")]
 use crate::concurrency::FileLockManager;
 use crate::core::id::AgentId;
 use crate::error::Result;
 use crate::tools::bash::BashTool;
+#[cfg(not(feature = "concurrency"))]
+use crate::tools::file::FileLockManager;
 use crate::tools::file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 use crate::tools::glob::GlobTool;
 use crate::tools::grep::GrepTool;

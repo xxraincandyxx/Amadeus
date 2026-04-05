@@ -22,7 +22,6 @@
 // - cmd: cargo test timeline --features full
 // @end-amadeus-header
 
-
 use std::time::{Duration, Instant};
 
 use amadeus::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult};

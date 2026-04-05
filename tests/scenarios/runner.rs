@@ -22,7 +22,6 @@
 // - cmd: cargo test runner --features full
 // @end-amadeus-header
 
-
 use futures::StreamExt;
 use std::collections::VecDeque;
 use std::sync::Arc;

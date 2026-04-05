@@ -239,7 +239,10 @@ impl Policy {
         if tool == "bash" {
             match self.bash_command_kind(input) {
                 BashCommandKind::WorkspaceWrite => {
-                    return format!("Tool '{}' requires approval for workspace-write command", tool);
+                    return format!(
+                        "Tool '{}' requires approval for workspace-write command",
+                        tool
+                    );
                 }
                 BashCommandKind::Destructive => {
                     return format!("Tool '{}' requires approval for destructive command", tool);
@@ -360,10 +363,7 @@ mod tests {
     fn test_bash_workspace_write_requires_approval() {
         let policy = Policy::new();
 
-        assert!(policy.needs_approval(
-            "bash",
-            &serde_json::json!({"command": "echo hi > out.txt"})
-        ));
+        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "echo hi > out.txt"})));
         assert!(policy.needs_approval(
             "bash",
             &serde_json::json!({"command": "sed -i 's/old/new/' file.txt"})
@@ -374,10 +374,8 @@ mod tests {
     fn test_bash_workspace_write_reason_is_specific() {
         let policy = Policy::new();
 
-        let reason = policy.approval_reason(
-            "bash",
-            &serde_json::json!({"command": "echo hi > out.txt"}),
-        );
+        let reason =
+            policy.approval_reason("bash", &serde_json::json!({"command": "echo hi > out.txt"}));
 
         assert!(reason.contains("workspace-write"));
     }

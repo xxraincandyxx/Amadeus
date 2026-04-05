@@ -2,7 +2,8 @@
 // summary: Tool implementation and support code for file.
 // layer: tools
 // status: active
-// feature_flags: none
+// feature_flags:
+// - concurrency
 // provides:
 // - module: crate::tools::file
 // - type: crate::tools::file::ReadFileInput
@@ -63,11 +64,15 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::agent::config::Config;
+#[cfg(feature = "concurrency")]
 use crate::concurrency::FileLockManager;
 use crate::core::id::AgentId;
 use crate::error::{AgentError, Result};
 use crate::tools::schema::{edit_file_tool, read_file_tool, write_file_tool};
 use crate::tools::tool_trait::Tool;
+
+#[cfg(not(feature = "concurrency"))]
+pub struct FileLockManager;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReadFileInput {
@@ -219,7 +224,7 @@ impl FileTools {
     pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<String> {
         let fp = self.safe_path(path)?;
 
-        // If file locking is enabled, acquire read lock
+        #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
             let read_guard = manager.acquire_read(*agent_id, &path_str).await?;
@@ -249,7 +254,6 @@ impl FileTools {
             return Ok(self.truncate_output(lines.join("\n")));
         }
 
-        // Without locking
         let text = tokio::fs::read_to_string(&fp).await.map_err(|e| {
             AgentError::Io(std::io::Error::other(format!(
                 "Failed to read {}: {}",
@@ -272,7 +276,7 @@ impl FileTools {
     pub async fn write(&self, path: &str, content: &str) -> Result<String> {
         let fp = self.safe_path(path)?;
 
-        // If file locking is enabled, validate and acquire write lock
+        #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
 
@@ -306,7 +310,6 @@ impl FileTools {
             return Ok(format!("Wrote {} bytes to {}", content.len(), path));
         }
 
-        // Without locking
         if let Some(parent) = fp.parent() {
             tokio::fs::create_dir_all(parent).await.map_err(|e| {
                 AgentError::Io(std::io::Error::other(format!(
@@ -335,7 +338,7 @@ impl FileTools {
     ) -> Result<String> {
         let fp = self.safe_path(path)?;
 
-        // If file locking is enabled, validate and acquire write lock
+        #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
 
@@ -384,7 +387,6 @@ impl FileTools {
             return Ok(format!("Edited {}", path));
         }
 
-        // Without locking
         let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
             AgentError::Io(std::io::Error::other(format!(
                 "Failed to read {}: {}",

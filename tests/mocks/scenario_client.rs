@@ -26,7 +26,6 @@
 // - cmd: cargo test scenario_client --features full
 // @end-amadeus-header
 
-
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;

@@ -23,5 +23,8 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Check source-file headers
+        run: python3 scripts/check_source_headers.py
+
       - name: Verify workspace
         run: bash ./verify.sh

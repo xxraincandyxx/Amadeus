@@ -143,7 +143,8 @@ impl FileLockManager {
     /// Multiple readers can hold the lock simultaneously.
     /// Returns a guard that must be dropped to release the lock.
     pub async fn acquire_read(&self, agent_id: AgentId, path: &str) -> Result<FileReadGuard> {
-        self.acquire_read_with_timeout(agent_id, path, self.default_timeout).await
+        self.acquire_read_with_timeout(agent_id, path, self.default_timeout)
+            .await
     }
 
     /// Acquire a shared (read) lock with custom timeout.
@@ -168,7 +169,11 @@ impl FileLockManager {
             if !writer_active {
                 // Try to increment reader count
                 let new = (reader_count + 1) << 1;
-                if lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+                if lock
+                    .state
+                    .compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
                     debug!(agent_id = %agent_id, path = %path, "Acquired read lock");
                     return Ok(FileReadGuard {
                         agent_id,
@@ -181,7 +186,9 @@ impl FileLockManager {
             }
 
             if start.elapsed() >= timeout {
-                return Err(AgentError::Lock(format!("Timeout acquiring read lock for {path}")));
+                return Err(AgentError::Lock(format!(
+                    "Timeout acquiring read lock for {path}"
+                )));
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
@@ -192,7 +199,8 @@ impl FileLockManager {
     /// Blocks all readers and other writers.
     /// Returns a guard that must be dropped to release the lock.
     pub async fn acquire_write(&self, agent_id: AgentId, path: &str) -> Result<FileWriteGuard> {
-        self.acquire_write_with_timeout(agent_id, path, self.default_timeout).await
+        self.acquire_write_with_timeout(agent_id, path, self.default_timeout)
+            .await
     }
 
     /// Acquire an exclusive (write) lock with custom timeout.
@@ -217,7 +225,9 @@ impl FileLockManager {
             if writer_active || reader_count > 0 {
                 // Writer active or readers exist, wait
                 if start.elapsed() >= timeout {
-                    return Err(AgentError::Lock(format!("Timeout acquiring write lock for {path}")));
+                    return Err(AgentError::Lock(format!(
+                        "Timeout acquiring write lock for {path}"
+                    )));
                 }
                 tokio::time::sleep(Duration::from_millis(10)).await;
                 continue;
@@ -225,7 +235,11 @@ impl FileLockManager {
 
             // Try to set writer bit
             let new = current | WRITER_BIT;
-            if lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if lock
+                .state
+                .compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 debug!(agent_id = %agent_id, path = %path, "Acquired write lock");
                 return Ok(FileWriteGuard {
                     path: path.to_string(),
@@ -338,7 +352,12 @@ impl FileReadGuard {
     /// Record that we read the file (for modification tracking).
     ///
     /// Call this after successfully reading the file content.
-    pub async fn record_read(self, manager: &FileLockManager, modified_at: SystemTime, content_hash: Option<u64>) {
+    pub async fn record_read(
+        self,
+        manager: &FileLockManager,
+        modified_at: SystemTime,
+        content_hash: Option<u64>,
+    ) {
         manager
             .cache_read(self.agent_id, &self.path, modified_at, content_hash)
             .await;
@@ -355,7 +374,12 @@ impl Drop for FileReadGuard {
                 return;
             }
             let new = (reader_count - 1) << 1;
-            if self.lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if self
+                .lock
+                .state
+                .compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return;
             }
         }
@@ -384,7 +408,12 @@ impl Drop for FileWriteGuard {
         loop {
             let current = self.lock.state.load(Ordering::SeqCst);
             let new = current & !1; // Clear bit 0
-            if self.lock.state.compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            if self
+                .lock
+                .state
+                .compare_exchange(current, new, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
                 return;
             }
         }

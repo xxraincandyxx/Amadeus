@@ -1129,16 +1129,10 @@ impl MessagesComponent {
         let buffer_color = ratatui::style::Color::Rgb(120, 120, 120); // Gray
         let empty_color = colors.ui.dark;
 
-        let mut bar_spans = vec![Span::styled(
-            "⛀ ",
-            Style::default().fg(colors.text.accent),
-        )];
+        let mut bar_spans = vec![Span::styled("⛀ ", Style::default().fg(colors.text.accent))];
 
         if used_chars > 0 {
-            let filled = (0..used_chars)
-                .map(|_| "⛁")
-                .collect::<Vec<_>>()
-                .join(" ");
+            let filled = (0..used_chars).map(|_| "⛁").collect::<Vec<_>>().join(" ");
             bar_spans.push(Span::styled(
                 format!("{} ", filled),
                 Style::default().fg(fill_color),
@@ -1146,10 +1140,7 @@ impl MessagesComponent {
         }
 
         if buffer_chars > 0 {
-            let buffered = (0..buffer_chars)
-                .map(|_| "⛝")
-                .collect::<Vec<_>>()
-                .join(" ");
+            let buffered = (0..buffer_chars).map(|_| "⛝").collect::<Vec<_>>().join(" ");
             bar_spans.push(Span::styled(
                 format!("{} ", buffered),
                 Style::default().fg(buffer_color),
@@ -1157,10 +1148,7 @@ impl MessagesComponent {
         }
 
         if free_chars > 0 {
-            let empty = (0..free_chars)
-                .map(|_| "⛶")
-                .collect::<Vec<_>>()
-                .join(" ");
+            let empty = (0..free_chars).map(|_| "⛶").collect::<Vec<_>>().join(" ");
             bar_spans.push(Span::styled(
                 format!("{} ", empty),
                 Style::default().fg(empty_color),
@@ -1174,24 +1162,23 @@ impl MessagesComponent {
         lines.push(Line::from(bar_spans));
 
         // Token count on next line
-        lines.push(Line::from(vec![
-            Span::styled(
-                format!(
-                    "    {} / {} tokens ({}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.used_tokens()),
-                    crate::ui::components::ContextInfo::fmt_tokens(total),
-                    pct,
-                ),
-                Style::default().fg(colors.text.secondary),
+        lines.push(Line::from(vec![Span::styled(
+            format!(
+                "    {} / {} tokens ({}%)",
+                crate::ui::components::ContextInfo::fmt_tokens(info.used_tokens()),
+                crate::ui::components::ContextInfo::fmt_tokens(total),
+                pct,
             ),
-        ]));
+            Style::default().fg(colors.text.secondary),
+        )]));
 
         lines.push(Line::from(""));
 
         // ── Category breakdown ──
-        lines.push(Line::from(vec![
-            Span::styled("  Estimated usage by category", Style::default().fg(colors.ui.comment)),
-        ]));
+        lines.push(Line::from(vec![Span::styled(
+            "  Estimated usage by category",
+            Style::default().fg(colors.ui.comment),
+        )]));
 
         // System prompt
         let sys_pct = info.pct_of(info.system_prompt_tokens);
