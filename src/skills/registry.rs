@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Skills subsystem code for registry.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::skills::registry
+// - type: crate::skills::registry::SkillRegistry
+// uses:
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Skill Registry
 //!
 //! Registry for loading and managing skills.

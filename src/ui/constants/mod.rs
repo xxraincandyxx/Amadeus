@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Module root for the constants subsystem and its exports.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::constants
+// - const: crate::ui::constants::PHRASE_CHANGE_INTERVAL_MS
+// - const: crate::ui::constants::COLOR_CYCLE_DURATION_MS
+// - const: crate::ui::constants::SPINNER_FRAME_INTERVAL_MS
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 pub mod tips;
 pub mod witty_phrases;
 

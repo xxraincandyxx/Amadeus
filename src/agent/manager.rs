@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Agent subsystem code for manager.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::manager
+// - type: crate::agent::manager::AgentStatus
+// - type: crate::agent::manager::AgentInfo
+// - type: crate::agent::manager::AgentManager
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::agent::profile::AgentProfile
+// - module: crate::client::LLMClient
+// - module: crate::core::id::AgentId
+// - module: crate::error
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! Agent Manager - handles multiple agents and coordination between them.
 
 use std::sync::Arc;

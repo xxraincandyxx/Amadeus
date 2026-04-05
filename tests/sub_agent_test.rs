@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Integration tests covering sub agent test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::sub_agent_test
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::loop_agent::Agent
+// - module: amadeus::agent::messages::ContentBlock
+// - module: amadeus::client::StreamEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test sub_agent_test --features full
+// @end-amadeus-header
+
 use std::sync::Arc;
 
 use amadeus::agent::config::Config;

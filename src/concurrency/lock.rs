@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: Concurrency utility code for lock.
+// layer: infra
+// status: active
+// feature_flags:
+// - concurrency
+// provides:
+// - module: crate::concurrency::lock
+// - type: crate::concurrency::lock::LockMode
+// - type: crate::concurrency::lock::LockEntry
+// - type: crate::concurrency::lock::LockStatus
+// - type: crate::concurrency::lock::LockError
+// - type: crate::concurrency::lock::LockManager
+// uses:
+// - module: crate::core::id::AgentId
+// - runtime: tokio async runtime
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Sends or receives messages across async channels.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Resource Lock Manager
 //!
 //! Provides resource-level locking for coordinating concurrent operations.

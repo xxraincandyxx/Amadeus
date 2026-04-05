@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI module code for vim.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::vim
+// - type: crate::ui::vim::VimMode
+// - type: crate::ui::vim::VimAction
+// - type: crate::ui::vim::VimHandler
+// uses:
+// - runtime: crossterm terminal events
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # Vim Mode Handler
 //!
 //! Provides vim-style keybindings for the TUI.

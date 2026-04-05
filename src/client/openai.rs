@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: OpenAI LLM client implementation for message and streaming requests.
+// layer: client
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::client::openai
+// - type: crate::client::openai::OpenAIClient
+// uses:
+// - module: crate::agent::messages
+// - module: crate::client
+// - module: crate::error
+// - protocol: reqwest HTTP client
+// - format: JSON values
+// - runtime: tracing instrumentation
+// - runtime: futures streams
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/mock_functional_test.rs
+// @end-amadeus-header
+
 //! # OpenAI API Client
 //!
 //! Client implementation for the OpenAI Chat Completions API.

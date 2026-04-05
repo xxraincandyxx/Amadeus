@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: TUI module code for api client.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::api_client
+// - type: crate::ui::api_client::AgentInfo
+// - type: crate::ui::api_client::ListAgentsResponse
+// - type: crate::ui::api_client::CreateAgentRequest
+// - type: crate::ui::api_client::CreateAgentResponse
+// - type: crate::ui::api_client::ApiClient
+// uses:
+// - runtime: tokio async runtime
+// - protocol: reqwest HTTP client
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # API Client for TUI
 //!
 //! HTTP client wrapper for TUI to communicate with the API server.

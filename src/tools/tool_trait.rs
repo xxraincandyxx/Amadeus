@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Core trait contract implemented by all Amadeus tools.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::tool_trait
+// - trait: crate::tools::tool_trait::Tool
+// uses:
+// - module: crate::error::Result
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Tool Trait
 //!
 //! Defines the common interface for all agent tools.

@@ -1,3 +1,25 @@
+// @amadeus-header
+// summary: Integration tests covering bash test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::bash_test
+// uses:
+// - module: amadeus::error::AgentError
+// - module: amadeus::tools::bash
+// - module: amadeus::tools::tool_trait::Tool
+// - format: JSON values
+// - artifact: filesystem paths and files
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test bash_test --features full
+// @end-amadeus-header
+
 use amadeus::error::AgentError;
 use amadeus::tools::bash::{classify_command, BashCommandKind, BashTool};
 use amadeus::tools::tool_trait::Tool;

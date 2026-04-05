@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: Agent subsystem code for mesh.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::mesh
+// - type: crate::agent::mesh::MeshInfo
+// - type: crate::agent::mesh::MeshManager
+// uses:
+// - protocol: serde serialization
+// - runtime: tracing instrumentation
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Mesh Management
 //!
 //! Coordination logic for multiple Amadeus instances in the same workspace.

@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Source file for benchmark.
+// layer: script
+// status: active
+// feature_flags: none
+// provides:
+// - module: bin::benchmark
+// uses:
+// - module: amadeus::agent::Config
+// - module: amadeus::benchmark
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use std::env;
 use std::path::PathBuf;
 use std::sync::Arc;

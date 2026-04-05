@@ -1,3 +1,31 @@
+// @amadeus-header
+// summary: CLI entrypoint for TUI mode, server mode, and session recording.
+// layer: script
+// status: active
+// feature_flags:
+// - api
+// - test-utils
+// - tui
+// provides:
+// - module: bin::amadeus
+// uses:
+// - module: amadeus::agent::config
+// - module: amadeus::agent::mesh::MeshManager
+// - module: amadeus::agent::supervisor
+// - module: amadeus::agent::worker::WorkerConfig
+// - module: amadeus::client::anthropic::AnthropicClient
+// - module: amadeus::client::openai::OpenAIClient
+// - module: amadeus::api::http::run_server
+// - module: amadeus::agent::loop_agent::Agent
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Amadeus - AI Agent SDK
 //!
 //! Run with `cargo run` for TUI mode, or `cargo run -- --server` for HTTP mode.

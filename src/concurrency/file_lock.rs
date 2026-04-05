@@ -1,3 +1,30 @@
+// @amadeus-header
+// summary: Concurrency utility code for file lock.
+// layer: infra
+// status: active
+// feature_flags:
+// - concurrency
+// provides:
+// - module: crate::concurrency::file_lock
+// - type: crate::concurrency::file_lock::FileReadInfo
+// - type: crate::concurrency::file_lock::FileLockManager
+// - type: crate::concurrency::file_lock::FileReadGuard
+// - type: crate::concurrency::file_lock::FileWriteGuard
+// - type: crate::concurrency::file_lock::FileLockStats
+// uses:
+// - module: crate::core::id::AgentId
+// - module: crate::error
+// - runtime: tokio async runtime
+// - runtime: tracing instrumentation
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # File Lock Manager
 //!
 //! Provides read-write locking for file operations and tracks per-agent read caches

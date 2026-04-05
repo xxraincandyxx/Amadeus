@@ -1,3 +1,36 @@
+// @amadeus-header
+// summary: ReAct agent loop handling LLM turns, tools, approvals, and session logs.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::loop_agent
+// - type: crate::agent::loop_agent::SessionLog
+// - type: crate::agent::loop_agent::SessionStats
+// - type: crate::agent::loop_agent::AgentBuilder
+// - type: crate::agent::loop_agent::Agent
+// - type: crate::agent::loop_agent::ApprovalChannels
+// - type: crate::agent::loop_agent::ApprovalHandle
+// - type: crate::agent::loop_agent::SubAgentResult
+// uses:
+// - module: crate::agent::compaction::ContextCompactor
+// - module: crate::agent::config::Config
+// - module: crate::agent::events
+// - module: crate::agent::messages
+// - module: crate::client
+// - module: crate::error
+// - module: crate::hooks
+// - module: crate::policy::Policy
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// - Spawns asynchronous tasks.
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;

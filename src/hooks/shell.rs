@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Source file for shell.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::hooks::shell
+// - type: crate::hooks::shell::ShellHook
+// uses:
+// - module: crate::error::Result
+// - module: crate::hooks
+// - format: JSON values
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Shell Hook
 //!
 //! Execute shell commands as hooks.

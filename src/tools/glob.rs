@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Tool implementation and support code for glob.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::glob
+// - type: crate::tools::glob::GlobInput
+// - type: crate::tools::glob::GlobTool
+// - tool: glob
+// uses:
+// - module: crate::error
+// - module: crate::tools::schema::glob_tool
+// - module: crate::tools::tool_trait::Tool
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Glob Tool
 //!
 //! Fast file pattern matching tool that works with any codebase size.

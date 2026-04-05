@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Source file for context.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::context
+// - type: crate::context::ProjectContext
+// - fn: crate::context::load_context_prompt
+// uses:
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Project Context
 //!
 //! Load project-specific context files that provide additional information

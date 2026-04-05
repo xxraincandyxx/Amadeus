@@ -1,3 +1,33 @@
+// @amadeus-header
+// summary: Main TUI application state, rendering, and event orchestration.
+// layer: ui
+// status: active
+// feature_flags:
+// - test-utils
+// - tui
+// provides:
+// - module: crate::ui::app
+// - type: crate::ui::app::AppMode
+// - type: crate::ui::app::App
+// uses:
+// - module: crate::test_utils::testflow::types
+// - module: crate::agent::events
+// - module: crate::agent::loop_agent
+// - module: crate::client::LLMClient
+// - module: crate::error::Result
+// - module: crate::ui::event
+// - module: crate::ui
+// - runtime: tokio async runtime
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// - Spawns asynchronous tasks.
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 use std::collections::{HashMap, VecDeque};
 use std::io::{IsTerminal, Write};
 use std::path::PathBuf;

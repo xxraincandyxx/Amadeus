@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Test utility code for fixtures.
+// layer: infra
+// status: active
+// feature_flags:
+// - test-utils
+// provides:
+// - module: crate::test_utils::fixtures
+// - type: crate::test_utils::fixtures::FixtureLoader
+// - type: crate::test_utils::fixtures::GoldenFileManager
+// - type: crate::test_utils::fixtures::GoldenFile
+// - type: crate::test_utils::fixtures::GoldenResponse
+// uses:
+// - protocol: serde serialization
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Test Fixtures
 //!
 //! Utilities for loading and managing test fixtures.

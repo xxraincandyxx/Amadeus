@@ -1,4 +1,25 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Test mock implementation for flaky client.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::mocks::flaky_client
+// - type: tests::mocks::flaky_client::FlakyMockClient
+// uses:
+// - module: amadeus::agent::messages::Message
+// - module: amadeus::client
+// - module: amadeus::error
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test flaky_client --features full
+// @end-amadeus-header
+
 
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};

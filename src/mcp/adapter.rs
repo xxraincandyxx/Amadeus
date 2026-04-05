@@ -1,3 +1,25 @@
+// @amadeus-header
+// summary: MCP integration code for adapter.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::mcp::adapter
+// - type: crate::mcp::adapter::McpToolAdapter
+// - fn: crate::mcp::adapter::create_mcp_adapters
+// uses:
+// - module: crate::error::Result
+// - module: crate::mcp::client
+// - module: crate::tools::tool_trait::Tool
+// - runtime: tokio async runtime
+// - format: JSON values
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # MCP Tool Adapter
 //!
 //! Adapts MCP tools to the SDK Tool trait.

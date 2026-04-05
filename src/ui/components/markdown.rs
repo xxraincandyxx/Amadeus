@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: TUI component implementation for markdown.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::markdown
+// - fn: crate::ui::components::markdown::render_markdown
+// uses:
+// - module: crate::ui::theme_manager::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use ratatui::{
     style::{Modifier, Style},
     text::{Line, Span},

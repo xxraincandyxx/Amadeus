@@ -1,3 +1,29 @@
+// @amadeus-header
+// summary: Tool implementation and support code for web.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::web
+// - type: crate::tools::web::WebFetchInput
+// - type: crate::tools::web::WebFetchTool
+// - tool: web_fetch
+// uses:
+// - module: crate::error
+// - module: crate::tools::schema::web_fetch_tool
+// - module: crate::tools::tool_trait::Tool
+// - runtime: tokio async runtime
+// - protocol: reqwest HTTP client
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Web Fetch Tool
 //!
 //! Fetch and convert URL content to LLM-friendly input.

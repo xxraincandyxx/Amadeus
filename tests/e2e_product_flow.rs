@@ -1,3 +1,29 @@
+// @amadeus-header
+// summary: Integration tests covering e2e product flow behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::e2e_product_flow
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::messages
+// - module: amadeus::agent::supervisor
+// - module: amadeus::agent::worker
+// - module: amadeus::client
+// - module: amadeus::core::AgentId
+// - module: amadeus::error::Result
+// - runtime: tokio async runtime
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test e2e_product_flow --features full
+// @end-amadeus-header
+
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;

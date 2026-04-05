@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Tool implementation and support code for todo.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::todo
+// - type: crate::tools::todo::TodoStatus
+// - type: crate::tools::todo::TodoItem
+// - type: crate::tools::todo::TodoManager
+// - type: crate::tools::todo::TodoTool
+// - tool: todo
+// uses:
+// - module: crate::error
+// - module: crate::tools::schema::todo_tool
+// - module: crate::tools::tool_trait::Tool
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/todo_test.rs
+// @end-amadeus-header
+
 //! # Todo Tool
 //!
 //! Stateful todo tracking for multi-step agent tasks.

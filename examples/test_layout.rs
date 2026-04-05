@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Runnable example for test layout usage.
+// layer: example
+// status: experimental
+// feature_flags:
+// - full
+// provides:
+// - module: example::test_layout
+// uses:
+// - runtime: ratatui terminal rendering
+// - runtime: crossterm terminal events
+// - runtime: anyhow error handling
+// invariants:
+// - Example code remains runnable against the current public API.
+// side_effects: none
+// tests:
+// - cmd: cargo run --example test_layout --features full
+// @end-amadeus-header
+
 use anyhow::Result;
 use crossterm::{
     cursor,

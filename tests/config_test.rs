@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Integration tests covering config test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::config_test
+// uses:
+// - module: amadeus::agent::config
+// - artifact: filesystem paths and files
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test config_test --features full
+// @end-amadeus-header
+
 use amadeus::agent::config::{Config, Provider};
 
 #[test]

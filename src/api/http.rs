@@ -1,3 +1,35 @@
+// @amadeus-header
+// summary: HTTP server bootstrap and router assembly for the public API.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::http
+// - type: crate::api::http::AppState
+// - fn: crate::api::http::run_server
+// - fn: crate::api::http::create_router
+// - route: /health
+// - route: /chat
+// - route: /execute
+// - route: /stream
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::agent::manager::AgentManager
+// - module: crate::agent::supervisor::Supervisor
+// - module: crate::client::LLMClient
+// - module: crate::error::Result
+// - runtime: tokio async runtime
+// - protocol: axum HTTP handlers
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// - Writes output to stdout or stderr.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # HTTP Server
 //!
 //! Axum HTTP server setup and configuration for the REST API.

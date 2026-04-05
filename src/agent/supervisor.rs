@@ -1,3 +1,31 @@
+// @amadeus-header
+// summary: Multi-agent supervisor coordinating worker tasks, scheduling, and routing.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::supervisor
+// - type: crate::agent::supervisor::DispatchStrategy
+// - type: crate::agent::supervisor::SupervisorConfig
+// - type: crate::agent::supervisor::Supervisor
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::client::LLMClient
+// - module: crate::concurrency::LockManager
+// - module: crate::core::id::AgentId
+// - module: crate::error
+// - module: crate::tools::peer::PeerTool
+// - runtime: tokio async runtime
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Supervisor Pattern
 //!
 //! Manages a pool of worker agents with configurable dispatch strategies.

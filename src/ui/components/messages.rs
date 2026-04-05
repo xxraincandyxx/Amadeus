@@ -1,3 +1,29 @@
+// @amadeus-header
+// summary: TUI component implementation for messages.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::messages
+// - type: crate::ui::components::messages::CompressionStatus
+// - type: crate::ui::components::messages::CompressionItem
+// - type: crate::ui::components::messages::HistoryItem
+// - type: crate::ui::components::messages::MessagesComponent
+// uses:
+// - module: crate::ui::components::compaction_animation::CompactionAnimator
+// - module: crate::ui::components::markdown::render_markdown
+// - module: crate::ui::components::tool_group
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// - runtime: tracing instrumentation
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/messages_test.rs
+// @end-amadeus-header
+
 use std::time::Instant;
 
 use ratatui::{

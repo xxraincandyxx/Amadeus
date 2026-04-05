@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Public API module code for prelude.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::prelude
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # API Prelude
 //!
 //! Convenient import for all commonly used public types.

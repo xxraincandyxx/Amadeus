@@ -1,3 +1,33 @@
+// @amadeus-header
+// summary: Testflow support code for recorder.
+// layer: infra
+// status: active
+// feature_flags:
+// - api
+// - concurrency
+// - context
+// - mesh
+// - supervisor
+// - test-utils
+// - tui
+// provides:
+// - module: crate::test_utils::testflow::recorder
+// - type: crate::test_utils::testflow::recorder::SessionRecorder
+// - fn: crate::test_utils::testflow::recorder::load_session
+// uses:
+// - module: crate::error::Result
+// - runtime: tokio async runtime
+// - runtime: chrono date and time utilities
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Session Recorder
 //!
 //! Records all session events to a structured log for debugging and replay.

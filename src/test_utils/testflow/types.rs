@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Testflow support code for types.
+// layer: infra
+// status: active
+// feature_flags:
+// - test-utils
+// provides:
+// - module: crate::test_utils::testflow::types
+// - const: crate::test_utils::testflow::types::TESTFLOW_VERSION
+// - type: crate::test_utils::testflow::types::SessionLog
+// - type: crate::test_utils::testflow::types::SessionMetadata
+// - type: crate::test_utils::testflow::types::ConfigSnapshot
+// - type: crate::test_utils::testflow::types::TimelineEvent
+// - type: crate::test_utils::testflow::types::RecordedEvent
+// - type: crate::test_utils::testflow::types::AgentEventData
+// uses:
+// - protocol: serde serialization
+// - runtime: chrono date and time utilities
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Testflow Types
 //!
 //! Type definitions for session recording and playback.

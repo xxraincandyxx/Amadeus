@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: HTTP handler implementation for chat routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::chat
+// - fn: crate::api::handlers::chat::chat
+// uses:
+// - module: crate::agent::worker::Task
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Chat Handler
 //!
 //! Handles POST /chat requests to send messages to the agent.

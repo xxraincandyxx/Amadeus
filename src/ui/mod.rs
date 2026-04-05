@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the ui subsystem and its exports.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # UI Module
 //!
 //! Terminal user interface components with gemini-cli-inspired theming.

@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Integration tests covering tool approval test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tool_approval_test
+// uses:
+// - module: amadeus::client::StreamEvent
+// - format: JSON values
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test tool_approval_test --features full
+// @end-amadeus-header
+
 use amadeus::client::StreamEvent;
 use serde_json::json;
 

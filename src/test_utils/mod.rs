@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the test utils subsystem and its exports.
+// layer: infra
+// status: active
+// feature_flags:
+// - test-utils
+// provides:
+// - module: crate::test_utils
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Test Utilities
 //!
 //! Testing infrastructure inspired by gemini-cli's TestRig pattern.

@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the agent subsystem and its exports.
+// layer: agent
+// status: active
+// feature_flags:
+// - supervisor
+// provides:
+// - module: crate::agent
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! Agent system for the SDK
 
 pub mod compaction;

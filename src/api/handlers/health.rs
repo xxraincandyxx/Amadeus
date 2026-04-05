@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: HTTP handler implementation for health routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::health
+// - fn: crate::api::handlers::health::health
+// uses:
+// - module: crate::api::types::HealthResponse
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Health Check Handler
 //!
 //! Simple health check endpoint to verify the server is running.

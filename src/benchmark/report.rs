@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for report.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::report
+// - type: crate::benchmark::report::CapturedEvent
+// - type: crate::benchmark::report::RunStatus
+// - type: crate::benchmark::report::BenchmarkCaseRun
+// - type: crate::benchmark::report::BenchmarkRunSummary
+// uses:
+// - module: crate::agent::events
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use serde::{Deserialize, Serialize};
 
 use crate::agent::events::{AgentEvent, RunResult};

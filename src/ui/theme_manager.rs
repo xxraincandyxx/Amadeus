@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: TUI module code for theme manager.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::theme_manager
+// - type: crate::ui::theme_manager::ThemeManager
+// - fn: crate::ui::theme_manager::get_theme
+// - fn: crate::ui::theme_manager::get_colors
+// - fn: crate::ui::theme_manager::set_theme
+// - fn: crate::ui::theme_manager::next_theme
+// - fn: crate::ui::theme_manager::previous_theme
+// - fn: crate::ui::theme_manager::get_available_themes
+// uses:
+// - module: crate::ui::semantic_colors::SemanticColors
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use crate::ui::semantic_colors::SemanticColors;
 use crate::ui::themes::{
     AtomOneDark, AyuDark, DarkRed, DefaultDark, DefaultLight, Dracula, GitHubDark, GitHubLight,

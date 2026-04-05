@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: UI constant definitions for tips.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::constants::tips
+// - const: crate::ui::constants::tips::INFORMATIVE_TIPS
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 pub const INFORMATIVE_TIPS: &[&str] = &[
     "Set your preferred editor for opening files (/settings)…",
     "Toggle Vim mode for a modal editing experience (/settings)…",

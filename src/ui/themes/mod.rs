@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Module root for the themes subsystem and its exports.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::themes
+// - type: crate::ui::themes::ThemeType
+// - trait: crate::ui::themes::Theme
+// uses:
+// - module: crate::ui::semantic_colors::SemanticColors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 pub mod atom_one_dark;
 pub mod ayu_dark;
 pub mod dark_red;

@@ -1,4 +1,31 @@
 #![cfg(feature = "supervisor")]
+// @amadeus-header
+// summary: Integration tests covering p2p test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// - supervisor
+// provides:
+// - module: tests::p2p_test
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::messages
+// - module: amadeus::agent::supervisor
+// - module: amadeus::agent::worker
+// - module: amadeus::client
+// - module: amadeus::core::AgentId
+// - module: amadeus::error::Result
+// - runtime: tokio async runtime
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test p2p_test --features full
+// @end-amadeus-header
+
 
 use serde_json::json;
 use std::sync::Arc;

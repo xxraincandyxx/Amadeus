@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the api subsystem and its exports.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Public API Module
 //!
 //! This module provides the public SDK API for the claude-agent library.

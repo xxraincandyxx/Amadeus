@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: Public API module code for types.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::types
+// - type: crate::api::types::ChatRequest
+// - type: crate::api::types::ChatResponse
+// - type: crate::api::types::ToolCall
+// - type: crate::api::types::ExecuteRequest
+// - type: crate::api::types::ExecuteResponse
+// - type: crate::api::types::TaskRequest
+// - type: crate::api::types::TaskResponse
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # HTTP Request/Response Types
 //!
 //! JSON types for the REST API endpoints. These types define the

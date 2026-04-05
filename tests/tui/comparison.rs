@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: TUI test support for comparison.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui::comparison
+// - type: tests::tui::comparison::FrameDiff
+// - type: tests::tui::comparison::StyleChange
+// - type: tests::tui::comparison::CursorChange
+// - type: tests::tui::comparison::FooterChanges
+// - type: tests::tui::comparison::HeaderChanges
+// - type: tests::tui::comparison::DiffSummary
+// - fn: tests::tui::comparison::compare
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test comparison --features full
+// @end-amadeus-header
+
 //! Snapshot Comparison
 //!
 //! Compares TUI frames and produces human-readable diffs.

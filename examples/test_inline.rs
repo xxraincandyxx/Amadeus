@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Runnable example for test inline usage.
+// layer: example
+// status: experimental
+// feature_flags:
+// - full
+// provides:
+// - module: example::test_inline
+// uses:
+// - runtime: ratatui terminal rendering
+// - runtime: crossterm terminal events
+// - runtime: anyhow error handling
+// invariants:
+// - Example code remains runnable against the current public API.
+// side_effects: none
+// tests:
+// - cmd: cargo run --example test_inline --features full
+// @end-amadeus-header
+
 use anyhow::Result;
 use crossterm::{
     terminal::{self, Clear, ClearType},

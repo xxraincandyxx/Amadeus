@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Source file for prompts.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::prompts
+// - const: crate::prompts::SYSTEM_PROMPT
+// - fn: crate::prompts::render_system_prompt
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # System Prompts
 //!
 //! All agent prompts centralized in a single file for easy configuration.

@@ -1,3 +1,29 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for runner.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::runner
+// - type: crate::benchmark::runner::BenchmarkRunnerOptions
+// - type: crate::benchmark::runner::BenchmarkRunner
+// uses:
+// - module: crate::agent::config
+// - module: crate::agent::events::AgentEvent
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::agent::messages::Message
+// - module: crate::benchmark::case
+// - module: crate::benchmark::eval::BenchmarkEvaluation
+// - module: crate::benchmark::metrics::BenchmarkMetrics
+// - module: crate::benchmark::mock::BenchmarkMockClient
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

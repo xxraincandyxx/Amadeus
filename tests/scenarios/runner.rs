@@ -1,4 +1,27 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Scenario testing support for runner.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::runner
+// - type: tests::scenarios::runner::ScenarioRunner
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::events
+// - module: amadeus::agent::loop_agent
+// - module: amadeus::agent::messages::Message
+// - module: amadeus::error::Result
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test runner --features full
+// @end-amadeus-header
+
 
 use futures::StreamExt;
 use std::collections::VecDeque;

@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: TUI component implementation for sidebar.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::sidebar
+// - type: crate::ui::components::sidebar::SidebarKind
+// - type: crate::ui::components::sidebar::Sidebar
+// - type: crate::ui::components::sidebar::FileSidebar
+// - type: crate::ui::components::sidebar::HelpSidebar
+// - type: crate::ui::components::sidebar::SkillSidebar
+// - type: crate::ui::components::sidebar::ContextInfo
+// uses:
+// - module: crate::skills::Skill
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::path::PathBuf;
 
 use ratatui::{

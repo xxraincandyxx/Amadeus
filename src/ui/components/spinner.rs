@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI component implementation for spinner.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::spinner
+// - type: crate::ui::components::spinner::GradientColor
+// - type: crate::ui::components::spinner::GeminiSpinner
+// uses:
+// - module: crate::ui::constants::COLOR_CYCLE_DURATION_MS
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::time::Instant;
 
 use ratatui::style::Color;

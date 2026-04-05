@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI component implementation for diff.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::diff
+// - type: crate::ui::components::diff::DiffLine
+// - type: crate::ui::components::diff::DiffStatus
+// - type: crate::ui::components::diff::DiffView
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # Diff View Component
 //!
 //! Renders diffs for the `edit_file` tool output.

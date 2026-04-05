@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Module root for the skills subsystem and its exports.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::skills
+// - type: crate::skills::Skill
+// - type: crate::skills::SkillError
+// uses:
+// - protocol: serde serialization
+// - artifact: filesystem paths and files
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Skills System
 //!
 //! Skills are reusable prompt templates that can be loaded from files.

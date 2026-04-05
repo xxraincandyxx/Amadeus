@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Module root for the hooks subsystem and its exports.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::hooks
+// - type: crate::hooks::HookAction
+// - type: crate::hooks::HookEvent
+// - trait: crate::hooks::Hook
+// - type: crate::hooks::HookRegistry
+// uses:
+// - module: crate::error::Result
+// - format: JSON values
+// - artifact: filesystem paths and files
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Hooks System
 //!
 //! Hooks provide extensibility points for the agent loop.

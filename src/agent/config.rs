@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: Agent subsystem code for config.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::config
+// - type: crate::agent::config::Provider
+// - type: crate::agent::config::Config
+// uses:
+// - module: crate::error
+// - protocol: serde serialization
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/config_test.rs
+// @end-amadeus-header
+
 //! # Configuration
 //!
 //! Load and manage agent configuration from environment variables.

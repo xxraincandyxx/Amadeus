@@ -1,3 +1,29 @@
+// @amadeus-header
+// summary: Worker agent execution and task lifecycle handling for supervision.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::worker
+// - type: crate::agent::worker::WorkerConfig
+// - type: crate::agent::worker::Task
+// - type: crate::agent::worker::HelpRequest
+// - type: crate::agent::worker::TaskResult
+// - type: crate::agent::worker::WorkerStatus
+// - type: crate::agent::worker::WorkerInfo
+// uses:
+// - module: crate::agent::events::ToolCall
+// - module: crate::core::id::AgentId
+// - runtime: tokio async runtime
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Worker Types
 //!
 //! Types for worker agents in a supervisor pattern.

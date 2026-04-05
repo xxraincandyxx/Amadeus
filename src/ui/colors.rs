@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: TUI module code for colors.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::colors
+// - type: crate::ui::colors::Theme
+// - const: crate::ui::colors::THEME
+// - type: crate::ui::colors::Palette
+// - fn: crate::ui::colors::print_command
+// - fn: crate::ui::colors::print_tool_result
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Writes output to stdout or stderr.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use ratatui::style::Color;
 
 #[derive(Debug, Clone, Copy)]

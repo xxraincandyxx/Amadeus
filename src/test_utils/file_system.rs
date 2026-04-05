@@ -1,3 +1,30 @@
+// @amadeus-header
+// summary: Test utility code for file system.
+// layer: infra
+// status: active
+// feature_flags:
+// - test-utils
+// provides:
+// - module: crate::test_utils::file_system
+// - type: crate::test_utils::file_system::FileSystemStructure
+// - type: crate::test_utils::file_system::TmpDirBuilder
+// - type: crate::test_utils::file_system::TmpDirWithStructure
+// - fn: crate::test_utils::file_system::create_tmp_dir
+// - fn: crate::test_utils::file_system::files_equal
+// - fn: crate::test_utils::file_system::file_content_equals
+// - fn: crate::test_utils::file_system::assert_file_contains
+// uses:
+// - runtime: tokio async runtime
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # File System Test Helpers
 //!
 //! Utilities for creating and managing test file systems.

@@ -1,3 +1,34 @@
+// @amadeus-header
+// summary: Tool implementation and support code for file.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::file
+// - type: crate::tools::file::ReadFileInput
+// - type: crate::tools::file::WriteFileInput
+// - type: crate::tools::file::EditFileInput
+// - type: crate::tools::file::FileTools
+// - type: crate::tools::file::ReadFileTool
+// - type: crate::tools::file::WriteFileTool
+// - type: crate::tools::file::EditFileTool
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::concurrency::FileLockManager
+// - module: crate::core::id::AgentId
+// - module: crate::error
+// - module: crate::tools::schema
+// - module: crate::tools::tool_trait::Tool
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # File Tools
 //!
 //! File operations: read, write, and edit files safely with concurrency control.

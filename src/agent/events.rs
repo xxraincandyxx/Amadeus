@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Agent subsystem code for events.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::events
+// - type: crate::agent::events::RunResult
+// - type: crate::agent::events::ToolCall
+// - type: crate::agent::events::ApprovalDecision
+// - type: crate::agent::events::ApprovalRequest
+// - type: crate::agent::events::AgentEvent
+// uses:
+// - module: crate::agent::compaction::CompressionStatus
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 use serde::{Deserialize, Serialize};
 
 use crate::agent::compaction::CompressionStatus;

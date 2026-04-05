@@ -1,3 +1,31 @@
+// @amadeus-header
+// summary: HTTP handler implementation for agents routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::agents
+// - fn: crate::api::handlers::agents::list_agents
+// - fn: crate::api::handlers::agents::create_agent
+// - fn: crate::api::handlers::agents::get_agent
+// - fn: crate::api::handlers::agents::kill_agent
+// - fn: crate::api::handlers::agents::switch_agent
+// - fn: crate::api::handlers::agents::agent_chat
+// - fn: crate::api::handlers::agents::agent_stream
+// uses:
+// - module: crate::agent::profile::AgentProfile
+// - module: crate::api::http::AppState
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Agent Management Handlers
 //!
 //! HTTP handlers for multi-agent management endpoints.

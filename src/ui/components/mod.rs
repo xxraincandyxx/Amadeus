@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the components subsystem and its exports.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 mod approval;
 mod compaction_animation;
 mod completion;

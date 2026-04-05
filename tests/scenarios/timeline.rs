@@ -1,4 +1,27 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Scenario testing support for timeline.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::timeline
+// - type: tests::scenarios::timeline::TimestampedEvent
+// - type: tests::scenarios::timeline::EventTimeline
+// - type: tests::scenarios::timeline::TimestampedApprovalDecision
+// - type: tests::scenarios::timeline::ToolCompletionInfo
+// - type: tests::scenarios::timeline::CompactionInfo
+// uses:
+// - module: amadeus::agent::events
+// - module: amadeus::agent::messages::Message
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test timeline --features full
+// @end-amadeus-header
+
 
 use std::time::{Duration, Instant};
 

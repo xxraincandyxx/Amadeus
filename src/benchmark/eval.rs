@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for eval.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::eval
+// - type: crate::benchmark::eval::BenchmarkCheckResult
+// - type: crate::benchmark::eval::BenchmarkEvaluation
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 

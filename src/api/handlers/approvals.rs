@@ -1,3 +1,34 @@
+// @amadeus-header
+// summary: HTTP handler implementation for approvals routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::approvals
+// - const: crate::api::handlers::approvals::APPROVAL_CHANNELS
+// - fn: crate::api::handlers::approvals::register_approval_channel
+// - fn: crate::api::handlers::approvals::remove_approval_channel
+// - fn: crate::api::handlers::approvals::submit_approval
+// - fn: crate::api::handlers::approvals::list_pending_approvals
+// - type: crate::api::handlers::approvals::PendingApproval
+// uses:
+// - module: crate::agent::events::ApprovalDecision
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - runtime: tokio async runtime
+// - protocol: axum HTTP handlers
+// - protocol: serde serialization
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Approvals Handler
 //!
 //! Handles approval flow endpoints for tool execution permissions.

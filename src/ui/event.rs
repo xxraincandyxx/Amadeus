@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: TUI module code for event.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::event
+// - type: crate::ui::event::AppEvent
+// - type: crate::ui::event::EventHandler
+// uses:
+// - runtime: tokio async runtime
+// - runtime: crossterm terminal events
+// - runtime: tokio task scheduling
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use crossterm::event::{self, Event, KeyEvent, KeyEventKind, MouseEvent};
 use std::time::Duration;
 use tokio::sync::mpsc;

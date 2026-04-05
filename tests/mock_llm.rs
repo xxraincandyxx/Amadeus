@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Integration tests covering mock llm behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::mock_llm
+// - type: tests::mock_llm::MockLLMClient
+// - fn: tests::mock_llm::mock_tool_use_response
+// - fn: tests::mock_llm::mock_text_response
+// - fn: tests::mock_llm::mock_tool_result
+// uses:
+// - module: amadeus::agent::messages
+// - module: amadeus::client
+// - module: amadeus::error::Result
+// - format: JSON values
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test mock_llm --features full
+// @end-amadeus-header
+
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::Result;

@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI component implementation for agent panel.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::agent_panel
+// - fn: crate::ui::components::agent_panel::render_agent_panel
+// - fn: crate::ui::components::agent_panel::render_agent_dialog
+// uses:
+// - module: crate::ui::api_client::AgentInfo
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # Agent Panel Component
 //!
 //! UI component to display agent list and manage agents.

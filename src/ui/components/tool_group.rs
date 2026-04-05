@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: TUI component implementation for tool group.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::tool_group
+// - type: crate::ui::components::tool_group::ToolStatus
+// - type: crate::ui::components::tool_group::ToolCall
+// - type: crate::ui::components::tool_group::ToolGroup
+// - fn: crate::ui::components::tool_group::render_tool_group_with_limit
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::time::Instant;
 
 use ratatui::{

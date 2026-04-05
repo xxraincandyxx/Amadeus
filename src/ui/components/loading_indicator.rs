@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: TUI component implementation for loading indicator.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::loading_indicator
+// - type: crate::ui::components::loading_indicator::StreamingState
+// - type: crate::ui::components::loading_indicator::LoadingIndicator
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::time::Instant;
 
 use super::phrase_cycler::PhraseCycler;

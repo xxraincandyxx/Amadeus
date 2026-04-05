@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: MCP integration code for client.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::mcp::client
+// - type: crate::mcp::client::McpServerConfig
+// - type: crate::mcp::client::McpToolSchema
+// - type: crate::mcp::client::McpClient
+// uses:
+// - module: crate::error
+// - runtime: tokio async runtime
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # MCP Client
 //!
 //! Client for connecting to MCP servers.

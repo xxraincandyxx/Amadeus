@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Built-in atom one dark TUI theme definition.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::themes::atom_one_dark
+// - type: crate::ui::themes::atom_one_dark::AtomOneDark
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Theme definitions keep semantic roles visually consistent.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use super::{Theme, ThemeType};
 use crate::ui::semantic_colors::{
     interpolate_color, BackgroundColors, BorderColors, DiffColors, ScrollbarColors, SemanticColors,

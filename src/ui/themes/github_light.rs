@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Built-in github light TUI theme definition.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::themes::github_light
+// - type: crate::ui::themes::github_light::GitHubLight
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Theme definitions keep semantic roles visually consistent.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use super::{Theme, ThemeType};
 use crate::ui::semantic_colors::{
     interpolate_color, BackgroundColors, BorderColors, DiffColors, ScrollbarColors, SemanticColors,

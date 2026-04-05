@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the handlers subsystem and its exports.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # HTTP Request Handlers
 //!
 //! Handlers for the REST API endpoints. Each handler processes

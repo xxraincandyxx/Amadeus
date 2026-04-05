@@ -1,4 +1,28 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Scenario testing support for assertions.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::assertions
+// - fn: tests::scenarios::assertions::assert_events_contain_text
+// - fn: tests::scenarios::assertions::assert_tool_call_count
+// - fn: tests::scenarios::assertions::assert_tool_call_order
+// - fn: tests::scenarios::assertions::assert_no_errors
+// - fn: tests::scenarios::assertions::assert_streaming_monotonic
+// - fn: tests::scenarios::assertions::assert_response_length
+// - fn: tests::scenarios::assertions::assert_event_sequence
+// uses:
+// - module: amadeus::agent::events::AgentEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test assertions --features full
+// @end-amadeus-header
+
 
 use amadeus::agent::events::AgentEvent;
 

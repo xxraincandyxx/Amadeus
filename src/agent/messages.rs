@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Agent subsystem code for messages.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::messages
+// - type: crate::agent::messages::ContentBlock
+// - type: crate::agent::messages::Message
+// uses:
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/messages_test.rs
+// @end-amadeus-header
+
 //! # Message Types
 //!
 //! Types for representing conversation messages and content blocks.

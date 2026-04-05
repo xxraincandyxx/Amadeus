@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: Module root for the policy subsystem and its exports.
+// layer: policy
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::policy
+// - type: crate::policy::ApprovalMode
+// - type: crate::policy::Policy
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::tools::bash
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Approval/Policy System
 //!
 //! Control which tools require approval before execution.

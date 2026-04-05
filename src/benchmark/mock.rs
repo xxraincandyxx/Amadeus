@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for mock.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::mock
+// - type: crate::benchmark::mock::BenchmarkMockClient
+// uses:
+// - module: crate::agent::messages
+// - module: crate::benchmark::case
+// - module: crate::client
+// - module: crate::error
+// - runtime: tokio async runtime
+// - runtime: futures streams
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/mock_functional_test.rs
+// - tests/mock_llm.rs
+// @end-amadeus-header
+
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;

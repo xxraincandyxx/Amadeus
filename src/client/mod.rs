@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Module root for the client subsystem and its exports.
+// layer: client
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::client
+// - type: crate::client::StreamEvent
+// - trait: crate::client::LLMClient
+// uses:
+// - module: crate::agent::messages
+// - module: crate::error::Result
+// - runtime: futures streams
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # LLM Client Abstraction
 //!
 //! This module provides a trait-based abstraction for LLM providers,

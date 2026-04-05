@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: TUI module code for repl.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::repl
+// - type: crate::ui::repl::Repl
+// uses:
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::client::LLMClient
+// - module: crate::ui::colors::Palette
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Writes output to stdout or stderr.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # Interactive REPL
 //!
 //! Read-Eval-Print Loop for interactive agent usage.

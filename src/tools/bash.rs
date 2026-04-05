@@ -1,3 +1,31 @@
+// @amadeus-header
+// summary: Tool implementation and support code for bash.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::bash
+// - type: crate::tools::bash::BashInput
+// - type: crate::tools::bash::BashCommandKind
+// - fn: crate::tools::bash::classify_command
+// - type: crate::tools::bash::BashTool
+// - tool: bash
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::error
+// - module: crate::tools::schema::bash_tool
+// - module: crate::tools::tool_trait::Tool
+// - runtime: tokio async runtime
+// - protocol: serde serialization
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - tests/bash_test.rs
+// @end-amadeus-header
+
 //! # Bash Tool
 //!
 //! Execute shell commands with timeout, blocklist, and output truncation.

@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Integration tests covering mock functional test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::mock_functional_test
+// - type: tests::mock_functional_test::StatefulMockClient
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::events::AgentEvent
+// - module: amadeus::agent::loop_agent::Agent
+// - module: amadeus::agent::messages
+// - module: amadeus::client
+// - module: amadeus::error::Result
+// - runtime: tokio async runtime
+// - format: JSON values
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test mock_functional_test --features full
+// @end-amadeus-header
+
 use amadeus::agent::config::Config;
 use amadeus::agent::events::AgentEvent;
 use amadeus::agent::loop_agent::Agent;

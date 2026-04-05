@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the concurrency subsystem and its exports.
+// layer: infra
+// status: active
+// feature_flags:
+// - concurrency
+// provides:
+// - module: crate::concurrency
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Concurrency Module
 //!
 //! Resource-level lock management for coordinating concurrent agent operations.

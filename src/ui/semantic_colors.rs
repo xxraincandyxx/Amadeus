@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: TUI module code for semantic colors.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::semantic_colors
+// - type: crate::ui::semantic_colors::TextColors
+// - type: crate::ui::semantic_colors::DiffColors
+// - type: crate::ui::semantic_colors::BackgroundColors
+// - type: crate::ui::semantic_colors::BorderColors
+// - type: crate::ui::semantic_colors::UiColors
+// - type: crate::ui::semantic_colors::StatusColors
+// - type: crate::ui::semantic_colors::ScrollbarColors
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use ratatui::style::Color;
 
 #[derive(Debug, Clone, Copy, PartialEq)]

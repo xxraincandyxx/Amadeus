@@ -1,3 +1,25 @@
+// @amadeus-header
+// summary: TUI component implementation for sessions.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::sessions
+// - type: crate::ui::components::sessions::SessionMetadata
+// - type: crate::ui::components::sessions::SessionBrowser
+// uses:
+// - module: crate::agent::messages::Message
+// - runtime: chrono date and time utilities
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 //! # Session Browser Component
 //!
 //! Browse and load past conversation sessions.

@@ -1,4 +1,23 @@
 #!/bin/bash
+# @amadeus-header
+# summary: Repository verification runner for formatting, linting, feature checks, and tests.
+# layer: script
+# status: active
+# feature_flags:
+# - full
+# provides:
+# - cmd: verify.sh
+# uses:
+# - cmd: cargo
+# invariants:
+# - Script command flow remains non-interactive and order-dependent.
+# side_effects:
+# - Runs external commands or subprocesses.
+# - Writes output to stdout or stderr.
+# tests:
+# - cmd: bash ./verify.sh
+# @end-amadeus-header
+
 set -e
 
 # Amadeus SDK Sanity Verification Script

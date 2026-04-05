@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: HTTP handler implementation for config routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::config
+// - fn: crate::api::handlers::config::get_config
+// - fn: crate::api::handlers::config::update_config
+// uses:
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/config_test.rs
+// @end-amadeus-header
+
 //! # Config Handler
 //!
 //! Handles configuration endpoints for getting and updating agent settings.

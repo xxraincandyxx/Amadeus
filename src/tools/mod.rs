@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Module root for the tools subsystem and its exports.
+// layer: tools
+// status: active
+// feature_flags:
+// - supervisor
+// provides:
+// - module: crate::tools
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # Tools Module
 //!
 //! Tool implementations for the agent.

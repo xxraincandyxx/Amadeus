@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: Integration tests covering streaming scenarios test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::streaming_scenarios_test
+// uses:
+// - module: amadeus::client::StreamEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test streaming_scenarios_test --features full
+// @end-amadeus-header
+
 use amadeus::client::StreamEvent;
 
 #[path = "scenarios/mod.rs"]

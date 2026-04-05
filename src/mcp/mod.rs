@@ -1,3 +1,18 @@
+// @amadeus-header
+// summary: Module root for the mcp subsystem and its exports.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::mcp
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - tests/mod.rs
+// @end-amadeus-header
+
 //! # MCP (Model Context Protocol) Support
 //!
 //! Connect to MCP servers and use their tools.

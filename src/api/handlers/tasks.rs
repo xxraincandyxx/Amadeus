@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: HTTP handler implementation for tasks routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::tasks
+// - fn: crate::api::handlers::tasks::handle_task
+// uses:
+// - module: crate::agent::worker::Task
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 use crate::agent::worker::Task;
 use crate::api::http::AppState;
 use crate::api::types::{TaskRequest, TaskResponse};

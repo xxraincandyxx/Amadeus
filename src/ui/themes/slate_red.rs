@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Built-in slate red TUI theme definition.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::themes::slate_red
+// - type: crate::ui::themes::slate_red::SlateRed
+// uses:
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Theme definitions keep semantic roles visually consistent.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use super::{Theme, ThemeType};
 use crate::ui::semantic_colors::{
     BackgroundColors, BorderColors, DiffColors, ScrollbarColors, SemanticColors, StatusColors,

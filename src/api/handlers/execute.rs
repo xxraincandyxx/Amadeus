@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: HTTP handler implementation for execute routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::execute
+// - fn: crate::api::handlers::execute::execute
+// uses:
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - module: crate::tools::bash::BashTool
+// - module: crate::tools::tool_trait::Tool
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Execute Handler
 //!
 //! Handles POST /execute requests to run bash commands directly.

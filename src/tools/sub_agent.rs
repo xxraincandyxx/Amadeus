@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: Tool implementation and support code for sub agent.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::sub_agent
+// - type: crate::tools::sub_agent::SubAgentTool
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::client::LLMClient
+// - module: crate::hooks::HookRegistry
+// - module: crate::policy::Policy
+// - module: crate::tools::registry::ToolRegistry
+// - module: crate::tools::schema::sub_agent_tool
+// - module: crate::tools::tool_trait::Tool
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/sub_agent_test.rs
+// @end-amadeus-header
+
 use std::sync::Arc;
 
 use async_trait::async_trait;

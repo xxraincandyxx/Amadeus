@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Source file for error.
+// layer: infra
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::error
+// - type: crate::error::AgentError
+// - type: crate::error::Result
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/error_recovery_test.rs
+// @end-amadeus-header
+
 //! # Error Types
 //!
 //! Custom error handling for the Claude agent using `thiserror`.

@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Agent subsystem code for compaction.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::compaction
+// - type: crate::agent::compaction::CompactionConfig
+// - type: crate::agent::compaction::CompressionStatus
+// - type: crate::agent::compaction::CompactionResult
+// - type: crate::agent::compaction::ContextCompactor
+// - type: crate::agent::compaction::CompactionEvent
+// uses:
+// - module: crate::agent::messages
+// - module: crate::client::LLMClient
+// - module: crate::error::Result
+// - protocol: serde serialization
+// - runtime: tracing instrumentation
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/compaction_test.rs
+// @end-amadeus-header
+
 //! # Context Compaction
 //!
 //! Automatic conversation history summarization to manage context window limits.

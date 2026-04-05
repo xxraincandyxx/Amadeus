@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Test utility code for assertions.
+// layer: infra
+// status: active
+// feature_flags:
+// - test-utils
+// provides:
+// - module: crate::test_utils::assertions
+// - fn: crate::test_utils::assertions::assert_eventually
+// - fn: crate::test_utils::assertions::assert_file_created
+// - fn: crate::test_utils::assertions::assert_file_not_created
+// - fn: crate::test_utils::assertions::assert_file_contains
+// - fn: crate::test_utils::assertions::assert_json_contains_keys
+// - fn: crate::test_utils::assertions::assert_json_eq
+// - fn: crate::test_utils::assertions::assert_matches_regex
+// uses:
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Test Assertions
 //!
 //! Custom assertion utilities for testing.

@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: Library crate root exposing Amadeus modules and public re-exports.
+// layer: core
+// status: active
+// feature_flags:
+// - api
+// - concurrency
+// - supervisor
+// - test-utils
+// - tui
+// provides:
+// - module: crate
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 //! # Amadeus - Agent SDK
 //!
 //! A Rust SDK for building AI agents with LLM support.

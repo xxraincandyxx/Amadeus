@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: TUI component implementation for phrase cycler.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::phrase_cycler
+// - type: crate::ui::components::phrase_cycler::PhraseMode
+// - type: crate::ui::components::phrase_cycler::PhraseCycler
+// uses:
+// - module: crate::ui::constants
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::time::{Duration, Instant};
 
 use crate::ui::constants::{INFORMATIVE_TIPS, PHRASE_CHANGE_INTERVAL_MS, WITTY_LOADING_PHRASES};

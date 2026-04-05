@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: Agent subsystem code for profile.
+// layer: agent
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::agent::profile
+// - type: crate::agent::profile::AgentProfile
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! Agent profiles with different system prompts for different roles.
 
 use serde::{Deserialize, Serialize};

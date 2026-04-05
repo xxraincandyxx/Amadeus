@@ -1,3 +1,32 @@
+// @amadeus-header
+// summary: TUI scenario test support for scenarios impl.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui::scenarios::scenarios_impl
+// - type: tests::tui::scenarios::scenarios_impl::Scenario
+// - fn: tests::tui::scenarios::scenarios_impl::simple_text
+// - fn: tests::tui::scenarios::scenarios_impl::streaming_text
+// - fn: tests::tui::scenarios::scenarios_impl::with_tool_call
+// - fn: tests::tui::scenarios::scenarios_impl::requiring_approval
+// - fn: tests::tui::scenarios::scenarios_impl::empty
+// - fn: tests::tui::scenarios::scenarios_impl::long_text
+// uses:
+// - module: amadeus::agent::messages
+// - module: amadeus::client::LLMClient
+// - module: amadeus::client::StreamEvent
+// - module: amadeus::error::Result
+// - format: JSON values
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test scenarios_impl --features full
+// @end-amadeus-header
+
 //! Test Scenarios
 //!
 //! Pre-built scripted scenarios for reproducible TUI tests.

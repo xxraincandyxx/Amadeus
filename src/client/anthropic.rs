@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Anthropic LLM client implementation for message and streaming requests.
+// layer: client
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::client::anthropic
+// - type: crate::client::anthropic::AnthropicClient
+// uses:
+// - module: crate::agent::messages
+// - module: crate::client::LLMClient
+// - module: crate::client::StreamEvent
+// - module: crate::error
+// - protocol: reqwest HTTP client
+// - format: JSON values
+// - runtime: tracing instrumentation
+// - runtime: futures streams
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/mock_functional_test.rs
+// @end-amadeus-header
+
 //! # Anthropic API Client
 //!
 //! Client implementation for the Anthropic Messages API.

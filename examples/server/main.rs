@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Runnable example for main usage.
+// layer: example
+// status: experimental
+// feature_flags:
+// - full
+// provides:
+// - module: example::server
+// uses:
+// - runtime: anyhow error handling
+// - runtime: tokio task scheduling
+// invariants:
+// - Example code remains runnable against the current public API.
+// side_effects:
+// - Spawns asynchronous tasks.
+// tests:
+// - cmd: cargo run --example server --features full
+// @end-amadeus-header
+
 //! # Server Example - SDK-as-a-Service
 //!
 //! This example demonstrates how to run Amadeus as a standalone HTTP server.

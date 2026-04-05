@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: HTTP handler implementation for sessions routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::sessions
+// - fn: crate::api::handlers::sessions::list_sessions
+// - fn: crate::api::handlers::sessions::get_session
+// - fn: crate::api::handlers::sessions::restore_session
+// uses:
+// - module: crate::agent::loop_agent::Agent
+// - module: crate::agent::messages::ContentBlock
+// - module: crate::api::http::AppState
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Sessions Handler
 //!
 //! Handles session management endpoints for listing, loading, and restoring

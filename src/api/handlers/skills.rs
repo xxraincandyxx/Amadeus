@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: HTTP handler implementation for skills routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::skills
+// - fn: crate::api::handlers::skills::list_skills
+// uses:
+// - module: crate::api::http::AppState
+// - module: crate::api::types
+// - module: crate::client::LLMClient
+// - module: crate::skills::registry::SkillRegistry
+// - protocol: axum HTTP handlers
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/agent_integration_test.rs
+// @end-amadeus-header
+
 //! # Skills Handler
 //!
 //! Handles the skills listing endpoint for prompt templates.

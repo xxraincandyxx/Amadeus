@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: TUI component implementation for completion.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::completion
+// - type: crate::ui::components::completion::Command
+// - fn: crate::ui::components::completion::get_available_commands
+// - type: crate::ui::components::completion::CompletionState
+// - fn: crate::ui::components::completion::render_completion_lines
+// uses:
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use ratatui::{
     layout::Rect,
     style::Style,

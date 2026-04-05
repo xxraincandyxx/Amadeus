@@ -1,3 +1,30 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for case.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::case
+// - type: crate::benchmark::case::BenchmarkMode
+// - type: crate::benchmark::case::BenchmarkCaseConfig
+// - type: crate::benchmark::case::BenchmarkExpectations
+// - type: crate::benchmark::case::BenchmarkThresholds
+// - type: crate::benchmark::case::BenchmarkCase
+// - type: crate::benchmark::case::MockScript
+// - type: crate::benchmark::case::MockStep
+// uses:
+// - module: crate::client::StreamEvent
+// - module: crate::error
+// - protocol: serde serialization
+// - artifact: filesystem paths and files
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use std::fs;
 use std::path::Path;
 

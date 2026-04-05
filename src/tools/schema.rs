@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Tool implementation and support code for schema.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::schema
+// - fn: crate::tools::schema::bash_tool
+// - fn: crate::tools::schema::read_file_tool
+// - fn: crate::tools::schema::write_file_tool
+// - fn: crate::tools::schema::edit_file_tool
+// - fn: crate::tools::schema::glob_tool
+// - fn: crate::tools::schema::grep_tool
+// - fn: crate::tools::schema::web_fetch_tool
+// uses:
+// - format: JSON values
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Tool Schemas
 //!
 //! JSON schemas for tool definitions sent to LLMs.

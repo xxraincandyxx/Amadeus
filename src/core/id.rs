@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Core primitive definitions for id.
+// layer: core
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::core::id
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use std::fmt;
 use std::str::FromStr;
 

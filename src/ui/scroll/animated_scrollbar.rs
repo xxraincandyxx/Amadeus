@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI scroll subsystem code for animated scrollbar.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::scroll::animated_scrollbar
+// - type: crate::ui::scroll::animated_scrollbar::AnimationPhase
+// - type: crate::ui::scroll::animated_scrollbar::AnimatedScrollbar
+// uses:
+// - module: crate::ui::semantic_colors::interpolate_color
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::time::{Duration, Instant};
 
 use ratatui::style::Color;

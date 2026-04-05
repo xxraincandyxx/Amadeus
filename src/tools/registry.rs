@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: Registry for tool discovery, schema exposure, and execution lookup.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::registry
+// - type: crate::tools::registry::ToolRegistry
+// uses:
+// - module: crate::agent::config::Config
+// - module: crate::concurrency::FileLockManager
+// - module: crate::core::id::AgentId
+// - module: crate::error::Result
+// - module: crate::tools::bash::BashTool
+// - module: crate::tools::file
+// - module: crate::tools::glob::GlobTool
+// - module: crate::tools::grep::GrepTool
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects: none
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Tool Registry
 //!
 //! Central registry for managing and discovering tools.

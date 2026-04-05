@@ -1,3 +1,34 @@
+// @amadeus-header
+// summary: HTTP handler implementation for stream routes.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - module: crate::api::handlers::stream
+// - type: crate::api::handlers::stream::StreamQuery
+// - type: crate::api::handlers::stream::TextEvent
+// - type: crate::api::handlers::stream::ToolStartEvent
+// - type: crate::api::handlers::stream::ToolDoneEvent
+// - type: crate::api::handlers::stream::DoneEvent
+// - type: crate::api::handlers::stream::ErrorEvent
+// - type: crate::api::handlers::stream::TokenUsageEvent
+// uses:
+// - module: crate::agent::events::AgentEvent
+// - module: crate::agent::messages::Message
+// - module: crate::api::http::AppState
+// - module: crate::client::LLMClient
+// - protocol: axum HTTP handlers
+// - protocol: serde serialization
+// - runtime: futures streams
+// invariants:
+// - Handler request and response handling stays aligned with route contracts.
+// side_effects:
+// - Performs network or HTTP operations.
+// tests:
+// - tests/streaming_scenarios_test.rs
+// @end-amadeus-header
+
 //! # Stream Handler
 //!
 //! Handles GET /stream requests for real-time agent execution updates using SSE.

@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI component implementation for approval.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::approval
+// - type: crate::ui::components::approval::ApprovalResponse
+// - type: crate::ui::components::approval::ApprovalDialog
+// uses:
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Approval Dialog Component
 //!
 //! Displays an approval dialog for tool execution.

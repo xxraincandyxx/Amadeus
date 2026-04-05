@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Benchmark pipeline code for metrics.
+// layer: benchmark
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::benchmark::metrics
+// - type: crate::benchmark::metrics::BenchmarkMetrics
+// uses:
+// - module: crate::agent::events::AgentEvent
+// - protocol: serde serialization
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
+
 use serde::{Deserialize, Serialize};
 
 use crate::agent::events::AgentEvent;

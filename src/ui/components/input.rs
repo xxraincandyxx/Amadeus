@@ -1,3 +1,23 @@
+// @amadeus-header
+// summary: TUI component implementation for input.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::input
+// - type: crate::ui::components::input::InputComponent
+// uses:
+// - module: crate::ui::components::completion
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},

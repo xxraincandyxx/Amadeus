@@ -1,3 +1,31 @@
+// @amadeus-header
+// summary: Tool implementation and support code for peer.
+// layer: tools
+// status: active
+// feature_flags:
+// - supervisor
+// provides:
+// - module: crate::tools::peer
+// - type: crate::tools::peer::PeerInfo
+// - type: crate::tools::peer::PeerTool
+// - tool: call_peer
+// uses:
+// - module: crate::core::id::AgentId
+// - module: crate::agent::worker
+// - module: crate::error
+// - module: crate::tools::tool_trait::Tool
+// - runtime: tokio async runtime
+// - protocol: serde serialization
+// - format: JSON values
+// - runtime: tracing instrumentation
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects:
+// - Sends or receives messages across async channels.
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Peer Help Tool
 //!
 //! Allows agents to request assistance from other workers in the swarm.

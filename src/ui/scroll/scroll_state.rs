@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: TUI scroll subsystem code for scroll state.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::scroll::scroll_state
+// - type: crate::ui::scroll::scroll_state::ScrollState
+// uses: none
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects: none
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ScrollState {
     pub offset: usize,

@@ -1,3 +1,25 @@
+// @amadeus-header
+// summary: TUI component implementation for footer.
+// layer: ui
+// status: active
+// feature_flags:
+// - tui
+// provides:
+// - module: crate::ui::components::footer
+// - type: crate::ui::components::footer::FooterInfo
+// - type: crate::ui::components::footer::SandboxStatus
+// - type: crate::ui::components::footer::Footer
+// uses:
+// - module: crate::ui::get_colors
+// - runtime: ratatui terminal rendering
+// invariants:
+// - Listed interfaces stay aligned with the implementation in this file.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - tests/tui_snapshot_test.rs
+// @end-amadeus-header
+
 use std::process::Command;
 use std::time::{Duration, Instant};
 

@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Tool implementation and support code for grep.
+// layer: tools
+// status: active
+// feature_flags: none
+// provides:
+// - module: crate::tools::grep
+// - type: crate::tools::grep::GrepInput
+// - type: crate::tools::grep::GrepTool
+// - tool: grep
+// uses:
+// - module: crate::error
+// - module: crate::tools::schema::grep_tool
+// - module: crate::tools::tool_trait::Tool
+// - protocol: serde serialization
+// - format: JSON values
+// - artifact: filesystem paths and files
+// invariants:
+// - Declared tool interfaces stay aligned with runtime behavior and schema.
+// side_effects:
+// - Reads or writes filesystem state.
+// tests:
+// - tests/tool_approval_test.rs
+// @end-amadeus-header
+
 //! # Grep Tool
 //!
 //! A powerful search tool built on regex for searching file contents.
