@@ -24,18 +24,13 @@ use crate::error::{AgentError, Result};
 use crate::hooks::{HookAction, HookRegistry};
 use crate::policy::Policy;
 use crate::tools::registry::ToolRegistry;
-use crate::tools::SubAgnetTool;
+use crate::tools::SubAgentTool;
 use crate::tools::{TodoItem, TodoManager};
 
 const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
-const LEGACY_SUB_AGENT_TOOL_NAME: &str = "sub_agnet";
 const TOOL_HEARTBEAT_INTERVAL_MS: u64 = 1200;
-const SUB_AGNET_HEARTBEAT_MESSAGE: &str = "subagent working";
-const SUB_AGNET_RESULT_TIMEOUT_SECS: u64 = 1800;
-
-fn is_subagent_tool_name(name: &str) -> bool {
-    name == SUB_AGENT_TOOL_NAME || name == LEGACY_SUB_AGENT_TOOL_NAME
-}
+const SUB_AGENT_HEARTBEAT_MESSAGE: &str = "subagent working";
+const SUB_AGENT_RESULT_TIMEOUT_SECS: u64 = 1800;
 
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
@@ -134,7 +129,7 @@ pub struct AgentBuilder<C: LLMClient> {
     client: C,
     config: Arc<Config>,
     tools: ToolRegistry,
-    include_sub_agnet_tool: bool,
+    include_sub_agent_tool: bool,
     subagent_depth: usize,
     delegate_subagents: bool,
     history: Option<Arc<RwLock<Vec<Message>>>>,
@@ -149,7 +144,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             client,
             config,
             tools: ToolRegistry::new(),
-            include_sub_agnet_tool: false,
+            include_sub_agent_tool: false,
             subagent_depth: 0,
             delegate_subagents: false,
             history: None,
@@ -163,7 +158,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_default_tools(mut self) -> Self {
         self.tools =
             ToolRegistry::with_defaults_and_todo(&self.config, Arc::clone(&self.todo_manager));
-        self.include_sub_agnet_tool = true;
+        self.include_sub_agent_tool = true;
         self
     }
 
@@ -176,7 +171,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     /// Set a custom tool registry.
     pub fn with_tools(mut self, tools: ToolRegistry) -> Self {
         self.tools = tools;
-        self.include_sub_agnet_tool = false;
+        self.include_sub_agent_tool = false;
         self
     }
 
@@ -222,9 +217,9 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
         let subagent_coordinator = Arc::new(SubAgentCoordinator::new());
-        let tools = if self.include_sub_agnet_tool {
+        let tools = if self.include_sub_agent_tool {
             if self.subagent_depth < self.config.max_subagent_depth {
-                self.tools.register(Box::new(SubAgnetTool::new(
+                self.tools.register(Box::new(SubAgentTool::new(
                     self.client.clone(),
                     Arc::clone(&self.config),
                     self.hooks.clone(),
@@ -414,7 +409,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     pub fn spawn_child_agent(&self, depth: usize) -> Agent<C> {
         let allow_recursive = depth < self.config.max_subagent_depth;
         let recursive_tool = if allow_recursive {
-            Some(Arc::new(SubAgnetTool::new(
+            Some(Arc::new(SubAgentTool::new(
                 self.client.clone(),
                 Arc::clone(&self.config),
                 self.hooks.clone(),
@@ -426,7 +421,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         };
 
         let child_tools =
-            ToolRegistry::with_sub_agnet_child_defaults_recursive(&self.config, recursive_tool);
+            ToolRegistry::with_sub_agent_child_defaults_recursive(&self.config, recursive_tool);
 
         AgentBuilder::new(self.client.clone(), Arc::clone(&self.config))
             .with_tools(child_tools)
@@ -922,7 +917,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                     }
 
-                                    if is_subagent_tool_name(&name) && agent.delegate_subagents {
+                                    if name == SUB_AGENT_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
                                             .and_then(|value| value.as_str())
@@ -948,7 +943,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
-                                                SUB_AGNET_RESULT_TIMEOUT_SECS,
+                                                SUB_AGENT_RESULT_TIMEOUT_SECS,
                                             ));
                                         tokio::pin!(timeout);
 
@@ -960,7 +955,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                                 _ = heartbeat.tick() => {
                                                     yield Ok(AgentEvent::ToolProgress {
                                                         id: id.clone(),
-                                                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                                                        message: SUB_AGENT_HEARTBEAT_MESSAGE.to_string(),
                                                         percent: None,
                                                         parent_id: None,
                                                     });
@@ -982,7 +977,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                             (
                                                 format!(
                                                     "Error: sub-agent timed out after {}s",
-                                                    SUB_AGNET_RESULT_TIMEOUT_SECS
+                                                    SUB_AGENT_RESULT_TIMEOUT_SECS
                                                 ),
                                                 true,
                                             )
@@ -1053,7 +1048,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         );
                                     }
                                 } else if !blocked {
-                                    if is_subagent_tool_name(&name) && agent.delegate_subagents {
+                                    if name == SUB_AGENT_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
                                             .and_then(|value| value.as_str())
@@ -1079,7 +1074,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                                         let timeout =
                                             tokio::time::sleep(Duration::from_secs(
-                                                SUB_AGNET_RESULT_TIMEOUT_SECS,
+                                                SUB_AGENT_RESULT_TIMEOUT_SECS,
                                             ));
                                         tokio::pin!(timeout);
 
@@ -1091,7 +1086,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                                 _ = heartbeat.tick() => {
                                                     yield Ok(AgentEvent::ToolProgress {
                                                         id: id.clone(),
-                                                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                                                        message: SUB_AGENT_HEARTBEAT_MESSAGE.to_string(),
                                                         percent: None,
                                                         parent_id: None,
                                                     });
@@ -1113,7 +1108,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                             (
                                                 format!(
                                                     "Error: sub-agent timed out after {}s",
-                                                    SUB_AGNET_RESULT_TIMEOUT_SECS
+                                                    SUB_AGENT_RESULT_TIMEOUT_SECS
                                                 ),
                                                 true,
                                             )
@@ -1320,8 +1315,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let (tx, rx) = mpsc::channel(64);
 
         tokio::spawn(async move {
-            if is_subagent_tool_name(&name) {
-                Agent::<C>::stream_sub_agnet_execution(
+            if name == SUB_AGENT_TOOL_NAME {
+                Agent::<C>::stream_sub_agent_execution(
                     client,
                     config,
                     hooks,
@@ -1367,7 +1362,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn stream_sub_agnet_execution(
+    async fn stream_sub_agent_execution(
         client: C,
         config: Arc<Config>,
         hooks: HookRegistry,
@@ -1390,7 +1385,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let next_depth = subagent_depth.saturating_add(1);
         let allow_recursive = next_depth < config.max_subagent_depth;
         let recursive_tool = if allow_recursive {
-            Some(Arc::new(SubAgnetTool::new(
+            Some(Arc::new(SubAgentTool::new(
                 client.clone(),
                 Arc::clone(&config),
                 hooks.clone(),
@@ -1402,7 +1397,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         };
 
         let child_tools =
-            ToolRegistry::with_sub_agnet_child_defaults_recursive(&config, recursive_tool);
+            ToolRegistry::with_sub_agent_child_defaults_recursive(&config, recursive_tool);
 
         let child = Agent::builder(client, Arc::clone(&config))
             .with_tools(child_tools)
@@ -1430,7 +1425,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 _ = heartbeat.tick() => {
                     let _ = tx.send(AgentEvent::ToolProgress {
                         id: id.clone(),
-                        message: SUB_AGNET_HEARTBEAT_MESSAGE.to_string(),
+                        message: SUB_AGENT_HEARTBEAT_MESSAGE.to_string(),
                         percent: None,
                         parent_id: None,
                     }).await;

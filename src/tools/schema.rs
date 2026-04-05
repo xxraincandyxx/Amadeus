@@ -13,7 +13,7 @@ static GLOB_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static GREP_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static TODO_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 static WEB_FETCH_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
-static SUB_AGNET_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
+static SUB_AGENT_TOOL_SCHEMA: OnceLock<Value> = OnceLock::new();
 
 pub fn bash_tool() -> &'static Value {
     BASH_TOOL_SCHEMA.get_or_init(|| {
@@ -243,8 +243,8 @@ pub fn todo_tool() -> &'static Value {
     })
 }
 
-pub fn sub_agnet_tool() -> &'static Value {
-    SUB_AGNET_TOOL_SCHEMA.get_or_init(|| {
+pub fn sub_agent_tool() -> &'static Value {
+    SUB_AGENT_TOOL_SCHEMA.get_or_init(|| {
         serde_json::json!({
             "name": "sub_agent",
             "description": "Spawn a focused subagent with fresh context. It shares the filesystem but not conversation history, and returns only the child's final summary.",
@@ -276,6 +276,6 @@ pub fn all_tools() -> Vec<&'static Value> {
         grep_tool(),
         todo_tool(),
         web_fetch_tool(),
-        sub_agnet_tool(),
+        sub_agent_tool(),
     ]
 }

@@ -21,7 +21,7 @@ pub use grep::GrepTool;
 #[cfg(feature = "supervisor")]
 pub use peer::PeerTool;
 pub use registry::ToolRegistry;
-pub use sub_agent::SubAgnetTool;
+pub use sub_agent::SubAgentTool;
 pub use todo::{TodoItem, TodoManager, TodoStatus, TodoTool};
 pub use tool_trait::Tool;
 pub use web::WebFetchTool;

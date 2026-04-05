@@ -571,10 +571,10 @@ impl Config {
     /// # Returns
     ///
     /// A formatted system prompt string.
-    pub fn system_prompt(&self, include_sub_agnet_tool: bool) -> String {
+    pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
         let mut prompt = crate::prompts::render_system_prompt(
             &self.workdir.display().to_string(),
-            include_sub_agnet_tool,
+            include_sub_agent_tool,
         );
 
         // Append project context if available

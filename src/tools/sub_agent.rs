@@ -11,20 +11,20 @@ use crate::client::LLMClient;
 use crate::hooks::HookRegistry;
 use crate::policy::Policy;
 use crate::tools::registry::ToolRegistry;
-use crate::tools::schema::sub_agnet_tool;
+use crate::tools::schema::sub_agent_tool;
 use crate::tools::tool_trait::Tool;
 use crate::Result;
 
-const SUB_AGNET_MAX_TURNS: usize = 30;
+const SUB_AGENT_MAX_TURNS: usize = 30;
 
 #[derive(Debug, Deserialize)]
-struct SubAgnetInput {
+struct SubAgentInput {
     prompt: String,
     #[allow(dead_code)]
     description: Option<String>,
 }
 
-pub struct SubAgnetTool<C: LLMClient> {
+pub struct SubAgentTool<C: LLMClient> {
     client: C,
     config: Arc<Config>,
     hooks: HookRegistry,
@@ -32,7 +32,7 @@ pub struct SubAgnetTool<C: LLMClient> {
     depth: usize,
 }
 
-impl<C: LLMClient + Clone + 'static> SubAgnetTool<C> {
+impl<C: LLMClient + Clone + 'static> SubAgentTool<C> {
     pub fn new(
         client: C,
         config: Arc<Config>,
@@ -51,13 +51,13 @@ impl<C: LLMClient + Clone + 'static> SubAgnetTool<C> {
 }
 
 #[async_trait]
-impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
+impl<C: LLMClient + Clone + 'static> Tool for SubAgentTool<C> {
     fn name(&self) -> &'static str {
         "sub_agent"
     }
 
     fn schema(&self) -> &'static Value {
-        sub_agnet_tool()
+        sub_agent_tool()
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
@@ -68,7 +68,7 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
             )));
         }
 
-        let parsed: SubAgnetInput =
+        let parsed: SubAgentInput =
             serde_json::from_value(input).map_err(|e| crate::error::AgentError::ToolInput {
                 tool: self.name().to_string(),
                 reason: e.to_string(),
@@ -78,7 +78,7 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
         let next_depth = self.depth.saturating_add(1);
         let allow_recursive = next_depth < self.config.max_subagent_depth;
         let recursive_tool = if allow_recursive {
-            Some(Arc::new(SubAgnetTool::new(
+            Some(Arc::new(SubAgentTool::new(
                 self.client.clone(),
                 Arc::clone(&self.config),
                 self.hooks.clone(),
@@ -90,7 +90,7 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
         };
 
         let child_tools =
-            ToolRegistry::with_sub_agnet_child_defaults_recursive(&self.config, recursive_tool);
+            ToolRegistry::with_sub_agent_child_defaults_recursive(&self.config, recursive_tool);
 
         let child = Agent::builder(self.client.clone(), Arc::clone(&self.config))
             .with_tools(child_tools)
@@ -100,7 +100,7 @@ impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
             .build();
 
         let result = child
-            .run_with_turn_limit(&parsed.prompt, SUB_AGNET_MAX_TURNS)
+            .run_with_turn_limit(&parsed.prompt, SUB_AGENT_MAX_TURNS)
             .await?;
 
         if result.text.is_empty() {

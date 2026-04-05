@@ -6,8 +6,8 @@
 //!
 //! Prompts support the following placeholders that are substituted at runtime:
 //! - `{{workdir}}` - The current working directory
-//! - `{{sub_agnet_available_tool}}` - Sub-agent tool declaration (if enabled)
-//! - `{{sub_agnet_usage}}` - Sub-agent usage guidance (if enabled)
+//! - `{{sub_agent_available_tool}}` - Sub-agent tool declaration (if enabled)
+//! - `{{sub_agent_usage}}` - Sub-agent usage guidance (if enabled)
 //!
 //! ## Example
 //!
@@ -17,9 +17,9 @@
 //! let prompt = render_system_prompt("/home/user/project", true);
 //! ```
 
-const SUB_AGNET_AVAILABLE_TOOL: &str =
+const SUB_AGENT_AVAILABLE_TOOL: &str =
     "- sub_agent: Delegate focused work to a fresh subagent with isolated context\n";
-const SUB_AGNET_USAGE: &str =
+const SUB_AGENT_USAGE: &str =
     "- sub_agent: When a focused subtask benefits from fresh context and isolated execution\n";
 
 // =============================================================================
@@ -79,7 +79,7 @@ Use todo to track multi-step tasks. Mark items complete immediately.
 - **read_file:** Read file contents. Use for understanding code.
 - **write_file:** Create files or complete rewrites.
 - **edit_file:** Targeted changes to existing files.
-{{sub_agnet_available_tool}}
+{{sub_agent_available_tool}}
 - **todo:** Track progress on multi-step tasks.
 
 ## Code References
@@ -91,15 +91,15 @@ When referencing code, use `file_path:line_number` format for navigation.
 Keep responses concise. Prefer one sentence explanations before tool calls.
 After completing a task, report what changed briefly.";
 
-pub fn render_system_prompt(workdir: &str, include_sub_agnet_tool: bool) -> String {
+pub fn render_system_prompt(workdir: &str, include_sub_agent_tool: bool) -> String {
     let mut prompt = SYSTEM_PROMPT.replace("{{workdir}}", workdir);
 
-    if include_sub_agnet_tool {
-        prompt = prompt.replace("{{sub_agnet_available_tool}}", SUB_AGNET_AVAILABLE_TOOL);
-        prompt = prompt.replace("{{sub_agnet_usage}}", SUB_AGNET_USAGE);
+    if include_sub_agent_tool {
+        prompt = prompt.replace("{{sub_agent_available_tool}}", SUB_AGENT_AVAILABLE_TOOL);
+        prompt = prompt.replace("{{sub_agent_usage}}", SUB_AGENT_USAGE);
     } else {
-        prompt = prompt.replace("{{sub_agnet_available_tool}}", "");
-        prompt = prompt.replace("{{sub_agnet_usage}}", "");
+        prompt = prompt.replace("{{sub_agent_available_tool}}", "");
+        prompt = prompt.replace("{{sub_agent_usage}}", "");
     }
 
     prompt
