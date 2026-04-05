@@ -492,4 +492,4 @@ manager.switch_next();
 
 ### API Endpoints
 
-See [REST_API.md](./REST_API.md#5-multi-agent-endpoints) for the HTTP API.
+For the HTTP API endpoints, see [API_GUIDE.md](./API_GUIDE.md#5-multi-agent-endpoints).
