@@ -23,9 +23,13 @@ Use narrower commands while iterating, such as `cargo test --test tool_approval_
 - Prefer `Result`-based error handling over panics in production code.
 - Avoid unrelated refactors in the same PR.
 - If you add a new feature gate, document it in `README.md` and keep `verify.sh` aligned with the supported matrix.
+- For in-scope source files, maintain the required file header defined in `docs/SOURCE_FILE_HEADERS.md`.
+- Treat header updates as part of the implementation, not optional documentation cleanup.
 
 ## Tests and Docs
 Bug fixes should come with a regression test when practical. Update `README.md`, `docs/`, examples, or inline help when behavior changes.
+
+If a change affects an in-scope source file’s responsibilities, interfaces, invariants, side effects, or primary verification path, update that file’s header in the same PR.
 
 ## Pull Requests
 Include:

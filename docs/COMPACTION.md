@@ -264,27 +264,27 @@ The TUI supports manual compaction via `Ctrl+O`:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│                    TUI Compaction                        │
-│                                                          │
-│  User presses Ctrl+O                                     │
-│         │                                                │
-│         ▼                                                │
-│  start_compaction()                                      │
-│         │                                                │
-│         ├── Clone history (Arc<RwLock>)                  │
-│         ├── Spawn background tokio task                  │
-│         │   └── compactor.compact()                      │
-│         │                                                │
-│         ▼                                                │
-│  UI shows animation (CompactionAnimator)                 │
-│         │                                                │
-│         ▼                                                │
-│  poll_compaction_result()                                │
-│         │                                                │
-│         ├── Result received → Update history             │
-│         │   └── Show "X tokens saved" message            │
-│         │                                                │
-│         └── Error → Show error message                   │
+│                    TUI Compaction                       │
+│                                                         │
+│  User presses Ctrl+O                                    │
+│         │                                               │
+│         ▼                                               │
+│  start_compaction()                                     │
+│         │                                               │
+│         ├── Clone history (Arc<RwLock>)                 │
+│         ├── Spawn background tokio task                 │
+│         │   └── compactor.compact()                     │
+│         │                                               │
+│         ▼                                               │
+│  UI shows animation (CompactionAnimator)                │
+│         │                                               │
+│         ▼                                               │
+│  poll_compaction_result()                               │
+│         │                                               │
+│         ├── Result received → Update history            │
+│         │   └── Show "X tokens saved" message           │
+│         │                                               │
+│         └── Error → Show error message                  │
 └─────────────────────────────────────────────────────────┘
 ```
 

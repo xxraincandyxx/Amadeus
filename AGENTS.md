@@ -61,11 +61,14 @@ Chain: `mesh` → `supervisor` → `concurrency`
 ### Documentation
 - Every public function needs a doc comment. Private functions doc comments encouraged.
 - Document Args, Returns, and any non-obvious complexity.
+- Source-file headers for in-scope code are mandatory and must follow `docs/SOURCE_FILE_HEADERS.md`.
+- When touching an in-scope source file, treat header maintenance as required work in the same change.
 
 ### Agent Behavior Rules
 - **No comments in code** unless explicitly requested by the user.
 - Do not run destructive shell commands (`sudo`, `rm -rf /`, writing to `.env`/`.pem`/`.key` are blocked).
 - Always run `cargo check --features full` and relevant tests after changes.
+- Keep source-file headers accurate; stale headers are policy violations.
 
 ---
 
@@ -129,4 +132,5 @@ Copy `.env.example` to `.env`. Set `PROVIDER`, API keys (`ANTHROPIC_API_KEY`, `O
 - **CLAUDE.md**: Extended commands, architecture details, session management
 - **GEMINI.md**: Performance mandates and defensive engineering guidelines
 - **.github/copilot-instructions.md**: Quick reference for GitHub Copilot
+- **docs/SOURCE_FILE_HEADERS.md**: Canonical schema and strict maintenance rules for source-file headers
 - **docs/**: Design notes (REST API, TUI guide, test flow, etc.)
