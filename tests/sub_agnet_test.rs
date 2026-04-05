@@ -24,7 +24,7 @@ async fn test_sub_agnet_uses_fresh_context_and_limited_child_tools() {
         vec![
             StreamEvent::ToolCallStart {
                 id: "sub_1".to_string(),
-                name: "sub_agnet".to_string(),
+                name: "sub_agent".to_string(),
             },
             StreamEvent::ToolCallDelta {
                 arguments: serde_json::json!({
@@ -72,7 +72,7 @@ async fn test_sub_agnet_uses_fresh_context_and_limited_child_tools() {
         .nth_request(2)
         .expect("missing parent resume request");
 
-    assert!(tool_names(&parent_request.tools).contains(&"sub_agnet".to_string()));
+    assert!(tool_names(&parent_request.tools).contains(&"sub_agent".to_string()));
 
     let child_tool_names = tool_names(&child_request.tools);
     assert_eq!(child_tool_names.len(), 9);
@@ -84,7 +84,7 @@ async fn test_sub_agnet_uses_fresh_context_and_limited_child_tools() {
     assert!(child_tool_names.contains(&"grep".to_string()));
     assert!(child_tool_names.contains(&"todo".to_string()));
     assert!(child_tool_names.contains(&"web_fetch".to_string()));
-    assert!(child_tool_names.contains(&"sub_agnet".to_string()));
+    assert!(child_tool_names.contains(&"sub_agent".to_string()));
     assert_eq!(child_request.messages.len(), 1);
 
     match &child_request.messages[0].content[0] {
@@ -125,7 +125,7 @@ async fn test_sub_agnet_stops_after_turn_limit() {
     let mut steps = vec![vec![
         StreamEvent::ToolCallStart {
             id: "sub_1".to_string(),
-            name: "sub_agnet".to_string(),
+            name: "sub_agent".to_string(),
         },
         StreamEvent::ToolCallDelta {
             arguments: serde_json::json!({

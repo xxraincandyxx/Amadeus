@@ -18,9 +18,9 @@
 //! ```
 
 const SUB_AGNET_AVAILABLE_TOOL: &str =
-    "- sub_agnet: Delegate focused work to a fresh subagent with isolated context\n";
+    "- sub_agent: Delegate focused work to a fresh subagent with isolated context\n";
 const SUB_AGNET_USAGE: &str =
-    "- sub_agnet: When a focused subtask benefits from fresh context and isolated execution\n";
+    "- sub_agent: When a focused subtask benefits from fresh context and isolated execution\n";
 
 // =============================================================================
 // SYSTEM PROMPT
@@ -124,7 +124,7 @@ mod tests {
         assert!(prompt.contains("read_file"));
         assert!(prompt.contains("write_file"));
         assert!(prompt.contains("edit_file"));
-        assert!(prompt.contains("sub_agnet"));
+        assert!(prompt.contains("sub_agent"));
         assert!(prompt.contains("todo"));
     }
 
@@ -133,6 +133,6 @@ mod tests {
         let prompt = render_system_prompt("/tmp", false);
         assert!(prompt.contains("bash"));
         assert!(prompt.contains("todo"));
-        assert!(!prompt.contains("sub_agnet"));
+        assert!(!prompt.contains("sub_agent"));
     }
 }

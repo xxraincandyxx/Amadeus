@@ -27,10 +27,15 @@ use crate::tools::registry::ToolRegistry;
 use crate::tools::SubAgnetTool;
 use crate::tools::{TodoItem, TodoManager};
 
-const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
+const LEGACY_SUB_AGENT_TOOL_NAME: &str = "sub_agnet";
 const TOOL_HEARTBEAT_INTERVAL_MS: u64 = 1200;
 const SUB_AGNET_HEARTBEAT_MESSAGE: &str = "subagent working";
 const SUB_AGNET_RESULT_TIMEOUT_SECS: u64 = 1800;
+
+fn is_subagent_tool_name(name: &str) -> bool {
+    name == SUB_AGENT_TOOL_NAME || name == LEGACY_SUB_AGENT_TOOL_NAME
+}
 
 #[derive(Debug, Clone)]
 struct ToolExecutionRecord {
@@ -917,7 +922,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                     }
 
-                                    if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
+                                    if is_subagent_tool_name(&name) && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
                                             .and_then(|value| value.as_str())
@@ -1048,7 +1053,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         );
                                     }
                                 } else if !blocked {
-                                    if name == SUB_AGNET_TOOL_NAME && agent.delegate_subagents {
+                                    if is_subagent_tool_name(&name) && agent.delegate_subagents {
                                         let prompt = input
                                             .get("prompt")
                                             .and_then(|value| value.as_str())
@@ -1315,7 +1320,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let (tx, rx) = mpsc::channel(64);
 
         tokio::spawn(async move {
-            if name == SUB_AGNET_TOOL_NAME {
+            if is_subagent_tool_name(&name) {
                 Agent::<C>::stream_sub_agnet_execution(
                     client,
                     config,
@@ -1574,16 +1579,16 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
         let duration_ms = tool_start.elapsed().as_millis() as u64;
         if let Err(error) = hooks
-            .on_tool_complete(SUB_AGNET_TOOL_NAME, &output, duration_ms)
+            .on_tool_complete(SUB_AGENT_TOOL_NAME, &output, duration_ms)
             .await
         {
-            warn!(tool = SUB_AGNET_TOOL_NAME, error = %error, "Hook error on complete");
+            warn!(tool = SUB_AGENT_TOOL_NAME, error = %error, "Hook error on complete");
         }
 
         let _ = tx
             .send(AgentEvent::ToolComplete {
                 id,
-                name: SUB_AGNET_TOOL_NAME.to_string(),
+                name: SUB_AGENT_TOOL_NAME.to_string(),
                 input,
                 output,
                 is_error,

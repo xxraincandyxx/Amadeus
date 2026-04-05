@@ -246,7 +246,7 @@ pub fn todo_tool() -> &'static Value {
 pub fn sub_agnet_tool() -> &'static Value {
     SUB_AGNET_TOOL_SCHEMA.get_or_init(|| {
         serde_json::json!({
-            "name": "sub_agnet",
+            "name": "sub_agent",
             "description": "Spawn a focused subagent with fresh context. It shares the filesystem but not conversation history, and returns only the child's final summary.",
             "parameters": {
                 "type": "object",

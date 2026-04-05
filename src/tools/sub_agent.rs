@@ -53,7 +53,7 @@ impl<C: LLMClient + Clone + 'static> SubAgnetTool<C> {
 #[async_trait]
 impl<C: LLMClient + Clone + 'static> Tool for SubAgnetTool<C> {
     fn name(&self) -> &'static str {
-        "sub_agnet"
+        "sub_agent"
     }
 
     fn schema(&self) -> &'static Value {

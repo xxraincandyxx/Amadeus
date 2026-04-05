@@ -27,6 +27,8 @@ use crate::tools::tool_trait::Tool;
 use crate::tools::web::WebFetchTool;
 
 type ToolMap = HashMap<&'static str, Arc<dyn Tool>>;
+const LEGACY_SUBAGENT_TOOL_NAME: &str = "sub_agnet";
+const SUBAGENT_TOOL_NAME: &str = "sub_agent";
 
 #[derive(Clone)]
 pub struct ToolRegistry {
@@ -140,7 +142,16 @@ impl ToolRegistry {
     }
 
     pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
-        self.tools.get(name).cloned()
+        self.tools
+            .get(name)
+            .or_else(|| {
+                if name == LEGACY_SUBAGENT_TOOL_NAME {
+                    self.tools.get(SUBAGENT_TOOL_NAME)
+                } else {
+                    None
+                }
+            })
+            .cloned()
     }
 
     pub fn schemas(&self) -> Vec<&'static Value> {
@@ -173,7 +184,11 @@ impl ToolRegistry {
         let filtered: ToolMap = self
             .tools
             .iter()
-            .filter(|(name, _)| allowed_set.contains(*name))
+            .filter(|(name, _)| {
+                allowed_set.contains(*name)
+                    || (**name == SUBAGENT_TOOL_NAME
+                        && allowed_set.contains(LEGACY_SUBAGENT_TOOL_NAME))
+            })
             .map(|(name, tool)| (*name, tool.clone()))
             .collect();
 
@@ -203,5 +218,32 @@ impl std::fmt::Debug for ToolRegistry {
         f.debug_struct("ToolRegistry")
             .field("tools", &self.tools.keys().collect::<Vec<_>>())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::agent::config::Config;
+
+    #[test]
+    fn registry_resolves_legacy_subagent_name() {
+        let registry = ToolRegistry::with_defaults(&Config::default()).register(Box::new(
+            crate::tools::SubAgnetTool::new(
+                crate::client::openai::OpenAIClient::new(
+                    "test-key".to_string(),
+                    None,
+                    "test-model".to_string(),
+                ),
+                Arc::new(Config::default()),
+                crate::hooks::HookRegistry::new(),
+                Arc::new(tokio::sync::RwLock::new(crate::policy::Policy::default())),
+                0,
+            ),
+        ));
+
+        assert!(registry.get(LEGACY_SUBAGENT_TOOL_NAME).is_some());
+        assert!(registry.get(SUBAGENT_TOOL_NAME).is_some());
     }
 }

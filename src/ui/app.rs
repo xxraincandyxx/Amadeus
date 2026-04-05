@@ -51,11 +51,16 @@ const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
-const SUB_AGNET_TOOL_NAME: &str = "sub_agnet";
+const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
+const LEGACY_SUB_AGENT_TOOL_NAME: &str = "sub_agnet";
 /// Retries for rebuilding the inline [`Terminal`] after clearing scrollback (tmux can fail DSR
 /// cursor queries briefly after `ClearType::Purge`).
 const INLINE_TERMINAL_RECREATE_RETRIES: usize = 8;
 const INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS: u64 = 35;
+
+fn is_subagent_tool_name(name: &str) -> bool {
+    name == SUB_AGENT_TOOL_NAME || name == LEGACY_SUB_AGENT_TOOL_NAME
+}
 
 /// Convert a character with SHIFT modifier to its shifted counterpart.
 /// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
@@ -1626,7 +1631,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 is_error,
                 parent_id,
             } => {
-                if name == SUB_AGNET_TOOL_NAME && parent_id.is_none() && !output.trim().is_empty() {
+                if is_subagent_tool_name(&name) && parent_id.is_none() && !output.trim().is_empty() {
                     self.last_subagent_output = Some(output.clone());
                 }
                 self.tool_monitor.complete(&id, output.clone(), is_error);
@@ -3873,7 +3878,7 @@ mod tests {
     #[test]
     fn tool_monitor_stays_visible_while_nested_tool_runs() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
+        monitor.start_tool("root".to_string(), "sub_agent".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
@@ -3893,7 +3898,7 @@ mod tests {
     #[test]
     fn active_snapshot_prefers_running_selection_then_running_descendant() {
         let mut monitor = ToolMonitorState::new(16);
-        monitor.start_tool("root".to_string(), "sub_agnet".to_string(), None, None);
+        monitor.start_tool("root".to_string(), "sub_agent".to_string(), None, None);
         monitor.start_tool(
             "root::child".to_string(),
             "bash".to_string(),
