@@ -1386,7 +1386,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     }
 
     fn render_live_viewport(&mut self, frame: &mut ratatui::Frame, area: Rect) {
-        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_DASHBOARD_HEIGHT {
+        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_LIVE_VIEWPORT_HEIGHT {
             return;
         }
 
