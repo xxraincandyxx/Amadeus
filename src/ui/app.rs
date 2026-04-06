@@ -29,18 +29,17 @@
 // @end-amadeus-header
 
 use std::collections::{HashMap, VecDeque};
-use std::io::{IsTerminal, Write};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::{
-    cursor::MoveTo,
     event::{
         KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
         PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    terminal::{disable_raw_mode, enable_raw_mode},
 };
 use futures::StreamExt;
 use ratatui::{
@@ -82,11 +81,6 @@ const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
-/// Retries for rebuilding the inline [`Terminal`] after clearing scrollback (tmux can fail DSR
-/// cursor queries briefly after `ClearType::Purge`).
-const INLINE_TERMINAL_RECREATE_RETRIES: usize = 8;
-const INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS: u64 = 35;
-
 /// Convert a character with SHIFT modifier to its shifted counterpart.
 /// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
 fn apply_shift_modifier(c: char) -> char {
@@ -2787,8 +2781,8 @@ pub struct App<C: LLMClient> {
     model_name: String,
     next_session_id: usize,
     next_sub_label: usize,
-    /// When true, next run-loop tick rebuilds the inline terminal and replays the active session's
-    /// scrollback so sessions do not share one host scrollback buffer.
+    /// When true, next run-loop tick replays the active session's committed history into the
+    /// current inline terminal.
     pending_terminal_reset: bool,
     pending_reset_from_history: bool,
     pending_close: Option<(usize, Instant)>,
@@ -3142,38 +3136,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         self.active_session_mut()
             .messages
             .reset_scrollback_cursor_for_session_switch();
-        drop(terminal);
-
-        let mut out = std::io::stdout();
-        execute!(
-            out,
-            Clear(ClearType::Purge),
-            Clear(ClearType::All),
-            MoveTo(0, 0)
-        )?;
-        out.flush()?;
-        std::thread::sleep(Duration::from_millis(50));
-
-        let mut last_err: Option<std::io::Error> = None;
-        for attempt in 0..INLINE_TERMINAL_RECREATE_RETRIES {
-            if attempt > 0 {
-                std::thread::sleep(Duration::from_millis(
-                    INLINE_TERMINAL_RECREATE_RETRY_PAUSE_MS,
-                ));
-            }
-            match self.new_inline_terminal() {
-                Ok(t) => return Ok(t),
-                Err(e) => {
-                    warn!(attempt, %e, "recreate inline terminal after session switch failed");
-                    last_err = Some(e);
-                }
-            }
-        }
-        Err(last_err
-            .unwrap_or_else(|| {
-                std::io::Error::other("inline terminal recreate failed with no error detail")
-            })
-            .into())
+        Ok(terminal)
     }
 
     fn should_finish_session_switch_immediately(&self) -> bool {
@@ -4206,6 +4169,45 @@ mod tests {
         assert!(!app.pending_reset_from_history);
         assert!(!app.should_finish_session_switch_immediately());
         assert!(app.pending_terminal_reset);
+    }
+
+    #[test]
+    fn recycle_terminal_after_switch_replays_populated_session_history() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let agent = Agent::builder(client, Arc::new(Config::default())).build();
+        let mut session2 = Session::new(
+            agent,
+            PathBuf::from("."),
+            "test-model".to_string(),
+            1,
+            "session1".to_string(),
+            1,
+        );
+        session2.messages.add_user("hello?".to_string());
+        session2.messages.add_assistant("hi".to_string());
+        let initial_lines = session2.messages.take_unrendered_lines(80);
+        assert!(!initial_lines.is_empty());
+        app.sessions.push(session2);
+
+        app.switch_session(1);
+
+        let _terminal = app
+            .recycle_terminal_after_session_switch(terminal)
+            .expect("session switch replay should keep the terminal alive");
+
+        assert!(!app.pending_terminal_reset);
+        let replayed = app.sessions[1].messages.take_unrendered_lines(80);
+        let rendered = replayed
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("hello?"));
+        assert!(rendered.contains("hi"));
+        assert!(!rendered.contains("Try \"how does src/main.rs work?\""));
     }
 
     #[test]
