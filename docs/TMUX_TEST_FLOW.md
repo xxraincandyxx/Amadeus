@@ -150,8 +150,8 @@ Expected anchors:
 
 Regression checkpoint — blank screen after switch:
 - capture immediately after a literal `Tab` sent with `tmux-cli send "\t" --enter=False`
-- if the pane is blank, the switch path cleared the terminal without completing the redraw in the same event cycle
-- the fix: `switch_session` clears `pending_reset_from_history` when switching to an empty session so `finish_session_switch` always runs an immediate redraw for empty targets
+- if the pane is blank, the switch path cleared or rebuilt the terminal without completing the redraw in the same event cycle
+- the fix: keep the existing inline terminal alive during the switch and replay the active session history into that same page
 - verify: `switching_from_populated_to_empty_session_allows_immediate_redraw` unit test passes
 
 Regression checkpoint — dashboard flicker on empty session switch:
@@ -170,8 +170,16 @@ Populated-session regression:
 
 Expected anchors:
 - the active label is `root [session1]`
+- `Amadeus v0.1.0` appears before the restored conversation history
+- `Try "how does src/main.rs work?"` appears before the restored conversation history
 - the assistant reply appears exactly once
 - `turn 1` appears once for that turn
+
+Regression checkpoint — populated session switch must include the dashboard:
+- if both sessions already have history, switching into either one must still prepend the dashboard block before the restored transcript
+- the replay should look like a same-page append, not like a raw transcript dump that starts mid-conversation
+- verify: `recycle_terminal_after_switch_replays_populated_session_history` unit test passes
+- verify: `test_session_switch_replay_prepends_dashboard_before_existing_history` unit test passes
 
 Notes:
 - Prefer `tmux-cli send "\t" --enter=False` for `Tab` in remote sessions.

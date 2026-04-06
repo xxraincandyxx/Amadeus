@@ -209,8 +209,6 @@ pub struct MessagesComponent {
     last_rendered_index: usize,
     last_rendered_turn: Option<usize>,
     skip_next_assistant_history_item: bool,
-    /// Skip the welcome/dashboard block on the next scrollback flush (after multi-session switch).
-    suppress_dashboard_on_next_scrollback_flush: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
 }
@@ -230,7 +228,6 @@ impl MessagesComponent {
             last_rendered_index: 0,
             last_rendered_turn: None,
             skip_next_assistant_history_item: false,
-            suppress_dashboard_on_next_scrollback_flush: false,
             scroll_offset: 0,
         }
     }
@@ -242,7 +239,6 @@ impl MessagesComponent {
         self.last_rendered_index = 0;
         self.last_rendered_turn = None;
         self.skip_next_assistant_history_item = false;
-        self.suppress_dashboard_on_next_scrollback_flush = !self.items.is_empty();
     }
 
     /// Get the current turn number
@@ -264,7 +260,6 @@ impl MessagesComponent {
         if self.last_rendered_index == 0
             && self.last_rendered_turn.is_none()
             && !self.items.is_empty()
-            && !self.suppress_dashboard_on_next_scrollback_flush
         {
             let dashboard_lines = self.render_dashboard_lines(width);
             if !dashboard_lines.is_empty() {
@@ -272,7 +267,6 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
         }
-        self.suppress_dashboard_on_next_scrollback_flush = false;
 
         for item in self.items[self.last_rendered_index..].iter() {
             let should_skip = !skipped_streamed_assistant
@@ -1817,6 +1811,30 @@ mod tests {
         assert!(!rendered.contains("/help"));
         assert!(rendered.contains("turn 1"));
         assert!(rendered.contains("Hello"));
+    }
+
+    #[test]
+    fn test_session_switch_replay_prepends_dashboard_before_existing_history() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("hello?".to_string());
+        messages.add_assistant("Hello!".to_string());
+
+        let initial_lines = messages.take_unrendered_lines(100);
+        assert!(!initial_lines.is_empty());
+
+        messages.reset_scrollback_cursor_for_session_switch();
+
+        let replayed = messages.take_unrendered_lines(100);
+        let rendered = replayed
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("Amadeus v0.1.0"));
+        assert!(rendered.contains("turn 1"));
+        assert!(rendered.contains("hello?"));
+        assert!(rendered.contains("Hello!"));
     }
 
     #[test]

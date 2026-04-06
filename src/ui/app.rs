@@ -4205,9 +4205,10 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
+        assert!(rendered.contains("Amadeus v0.1.0"));
         assert!(rendered.contains("hello?"));
         assert!(rendered.contains("hi"));
-        assert!(!rendered.contains("Try \"how does src/main.rs work?\""));
+        assert!(rendered.contains("Premium CLI Coding Interface"));
     }
 
     #[test]
