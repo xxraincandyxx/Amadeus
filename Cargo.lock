@@ -27,12 +27,12 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "amadeus"
 version = "0.1.0"
 dependencies = [
+ "amadeus-api",
  "amadeus-core",
  "amadeus-tui",
  "anyhow",
  "async-stream",
  "async-trait",
- "axum",
  "bytes",
  "chrono",
  "dirs",
@@ -44,7 +44,6 @@ dependencies = [
  "mockito",
  "rand 0.8.5",
  "regex",
- "reqwest",
  "rustc_version_runtime",
  "serde",
  "serde_json",
@@ -52,16 +51,27 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tokio-util",
- "tower 0.4.13",
- "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
  "url",
- "urlencoding",
  "uuid",
  "walkdir",
  "wiremock",
+]
+
+[[package]]
+name = "amadeus-api"
+version = "0.1.0"
+dependencies = [
+ "amadeus-core",
+ "axum",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
 ]
 
 [[package]]

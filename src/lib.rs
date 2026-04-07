@@ -26,7 +26,7 @@
 pub use amadeus_core::*;
 
 #[cfg(feature = "api")]
-pub mod api;
+pub use amadeus_api::api;
 
 #[cfg(feature = "tui")]
 pub use amadeus_tui::ui;

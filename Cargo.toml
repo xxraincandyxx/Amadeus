@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/amadeus-core", "crates/amadeus-tui"]
+members = ["crates/amadeus-api", "crates/amadeus-core", "crates/amadeus-tui"]
 resolver = "2"
 
 [package]
@@ -26,7 +26,7 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["amadeus-core/api", "axum", "tower", "tower-http", "tokio-util", "supervisor"]
+api = ["amadeus-core/api", "dep:amadeus-api", "supervisor"]
 tui = ["amadeus-core/tui", "dep:amadeus-tui", "concurrency"]
 test-utils = ["amadeus-core/test-utils", "amadeus-tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
@@ -43,12 +43,11 @@ full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-util
 
 [dependencies]
 amadeus-core = { path = "crates/amadeus-core", default-features = false }
+amadeus-api = { path = "crates/amadeus-api", optional = true, default-features = false }
 amadeus-tui = { path = "crates/amadeus-tui", optional = true, default-features = false }
 
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
-urlencoding = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dotenvy = "0.15"
@@ -65,11 +64,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
-# Optional: HTTP server
-axum = { version = "0.7", optional = true }
-tower = { version = "0.4", optional = true }
-tower-http = { version = "0.5", features = ["cors"], optional = true }
-tokio-util = { version = "0.7", features = ["io"], optional = true }
 walkdir = "2.5"
 glob = "0.3"
 regex = "1.10"

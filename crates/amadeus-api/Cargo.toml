@@ -1,0 +1,23 @@
+[package]
+name = "amadeus-api"
+version = "0.1.0"
+edition = "2021"
+description = "HTTP API adapter crate for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_api"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus-core = { path = "../amadeus-core", default-features = false, features = ["api", "supervisor"] }
+axum = "0.7"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.39", features = ["full"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
