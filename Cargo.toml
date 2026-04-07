@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/amadeus-core"]
+members = ["crates/amadeus-core", "crates/amadeus-tui"]
 resolver = "2"
 
 [package]
@@ -27,8 +27,8 @@ default = []
 
 # Testing/Examples
 api = ["amadeus-core/api", "axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["amadeus-core/tui", "crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
-test-utils = ["amadeus-core/test-utils", "tempfile", "rustc_version_runtime"]
+tui = ["amadeus-core/tui", "dep:amadeus-tui", "concurrency"]
+test-utils = ["amadeus-core/test-utils", "amadeus-tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
 concurrency = ["amadeus-core/concurrency"]
@@ -43,6 +43,7 @@ full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-util
 
 [dependencies]
 amadeus-core = { path = "crates/amadeus-core", default-features = false }
+amadeus-tui = { path = "crates/amadeus-tui", optional = true, default-features = false }
 
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
@@ -74,13 +75,6 @@ glob = "0.3"
 regex = "1.10"
 url = "2.5"
 
-# Optional: TUI
-crossterm = { version = "0.27", features = ["event-stream"], optional = true }
-ratatui = { version = "0.28", optional = true }
-tui-textarea = { version = "0.6", optional = true }
-unicode-width = { version = "0.2", optional = true }
-colored = { version = "2.1", optional = true }
-lazy_static = { version = "1.4", optional = true }
 libc = "0.2.182"
 rand = "0.8"
 dirs = "5.0"

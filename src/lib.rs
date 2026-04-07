@@ -29,4 +29,4 @@ pub use amadeus_core::*;
 pub mod api;
 
 #[cfg(feature = "tui")]
-pub mod ui;
+pub use amadeus_tui::ui;

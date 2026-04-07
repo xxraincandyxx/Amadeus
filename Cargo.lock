@@ -28,24 +28,21 @@ name = "amadeus"
 version = "0.1.0"
 dependencies = [
  "amadeus-core",
+ "amadeus-tui",
  "anyhow",
  "async-stream",
  "async-trait",
  "axum",
  "bytes",
  "chrono",
- "colored 2.2.0",
- "crossterm 0.27.0",
  "dirs",
  "dotenvy",
  "flate2",
  "futures",
  "glob",
- "lazy_static",
  "libc",
  "mockito",
  "rand 0.8.5",
- "ratatui",
  "regex",
  "reqwest",
  "rustc_version_runtime",
@@ -60,8 +57,6 @@ dependencies = [
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
- "tui-textarea",
- "unicode-width 0.2.2",
  "url",
  "urlencoding",
  "uuid",
@@ -102,6 +97,32 @@ dependencies = [
  "uuid",
  "walkdir",
  "wiremock",
+]
+
+[[package]]
+name = "amadeus-tui"
+version = "0.1.0"
+dependencies = [
+ "amadeus-core",
+ "anyhow",
+ "chrono",
+ "colored 2.2.0",
+ "crossterm 0.27.0",
+ "dirs",
+ "futures",
+ "lazy_static",
+ "rand 0.8.5",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tui-textarea",
+ "unicode-width 0.2.2",
+ "urlencoding",
+ "uuid",
+ "walkdir",
 ]
 
 [[package]]
