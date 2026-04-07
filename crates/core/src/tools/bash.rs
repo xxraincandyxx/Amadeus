@@ -89,6 +89,87 @@ pub fn classify_command(command: &str) -> BashCommandKind {
     }
 }
 
+pub fn is_read_only_command(command: &str) -> bool {
+    let first_token = command
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
+
+    matches!(
+        first_token,
+        "cat"
+            | "head"
+            | "tail"
+            | "less"
+            | "more"
+            | "wc"
+            | "ls"
+            | "find"
+            | "grep"
+            | "rg"
+            | "awk"
+            | "sed"
+            | "echo"
+            | "printf"
+            | "which"
+            | "where"
+            | "whoami"
+            | "pwd"
+            | "env"
+            | "printenv"
+            | "date"
+            | "cal"
+            | "df"
+            | "du"
+            | "free"
+            | "uptime"
+            | "uname"
+            | "file"
+            | "stat"
+            | "diff"
+            | "sort"
+            | "uniq"
+            | "tr"
+            | "cut"
+            | "paste"
+            | "tee"
+            | "xargs"
+            | "test"
+            | "true"
+            | "false"
+            | "type"
+            | "readlink"
+            | "realpath"
+            | "basename"
+            | "dirname"
+            | "sha256sum"
+            | "md5sum"
+            | "b3sum"
+            | "xxd"
+            | "hexdump"
+            | "od"
+            | "strings"
+            | "tree"
+            | "jq"
+            | "yq"
+            | "python3"
+            | "python"
+            | "node"
+            | "ruby"
+            | "cargo"
+            | "rustc"
+            | "git"
+            | "gh"
+            | "tmux-cli"
+    ) && !command.contains("-i ")
+        && !command.contains("--in-place")
+        && !command.contains(" > ")
+        && !command.contains(" >> ")
+}
+
 pub struct BashTool {
     timeout_secs: u64,
     workdir: String,

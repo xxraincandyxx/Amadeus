@@ -55,6 +55,7 @@ use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
 use crate::hooks::{HookAction, HookRegistry};
+use crate::permissions::{PermissionDecision, PermissionEnforcer};
 use crate::policy::Policy;
 use crate::tools::registry::ToolRegistry;
 use crate::tools::SubAgentTool;
@@ -855,8 +856,35 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                     }
                                 };
 
-                                // Check policy for approval
+                                let permission_enforcer =
+                                    PermissionEnforcer::from_config(config.as_ref());
+                                let permission_decision = if !blocked {
+                                    Some(permission_enforcer.check(&name, &input))
+                                } else {
+                                    None
+                                };
+
+                                let blocked = match &permission_decision {
+                                    Some(PermissionDecision::Deny { required, reason }) => {
+                                        warn!(
+                                            tool = %name,
+                                            reason = %reason,
+                                            required_mode = required.as_str(),
+                                            active_mode = permission_enforcer.active_mode().as_str(),
+                                            "Permission denied tool execution"
+                                        );
+                                        yield Ok(AgentEvent::Error { message: reason.clone() });
+                                        true
+                                    }
+                                    _ => blocked,
+                                };
+
                                 let (needs_approval, reason) = if !blocked {
+                                    if let Some(PermissionDecision::Ask { reason, .. }) =
+                                        permission_decision.clone()
+                                    {
+                                        (true, reason)
+                                    } else {
                                     let policy_guard = policy.read().await;
                                     let needs = policy_guard.needs_approval(&name, &input);
                                     let reason = if needs {
@@ -865,6 +893,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         String::new()
                                     };
                                     (needs, reason)
+                                    }
                                 } else {
                                     (false, String::new())
                                 };

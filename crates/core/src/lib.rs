@@ -33,6 +33,7 @@ pub mod core;
 pub mod error;
 pub mod hooks;
 pub mod mcp;
+pub mod permissions;
 pub mod policy;
 pub mod prompts;
 pub mod skills;
@@ -41,6 +42,7 @@ pub mod test_utils;
 pub mod tools;
 
 pub use error::{AgentError, Result};
+pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
 
 #[cfg(feature = "concurrency")]
 pub use concurrency::{

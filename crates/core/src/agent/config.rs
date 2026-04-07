@@ -61,6 +61,7 @@
 use std::path::Path;
 
 use crate::error::{AgentError, Result};
+use crate::permissions::PermissionMode;
 
 // Standard library's environment variable module
 use std::env;
@@ -247,6 +248,8 @@ pub struct Config {
     ///
     /// Default: 2
     pub max_subagent_depth: usize,
+    /// Permission mode for tool execution.
+    pub permission_mode: PermissionMode,
 }
 
 /*
@@ -273,6 +276,7 @@ impl Default for Config {
             compact_threshold_percent: 75,
             compact_preserve_recent: 6,
             max_subagent_depth: 2,
+            permission_mode: PermissionMode::WorkspaceWrite,
         }
     }
 }
@@ -637,6 +641,10 @@ impl Config {
 
             // Sub-agent settings
             max_subagent_depth,
+            permission_mode: env::var("PERMISSION_MODE")
+                .ok()
+                .and_then(|value| PermissionMode::parse(&value))
+                .unwrap_or(PermissionMode::WorkspaceWrite),
         })
     }
 
@@ -765,6 +773,12 @@ impl Config {
             config.max_subagent_depth = max_subagent_depth as usize;
         }
 
+        if let Some(permission_mode) = json.get("permission_mode").and_then(|v| v.as_str()) {
+            if let Some(mode) = PermissionMode::parse(permission_mode) {
+                config.permission_mode = mode;
+            }
+        }
+
         Ok(config)
     }
 
@@ -888,6 +902,11 @@ impl Config {
             } else {
                 self.max_subagent_depth
             },
+            permission_mode: if other.permission_mode != PermissionMode::WorkspaceWrite {
+                other.permission_mode
+            } else {
+                self.permission_mode
+            },
         }
     }
 
@@ -997,5 +1016,16 @@ mod tests {
         restore_env("PROVIDER", provider);
         restore_env("ANTHROPIC_API_KEY", anthropic_key);
         restore_env("MODEL_ID", model);
+    }
+
+    #[test]
+    fn load_from_file_reads_permission_mode() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(&path, r#"{"api_key":"x","permission_mode":"read-only"}"#).unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.permission_mode, PermissionMode::ReadOnly);
     }
 }

@@ -114,6 +114,7 @@ impl SessionRecorder {
             },
             model: config.model.clone(),
             workdir: config.workdir.to_string_lossy().to_string(),
+            permission_mode: config.permission_mode.as_str().to_string(),
             config_roots: config
                 .config_roots()
                 .into_iter()
