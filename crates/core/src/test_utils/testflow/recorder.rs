@@ -15,6 +15,7 @@
 // - type: crate::test_utils::testflow::recorder::SessionRecorder
 // - fn: crate::test_utils::testflow::recorder::load_session
 // uses:
+// - module: crate::agent::config::Config
 // - module: crate::error::Result
 // - runtime: tokio async runtime
 // - runtime: chrono date and time utilities
@@ -43,6 +44,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use super::types::*;
+use crate::agent::config::Config;
 use crate::error::Result;
 
 pub struct SessionRecorder {
@@ -103,12 +105,26 @@ impl SessionRecorder {
             .unwrap_or_default()
     }
 
-    pub async fn set_config_snapshot(&self, provider: &str, model: &str, workdir: &Path) {
+    pub async fn set_config_snapshot(&self, config: &Config) {
         let mut session = self.session.lock().await;
         session.metadata.config_snapshot = ConfigSnapshot {
-            provider: provider.to_string(),
-            model: model.to_string(),
-            workdir: workdir.to_string_lossy().to_string(),
+            provider: match config.provider {
+                crate::agent::config::Provider::Anthropic => "anthropic".to_string(),
+                crate::agent::config::Provider::OpenAI => "openai".to_string(),
+            },
+            model: config.model.clone(),
+            workdir: config.workdir.to_string_lossy().to_string(),
+            config_roots: config
+                .config_roots()
+                .into_iter()
+                .map(|root| root.to_string_lossy().to_string())
+                .collect(),
+            global_hook_path: Config::global_hooks_path()
+                .map(|path| path.to_string_lossy().to_string()),
+            workspace_hook_path: config.workspace_hooks_path().to_string_lossy().to_string(),
+            agents_dir: config.agents_dir().to_string_lossy().to_string(),
+            skills_dir: config.skills_dir().to_string_lossy().to_string(),
+            workspace_env_path: config.workspace_env_path().to_string_lossy().to_string(),
         };
     }
 

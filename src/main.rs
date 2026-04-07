@@ -198,16 +198,7 @@ async fn main() -> Result<()> {
                 .record_dir
                 .unwrap_or_else(|| workdir.join("logs").join("testflow").join("sessions"));
             let recorder = SessionRecorder::new(record_dir);
-            recorder
-                .set_config_snapshot(
-                    match config.provider {
-                        Provider::Anthropic => "anthropic",
-                        Provider::OpenAI => "openai",
-                    },
-                    &model,
-                    &workdir,
-                )
-                .await;
+            recorder.set_config_snapshot(config.as_ref()).await;
             Some(recorder)
         } else {
             None

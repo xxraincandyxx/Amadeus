@@ -48,10 +48,17 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 use crate::error::Result;
-use crate::hooks::{Hook, HookAction};
+use crate::hooks::{Hook, HookAction, HookEvent};
+
+struct ShellHookResult {
+    exit_code: i32,
+    success: bool,
+    output: String,
+}
 
 /// A hook that executes a shell command.
 pub struct ShellHook {
@@ -115,10 +122,12 @@ impl ShellHook {
         let event = match config
             .get("event")
             .and_then(|v| v.as_str())
-            .unwrap_or("tool_start")
+            .unwrap_or("pre_tool_use")
         {
-            "tool_complete" => super::HookEvent::ToolComplete,
-            _ => super::HookEvent::ToolStart,
+            "tool_start" | "pre_tool_use" => HookEvent::PreToolUse,
+            "tool_complete" | "post_tool_use" => HookEvent::PostToolUse,
+            "post_tool_use_failure" => HookEvent::PostToolUseFailure,
+            _ => HookEvent::PreToolUse,
         };
 
         let command = config
@@ -165,22 +174,57 @@ impl ShellHook {
     /// Execute the shell command.
     fn execute(
         &self,
+        event: HookEvent,
         tool_name: &str,
         tool_input: &Value,
         tool_output: Option<&str>,
+        is_error: bool,
         duration_ms: Option<u64>,
-    ) -> std::io::Result<(bool, String)> {
+    ) -> std::io::Result<ShellHookResult> {
         let tool_input_str = serde_json::to_string(tool_input).unwrap_or_default();
+        let payload = serde_json::json!({
+            "event": match event {
+                HookEvent::PreToolUse => "pre_tool_use",
+                HookEvent::PostToolUse => "post_tool_use",
+                HookEvent::PostToolUseFailure => "post_tool_use_failure",
+            },
+            "tool_name": tool_name,
+            "tool_input": tool_input,
+            "tool_output": tool_output.unwrap_or(""),
+            "is_error": is_error,
+            "duration_ms": duration_ms.unwrap_or(0),
+        });
 
-        let output = Command::new("sh")
+        let mut child = Command::new("sh")
             .arg("-c")
             .arg(&self.command)
-            .env("TOOL_NAME", tool_name)
-            .env("TOOL_INPUT", &tool_input_str)
-            .env("TOOL_OUTPUT", tool_output.unwrap_or(""))
-            .env("TOOL_DURATION_MS", duration_ms.unwrap_or(0).to_string())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env(
+                "HOOK_EVENT",
+                match event {
+                    HookEvent::PreToolUse => "pre_tool_use",
+                    HookEvent::PostToolUse => "post_tool_use",
+                    HookEvent::PostToolUseFailure => "post_tool_use_failure",
+                },
+            )
+            .env("HOOK_TOOL_NAME", tool_name)
+            .env("HOOK_TOOL_INPUT", &tool_input_str)
+            .env("HOOK_TOOL_OUTPUT", tool_output.unwrap_or(""))
+            .env(
+                "HOOK_TOOL_DURATION_MS",
+                duration_ms.unwrap_or(0).to_string(),
+            )
+            .env("HOOK_TOOL_IS_ERROR", if is_error { "1" } else { "0" })
             .envs(&self.env)
-            .output()?;
+            .spawn()?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin.write_all(payload.to_string().as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -190,7 +234,11 @@ impl ShellHook {
             format!("{}\n{}", stdout, stderr)
         };
 
-        Ok((output.status.success(), combined))
+        Ok(ShellHookResult {
+            exit_code: output.status.code().unwrap_or(-1),
+            success: output.status.success(),
+            output: combined,
+        })
     }
 }
 
@@ -208,22 +256,37 @@ impl Hook for ShellHook {
     }
 
     async fn on_tool_start(&self, tool_name: &str, input: &Value) -> Result<HookAction> {
-        if self.event != super::HookEvent::ToolStart {
+        if self.event != HookEvent::PreToolUse {
             return Ok(HookAction::Continue);
         }
 
-        let (success, output) = self.execute(tool_name, input, None, None).map_err(|e| {
-            crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
-        })?;
+        let result = self
+            .execute(HookEvent::PreToolUse, tool_name, input, None, false, None)
+            .map_err(|e| {
+                crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
+            })?;
 
-        if !success && self.block_on_error {
+        if result.exit_code == 2 {
             Ok(HookAction::Block(format!(
                 "Hook '{}' blocked execution: {}",
-                self.name, output
+                self.name, result.output
             )))
         } else {
-            if !output.trim().is_empty() {
-                tracing::info!(hook = %self.name, output = %output.trim(), "Shell hook executed");
+            if !result.success && self.block_on_error {
+                return Ok(HookAction::Block(format!(
+                    "Hook '{}' blocked execution: {}",
+                    self.name, result.output
+                )));
+            }
+            if !result.success {
+                tracing::warn!(
+                    hook = %self.name,
+                    output = %result.output.trim(),
+                    exit_code = result.exit_code,
+                    "Shell hook returned non-zero exit code"
+                );
+            } else if !result.output.trim().is_empty() {
+                tracing::info!(hook = %self.name, output = %result.output.trim(), "Shell hook executed");
             }
             Ok(HookAction::Continue)
         }
@@ -232,28 +295,40 @@ impl Hook for ShellHook {
     async fn on_tool_complete(
         &self,
         tool_name: &str,
+        input: &Value,
         output: &str,
+        is_error: bool,
         duration_ms: u64,
     ) -> Result<()> {
-        if self.event != super::HookEvent::ToolComplete {
+        if (self.event == HookEvent::PostToolUse && is_error)
+            || (self.event == HookEvent::PostToolUseFailure && !is_error)
+            || self.event == HookEvent::PreToolUse
+        {
             return Ok(());
         }
 
-        let input = serde_json::json!({});
-        let (success, cmd_output) = self
-            .execute(tool_name, &input, Some(output), Some(duration_ms))
+        let result = self
+            .execute(
+                self.event,
+                tool_name,
+                input,
+                Some(output),
+                is_error,
+                Some(duration_ms),
+            )
             .map_err(|e| {
                 crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
             })?;
 
-        if !success {
+        if !result.success {
             tracing::warn!(
                 hook = %self.name,
-                output = %cmd_output.trim(),
+                output = %result.output.trim(),
+                exit_code = result.exit_code,
                 "Shell hook returned non-zero exit code"
             );
-        } else if !cmd_output.trim().is_empty() {
-            tracing::info!(hook = %self.name, output = %cmd_output.trim(), "Shell hook executed");
+        } else if !result.output.trim().is_empty() {
+            tracing::info!(hook = %self.name, output = %result.output.trim(), "Shell hook executed");
         }
 
         Ok(())
@@ -269,7 +344,7 @@ mod tests {
         let config = serde_json::json!({
             "type": "shell",
             "name": "test-hook",
-            "event": "tool_start",
+            "event": "pre_tool_use",
             "command": "echo 'test'",
             "tools": ["bash"],
             "env": {
@@ -280,7 +355,7 @@ mod tests {
 
         let hook = ShellHook::from_config(&config).unwrap();
         assert_eq!(hook.name, "test-hook");
-        assert_eq!(hook.event, super::super::HookEvent::ToolStart);
+        assert_eq!(hook.event, HookEvent::PreToolUse);
         assert_eq!(hook.command, "echo 'test'");
         assert_eq!(hook.tools, vec!["bash"]);
         assert_eq!(hook.env.get("FOO"), Some(&"bar".to_string()));
@@ -289,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_shell_hook_matches_tool() {
-        let hook = ShellHook::new("test", super::super::HookEvent::ToolStart, "echo")
+        let hook = ShellHook::new("test", HookEvent::PreToolUse, "echo")
             .with_tools(vec!["bash".to_string(), "write_file".to_string()]);
 
         assert!(hook.matches_tool("bash"));
@@ -299,11 +374,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_shell_hook_execute() {
-        let hook = ShellHook::new(
-            "test",
-            super::super::HookEvent::ToolStart,
-            "echo $TOOL_NAME",
-        );
+        let hook = ShellHook::new("test", HookEvent::PreToolUse, "echo $HOOK_TOOL_NAME");
 
         let action = hook
             .on_tool_start("bash", &serde_json::json!({"command": "ls"}))
@@ -311,5 +382,17 @@ mod tests {
             .unwrap();
 
         assert!(matches!(action, HookAction::Continue));
+    }
+
+    #[tokio::test]
+    async fn test_shell_hook_exit_code_two_blocks_pre_tool_use() {
+        let hook = ShellHook::new("test", HookEvent::PreToolUse, "exit 2");
+
+        let action = hook
+            .on_tool_start("bash", &serde_json::json!({"command": "ls"}))
+            .await
+            .unwrap();
+
+        assert!(matches!(action, HookAction::Block(_)));
     }
 }

@@ -173,6 +173,7 @@ pub struct AgentBuilder<C: LLMClient> {
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn new(client: C, config: Arc<Config>) -> Self {
+        let hooks = HookRegistry::load_for_config(config.as_ref()).unwrap_or_default();
         Self {
             client,
             config,
@@ -182,7 +183,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             delegate_subagents: false,
             history: None,
             todo_manager: Arc::new(StdRwLock::new(TodoManager::new())),
-            hooks: HookRegistry::new(),
+            hooks,
             policy: Policy::default(),
         }
     }
@@ -1320,14 +1321,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             Err(e) => format!("Error: {}", e),
         };
         let duration_ms = tool_start.elapsed().as_millis() as u64;
+        let is_error = output.starts_with("Error:");
 
-        if let Err(e) = hooks.on_tool_complete(&name, &output, duration_ms).await {
+        if let Err(e) = hooks
+            .on_tool_complete(&name, &input, &output, is_error, duration_ms)
+            .await
+        {
             warn!(tool = %name, error = %e, "Hook error on complete");
         }
 
         debug!(tool = %name, duration_ms = duration_ms, "Tool executed");
 
-        let is_error = output.starts_with("Error:");
         ToolExecutionRecord::new(id, name, input, output, is_error)
     }
 
@@ -1607,7 +1611,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
         let duration_ms = tool_start.elapsed().as_millis() as u64;
         if let Err(error) = hooks
-            .on_tool_complete(SUB_AGENT_TOOL_NAME, &output, duration_ms)
+            .on_tool_complete(SUB_AGENT_TOOL_NAME, &input, &output, is_error, duration_ms)
             .await
         {
             warn!(tool = SUB_AGENT_TOOL_NAME, error = %error, "Hook error on complete");

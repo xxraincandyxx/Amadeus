@@ -42,7 +42,7 @@ pub async fn list_skills<C: LLMClient + Clone + 'static>(
     let config = state.supervisor.config();
 
     // Load skills from the configured skills directory
-    let skills_dir = config.workdir.join(".amadeus").join("skills");
+    let skills_dir = config.skills_dir();
 
     let registry = match SkillRegistry::load_from_dir(&skills_dir) {
         Ok(r) => r,
