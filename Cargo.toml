@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/amadeus-api", "crates/amadeus-core", "crates/amadeus-tui"]
+members = ["crates/api", "crates/core", "crates/tui"]
 resolver = "2"
 
 [package]
@@ -26,25 +26,25 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["amadeus-core/api", "dep:amadeus-api", "supervisor"]
-tui = ["amadeus-core/tui", "dep:amadeus-tui", "concurrency"]
-test-utils = ["amadeus-core/test-utils", "amadeus-tui?/test-utils", "tempfile", "rustc_version_runtime"]
+api = ["amadeus_core/api", "dep:amadeus_api", "supervisor"]
+tui = ["amadeus_core/tui", "dep:amadeus_tui", "concurrency"]
+test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
-concurrency = ["amadeus-core/concurrency"]
-supervisor = ["amadeus-core/supervisor", "concurrency"]
-mesh = ["amadeus-core/mesh", "supervisor"]
+concurrency = ["amadeus_core/concurrency"]
+supervisor = ["amadeus_core/supervisor", "concurrency"]
+mesh = ["amadeus_core/mesh", "supervisor"]
 
 # Context Management
-context = ["amadeus-core/context"]
+context = ["amadeus_core/context"]
 
 # All features
 full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
-amadeus-core = { path = "crates/amadeus-core", default-features = false }
-amadeus-api = { path = "crates/amadeus-api", optional = true, default-features = false }
-amadeus-tui = { path = "crates/amadeus-tui", optional = true, default-features = false }
+amadeus_core = { package = "core", path = "crates/core", default-features = false }
+amadeus_api = { package = "api", path = "crates/api", optional = true, default-features = false }
+amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-features = false }
 
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }

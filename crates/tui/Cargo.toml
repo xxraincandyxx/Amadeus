@@ -1,5 +1,5 @@
 [package]
-name = "amadeus-tui"
+name = "tui"
 version = "0.1.0"
 edition = "2021"
 description = "Terminal UI adapter crate for Amadeus"
@@ -13,10 +13,10 @@ path = "src/lib.rs"
 
 [features]
 default = []
-test-utils = ["amadeus-core/test-utils"]
+test-utils = ["amadeus_core/test-utils"]
 
 [dependencies]
-amadeus-core = { path = "../amadeus-core", default-features = false, features = ["tui"] }
+amadeus_core = { package = "core", path = "../core", default-features = false, features = ["tui"] }
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"

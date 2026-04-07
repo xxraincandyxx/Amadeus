@@ -17,7 +17,7 @@
 // - Core modules remain frontend-agnostic and reusable across transports.
 // side_effects: none
 // tests:
-// - cmd: cargo test -p amadeus-core --features full
+// - cmd: cargo test -p core --features full
 // @end-amadeus-header
 
 //! Core Amadeus SDK runtime and reusable agent infrastructure.

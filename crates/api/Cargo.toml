@@ -1,5 +1,5 @@
 [package]
-name = "amadeus-api"
+name = "api"
 version = "0.1.0"
 edition = "2021"
 description = "HTTP API adapter crate for Amadeus"
@@ -12,7 +12,7 @@ name = "amadeus_api"
 path = "src/lib.rs"
 
 [dependencies]
-amadeus-core = { path = "../amadeus-core", default-features = false, features = ["api", "supervisor"] }
+amadeus_core = { package = "core", path = "../core", default-features = false, features = ["api", "supervisor"] }
 axum = "0.7"
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
