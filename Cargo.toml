@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/amadeus-core"]
+resolver = "2"
+
 [package]
 name = "amadeus"
 version = "0.1.0"
@@ -22,22 +26,24 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
-test-utils = ["tempfile", "rustc_version_runtime"]
+api = ["amadeus-core/api", "axum", "tower", "tower-http", "tokio-util", "supervisor"]
+tui = ["amadeus-core/tui", "crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
+test-utils = ["amadeus-core/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
-concurrency = []
-supervisor = ["concurrency"]
-mesh = ["supervisor"]
+concurrency = ["amadeus-core/concurrency"]
+supervisor = ["amadeus-core/supervisor", "concurrency"]
+mesh = ["amadeus-core/mesh", "supervisor"]
 
 # Context Management
-context = []
+context = ["amadeus-core/context"]
 
 # All features
 full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
+amadeus-core = { path = "crates/amadeus-core", default-features = false }
+
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
@@ -56,8 +62,6 @@ bytes = "1.0"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Core primitives
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
 # Optional: HTTP server

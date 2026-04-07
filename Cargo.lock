@@ -27,6 +27,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 name = "amadeus"
 version = "0.1.0"
 dependencies = [
+ "amadeus-core",
  "anyhow",
  "async-stream",
  "async-trait",
@@ -61,6 +62,41 @@ dependencies = [
  "tracing-subscriber",
  "tui-textarea",
  "unicode-width 0.2.2",
+ "url",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "wiremock",
+]
+
+[[package]]
+name = "amadeus-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "dirs",
+ "dotenvy",
+ "flate2",
+ "futures",
+ "glob",
+ "libc",
+ "mockito",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "rustc_version_runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "urlencoding",
  "uuid",
