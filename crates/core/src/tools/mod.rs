@@ -4,6 +4,7 @@
 // status: active
 // feature_flags:
 // - supervisor
+// - team
 // provides:
 // - module: crate::tools
 // uses: none
@@ -34,7 +35,7 @@ pub use bash::BashTool;
 pub use file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 pub use glob::GlobTool;
 pub use grep::GrepTool;
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 pub use peer::PeerTool;
 pub use registry::ToolRegistry;
 pub use sub_agent::SubAgentTool;

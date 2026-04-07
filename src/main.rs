@@ -11,8 +11,6 @@
 // uses:
 // - module: amadeus::agent::config
 // - module: amadeus::agent::mesh::MeshManager
-// - module: amadeus::agent::supervisor
-// - module: amadeus::agent::worker::WorkerConfig
 // - module: amadeus::client::anthropic::AnthropicClient
 // - module: amadeus::client::openai::OpenAIClient
 // - module: amadeus::api::http::run_server
@@ -36,10 +34,13 @@
 
 use amadeus::agent::config::{Config, Provider};
 use amadeus::agent::mesh::MeshManager;
-use amadeus::agent::supervisor::{Supervisor, SupervisorConfig};
-use amadeus::agent::worker::WorkerConfig;
+use amadeus::assessment::{
+    default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentRunner,
+    ScriptedAssessmentClient,
+};
 use amadeus::client::anthropic::AnthropicClient;
 use amadeus::client::openai::OpenAIClient;
+use amadeus::permissions::PermissionMode;
 use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -83,10 +84,25 @@ fn parse_args(args: &[String]) -> CliArgs {
                 println!("Usage: amadeus [OPTIONS]");
                 println!();
                 println!("Options:");
+                println!("  --assess-features [DIR]  Run read-only feature assessment and write a report");
+                println!("  --permission-mode MODE   Override permission mode (read-only|workspace-write|danger-full-access|prompt)");
                 println!("  --server [PORT]  Run HTTP API server (default: 3000)");
                 println!("  --record [DIR]   Record session to JSON log (default: logs/testflow/sessions)");
                 println!("  --help, -h       Show this help message");
                 std::process::exit(0);
+            }
+            "--assess-features" => {
+                cli.assess_features = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                    cli.assessment_dir = Some(PathBuf::from(&args[i + 1]));
+                    i += 1;
+                }
+            }
+            "--permission-mode" => {
+                if i + 1 < args.len() {
+                    cli.permission_mode = PermissionMode::parse(&args[i + 1]);
+                    i += 1;
+                }
             }
             _ => {}
         }
@@ -101,6 +117,9 @@ struct CliArgs {
     server_port: u16,
     record_session: bool,
     record_dir: Option<PathBuf>,
+    assess_features: bool,
+    assessment_dir: Option<PathBuf>,
+    permission_mode: Option<PermissionMode>,
 }
 
 #[tokio::main]
@@ -117,31 +136,74 @@ async fn main() -> Result<()> {
     let cli = parse_args(&args);
 
     // 1. Initial Setup
-    let config = Arc::new(Config::load()?);
-    let sdk_config = Arc::clone(&config);
-    let mesh_manager = MeshManager::new(config.workdir.clone());
-
-    // 2. Initialize Core LLM Client
-    let provider = match config.provider {
-        Provider::Anthropic => {
-            let client = AnthropicClient::new(
-                config.api_key.clone(),
-                config.base_url.clone(),
-                config.model.clone(),
-            );
-            ClientKind::Anthropic(client)
-        }
-        Provider::OpenAI => {
-            let client = OpenAIClient::new(
-                config.api_key.clone(),
-                config.base_url.clone(),
-                config.model.clone(),
-            );
-            ClientKind::OpenAI(client)
-        }
+    let mut resolved_config = if cli.assess_features {
+        Config::load_for_assessment()?
+    } else {
+        Config::load()?
     };
+    if let Some(permission_mode) = cli.permission_mode {
+        resolved_config.permission_mode = permission_mode;
+    }
+    let config = Arc::new(resolved_config);
 
     // 3. Mode Selection
+
+    if cli.assess_features {
+        let report_dir = cli
+            .assessment_dir
+            .unwrap_or_else(|| config.workdir.join("logs").join("assessments"));
+        let sdk_config = Arc::clone(&config);
+        if config.api_key.is_empty() {
+            let runner = AssessmentRunner::new(
+                ScriptedAssessmentClient::new(config.workdir.clone()),
+                sdk_config.clone(),
+            );
+            let result = runner
+                .run(AssessmentConfig::new(
+                    report_dir,
+                    default_assessment_prompt(&config.workdir),
+                ))
+                .await?;
+            println!(
+                "Assessment report written to {}",
+                result.report_path.display()
+            );
+        } else {
+            match build_client(&config) {
+                ClientKind::Anthropic(c) => {
+                    let runner = AssessmentRunner::new(c, sdk_config.clone());
+                    let result = runner
+                        .run(AssessmentConfig::new(
+                            report_dir,
+                            default_assessment_prompt(&config.workdir),
+                        ))
+                        .await?;
+                    println!(
+                        "Assessment report written to {}",
+                        result.report_path.display()
+                    );
+                }
+                ClientKind::OpenAI(c) => {
+                    let runner = AssessmentRunner::new(c, sdk_config.clone());
+                    let result = runner
+                        .run(AssessmentConfig::new(
+                            report_dir,
+                            default_assessment_prompt(&config.workdir),
+                        ))
+                        .await?;
+                    println!(
+                        "Assessment report written to {}",
+                        result.report_path.display()
+                    );
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    let sdk_config = Arc::clone(&config);
+    let mesh_manager = MeshManager::new(config.workdir.clone());
+    let provider = build_client(&config);
 
     // --- MESH COORDINATION ---
     let supervisor_info = mesh_manager.get_supervisor_info();
@@ -153,32 +215,12 @@ async fn main() -> Result<()> {
 
         match provider {
             ClientKind::Anthropic(c) => {
-                let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
-                supervisor
-                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                    .await?;
-                let supervisor = Arc::new(supervisor);
-                let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move {
-                    let _ = s_clone.run().await;
-                });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor, sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone()).await?;
             }
             ClientKind::OpenAI(c) => {
-                let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
-                supervisor
-                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                    .await?;
-                let supervisor = Arc::new(supervisor);
-                let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move {
-                    let _ = s_clone.run().await;
-                });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor, sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone()).await?;
             }
         }
         mesh_manager.cleanup();
@@ -198,16 +240,7 @@ async fn main() -> Result<()> {
                 .record_dir
                 .unwrap_or_else(|| workdir.join("logs").join("testflow").join("sessions"));
             let recorder = SessionRecorder::new(record_dir);
-            recorder
-                .set_config_snapshot(
-                    match config.provider {
-                        Provider::Anthropic => "anthropic",
-                        Provider::OpenAI => "openai",
-                    },
-                    &model,
-                    &workdir,
-                )
-                .await;
+            recorder.set_config_snapshot(config.as_ref()).await;
             Some(recorder)
         } else {
             None
@@ -254,4 +287,19 @@ async fn main() -> Result<()> {
 enum ClientKind {
     Anthropic(AnthropicClient),
     OpenAI(OpenAIClient),
+}
+
+fn build_client(config: &Config) -> ClientKind {
+    match config.provider {
+        Provider::Anthropic => ClientKind::Anthropic(AnthropicClient::new(
+            config.api_key.clone(),
+            config.base_url.clone(),
+            config.model.clone(),
+        )),
+        Provider::OpenAI => ClientKind::OpenAI(OpenAIClient::new(
+            config.api_key.clone(),
+            config.base_url.clone(),
+            config.model.clone(),
+        )),
+    }
 }

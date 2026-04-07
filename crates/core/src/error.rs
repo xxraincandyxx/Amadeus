@@ -97,6 +97,16 @@ pub enum AgentError {
 
     #[error("Task join error: {0}")]
     JoinError(String),
+
+    #[error(
+        "Permission denied for tool '{tool}' in mode '{active_mode}' (requires '{required_mode}'): {reason}"
+    )]
+    PermissionDenied {
+        tool: String,
+        active_mode: String,
+        required_mode: String,
+        reason: String,
+    },
 }
 
 impl AgentError {

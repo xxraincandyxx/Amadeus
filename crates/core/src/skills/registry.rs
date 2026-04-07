@@ -21,9 +21,10 @@
 //! Registry for loading and managing skills.
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::{Skill, SkillError};
+use crate::agent::config::Config;
 
 /// Registry for managing skills.
 #[derive(Debug, Clone, Default)]
@@ -41,7 +42,7 @@ impl SkillRegistry {
 
     /// Load skills from a directory.
     ///
-    /// Searches for `.md` files and attempts to load them as skills.
+    /// Searches for `.md` files and nested `SKILL.md` files.
     pub fn load_from_dir(path: &Path) -> Result<Self, SkillError> {
         let mut registry = Self::new();
 
@@ -49,27 +50,33 @@ impl SkillRegistry {
             return Ok(registry);
         }
 
-        let entries = std::fs::read_dir(path)
-            .map_err(|e| SkillError::LoadFailed(path.display().to_string(), e.to_string()))?;
-
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if entry_path.extension().map(|e| e == "md").unwrap_or(false) {
-                if let Ok(skill) = Skill::load(&entry_path) {
-                    tracing::info!(
-                        skill = %skill.name,
-                        path = %entry_path.display(),
-                        "Loaded skill"
-                    );
-                    registry.skills.insert(skill.name.clone(), skill);
-                } else {
-                    tracing::warn!(
-                        path = %entry_path.display(),
-                        "Failed to load skill file"
-                    );
-                }
+        for skill_path in collect_skill_paths(path)? {
+            if let Ok(skill) = Skill::load(&skill_path) {
+                tracing::info!(
+                    skill = %skill.name,
+                    path = %skill_path.display(),
+                    "Loaded skill"
+                );
+                registry.skills.insert(skill.name.clone(), skill);
+            } else {
+                tracing::warn!(
+                    path = %skill_path.display(),
+                    "Failed to load skill file"
+                );
             }
         }
+
+        Ok(registry)
+    }
+
+    /// Load skills from global and workspace `.amadeus` roots.
+    pub fn load_for_config(config: &Config) -> Result<Self, SkillError> {
+        let mut registry = Self::new();
+
+        if let Some(global_root) = Config::global_config_root() {
+            registry.merge(Self::load_from_dir(&global_root.join("skills"))?);
+        }
+        registry.merge(Self::load_from_dir(&config.skills_dir())?);
 
         Ok(registry)
     }
@@ -113,6 +120,31 @@ impl SkillRegistry {
     pub fn into_skills(self) -> Vec<Skill> {
         self.skills.into_values().collect()
     }
+
+    pub fn merge(&mut self, other: Self) {
+        self.skills.extend(other.skills);
+    }
+}
+
+fn collect_skill_paths(path: &Path) -> Result<Vec<PathBuf>, SkillError> {
+    let entries = std::fs::read_dir(path)
+        .map_err(|e| SkillError::LoadFailed(path.display().to_string(), e.to_string()))?;
+    let mut paths = Vec::new();
+
+    for entry in entries.flatten() {
+        let entry_path = entry.path();
+        if entry_path.is_dir() {
+            let nested = entry_path.join("SKILL.md");
+            if nested.exists() {
+                paths.push(nested);
+            }
+        } else if entry_path.extension().map(|e| e == "md").unwrap_or(false) {
+            paths.push(entry_path);
+        }
+    }
+
+    paths.sort();
+    Ok(paths)
 }
 
 #[cfg(test)]
@@ -153,6 +185,26 @@ Do something with: {context}
         let skill = registry.get("example").unwrap();
         assert_eq!(skill.name, "example");
         assert_eq!(skill.description, "An example skill");
+    }
+
+    #[test]
+    fn test_load_from_nested_skill_dir() {
+        let temp = TempDir::new().unwrap();
+        let skill_dir = temp.path().join("nested");
+        fs::create_dir_all(&skill_dir).unwrap();
+
+        let skill_content = r#"---
+name: nested-example
+description: Nested skill
+---
+
+Do something with: {context}
+"#;
+
+        fs::write(skill_dir.join("SKILL.md"), skill_content).unwrap();
+
+        let registry = SkillRegistry::load_from_dir(temp.path()).unwrap();
+        assert!(registry.contains("nested-example"));
     }
 
     #[test]

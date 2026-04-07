@@ -34,8 +34,12 @@ pub async fn handle_task<C: LLMClient + Clone + 'static>(
     Json(payload): Json<TaskRequest>,
 ) -> Json<TaskResponse> {
     let task = Task::new(payload.id, payload.prompt).requires(payload.capabilities);
+    let mut agent_manager = state.agent_manager.write().await;
 
-    match state.supervisor.execute(task).await {
+    match agent_manager
+        .execute_task(Some(state.default_team_id), task)
+        .await
+    {
         Ok(res) => Json(TaskResponse {
             task_id: res.task_id,
             worker_id: res.worker_id.to_string(),

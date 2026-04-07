@@ -12,6 +12,7 @@
 // - module: crate::agent::config::Config
 // - module: crate::agent::loop_agent::Agent
 // - module: crate::agent::profile::AgentProfile
+// - module: crate::agent::team
 // - module: crate::client::LLMClient
 // - module: crate::core::id::AgentId
 // - module: crate::error
@@ -26,14 +27,17 @@
 //! Agent Manager - handles multiple agents and coordination between them.
 
 use std::sync::Arc;
+use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 
 use crate::agent::config::Config;
 use crate::agent::loop_agent::Agent;
 use crate::agent::profile::AgentProfile;
+use crate::agent::team::{AgentTeam, TeamLeader, TeamRegistry};
+use crate::agent::worker::{Task, TaskResult, WorkerConfig};
 use crate::client::LLMClient;
-use crate::core::id::AgentId;
+use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
 
 /// Status of an agent.
@@ -75,15 +79,21 @@ pub struct AgentManager<C: LLMClient> {
     active_index: usize,
     /// Counter for agent names.
     name_counter: usize,
+    /// Shared team/task coordination registry.
+    teams: TeamRegistry,
 }
 
 struct AgentHandle<C: LLMClient> {
+    /// Stable agent identifier.
+    id: AgentId,
     /// The agent instance.
     agent: Agent<C>,
     /// User-defined name.
     name: String,
     /// Agent profile.
     profile: AgentProfile,
+    /// Capability tags used for team task routing.
+    capabilities: Vec<String>,
     /// Current status.
     status: AgentStatus,
     /// Number of completed tasks.
@@ -99,6 +109,7 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
             agents: Vec::new(),
             active_index: 0,
             name_counter: 0,
+            teams: TeamRegistry::new(),
         }
     }
 
@@ -109,37 +120,153 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         name: Option<String>,
         profile: AgentProfile,
     ) -> Result<AgentId> {
-        // Generate name if not provided
+        self.create_agent_with_capabilities(name, profile, Vec::new(), None)
+            .await
+    }
+
+    /// Create a new teammate using worker-style configuration.
+    pub async fn spawn_teammate(&mut self, config: WorkerConfig) -> Result<AgentId> {
+        self.create_agent_with_capabilities(
+            Some(config.name),
+            AgentProfile::Default,
+            config.capabilities,
+            config.model,
+        )
+        .await
+    }
+
+    /// Create a new team and return its identifier.
+    pub fn create_team(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
+        self.teams.create_team(name, leader)
+    }
+
+    /// Ensure there is always a default team for task routing.
+    pub fn ensure_default_team(&mut self, leader: TeamLeader) -> TeamId {
+        if let Some(team_id) = self.teams.default_team_id() {
+            return team_id;
+        }
+        self.teams.create_team("default", leader)
+    }
+
+    /// List all teams.
+    pub fn list_teams(&self) -> Vec<AgentTeam> {
+        self.teams.list_teams()
+    }
+
+    /// Add an agent to a team.
+    pub fn add_agent_to_team(&mut self, team_id: TeamId, agent_id: AgentId) -> Result<()> {
+        if !self.agents.iter().any(|agent| agent.id == agent_id) {
+            return Err(AgentError::Command(format!("Unknown agent: {}", agent_id)));
+        }
+        self.teams.add_member(team_id, agent_id)
+    }
+
+    /// Execute a team task using the best available local agent.
+    pub async fn execute_task(
+        &mut self,
+        team_id: Option<TeamId>,
+        task: Task,
+    ) -> Result<TaskResult> {
+        let target_team_id = team_id.or_else(|| self.teams.default_team_id());
+        let selected_index = self.select_agent_index(target_team_id, &task)?;
+        let selected_id = self.agents[selected_index].id;
+        let agent = self.agents[selected_index].agent.clone();
+
+        if let Some(team_id) = target_team_id {
+            self.teams
+                .queue_task(team_id, task.clone(), TeamLeader::User)?;
+            self.teams.claim_task(team_id, &task.id, selected_id)?;
+        }
+
+        self.agents[selected_index].status = AgentStatus::Running;
+        self.active_index = selected_index;
+
+        let start = Instant::now();
+        let result = agent.run(&task.prompt).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+        let handle = &mut self.agents[selected_index];
+        handle.status = AgentStatus::Idle;
+
+        let task_result = match result {
+            Ok(run_result) => {
+                handle.task_count += 1;
+                TaskResult {
+                    task_id: task.id.clone(),
+                    worker_id: selected_id,
+                    success: true,
+                    output: Some(run_result.text),
+                    error: None,
+                    duration_ms,
+                    tool_calls: run_result.tool_calls,
+                }
+            }
+            Err(error) => {
+                handle.status = AgentStatus::Error;
+                TaskResult {
+                    task_id: task.id.clone(),
+                    worker_id: selected_id,
+                    success: false,
+                    output: None,
+                    error: Some(error.to_string()),
+                    duration_ms,
+                    tool_calls: Vec::new(),
+                }
+            }
+        };
+
+        if let Some(team_id) = target_team_id {
+            self.teams
+                .record_result(team_id, &task.id, selected_id, &task_result)?;
+        }
+
+        if task_result.success {
+            Ok(task_result)
+        } else {
+            Err(AgentError::Command(
+                task_result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Task execution failed".to_string()),
+            ))
+        }
+    }
+
+    async fn create_agent_with_capabilities(
+        &mut self,
+        name: Option<String>,
+        profile: AgentProfile,
+        capabilities: Vec<String>,
+        model_override: Option<String>,
+    ) -> Result<AgentId> {
         let name = name.unwrap_or_else(|| {
             self.name_counter += 1;
             format!("{}-{}", profile.display_name(), self.name_counter)
         });
 
-        // Determine if we need to enable call_peer
-        let enable_call_peer = !self.agents.is_empty(); // Enable when 2+ agents
-
-        // Create the agent with appropriate system prompt
-        let agent = Agent::builder(self.client.clone(), Arc::clone(&self.config)).build();
-
         let id = AgentId::new();
+        let agent_config = if let Some(model) = model_override {
+            let mut config = (*self.config).clone();
+            config.model = model;
+            Arc::new(config)
+        } else {
+            Arc::clone(&self.config)
+        };
+        let agent = Agent::builder(self.client.clone(), agent_config)
+            .with_default_tools()
+            .build();
 
-        // Add to agents list
         self.agents.push(AgentHandle {
+            id,
             agent,
             name,
             profile: profile.clone(),
+            capabilities,
             status: AgentStatus::Idle,
             task_count: 0,
         });
 
-        // If this is the first agent, set as active
         if self.agents.len() == 1 {
             self.active_index = 0;
-        }
-
-        // Update call_peer for all agents if needed
-        if enable_call_peer {
-            self.update_peer_tools().await;
         }
 
         Ok(id)
@@ -151,10 +278,8 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
             .iter()
             .enumerate()
             .map(|(i, handle)| {
-                // Generate a temporary ID based on index for now
-                let id = AgentId::new();
                 AgentInfo {
-                    id,
+                    id: handle.id,
                     name: handle.name.clone(),
                     profile: handle.profile.clone(),
                     status: if i == self.active_index {
@@ -169,19 +294,17 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
     }
 
     /// Get info for a specific agent.
-    pub fn get_agent(&self, _agent_id: &AgentId) -> Option<AgentInfo> {
-        // For now, just return the first agent or find by index
-        // TODO: Implement proper ID-based lookup
-        self.agents.first().map(|handle| {
-            let id = AgentId::new();
-            AgentInfo {
-                id,
+    pub fn get_agent(&self, agent_id: &AgentId) -> Option<AgentInfo> {
+        self.agents
+            .iter()
+            .find(|handle| &handle.id == agent_id)
+            .map(|handle| AgentInfo {
+                id: handle.id,
                 name: handle.name.clone(),
                 profile: handle.profile.clone(),
                 status: handle.status,
                 task_count: handle.task_count,
-            }
-        })
+            })
     }
 
     /// Get the currently active agent.
@@ -191,18 +314,17 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// Get the currently active agent ID.
     pub fn active_agent_id(&self) -> Option<AgentId> {
-        self.agents.get(self.active_index).map(|_h| AgentId::new())
+        self.agents.get(self.active_index).map(|handle| handle.id)
     }
 
     /// Switch to a different agent by ID.
-    pub fn switch_to(&mut self, _agent_id: &AgentId) -> Result<()> {
-        // For now, just switch to first agent
-        // TODO: Implement proper ID-based lookup
-        if self.agents.is_empty() {
-            return Err(AgentError::Command("No agents available".to_string()));
+    pub fn switch_to(&mut self, agent_id: &AgentId) -> Result<()> {
+        if let Some(index) = self.agents.iter().position(|agent| &agent.id == agent_id) {
+            self.active_index = index;
+            Ok(())
+        } else {
+            Err(AgentError::Command(format!("Unknown agent: {}", agent_id)))
         }
-        self.active_index = 0;
-        Ok(())
     }
 
     /// Switch to the next agent.
@@ -224,19 +346,20 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
     }
 
     /// Kill (remove) an agent.
-    pub fn kill(&mut self, _agent_id: &AgentId) -> Result<()> {
-        // Don't allow killing the last agent
+    pub fn kill(&mut self, agent_id: &AgentId) -> Result<()> {
         if self.agents.len() == 1 {
             return Err(AgentError::Command(
                 "Cannot kill the last agent".to_string(),
             ));
         }
 
-        // Remove the last agent for now
-        // TODO: Implement proper ID-based removal
-        self.agents.pop();
+        let index = self
+            .agents
+            .iter()
+            .position(|agent| &agent.id == agent_id)
+            .ok_or_else(|| AgentError::Command(format!("Unknown agent: {}", agent_id)))?;
+        self.agents.remove(index);
 
-        // Adjust active index if needed
         if self.active_index >= self.agents.len() {
             self.active_index = 0;
         }
@@ -246,10 +369,17 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// Get peer information for call_peer tool.
     /// Excludes the specified agent from the list.
-    pub fn get_peers(&self, _exclude_agent_id: &AgentId) -> Vec<crate::tools::peer::PeerInfo> {
-        // Return empty for now
-        // TODO: Implement proper peer info
-        Vec::new()
+    pub fn get_peers(&self, exclude_agent_id: &AgentId) -> Vec<crate::tools::peer::PeerInfo> {
+        self.agents
+            .iter()
+            .filter(|agent| &agent.id != exclude_agent_id)
+            .map(|agent| crate::tools::peer::PeerInfo {
+                id: agent.id,
+                name: agent.name.clone(),
+                profile: agent.profile.to_string(),
+                description: agent.capabilities.join(", "),
+            })
+            .collect()
     }
 
     /// Check if call_peer should be enabled (2+ agents).
@@ -257,9 +387,58 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         self.agents.len() >= 2
     }
 
-    /// Update the call_peer tool for all agents.
-    async fn update_peer_tools(&self) {
-        // TODO: Update agent's tool registry with new peer list
+    fn select_agent_index(&self, team_id: Option<TeamId>, task: &Task) -> Result<usize> {
+        let candidate_ids = team_id.and_then(|team_id| {
+            self.teams
+                .get_team(team_id)
+                .map(|team| team.members.clone())
+        });
+
+        let mut selected_index = None;
+
+        for (index, handle) in self.agents.iter().enumerate() {
+            if let Some(candidate_ids) = &candidate_ids {
+                if !candidate_ids.contains(&handle.id) {
+                    continue;
+                }
+            }
+
+            if task
+                .required_capabilities
+                .iter()
+                .all(|capability| handle.capabilities.contains(capability))
+            {
+                selected_index = Some(index);
+                if index == self.active_index {
+                    break;
+                }
+            }
+        }
+
+        if selected_index.is_none() && task.required_capabilities.is_empty() {
+            selected_index = if let Some(candidate_ids) = &candidate_ids {
+                self.agents
+                    .iter()
+                    .enumerate()
+                    .find(|(_, handle)| candidate_ids.contains(&handle.id))
+                    .map(|(index, _)| index)
+            } else if self.agents.is_empty() {
+                None
+            } else {
+                Some(self.active_index.min(self.agents.len() - 1))
+            };
+        }
+
+        selected_index.ok_or_else(|| {
+            if task.required_capabilities.is_empty() {
+                AgentError::Command("No agents available".to_string())
+            } else {
+                AgentError::Command(format!(
+                    "No agent matched capabilities: {}",
+                    task.required_capabilities.join(", ")
+                ))
+            }
+        })
     }
 
     /// Get the total number of agents.

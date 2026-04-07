@@ -62,10 +62,9 @@ fn extract_text_content(content: &[ContentBlock]) -> String {
 pub async fn list_sessions<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> std::result::Result<Json<SessionsResponse>, Json<ErrorResponse>> {
-    // Create a temporary agent to list sessions
     let agent = crate::agent::loop_agent::AgentBuilder::new(
-        state.supervisor.client().clone(),
-        state.supervisor.config().clone(),
+        state.client.clone(),
+        Arc::clone(&state.config),
     )
     .build();
 
@@ -107,8 +106,7 @@ pub async fn get_session<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Path(session_id): Path<String>,
 ) -> std::result::Result<Json<SessionDetailResponse>, Json<ErrorResponse>> {
-    // Build the session path from the log directory
-    let config = state.supervisor.config();
+    let config = &state.config;
     let log_dir = match &config.session_log_dir {
         Some(dir) => dir.clone(),
         None => {
@@ -181,8 +179,7 @@ pub async fn restore_session<C: LLMClient + Clone + 'static>(
     Path(session_id): Path<String>,
     Json(_request): Json<RestoreSessionRequest>,
 ) -> std::result::Result<Json<RestoreSessionResponse>, Json<ErrorResponse>> {
-    // Build the session path from the log directory
-    let config = state.supervisor.config();
+    let config = &state.config;
     let log_dir = match &config.session_log_dir {
         Some(dir) => dir.clone(),
         None => {

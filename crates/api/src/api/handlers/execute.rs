@@ -40,7 +40,7 @@ pub async fn execute<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(request): Json<ExecuteRequest>,
 ) -> std::result::Result<Json<ExecuteResponse>, Json<ErrorResponse>> {
-    let bash = BashTool::from_config(state.supervisor.config());
+    let bash = BashTool::from_config(&state.config);
 
     let input = serde_json::json!({
         "command": request.command,

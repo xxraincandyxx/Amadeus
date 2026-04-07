@@ -38,7 +38,7 @@ use crate::client::LLMClient;
 pub async fn get_config<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> Json<ConfigResponse> {
-    let config = state.supervisor.config();
+    let config = &state.config;
 
     Json(ConfigResponse {
         working_dir: config.workdir.display().to_string(),
@@ -66,7 +66,7 @@ pub async fn update_config<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(request): Json<UpdateConfigRequest>,
 ) -> std::result::Result<Json<UpdateConfigResponse>, Json<ErrorResponse>> {
-    let config = state.supervisor.config();
+    let config = &state.config;
 
     // In a stateful implementation, we would update the config here.
     // For now, we return what the config would look like with the changes.

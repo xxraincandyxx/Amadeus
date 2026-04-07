@@ -10,6 +10,7 @@
 // - trait: crate::hooks::Hook
 // - type: crate::hooks::HookRegistry
 // uses:
+// - module: crate::agent::config::Config
 // - module: crate::error::Result
 // - format: JSON values
 // - artifact: filesystem paths and files
@@ -67,6 +68,7 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::Arc;
 
+use crate::agent::config::Config;
 use crate::error::Result;
 
 /// Actions that a hook can return from `on_tool_start`.
@@ -84,9 +86,11 @@ pub enum HookAction {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HookEvent {
     /// Before a tool is executed.
-    ToolStart,
-    /// After a tool completes.
-    ToolComplete,
+    PreToolUse,
+    /// After a tool completes successfully.
+    PostToolUse,
+    /// After a tool completes with an error.
+    PostToolUseFailure,
 }
 
 /// Trait for implementing hooks.
@@ -106,8 +110,15 @@ pub trait Hook: Send + Sync {
     /// Called after a tool completes.
     ///
     /// Can be used for logging, notifications, or side effects.
-    async fn on_tool_complete(&self, name: &str, output: &str, duration_ms: u64) -> Result<()> {
-        let _ = (name, output, duration_ms);
+    async fn on_tool_complete(
+        &self,
+        name: &str,
+        input: &Value,
+        output: &str,
+        is_error: bool,
+        duration_ms: u64,
+    ) -> Result<()> {
+        let _ = (name, input, output, is_error, duration_ms);
         Ok(())
     }
 
@@ -196,6 +207,29 @@ impl HookRegistry {
         Ok(registry)
     }
 
+    /// Load hooks from the global and workspace `.amadeus` roots.
+    pub fn load_for_config(config: &Config) -> Result<Self> {
+        let mut registry = Self::new();
+
+        if let Some(global_hooks_path) = Config::global_hooks_path() {
+            if global_hooks_path.exists() {
+                registry.merge(Self::load_from_file(&global_hooks_path)?);
+            }
+        }
+
+        let workspace_hooks_path = config.workspace_hooks_path();
+        if workspace_hooks_path.exists() {
+            registry.merge(Self::load_from_file(&workspace_hooks_path)?);
+        }
+
+        Ok(registry)
+    }
+
+    /// Merge another registry into this one, preserving registration order.
+    pub fn merge(&mut self, other: Self) {
+        self.hooks.extend(other.hooks);
+    }
+
     /// Invoke all hooks for `on_tool_start`.
     ///
     /// Returns the first `Block` action if any hook blocks,
@@ -226,12 +260,20 @@ impl HookRegistry {
     }
 
     /// Invoke all hooks for `on_tool_complete`.
-    pub async fn on_tool_complete(&self, name: &str, output: &str, duration_ms: u64) -> Result<()> {
+    pub async fn on_tool_complete(
+        &self,
+        name: &str,
+        input: &Value,
+        output: &str,
+        is_error: bool,
+        duration_ms: u64,
+    ) -> Result<()> {
         for hook in &self.hooks {
             if !hook.matches_tool(name) {
                 continue;
             }
-            hook.on_tool_complete(name, output, duration_ms).await?;
+            hook.on_tool_complete(name, input, output, is_error, duration_ms)
+                .await?;
         }
         Ok(())
     }
@@ -291,5 +333,43 @@ mod tests {
             .await
             .unwrap();
         assert!(matches!(action, HookAction::Block(_)));
+    }
+
+    #[test]
+    fn test_load_for_config_merges_global_and_workspace_hooks() {
+        let temp = tempfile::tempdir().unwrap();
+        let fake_home = temp.path().join("home");
+        let workdir = temp.path().join("workspace");
+        let global_root = fake_home.join(".amadeus");
+        let workspace_root = workdir.join(".amadeus");
+        std::fs::create_dir_all(&global_root).unwrap();
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        std::fs::write(
+            global_root.join("hook.json"),
+            r#"{"hooks":[{"type":"shell","name":"global","event":"pre_tool_use","command":"true"}]}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace_root.join("hook.json"),
+            r#"{"hooks":[{"type":"shell","name":"workspace","event":"post_tool_use","command":"true"}]}"#,
+        )
+        .unwrap();
+
+        let previous_home = std::env::var("HOME").ok();
+        std::env::set_var("HOME", &fake_home);
+
+        let config = Config {
+            workdir: workdir.clone(),
+            ..Config::default()
+        };
+        let registry = HookRegistry::load_for_config(&config).unwrap();
+
+        assert_eq!(registry.len(), 2);
+        assert_eq!(registry.names(), vec!["global", "workspace"]);
+
+        match previous_home {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
     }
 }

@@ -39,12 +39,9 @@ use crate::skills::registry::SkillRegistry;
 pub async fn list_skills<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> std::result::Result<Json<SkillsResponse>, Json<ErrorResponse>> {
-    let config = state.supervisor.config();
+    let config = &state.config;
 
-    // Load skills from the configured skills directory
-    let skills_dir = config.workdir.join(".amadeus").join("skills");
-
-    let registry = match SkillRegistry::load_from_dir(&skills_dir) {
+    let registry = match SkillRegistry::load_for_config(config) {
         Ok(r) => r,
         Err(e) => return Err(Json(ErrorResponse::new("SkillLoadError", e.to_string()))),
     };

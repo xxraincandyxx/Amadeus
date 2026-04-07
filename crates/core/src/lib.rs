@@ -8,6 +8,7 @@
 // - context
 // - mesh
 // - supervisor
+// - team
 // - test-utils
 // - tui
 // provides:
@@ -23,6 +24,7 @@
 //! Core Amadeus SDK runtime and reusable agent infrastructure.
 
 pub mod agent;
+pub mod assessment;
 pub mod benchmark;
 pub mod client;
 #[cfg(feature = "concurrency")]
@@ -32,6 +34,7 @@ pub mod core;
 pub mod error;
 pub mod hooks;
 pub mod mcp;
+pub mod permissions;
 pub mod policy;
 pub mod prompts;
 pub mod skills;
@@ -39,7 +42,12 @@ pub mod skills;
 pub mod test_utils;
 pub mod tools;
 
+pub use assessment::{
+    default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
+    AssessmentRunner, ScriptedAssessmentClient,
+};
 pub use error::{AgentError, Result};
+pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
 
 #[cfg(feature = "concurrency")]
 pub use concurrency::{
@@ -47,8 +55,14 @@ pub use concurrency::{
     LockError, LockManager, LockMode, LockStatus,
 };
 
-#[cfg(feature = "supervisor")]
+#[cfg(feature = "team")]
 pub use agent::{
-    DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerConfig, WorkerInfo,
-    WorkerStatus,
+    AgentTeam, Task, TaskResult, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
+    WorkerConfig, WorkerInfo, WorkerStatus,
 };
+
+#[cfg(feature = "supervisor")]
+pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};
+
+#[cfg(all(feature = "supervisor", not(feature = "team")))]
+pub use agent::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

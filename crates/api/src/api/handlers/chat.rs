@@ -38,10 +38,13 @@ pub async fn chat<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(request): Json<ChatRequest>,
 ) -> std::result::Result<Json<ChatResponse>, Json<ErrorResponse>> {
-    // For single chat, we can dispatch a generic task to the supervisor
     let task = Task::new("chat-request".to_string(), request.message);
+    let mut agent_manager = state.agent_manager.write().await;
 
-    match state.supervisor.execute(task).await {
+    match agent_manager
+        .execute_task(Some(state.default_team_id), task)
+        .await
+    {
         Ok(result) => Ok(Json(ChatResponse {
             content: result.output.unwrap_or_default(),
             tool_calls: result

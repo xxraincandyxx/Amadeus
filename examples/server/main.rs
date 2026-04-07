@@ -26,8 +26,6 @@ use std::sync::Arc;
 
 use amadeus::{
     agent::config::{Config, Provider},
-    agent::supervisor::{Supervisor, SupervisorConfig},
-    agent::worker::WorkerConfig,
     api::http::run_server,
     client::anthropic::AnthropicClient,
     client::openai::OpenAIClient,
@@ -46,17 +44,7 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor =
-                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
-            supervisor
-                .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                .await?;
-            let supervisor = Arc::new(supervisor);
-            let s_clone = Arc::clone(&supervisor);
-            tokio::spawn(async move {
-                let _ = s_clone.run().await;
-            });
-            run_server(port, supervisor, sdk_config.clone()).await?;
+            run_server(port, client, sdk_config.clone()).await?;
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -64,17 +52,7 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            let mut supervisor =
-                Supervisor::new(client, SupervisorConfig::default(), sdk_config.clone());
-            supervisor
-                .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                .await?;
-            let supervisor = Arc::new(supervisor);
-            let s_clone = Arc::clone(&supervisor);
-            tokio::spawn(async move {
-                let _ = s_clone.run().await;
-            });
-            run_server(port, supervisor, sdk_config.clone()).await?;
+            run_server(port, client, sdk_config.clone()).await?;
         }
     }
 
