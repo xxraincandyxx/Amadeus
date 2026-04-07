@@ -278,6 +278,66 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Returns the workspace configuration root.
+    pub fn workspace_config_root(&self) -> PathBuf {
+        self.workdir.join(".amadeus")
+    }
+
+    /// Returns the global configuration root.
+    pub fn global_config_root() -> Option<PathBuf> {
+        dirs::home_dir().map(|home| home.join(".amadeus"))
+    }
+
+    /// Returns the active configuration roots in precedence order.
+    pub fn config_roots(&self) -> Vec<PathBuf> {
+        let mut roots = Vec::new();
+        if let Some(global_root) = Self::global_config_root() {
+            roots.push(global_root);
+        }
+        roots.push(self.workspace_config_root());
+        roots
+    }
+
+    /// Returns the workspace settings path.
+    pub fn workspace_settings_path(&self) -> PathBuf {
+        self.workspace_config_root().join("settings.json")
+    }
+
+    /// Returns the global settings path.
+    pub fn global_settings_path() -> Option<PathBuf> {
+        Self::global_config_root().map(|root| root.join("settings.json"))
+    }
+
+    /// Returns the workspace hook config path.
+    pub fn workspace_hooks_path(&self) -> PathBuf {
+        self.workspace_config_root().join("hook.json")
+    }
+
+    /// Returns the global hook config path.
+    pub fn global_hooks_path() -> Option<PathBuf> {
+        Self::global_config_root().map(|root| root.join("hook.json"))
+    }
+
+    /// Returns the workspace agents directory.
+    pub fn agents_dir(&self) -> PathBuf {
+        self.workspace_config_root().join("agents")
+    }
+
+    /// Returns the workspace skills directory.
+    pub fn skills_dir(&self) -> PathBuf {
+        self.workspace_config_root().join("skills")
+    }
+
+    /// Returns the workspace environment file.
+    pub fn workspace_env_path(&self) -> PathBuf {
+        self.workspace_config_root().join("env")
+    }
+
+    /// Returns the global environment file.
+    pub fn global_env_path() -> Option<PathBuf> {
+        Self::global_config_root().map(|root| root.join("env"))
+    }
+
     // -------------------------------------------------------------------------
     // LOAD METHOD
     // -------------------------------------------------------------------------
@@ -312,25 +372,29 @@ impl Config {
     // Note: No `async` keyword - this is a synchronous function
     // Reading environment variables is fast, no need for async
     pub fn load() -> Result<Self> {
-        // ---------------------------------------------------------------------
-        // LOAD .ENV FILE
-        // ---------------------------------------------------------------------
+        let workdir = env::current_dir()?;
+        Self::load_with_hierarchy(&workdir)
+    }
 
-        // dotenvy::dotenv() loads a .env file from the current directory
-        // It sets environment variables from the file
-        //
-        // .ok() converts Result to Option:
-        // - Ok(value) -> Some(value)
-        // - Err(_) -> None
-        //
-        // We use .ok() because we don't care if .env doesn't exist
-        // (env vars might already be set by the shell)
-        //
-        // Equivalent to:
-        //   match dotenvy::dotenv() {
-        //       Ok(_) => {},  // File loaded, ignore result
-        //       Err(_) => {}, // File doesn't exist, that's fine
-        //   }
+    fn load_env_file(path: &Path) {
+        if path.exists() {
+            let _ = dotenvy::from_path(path);
+        }
+    }
+
+    fn validate_credentials(&self) -> Result<()> {
+        match self.provider {
+            Provider::Anthropic if self.api_key.is_empty() => {
+                Err(AgentError::MissingEnvVar("ANTHROPIC_API_KEY".into()))
+            }
+            Provider::OpenAI if self.api_key.is_empty() => {
+                Err(AgentError::MissingEnvVar("OPENAI_API_KEY".into()))
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn load_from_environment() -> Result<Self> {
         dotenvy::dotenv().ok();
 
         // ---------------------------------------------------------------------
@@ -720,15 +784,12 @@ impl Config {
     ///
     /// A merged Config with values from all applicable sources.
     pub fn load_with_hierarchy(workdir: &std::path::Path) -> Result<Self> {
-        // Start with defaults
         let mut config = Config {
             workdir: workdir.to_path_buf(),
             ..Config::default()
         };
 
-        // 1. Load user global settings (~/.amadeus/settings.json)
-        if let Some(home_dir) = dirs::home_dir() {
-            let user_config_path = home_dir.join(".amadeus/settings.json");
+        if let Some(user_config_path) = Self::global_settings_path() {
             if user_config_path.exists() {
                 if let Ok(user_config) = Self::load_from_file(&user_config_path) {
                     config = config.merge(user_config);
@@ -736,20 +797,21 @@ impl Config {
             }
         }
 
-        // 2. Load project settings (<workdir>/.amadeus/settings.json)
-        let project_config_path = workdir.join(".amadeus/settings.json");
+        let project_config_path = config.workspace_settings_path();
         if project_config_path.exists() {
             if let Ok(project_config) = Self::load_from_file(&project_config_path) {
                 config = config.merge(project_config);
             }
         }
 
-        // 3. Environment variables (highest priority)
+        if let Some(global_env_path) = Self::global_env_path() {
+            Self::load_env_file(&global_env_path);
+        }
+        Self::load_env_file(&config.workspace_env_path());
+
         config = config.merge_env();
-
-        // Ensure workdir is set correctly
         config.workdir = workdir.to_path_buf();
-
+        config.validate_credentials()?;
         Ok(config)
     }
 
@@ -833,100 +895,9 @@ impl Config {
     ///
     /// Environment variables take highest priority.
     pub fn merge_env(mut self) -> Self {
-        // Load .env file if present
-        dotenvy::dotenv().ok();
-
-        // Provider
-        if let Ok(provider) = env::var("PROVIDER") {
-            self.provider = match provider.to_lowercase().as_str() {
-                "openai" => Provider::OpenAI,
-                _ => Provider::Anthropic,
-            };
+        if let Ok(environment) = Self::load_from_environment() {
+            self = self.merge(environment);
         }
-
-        // API keys
-        match &self.provider {
-            Provider::Anthropic => {
-                if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
-                    self.api_key = key;
-                }
-                if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
-            Provider::OpenAI => {
-                if let Ok(key) = env::var("OPENAI_API_KEY") {
-                    self.api_key = key;
-                }
-                if let Ok(url) = env::var("OPENAI_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
-        }
-
-        // Model
-        if let Ok(model) = env::var("MODEL_ID") {
-            self.model = model;
-        }
-
-        // Tool settings
-        if let Ok(max_bytes) = env::var("MAX_OUTPUT_BYTES") {
-            if let Ok(bytes) = max_bytes.parse::<usize>() {
-                self.max_output_bytes = bytes;
-            }
-        }
-
-        if let Ok(blocked) = env::var("BLOCKED_COMMANDS") {
-            self.blocked_commands = blocked
-                .split(',')
-                .map(|cmd| cmd.trim().to_string())
-                .filter(|cmd| !cmd.is_empty())
-                .collect();
-        }
-
-        // Logging settings
-        if let Ok(log_dir) = env::var("SESSION_LOG_DIR") {
-            self.session_log_dir = Some(PathBuf::from(log_dir));
-        }
-
-        if let Ok(compress) = env::var("SESSION_LOG_COMPRESS") {
-            if let Ok(b) = compress.parse::<bool>() {
-                self.session_log_compress = b;
-            }
-        }
-
-        // Timeout
-        if let Ok(timeout) = env::var("TIMEOUT_SECONDS") {
-            if let Ok(secs) = timeout.parse::<u64>() {
-                self.timeout_seconds = secs;
-            }
-        }
-
-        // Compaction settings
-        if let Ok(auto_compact) = env::var("AUTO_COMPACT") {
-            if let Ok(b) = auto_compact.parse::<bool>() {
-                self.auto_compact = b;
-            }
-        }
-
-        if let Ok(threshold) = env::var("COMPACT_THRESHOLD_PERCENT") {
-            if let Ok(p) = threshold.parse::<u8>() {
-                self.compact_threshold_percent = p;
-            }
-        }
-
-        if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
-            if let Ok(n) = preserve.parse::<usize>() {
-                self.compact_preserve_recent = n;
-            }
-        }
-
-        if let Ok(max_depth) = env::var("MAX_SUBAGENT_DEPTH") {
-            if let Ok(n) = max_depth.parse::<usize>() {
-                self.max_subagent_depth = n;
-            }
-        }
-
         self
     }
 
@@ -941,5 +912,90 @@ impl Config {
             min_messages: 10,
             max_tool_result_chars: 5000,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use tempfile::tempdir;
+
+    fn restore_env(key: &str, value: Option<String>) {
+        match value {
+            Some(value) => env::set_var(key, value),
+            None => env::remove_var(key),
+        }
+    }
+
+    #[test]
+    fn load_with_hierarchy_prefers_workspace_settings() {
+        let temp = tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        let workspace_root = workdir.join(".amadeus");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+
+        let provider = env::var("PROVIDER").ok();
+        let home = env::var("HOME").ok();
+
+        env::remove_var("PROVIDER");
+
+        let fake_home = temp.path().join("home");
+        let global_root = fake_home.join(".amadeus");
+        std::fs::create_dir_all(&global_root).unwrap();
+        std::fs::write(
+            global_root.join("settings.json"),
+            r#"{"model":"global-model","timeout_seconds":120,"api_key":"global-key"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace_root.join("settings.json"),
+            r#"{"model":"workspace-model","timeout_seconds":45,"api_key":"workspace-key"}"#,
+        )
+        .unwrap();
+        env::set_var("HOME", &fake_home);
+
+        let config = Config::load_with_hierarchy(&workdir).unwrap();
+
+        assert_eq!(config.model, "workspace-model");
+        assert_eq!(config.timeout_seconds, 45);
+        assert_eq!(
+            config.workspace_settings_path(),
+            workspace_root.join("settings.json")
+        );
+        assert_eq!(
+            config.workspace_hooks_path(),
+            workspace_root.join("hook.json")
+        );
+        assert_eq!(config.agents_dir(), workspace_root.join("agents"));
+        assert_eq!(config.skills_dir(), workspace_root.join("skills"));
+
+        restore_env("PROVIDER", provider);
+        restore_env("HOME", home);
+    }
+
+    #[test]
+    fn load_with_hierarchy_reads_workspace_env_file() {
+        let temp = tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        let workspace_root = workdir.join(".amadeus");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+        std::fs::write(workspace_root.join("env"), "MODEL_ID=env-model\n").unwrap();
+
+        let provider = env::var("PROVIDER").ok();
+        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+        let model = env::var("MODEL_ID").ok();
+
+        env::remove_var("PROVIDER");
+        env::set_var("ANTHROPIC_API_KEY", "env-test-key");
+        env::remove_var("MODEL_ID");
+
+        let config = Config::load_with_hierarchy(&workdir).unwrap();
+
+        assert_eq!(config.model, "env-model");
+
+        restore_env("PROVIDER", provider);
+        restore_env("ANTHROPIC_API_KEY", anthropic_key);
+        restore_env("MODEL_ID", model);
     }
 }
