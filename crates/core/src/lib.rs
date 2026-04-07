@@ -24,6 +24,7 @@
 //! Core Amadeus SDK runtime and reusable agent infrastructure.
 
 pub mod agent;
+pub mod assessment;
 pub mod benchmark;
 pub mod client;
 #[cfg(feature = "concurrency")]
@@ -41,6 +42,10 @@ pub mod skills;
 pub mod test_utils;
 pub mod tools;
 
+pub use assessment::{
+    default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
+    AssessmentRunner, ScriptedAssessmentClient,
+};
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
 
@@ -57,7 +62,7 @@ pub use agent::{
 };
 
 #[cfg(feature = "supervisor")]
-pub use agent::{
-    DispatchStrategy, Supervisor, SupervisorConfig, Task, TaskResult, WorkerConfig, WorkerInfo,
-    WorkerStatus,
-};
+pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};
+
+#[cfg(all(feature = "supervisor", not(feature = "team")))]
+pub use agent::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

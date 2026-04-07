@@ -100,6 +100,15 @@ impl PermissionEnforcer {
             };
         }
 
+        if self.active_mode == PermissionMode::WorkspaceWrite
+            && required == PermissionMode::DangerFullAccess
+        {
+            return PermissionDecision::Ask {
+                required,
+                reason: self.reason(tool_name, required, input),
+            };
+        }
+
         if self.active_mode >= required {
             PermissionDecision::Allow
         } else {
@@ -234,13 +243,13 @@ mod tests {
     }
 
     #[test]
-    fn workspace_write_mode_denies_destructive_bash() {
+    fn workspace_write_mode_requests_approval_for_destructive_bash() {
         let enforcer =
             PermissionEnforcer::from_config(&make_config(PermissionMode::WorkspaceWrite));
 
         assert!(matches!(
             enforcer.check("bash", &serde_json::json!({"command": "rm -rf /"})),
-            PermissionDecision::Deny {
+            PermissionDecision::Ask {
                 required: PermissionMode::DangerFullAccess,
                 ..
             }

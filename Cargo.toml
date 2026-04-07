@@ -27,7 +27,13 @@ default = []
 
 # Testing/Examples
 api = ["amadeus_core/api", "dep:amadeus_api", "team"]
-tui = ["amadeus_core/tui", "dep:amadeus_tui", "concurrency"]
+tui = [
+  "amadeus_core/tui",
+  "dep:amadeus_tui",
+  "dep:crossterm",
+  "dep:ratatui",
+  "concurrency",
+]
 test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
@@ -40,7 +46,7 @@ mesh = ["amadeus_core/mesh", "team"]
 context = ["amadeus_core/context"]
 
 # All features
-full = ["api", "tui", "concurrency", "team", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
 amadeus_core = { package = "core", path = "crates/core", default-features = false }
@@ -60,6 +66,7 @@ futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
 bytes = "1.0"
+crossterm = { version = "0.27", features = ["event-stream"], optional = true }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -68,6 +75,7 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 walkdir = "2.5"
 glob = "0.3"
 regex = "1.10"
+ratatui = { version = "0.28", optional = true }
 url = "2.5"
 
 libc = "0.2.182"

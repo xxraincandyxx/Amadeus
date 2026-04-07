@@ -380,6 +380,12 @@ impl Config {
         Self::load_with_hierarchy(&workdir)
     }
 
+    /// Load configuration for assessment mode without requiring provider credentials.
+    pub fn load_for_assessment() -> Result<Self> {
+        let workdir = env::current_dir()?;
+        Self::load_with_hierarchy_internal(&workdir, false)
+    }
+
     fn load_env_file(path: &Path) {
         if path.exists() {
             let _ = dotenvy::from_path(path);
@@ -798,6 +804,13 @@ impl Config {
     ///
     /// A merged Config with values from all applicable sources.
     pub fn load_with_hierarchy(workdir: &std::path::Path) -> Result<Self> {
+        Self::load_with_hierarchy_internal(workdir, true)
+    }
+
+    fn load_with_hierarchy_internal(
+        workdir: &std::path::Path,
+        validate_credentials: bool,
+    ) -> Result<Self> {
         let mut config = Config {
             workdir: workdir.to_path_buf(),
             ..Config::default()
@@ -825,7 +838,9 @@ impl Config {
 
         config = config.merge_env();
         config.workdir = workdir.to_path_buf();
-        config.validate_credentials()?;
+        if validate_credentials {
+            config.validate_credentials()?;
+        }
         Ok(config)
     }
 
