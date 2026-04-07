@@ -28,25 +28,21 @@ name = "amadeus"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "api",
  "async-stream",
  "async-trait",
- "axum",
  "bytes",
  "chrono",
- "colored 2.2.0",
- "crossterm 0.27.0",
+ "core",
  "dirs",
  "dotenvy",
  "flate2",
  "futures",
  "glob",
- "lazy_static",
  "libc",
  "mockito",
  "rand 0.8.5",
- "ratatui",
  "regex",
- "reqwest",
  "rustc_version_runtime",
  "serde",
  "serde_json",
@@ -54,15 +50,10 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-test",
- "tokio-util",
- "tower 0.4.13",
- "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
- "tui-textarea",
- "unicode-width 0.2.2",
+ "tui",
  "url",
- "urlencoding",
  "uuid",
  "walkdir",
  "wiremock",
@@ -82,6 +73,21 @@ name = "anyhow"
 version = "1.0.101"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
+
+[[package]]
+name = "api"
+version = "0.1.0"
+dependencies = [
+ "axum",
+ "core",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tower 0.4.13",
+ "tower-http 0.5.2",
+]
 
 [[package]]
 name = "assert-json-diff"
@@ -293,6 +299,41 @@ dependencies = [
  "rustversion",
  "ryu",
  "static_assertions",
+]
+
+[[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-stream",
+ "async-trait",
+ "bytes",
+ "chrono",
+ "dirs",
+ "dotenvy",
+ "flate2",
+ "futures",
+ "glob",
+ "libc",
+ "mockito",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "rustc_version_runtime",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "wiremock",
 ]
 
 [[package]]
@@ -2268,6 +2309,32 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "tui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "colored 2.2.0",
+ "core",
+ "crossterm 0.27.0",
+ "dirs",
+ "futures",
+ "lazy_static",
+ "rand 0.8.5",
+ "ratatui",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tui-textarea",
+ "unicode-width 0.2.2",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+]
 
 [[package]]
 name = "tui-textarea"

@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/api", "crates/core", "crates/tui"]
+resolver = "2"
+
 [package]
 name = "amadeus"
 version = "0.1.0"
@@ -22,26 +26,28 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static", "concurrency"]
-test-utils = ["tempfile", "rustc_version_runtime"]
+api = ["amadeus_core/api", "dep:amadeus_api", "supervisor"]
+tui = ["amadeus_core/tui", "dep:amadeus_tui", "concurrency"]
+test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
-concurrency = []
-supervisor = ["concurrency"]
-mesh = ["supervisor"]
+concurrency = ["amadeus_core/concurrency"]
+supervisor = ["amadeus_core/supervisor", "concurrency"]
+mesh = ["amadeus_core/mesh", "supervisor"]
 
 # Context Management
-context = []
+context = ["amadeus_core/context"]
 
 # All features
 full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
+amadeus_core = { package = "core", path = "crates/core", default-features = false }
+amadeus_api = { package = "api", path = "crates/api", optional = true, default-features = false }
+amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-features = false }
+
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
-reqwest = { version = "0.12", features = ["json", "stream"] }
-urlencoding = "2.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 dotenvy = "0.15"
@@ -56,27 +62,13 @@ bytes = "1.0"
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Core primitives
 uuid = { version = "1.10", features = ["v4", "serde"] }
 
-# Optional: HTTP server
-axum = { version = "0.7", optional = true }
-tower = { version = "0.4", optional = true }
-tower-http = { version = "0.5", features = ["cors"], optional = true }
-tokio-util = { version = "0.7", features = ["io"], optional = true }
 walkdir = "2.5"
 glob = "0.3"
 regex = "1.10"
 url = "2.5"
 
-# Optional: TUI
-crossterm = { version = "0.27", features = ["event-stream"], optional = true }
-ratatui = { version = "0.28", optional = true }
-tui-textarea = { version = "0.6", optional = true }
-unicode-width = { version = "0.2", optional = true }
-colored = { version = "2.1", optional = true }
-lazy_static = { version = "1.4", optional = true }
 libc = "0.2.182"
 rand = "0.8"
 dirs = "5.0"
