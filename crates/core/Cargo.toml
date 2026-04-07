@@ -14,14 +14,15 @@ path = "src/lib.rs"
 
 [features]
 default = []
-api = ["supervisor"]
+api = ["team"]
 tui = ["concurrency"]
 test-utils = ["tempfile", "rustc_version_runtime"]
 concurrency = []
+team = ["concurrency"]
 supervisor = ["concurrency"]
-mesh = ["supervisor"]
+mesh = ["team"]
 context = []
-full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "mesh", "context", "test-utils"]
 
 [dependencies]
 tokio = { version = "1.39", features = ["full"] }

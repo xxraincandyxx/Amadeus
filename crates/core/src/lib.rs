@@ -8,6 +8,7 @@
 // - context
 // - mesh
 // - supervisor
+// - team
 // - test-utils
 // - tui
 // provides:
@@ -45,6 +46,12 @@ pub use error::{AgentError, Result};
 pub use concurrency::{
     FileLockManager, FileLockStats, FileReadGuard, FileReadInfo, FileWriteGuard, LockEntry,
     LockError, LockManager, LockMode, LockStatus,
+};
+
+#[cfg(feature = "team")]
+pub use agent::{
+    AgentTeam, Task, TaskResult, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
+    WorkerConfig, WorkerInfo, WorkerStatus,
 };
 
 #[cfg(feature = "supervisor")]

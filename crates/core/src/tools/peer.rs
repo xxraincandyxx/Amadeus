@@ -4,6 +4,7 @@
 // status: active
 // feature_flags:
 // - supervisor
+// - team
 // provides:
 // - module: crate::tools::peer
 // - type: crate::tools::peer::PeerInfo
@@ -47,31 +48,31 @@ pub struct PeerInfo {
     pub description: String,
 }
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use async_trait::async_trait;
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use serde_json::{json, Value};
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use tokio::sync::{mpsc, oneshot};
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use tracing::{debug, info};
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use crate::agent::worker::{HelpRequest, Task};
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use crate::error::{AgentError, Result};
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 use crate::tools::tool_trait::Tool;
 
 /// A tool that delegates tasks to other agents.
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 pub struct PeerTool {
     requester_id: AgentId,
     help_tx: mpsc::Sender<HelpRequest>,
     schema: Value,
 }
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 impl PeerTool {
     /// Create a new PeerTool.
     pub fn new(requester_id: AgentId, help_tx: mpsc::Sender<HelpRequest>) -> Self {
@@ -103,7 +104,7 @@ impl PeerTool {
     }
 }
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 #[async_trait]
 impl Tool for PeerTool {
     fn name(&self) -> &'static str {
@@ -151,7 +152,7 @@ impl Tool for PeerTool {
 
         if let Err(e) = self.help_tx.send(help_request).await {
             return Err(AgentError::Command(format!(
-                "Failed to contact supervisor: {}",
+                "Failed to contact team coordinator: {}",
                 e
             )));
         }

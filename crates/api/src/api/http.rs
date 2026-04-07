@@ -16,7 +16,7 @@
 // uses:
 // - module: crate::agent::config::Config
 // - module: crate::agent::manager::AgentManager
-// - module: crate::agent::supervisor::Supervisor
+// - module: crate::agent::team
 // - module: crate::client::LLMClient
 // - module: crate::error::Result
 // - runtime: tokio async runtime
@@ -37,8 +37,7 @@
 //! ## Architecture
 //!
 //! The server uses a shared `AppState` to provide handlers access to the
-//! multi-agent `Supervisor`. This ensures that all API requests (stateless
-//! chat or stateful tasks) are orchestrated by the same engine.
+//! core client, configuration, and team-aware agent manager.
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
@@ -69,8 +68,7 @@
 //!
 //! #[tokio::main]
 //! async fn main() {
-//!     let supervisor = Arc::new(Supervisor::new(...));
-//!     run_server(3000, supervisor).await?;
+//!     run_server(3000, client, config).await?;
 //! }
 //! ```
 
@@ -108,7 +106,8 @@ use std::sync::Arc;
 // Internal dependencies
 use crate::agent::config::Config;
 use crate::agent::manager::AgentManager;
-use crate::agent::supervisor::Supervisor;
+use crate::agent::profile::AgentProfile;
+use crate::agent::team::TeamLeader;
 use crate::api::handlers::{
     agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
     get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
@@ -128,12 +127,16 @@ use tokio::sync::RwLock;
 /// Shared application state.
 ///
 /// This struct is passed to every request handler via Axum's `State` extractor.
-/// It provides access to the global `Supervisor`, which manages the worker pool.
+/// It provides access to the shared client, config, and team-aware agent manager.
 pub struct AppState<C: LLMClient> {
-    /// The multi-agent supervisor instance.
-    pub supervisor: Arc<Supervisor<C>>,
+    /// The shared base LLM client.
+    pub client: C,
+    /// The shared runtime configuration.
+    pub config: Arc<Config>,
     /// The multi-agent manager for standalone agent management.
     pub agent_manager: Arc<RwLock<AgentManager<C>>>,
+    /// The default user-led team used by stateless task endpoints.
+    pub default_team_id: crate::core::id::TeamId,
 }
 
 /*
@@ -150,7 +153,8 @@ pub struct AppState<C: LLMClient> {
 /// # Arguments
 ///
 /// * `port` - Port number to listen on (e.g., 3000, 8080)
-/// * `supervisor` - Thread-safe reference to the Supervisor
+/// * `client` - Shared base client for creating agents
+/// * `config` - Shared runtime configuration
 ///
 /// # Returns
 ///
@@ -159,7 +163,7 @@ pub struct AppState<C: LLMClient> {
 /// # Example
 ///
 /// ```rust,ignore
-/// run_server(3000, supervisor).await?;
+/// run_server(3000, client, config).await?;
 /// ```
 ///
 /// # Endpoints
@@ -167,7 +171,7 @@ pub struct AppState<C: LLMClient> {
 /// | Path | Method | Handler | Description |
 /// |------|--------|---------|-------------|
 /// | `/health` | GET | `health` | Health check |
-/// | `/chat` | POST | `chat` | Stateless chat via supervisor |
+/// | `/chat` | POST | `chat` | Stateless chat via agent team |
 /// | `/execute` | POST | `execute` | Direct bash command execution |
 /// | `/stream` | GET | `stream` | SSE event streaming |
 /// | `/tasks` | POST | `tasks` | Multi-agent task execution |
@@ -182,19 +186,22 @@ pub struct AppState<C: LLMClient> {
 /// | `/approvals/{id}` | POST | `submit_approval` | Submit approval decision |
 pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
-    supervisor: Arc<Supervisor<C>>,
+    client: C,
     config: Arc<Config>,
 ) -> Result<()> {
-    // -------------------------------------------------------------------------
-    // CREATE SHARED STATE
-    // -------------------------------------------------------------------------
-    // Create AgentManager with a cloned client
-    let client = supervisor.client().clone();
-    let agent_manager = Arc::new(RwLock::new(AgentManager::new(client, config)));
+    let mut manager = AgentManager::new(client.clone(), Arc::clone(&config));
+    let default_team_id = manager.ensure_default_team(TeamLeader::User);
+    let main_agent_id = manager
+        .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
+        .await?;
+    manager.add_agent_to_team(default_team_id, main_agent_id)?;
+    let agent_manager = Arc::new(RwLock::new(manager));
 
     let state = Arc::new(AppState {
-        supervisor,
+        client,
+        config,
         agent_manager,
+        default_team_id,
     });
 
     // -------------------------------------------------------------------------

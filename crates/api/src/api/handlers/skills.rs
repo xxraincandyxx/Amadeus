@@ -39,7 +39,7 @@ use crate::skills::registry::SkillRegistry;
 pub async fn list_skills<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> std::result::Result<Json<SkillsResponse>, Json<ErrorResponse>> {
-    let config = state.supervisor.config();
+    let config = &state.config;
 
     // Load skills from the configured skills directory
     let skills_dir = config.skills_dir();

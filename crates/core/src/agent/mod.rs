@@ -4,6 +4,7 @@
 // status: active
 // feature_flags:
 // - supervisor
+// - team
 // provides:
 // - module: crate::agent
 // uses: none
@@ -24,11 +25,13 @@ pub mod manager; // NEW: Multi-agent manager
 pub mod mesh;
 pub mod messages;
 pub mod profile; // NEW: Agent profiles
+#[cfg(feature = "team")]
+pub mod team;
 
 #[cfg(feature = "supervisor")]
 pub mod supervisor;
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 pub mod worker;
 
 pub use compaction::{
@@ -40,9 +43,11 @@ pub use loop_agent::{Agent, SessionLog, SessionStats};
 pub use manager::{AgentInfo, AgentManager, AgentStatus}; // NEW
 pub use messages::{ContentBlock, Message};
 pub use profile::AgentProfile; // NEW
+#[cfg(feature = "team")]
+pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus};
 
 #[cfg(feature = "supervisor")]
 pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
 
-#[cfg(feature = "supervisor")]
+#[cfg(any(feature = "team", feature = "supervisor"))]
 pub use worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

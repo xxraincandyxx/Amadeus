@@ -11,8 +11,6 @@
 // uses:
 // - module: amadeus::agent::config
 // - module: amadeus::agent::mesh::MeshManager
-// - module: amadeus::agent::supervisor
-// - module: amadeus::agent::worker::WorkerConfig
 // - module: amadeus::client::anthropic::AnthropicClient
 // - module: amadeus::client::openai::OpenAIClient
 // - module: amadeus::api::http::run_server
@@ -36,8 +34,6 @@
 
 use amadeus::agent::config::{Config, Provider};
 use amadeus::agent::mesh::MeshManager;
-use amadeus::agent::supervisor::{Supervisor, SupervisorConfig};
-use amadeus::agent::worker::WorkerConfig;
 use amadeus::client::anthropic::AnthropicClient;
 use amadeus::client::openai::OpenAIClient;
 use anyhow::Result;
@@ -153,32 +149,12 @@ async fn main() -> Result<()> {
 
         match provider {
             ClientKind::Anthropic(c) => {
-                let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
-                supervisor
-                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                    .await?;
-                let supervisor = Arc::new(supervisor);
-                let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move {
-                    let _ = s_clone.run().await;
-                });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor, sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone()).await?;
             }
             ClientKind::OpenAI(c) => {
-                let mut supervisor =
-                    Supervisor::new(c.clone(), SupervisorConfig::default(), sdk_config.clone());
-                supervisor
-                    .spawn(vec![WorkerConfig::new("Main Coder").capability("bash")])
-                    .await?;
-                let supervisor = Arc::new(supervisor);
-                let s_clone = Arc::clone(&supervisor);
-                tokio::spawn(async move {
-                    let _ = s_clone.run().await;
-                });
                 mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
-                run_server(port, supervisor, sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone()).await?;
             }
         }
         mesh_manager.cleanup();

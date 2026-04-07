@@ -89,6 +89,7 @@ macro_rules! define_id {
 }
 
 define_id!(AgentId, "agent");
+define_id!(TeamId, "team");
 define_id!(CommitId, "commit");
 define_id!(TxId, "tx");
 define_id!(SnapshotId, "snapshot");
@@ -134,6 +135,13 @@ mod tests {
         let id = CommitId::new();
         let display = format!("{}", id);
         assert!(display.starts_with("commit:"));
+    }
+
+    #[test]
+    fn test_team_id() {
+        let id = TeamId::new();
+        let display = format!("{}", id);
+        assert!(display.starts_with("team:"));
     }
 
     #[test]

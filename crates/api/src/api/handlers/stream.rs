@@ -208,20 +208,15 @@ type BoxedSseStream = Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Sen
 /// GET /stream
 ///
 /// Initiates a real-time event stream for an agent conversation.
-/// This handler creates a temporary agent using the Supervisor's core client
+/// This handler creates a temporary agent using the shared core client
 /// and configuration, ensuring consistent behavior with the rest of the SDK.
 pub async fn stream<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Query(params): Query<StreamQuery>,
 ) -> Sse<BoxedSseStream> {
-    // -------------------------------------------------------------------------
-    // INITIALIZE TEMPORARY AGENT
-    // -------------------------------------------------------------------------
-    // We use the AgentBuilder to reconstruct an agent with the global SDK config.
-    // In a multi-agent context, this represents a "primary" agent interaction.
     let agent = crate::agent::loop_agent::AgentBuilder::new(
-        state.supervisor.client().clone(),
-        state.supervisor.config().clone(),
+        state.client.clone(),
+        Arc::clone(&state.config),
     )
     .with_default_tools()
     .build();
