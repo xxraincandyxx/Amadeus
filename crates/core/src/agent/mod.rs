@@ -21,6 +21,7 @@ pub mod compaction;
 pub mod config;
 pub mod events;
 pub mod loop_agent;
+#[cfg(feature = "team")]
 pub mod manager; // NEW: Multi-agent manager
 pub mod mesh;
 pub mod messages;
@@ -39,7 +40,8 @@ pub use compaction::{
 };
 pub use config::{Config, Provider};
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
-pub use loop_agent::{Agent, SessionLog, SessionStats};
+pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
+#[cfg(feature = "team")]
 pub use manager::{AgentInfo, AgentManager, AgentStatus}; // NEW
 pub use messages::{ContentBlock, Message};
 pub use profile::AgentProfile; // NEW

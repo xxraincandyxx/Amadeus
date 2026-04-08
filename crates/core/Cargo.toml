@@ -22,7 +22,7 @@ team = ["concurrency"]
 supervisor = ["concurrency"]
 mesh = ["team"]
 context = []
-full = ["api", "tui", "concurrency", "team", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "supervisor", "mesh", "context", "test-utils"]
 
 [dependencies]
 tokio = { version = "1.39", features = ["full"] }

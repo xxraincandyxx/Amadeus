@@ -2,7 +2,8 @@
 // summary: Agent subsystem code for manager.
 // layer: agent
 // status: active
-// feature_flags: none
+// feature_flags:
+// - team
 // provides:
 // - module: crate::agent::manager
 // - type: crate::agent::manager::AgentStatus
