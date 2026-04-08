@@ -266,6 +266,40 @@ Expected anchors:
 - sidebar visibility changes are obvious in the capture
 - the app returns cleanly to the normal single-pane composition
 
+### 10. Multi-Session File Locks
+
+Purpose: validate that file locking prevents stale writes across two or more sessions.
+
+Precondition:
+- use a deterministic scripted client or local fixture that makes specific sessions issue `read_file`, `write_file`, and `edit_file` on the same relative path
+- seed a small shared file such as `lock-demo.txt` before launching the TUI
+
+Steps:
+1. In `root`, trigger a deterministic `read_file` on `lock-demo.txt`.
+2. Capture and confirm the read completed.
+3. Create `session1`.
+4. In `session1`, trigger a deterministic `write_file` that changes `lock-demo.txt`.
+5. Capture and confirm the write completed.
+6. Switch back to `root`.
+7. In `root`, trigger a deterministic `edit_file` against the stale content it read before `session1` wrote.
+8. Capture the failure state.
+9. Optionally create `session2` and trigger a fresh `read_file` on `lock-demo.txt`.
+10. Capture the success state with the latest content.
+
+Expected anchors:
+- `root` can read the shared file before any competing write
+- `session1` can write the shared file after `root` finishes reading
+- the stale follow-up edit from `root` fails because the old text is no longer present
+- a fresh third-session read sees the latest file contents
+
+Regression checkpoint — stale session edit must not overwrite newer content:
+- if session A reads and session B writes the same file, session A must not be allowed to apply an edit based on the stale text it saw earlier
+- verify: `stale_edit_is_rejected_after_another_session_writes` integration test passes
+
+Regression checkpoint — blocked reader must recover after writer finishes:
+- if one session holds the write lock, another session must remain blocked only until the writer releases it
+- verify: `waiting_reader_proceeds_after_writer_session_releases_lock` integration test passes
+
 ## Recommended Run Order
 
 For normal bug work:
