@@ -6,7 +6,6 @@
 // - api
 // - concurrency
 // - context
-// - mesh
 // - supervisor
 // - test-utils
 // - tui
@@ -425,8 +424,6 @@ fn get_enabled_features() -> Vec<String> {
     features.push("supervisor".to_string());
     #[cfg(feature = "concurrency")]
     features.push("concurrency".to_string());
-    #[cfg(feature = "mesh")]
-    features.push("mesh".to_string());
     #[cfg(feature = "context")]
     features.push("context".to_string());
     #[cfg(feature = "test-utils")]

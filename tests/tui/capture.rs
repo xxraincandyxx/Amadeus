@@ -59,7 +59,6 @@ pub struct FooterSnapshot {
     pub model: String,
     pub context_pct: u8,
     pub agent_name: Option<String>,
-    pub is_mesh: bool,
     pub sandbox_status: String,
 }
 
@@ -234,9 +233,6 @@ impl TuiFrameSnapshot {
             "║ Footer: {} [{}] {}%",
             self.footer.model, self.footer.cwd, self.footer.context_pct
         ));
-        if self.footer.is_mesh {
-            output.push_str(" MESH");
-        }
         if let Some(ref name) = self.footer.agent_name {
             output.push_str(&format!(" [{}]", name));
         }

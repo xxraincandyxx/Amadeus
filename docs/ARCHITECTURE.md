@@ -90,7 +90,7 @@ Parity with the `refs/claw-code-parity` reference is treated as a behavioral tes
 | `api/` | `api` | HTTP REST API (axum) |
 | `concurrency/` | `concurrency` | Lock management |
 | `supervisor/` | `supervisor` | Multi-agent coordination |
-| `mesh/` | `mesh` | Distributed agent mesh |
+| `team/` | `team` | Agent team coordination |
 | `mcp/` | - | Model Context Protocol |
 | `skills/` | - | Reusable prompt templates |
 | `benchmark/` | - | Benchmark & evaluation |
@@ -676,16 +676,15 @@ test-utils = ["tempfile"]
 # Concurrency & Multi-Agent
 concurrency = []
 supervisor = ["concurrency"]
-mesh = ["supervisor"]
 
 # Context Management
 context = []
 
 # All features
-full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
 ```
 
-Feature flag chain: `mesh` → `supervisor` → `concurrency`
+Feature flag chain: `team` → `concurrency`
 
 ---
 

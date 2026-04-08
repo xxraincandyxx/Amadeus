@@ -40,7 +40,6 @@ pub struct FooterInfo {
     pub sandbox_status: SandboxStatus,
     pub model_name: String,
     pub context_percent: u8,
-    pub is_mesh: bool,
     /// Active agent name (for multi-agent mode)
     pub agent_name: Option<String>,
     /// Temporary status message (shown for a short time)
@@ -99,7 +98,6 @@ impl Footer {
                 sandbox_status,
                 model_name,
                 context_percent: 0,
-                is_mesh: false,
                 agent_name: None,
                 status_message: None,
                 is_background: false,
@@ -193,10 +191,6 @@ impl Footer {
         self.info.model_name = name;
     }
 
-    pub fn set_mesh(&mut self, is_mesh: bool) {
-        self.info.is_mesh = is_mesh;
-    }
-
     /// Set the active agent name (shown in footer for multi-agent mode)
     pub fn set_agent_name(&mut self, name: Option<String>) {
         self.info.agent_name = name;
@@ -266,19 +260,11 @@ impl Footer {
         // --- Line 1: Status indicators + Model + Context + Duration ---
         let mut line1_left: Vec<Span> = Vec::new();
 
-        // Show agent indicator (agent name or MESH mode)
-        if self.info.is_mesh {
-            line1_left.push(Span::styled(
-                "MESH ",
-                Style::default().fg(colors.text.secondary),
-            ));
-        } else if let Some(ref agent_name) = self.info.agent_name {
+        if let Some(ref agent_name) = self.info.agent_name {
             line1_left.push(Span::styled(
                 format!("{} ", agent_name),
                 Style::default().fg(colors.text.secondary),
             ));
-        } else {
-            // Single agent mode - show nothing or could show "main"
         }
 
         if self.is_background {
@@ -444,7 +430,6 @@ mod tests {
         let footer = Footer::new("test-model".to_string());
         assert_eq!(footer.info.model_name, "test-model");
         assert_eq!(footer.info.context_percent, 0);
-        assert!(!footer.info.is_mesh);
     }
 
     #[test]
@@ -467,18 +452,6 @@ mod tests {
         let mut footer = Footer::new("old-model".to_string());
         footer.set_model_name("new-model".to_string());
         assert_eq!(footer.info.model_name, "new-model");
-    }
-
-    #[test]
-    fn test_footer_set_mesh() {
-        let mut footer = Footer::new("test".to_string());
-        assert!(!footer.info.is_mesh);
-
-        footer.set_mesh(true);
-        assert!(footer.info.is_mesh);
-
-        footer.set_mesh(false);
-        assert!(!footer.info.is_mesh);
     }
 
     #[test]
@@ -544,7 +517,6 @@ mod tests {
             sandbox_status: SandboxStatus::Docker,
             model_name: "test-model".to_string(),
             context_percent: 50,
-            is_mesh: true,
             agent_name: Some("test-agent".to_string()),
             status_message: Some("test".to_string()),
             is_background: false,

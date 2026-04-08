@@ -10,7 +10,6 @@
 // - module: bin::amadeus
 // uses:
 // - module: amadeus::agent::config
-// - module: amadeus::agent::mesh::MeshManager
 // - module: amadeus::client::anthropic::AnthropicClient
 // - module: amadeus::client::openai::OpenAIClient
 // - module: amadeus::api::http::run_server
@@ -33,7 +32,6 @@
 //!   --record [DIR]   Record session to JSON log (default: logs/testflow/sessions)
 
 use amadeus::agent::config::{Config, Provider};
-use amadeus::agent::mesh::MeshManager;
 use amadeus::assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentRunner,
     ScriptedAssessmentClient,
@@ -202,11 +200,7 @@ async fn main() -> Result<()> {
     }
 
     let sdk_config = Arc::clone(&config);
-    let mesh_manager = MeshManager::new(config.workdir.clone());
     let provider = build_client(&config);
-
-    // --- MESH COORDINATION ---
-    let supervisor_info = mesh_manager.get_supervisor_info();
 
     // --- SERVER MODE ---
     #[cfg(feature = "api")]
@@ -215,15 +209,12 @@ async fn main() -> Result<()> {
 
         match provider {
             ClientKind::Anthropic(c) => {
-                mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
                 run_server(port, c.clone(), sdk_config.clone()).await?;
             }
             ClientKind::OpenAI(c) => {
-                mesh_manager.register_supervisor(&format!("http://localhost:{}", port));
                 run_server(port, c.clone(), sdk_config.clone()).await?;
             }
         }
-        mesh_manager.cleanup();
         return Ok(());
     }
 
@@ -250,9 +241,6 @@ async fn main() -> Result<()> {
             ClientKind::Anthropic(c) => {
                 let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
-                if let Some(info) = supervisor_info {
-                    app.set_mesh_mode(&info.supervisor_addr);
-                }
                 #[cfg(feature = "test-utils")]
                 if let Some(rec) = recorder {
                     app.set_recorder(rec);
@@ -262,9 +250,6 @@ async fn main() -> Result<()> {
             ClientKind::OpenAI(c) => {
                 let agent = Agent::new(c, sdk_config);
                 let mut app = App::new(agent, workdir, model);
-                if let Some(info) = supervisor_info {
-                    app.set_mesh_mode(&info.supervisor_addr);
-                }
                 #[cfg(feature = "test-utils")]
                 if let Some(rec) = recorder {
                     app.set_recorder(rec);

@@ -20,9 +20,8 @@ test-utils = ["tempfile", "rustc_version_runtime"]
 concurrency = []
 team = ["concurrency"]
 supervisor = ["concurrency"]
-mesh = ["team"]
 context = []
-full = ["api", "tui", "concurrency", "team", "supervisor", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
 
 [dependencies]
 tokio = { version = "1.39", features = ["full"] }

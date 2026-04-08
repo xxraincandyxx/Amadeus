@@ -21,7 +21,6 @@
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects:
-// - Performs network or HTTP operations.
 // - Spawns asynchronous tasks.
 // - Sends or receives messages across async channels.
 // tests:
@@ -633,7 +632,6 @@ struct Session<C: LLMClient> {
     current_text: String,
     messages_area: Rect,
     sidebar_area: Rect,
-    mesh_supervisor_addr: Option<String>,
     /// Approval dialog state
     approval_dialog: Option<ApprovalDialog>,
     /// Channel to send approval decisions back to agent (for current stream)
@@ -849,7 +847,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             current_text: String::new(),
             messages_area: Rect::default(),
             sidebar_area: Rect::default(),
-            mesh_supervisor_addr: None,
             approval_dialog: None,
             approval_dec_tx: None,
             approval_req_rx: None,
@@ -879,11 +876,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             parent_session_id: None,
             parent_request_id: None,
         }
-    }
-
-    pub fn set_mesh_mode(&mut self, addr: &str) {
-        self.mesh_supervisor_addr = Some(addr.to_string());
-        self.footer.set_mesh(true);
     }
 
     fn checkpoint_preview(input: &str) -> String {
@@ -2912,62 +2904,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .set_streaming_state(StreamingState::Responding);
         self.sync_activity_chrome();
 
-        // --- MESH DELEGATION ---
-        if let Some(addr) = self.mesh_supervisor_addr.clone() {
-            let prompt = trimmed.to_string();
-            let (tx, rx) = mpsc::channel(64);
-
-            let handle = tokio::spawn(async move {
-                let client = reqwest::Client::new();
-                let url = format!("{}/tasks", addr);
-
-                let body = serde_json::json!({
-                    "id": format!("tui-{}", uuid::Uuid::new_v4()),
-                    "prompt": prompt,
-                    "capabilities": ["bash"]
-                });
-
-                match client.post(&url).json(&body).send().await {
-                    Ok(resp) => {
-                        if resp.status().is_success() {
-                            if let Ok(result) = resp.json::<serde_json::Value>().await {
-                                let text = result["output"].as_str().unwrap_or("Done").to_string();
-                                let _ = tx
-                                    .send(AgentEvent::Done {
-                                        result: crate::agent::events::RunResult {
-                                            text,
-                                            tool_calls: Vec::new(),
-                                        },
-                                    })
-                                    .await;
-                            }
-                        } else {
-                            let error_body = resp
-                                .text()
-                                .await
-                                .unwrap_or_else(|_| "Unknown error".to_string());
-                            let _ = tx
-                                .send(AgentEvent::Error {
-                                    message: format!("Supervisor error ({}): {}", addr, error_body),
-                                })
-                                .await;
-                        }
-                    }
-                    Err(e) => {
-                        let _ = tx
-                            .send(AgentEvent::Error {
-                                message: format!("Connection failed to {}: {}", addr, e),
-                            })
-                            .await;
-                    }
-                }
-            });
-
-            self.stream_rx = Some(rx);
-            self.stream_abort = Some(handle);
-            return Ok(());
-        }
-
         let agent = self.agent.clone();
         let prompt = trimmed.to_string();
 
@@ -3103,7 +3039,6 @@ pub struct App<C: LLMClient> {
     active_idx: usize,
     should_quit: bool,
     workdir: PathBuf,
-    mesh_supervisor_addr: Option<String>,
     model_name: String,
     next_session_id: usize,
     next_sub_label: usize,
@@ -3135,7 +3070,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             active_idx: 0,
             should_quit: false,
             workdir,
-            mesh_supervisor_addr: None,
             model_name,
             next_session_id: 1,
             next_sub_label: 1,
@@ -3278,13 +3212,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
     #[cfg(not(feature = "test-utils"))]
     fn record_agent_event(&self, _event: AgentEvent) {}
-
-    pub fn set_mesh_mode(&mut self, addr: &str) {
-        self.mesh_supervisor_addr = Some(addr.to_string());
-        for session in &mut self.sessions {
-            session.set_mesh_mode(addr);
-        }
-    }
 
     pub async fn run(&mut self) -> Result<()> {
         #[cfg(feature = "test-utils")]
@@ -3705,10 +3632,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         );
         self.next_session_id += 1;
 
-        if let Some(addr) = self.mesh_supervisor_addr.clone() {
-            session.set_mesh_mode(&addr);
-        }
-
         // Set up approval channels
         let (_channels, approval_handle) = create_approval_channels();
         session.approval_dec_tx = Some(approval_handle.decision_tx);
@@ -3754,10 +3677,6 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         session.parent_session_id = Some(parent_idx);
         session.parent_request_id = Some(request_id);
-
-        if let Some(addr) = self.mesh_supervisor_addr.clone() {
-            session.set_mesh_mode(&addr);
-        }
 
         // Seed the child session with the prompt as a user message and start streaming.
         session.messages.add_user(prompt.clone());

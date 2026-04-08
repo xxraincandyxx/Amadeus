@@ -6,7 +6,6 @@
 // - api
 // - concurrency
 // - context
-// - mesh
 // - supervisor
 // - team
 // - test-utils

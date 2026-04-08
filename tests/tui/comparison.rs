@@ -67,7 +67,6 @@ pub struct FooterChanges {
     pub model: Option<String>,
     pub context_pct: Option<String>,
     pub agent_name: Option<String>,
-    pub is_mesh: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -172,7 +171,6 @@ pub fn compare(expected: &TuiFrameSnapshot, actual: &TuiFrameSnapshot) -> FrameD
             expected.footer.agent_name.clone(),
             actual.footer.agent_name.clone(),
         ),
-        is_mesh: diff_bool(expected.footer.is_mesh, actual.footer.is_mesh),
     };
     let footer_changed = !is_footer_default(&footer_changes);
 
@@ -248,7 +246,6 @@ fn is_footer_default(f: &FooterChanges) -> bool {
         && f.model.is_none()
         && f.context_pct.is_none()
         && f.agent_name.is_none()
-        && f.is_mesh.is_none()
 }
 
 fn is_header_default(h: &HeaderChanges) -> bool {

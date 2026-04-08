@@ -23,7 +23,6 @@ pub mod events;
 pub mod loop_agent;
 #[cfg(feature = "team")]
 pub mod manager; // NEW: Multi-agent manager
-pub mod mesh;
 pub mod messages;
 pub mod profile; // NEW: Agent profiles
 #[cfg(feature = "team")]

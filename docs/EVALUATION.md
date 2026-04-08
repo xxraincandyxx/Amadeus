@@ -54,7 +54,7 @@
 |---|---|
 | **Simplicity** | Single crate vs 9-crate workspace |
 | **Provider abstraction** | Clean `LLMClient` trait, easy to swap Anthropic ↔ OpenAI |
-| **Feature flags** | Better granularity (`tui`, `api`, `mesh`, etc.) |
+| **Feature flags** | Better granularity (`tui`, `api`, `team`, etc.) |
 | **Code size** | Smaller, easier to understand |
 | **Generic Agent** | `Agent<C>` is generic over any LLM client |
 

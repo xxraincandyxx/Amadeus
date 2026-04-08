@@ -40,13 +40,11 @@ test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", 
 concurrency = ["amadeus_core/concurrency"]
 team = ["amadeus_core/team", "concurrency"]
 supervisor = ["amadeus_core/supervisor", "concurrency"]
-mesh = ["amadeus_core/mesh", "team"]
-
 # Context Management
 context = ["amadeus_core/context"]
 
 # All features
-full = ["api", "tui", "concurrency", "team", "supervisor", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
 
 [dependencies]
 amadeus_core = { package = "core", path = "crates/core", default-features = false }
