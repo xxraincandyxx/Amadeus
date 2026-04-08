@@ -27,6 +27,7 @@ pub mod agent;
 pub mod assessment;
 pub mod benchmark;
 pub mod client;
+pub mod commands;
 #[cfg(feature = "concurrency")]
 pub mod concurrency;
 pub mod context;
@@ -46,6 +47,7 @@ pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
     AssessmentRunner, ScriptedAssessmentClient,
 };
+pub use commands::{SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS};
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
 

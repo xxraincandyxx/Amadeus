@@ -71,6 +71,13 @@ use std::sync::Arc;
 use crate::agent::config::Config;
 use crate::error::Result;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookSource {
+    Global,
+    Workspace,
+    Runtime,
+}
+
 /// Actions that a hook can return from `on_tool_start`.
 #[derive(Debug, Clone)]
 pub enum HookAction {
@@ -91,6 +98,33 @@ pub enum HookEvent {
     PostToolUse,
     /// After a tool completes with an error.
     PostToolUseFailure,
+}
+
+impl HookEvent {
+    pub fn title(&self) -> &'static str {
+        match self {
+            Self::PreToolUse => "PreToolUse",
+            Self::PostToolUse => "PostToolUse",
+            Self::PostToolUseFailure => "PostToolUseFailure",
+        }
+    }
+
+    pub fn summary(&self) -> &'static str {
+        match self {
+            Self::PreToolUse => "Before tool execution",
+            Self::PostToolUse => "After tool execution",
+            Self::PostToolUseFailure => "After tool execution fails",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HookDescriptor {
+    pub name: String,
+    pub event: HookEvent,
+    pub command: String,
+    pub tools: Vec<String>,
+    pub source: HookSource,
 }
 
 /// Trait for implementing hooks.
@@ -134,12 +168,16 @@ pub trait Hook: Send + Sync {
 #[derive(Clone, Default)]
 pub struct HookRegistry {
     hooks: Vec<Arc<dyn Hook>>,
+    descriptors: Vec<HookDescriptor>,
 }
 
 impl HookRegistry {
     /// Create a new empty hook registry.
     pub fn new() -> Self {
-        Self { hooks: Vec::new() }
+        Self {
+            hooks: Vec::new(),
+            descriptors: Vec::new(),
+        }
     }
 
     /// Register a hook.
@@ -169,6 +207,10 @@ impl HookRegistry {
     /// }
     /// ```
     pub fn load_from_file(path: &Path) -> Result<Self> {
+        Self::load_from_file_with_source(path, HookSource::Runtime)
+    }
+
+    fn load_from_file_with_source(path: &Path, source: HookSource) -> Result<Self> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             crate::error::AgentError::Config(format!(
                 "Failed to read hooks file {}: {}",
@@ -193,6 +235,13 @@ impl HookRegistry {
                     match hook_type {
                         "shell" => {
                             if let Ok(shell_hook) = shell::ShellHook::from_config(hook_config) {
+                                registry.descriptors.push(HookDescriptor {
+                                    name: shell_hook.name.clone(),
+                                    event: shell_hook.event,
+                                    command: shell_hook.command.clone(),
+                                    tools: shell_hook.tools.clone(),
+                                    source,
+                                });
                                 registry.register(shell_hook);
                             }
                         }
@@ -213,13 +262,19 @@ impl HookRegistry {
 
         if let Some(global_hooks_path) = Config::global_hooks_path() {
             if global_hooks_path.exists() {
-                registry.merge(Self::load_from_file(&global_hooks_path)?);
+                registry.merge(Self::load_from_file_with_source(
+                    &global_hooks_path,
+                    HookSource::Global,
+                )?);
             }
         }
 
         let workspace_hooks_path = config.workspace_hooks_path();
         if workspace_hooks_path.exists() {
-            registry.merge(Self::load_from_file(&workspace_hooks_path)?);
+            registry.merge(Self::load_from_file_with_source(
+                &workspace_hooks_path,
+                HookSource::Workspace,
+            )?);
         }
 
         Ok(registry)
@@ -228,6 +283,7 @@ impl HookRegistry {
     /// Merge another registry into this one, preserving registration order.
     pub fn merge(&mut self, other: Self) {
         self.hooks.extend(other.hooks);
+        self.descriptors.extend(other.descriptors);
     }
 
     /// Invoke all hooks for `on_tool_start`.
@@ -291,6 +347,18 @@ impl HookRegistry {
     /// Get hook names.
     pub fn names(&self) -> Vec<&str> {
         self.hooks.iter().map(|h| h.name()).collect()
+    }
+
+    pub fn descriptors(&self) -> &[HookDescriptor] {
+        &self.descriptors
+    }
+
+    pub fn descriptors_for_event(&self, event: HookEvent) -> Vec<HookDescriptor> {
+        self.descriptors
+            .iter()
+            .filter(|descriptor| descriptor.event == event)
+            .cloned()
+            .collect()
     }
 }
 
@@ -366,6 +434,11 @@ mod tests {
 
         assert_eq!(registry.len(), 2);
         assert_eq!(registry.names(), vec!["global", "workspace"]);
+        assert_eq!(registry.descriptors().len(), 2);
+        assert_eq!(registry.descriptors()[0].source, HookSource::Global);
+        assert_eq!(registry.descriptors()[1].source, HookSource::Workspace);
+        assert_eq!(registry.descriptors()[0].event, HookEvent::PreToolUse);
+        assert_eq!(registry.descriptors()[1].event, HookEvent::PostToolUse);
 
         match previous_home {
             Some(value) => std::env::set_var("HOME", value),

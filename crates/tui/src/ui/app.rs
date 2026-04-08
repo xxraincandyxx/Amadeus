@@ -57,13 +57,15 @@ use tracing::{debug, info, warn};
 use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
 
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
-use crate::agent::loop_agent::{create_approval_channels, Agent};
+use crate::agent::loop_agent::{create_approval_channels, Agent, SessionCheckpoint};
 use crate::client::LLMClient;
+use crate::commands::SlashCommand;
 use crate::error::Result;
+use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
     render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar, Footer,
-    HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, StatusBar,
-    StreamingState,
+    HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SlashDialog,
+    SlashDialogItem, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::{get_theme, next_theme, SidebarKind};
@@ -575,6 +577,7 @@ pub enum AppMode {
     Normal,
     Input,
     Approval,
+    SlashDialog,
 }
 
 #[derive(Debug, Clone)]
@@ -586,6 +589,32 @@ enum SessionAction {
         prompt: String,
         depth: usize,
     },
+}
+
+#[derive(Debug, Clone)]
+struct RewindCheckpointRecord {
+    label: String,
+    detail: String,
+    checkpoint: SessionCheckpoint,
+}
+
+#[derive(Debug, Clone)]
+struct HooksDialogState {
+    dialog: SlashDialog,
+    events: Vec<HookEvent>,
+    descriptors: Vec<HookDescriptor>,
+}
+
+#[derive(Debug, Clone)]
+struct RewindDialogState {
+    dialog: SlashDialog,
+    entries: Vec<Option<RewindCheckpointRecord>>,
+}
+
+#[derive(Debug, Clone)]
+enum SlashDialogState {
+    Hooks(HooksDialogState),
+    Rewind(RewindDialogState),
 }
 
 struct Session<C: LLMClient> {
@@ -637,11 +666,15 @@ struct Session<C: LLMClient> {
     last_subagent_output: Option<String>,
     last_result_text: Option<String>,
     last_context_sync: Instant,
+    hooks: HookRegistry,
+    slash_dialog: Option<SlashDialogState>,
+    rewind_checkpoints: Vec<RewindCheckpointRecord>,
     #[allow(dead_code)]
     subagent_depth: usize,
     session_label: String,
     session_id: usize,
     pending_new_agent: bool,
+    pending_transcript_reset: bool,
     pending_approvals: VecDeque<ApprovalRequest>,
     last_error: Option<String>,
     parent_session_id: Option<usize>,
@@ -793,6 +826,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         session_label: String,
         session_id: usize,
     ) -> Self {
+        let hooks = HookRegistry::load_for_config(agent.config().as_ref()).unwrap_or_default();
         let mut footer = Footer::new(model_name.clone());
         // Set default agent name for multi-agent indicator
         footer.set_agent_name(Some("main".to_string()));
@@ -832,10 +866,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             last_subagent_output: None,
             last_result_text: None,
             last_context_sync: Instant::now(),
+            hooks,
+            slash_dialog: None,
+            rewind_checkpoints: Vec::new(),
             subagent_depth,
             session_label,
             session_id,
             pending_new_agent: false,
+            pending_transcript_reset: false,
             pending_approvals: VecDeque::new(),
             last_error: None,
             parent_session_id: None,
@@ -846,6 +884,204 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     pub fn set_mesh_mode(&mut self, addr: &str) {
         self.mesh_supervisor_addr = Some(addr.to_string());
         self.footer.set_mesh(true);
+    }
+
+    fn checkpoint_preview(input: &str) -> String {
+        let trimmed = input.trim();
+        if trimmed.chars().count() <= 48 {
+            trimmed.to_string()
+        } else {
+            let prefix: String = trimmed.chars().take(47).collect();
+            format!("{prefix}…")
+        }
+    }
+
+    fn checkpoint_detail(checkpoint: &SessionCheckpoint) -> String {
+        format!(
+            "{} messages · {} todos",
+            checkpoint.history.len(),
+            checkpoint.todos.len()
+        )
+    }
+
+    async fn capture_rewind_checkpoint(&mut self, label: String) -> Result<()> {
+        let checkpoint = self.agent.checkpoint().await?;
+        let detail = Self::checkpoint_detail(&checkpoint);
+        self.rewind_checkpoints.push(RewindCheckpointRecord {
+            label,
+            detail,
+            checkpoint,
+        });
+        Ok(())
+    }
+
+    fn dismiss_slash_dialog(&mut self) {
+        self.slash_dialog = None;
+        self.mode = AppMode::Input;
+    }
+
+    fn show_hooks_dialog(&mut self) {
+        self.hooks =
+            HookRegistry::load_for_config(self.agent.config().as_ref()).unwrap_or_default();
+        let events = vec![
+            HookEvent::PreToolUse,
+            HookEvent::PostToolUse,
+            HookEvent::PostToolUseFailure,
+        ];
+        let items = events
+            .iter()
+            .map(|event| {
+                let count = self.hooks.descriptors_for_event(*event).len();
+                SlashDialogItem::new(
+                    format!("{} - {}", event.title(), event.summary()),
+                    Some(if count == 1 {
+                        "1 hook".to_string()
+                    } else {
+                        format!("{count} hooks")
+                    }),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        self.slash_dialog = Some(SlashDialogState::Hooks(HooksDialogState {
+            dialog: SlashDialog::new(
+                "Hooks",
+                Some(format!("{} hooks", self.hooks.descriptors().len())),
+                Vec::new(),
+                "Enter to confirm · Esc to cancel",
+                items,
+            ),
+            events,
+            descriptors: self.hooks.descriptors().to_vec(),
+        }));
+        self.mode = AppMode::SlashDialog;
+    }
+
+    async fn show_rewind_dialog(&mut self) -> Result<()> {
+        let current_checkpoint = self.agent.checkpoint().await?;
+        let mut entries = self
+            .rewind_checkpoints
+            .iter()
+            .cloned()
+            .map(Some)
+            .collect::<Vec<_>>();
+        entries.push(None);
+
+        let items = self
+            .rewind_checkpoints
+            .iter()
+            .map(|entry| SlashDialogItem::new(entry.label.clone(), Some(entry.detail.clone())))
+            .chain(std::iter::once(SlashDialogItem::new(
+                "(current)",
+                Some(Self::checkpoint_detail(&current_checkpoint)),
+            )))
+            .collect::<Vec<_>>();
+
+        self.slash_dialog = Some(SlashDialogState::Rewind(RewindDialogState {
+            dialog: SlashDialog::new(
+                "Rewind",
+                None,
+                vec![
+                    "Restore the session to the point before the selected command or prompt."
+                        .to_string(),
+                ],
+                "Enter to continue · Esc to exit",
+                items,
+            ),
+            entries,
+        }));
+        self.mode = AppMode::SlashDialog;
+        Ok(())
+    }
+
+    fn render_hook_details(&mut self, event: HookEvent, descriptors: &[HookDescriptor]) {
+        let matching = descriptors
+            .iter()
+            .filter(|descriptor| descriptor.event == event)
+            .collect::<Vec<_>>();
+
+        if matching.is_empty() {
+            self.messages.add_local_command_result(format!(
+                "**{}**\n\nNo hooks configured for this phase.",
+                event.title()
+            ));
+            return;
+        }
+
+        let mut content = format!("**{}**\n\n", event.title());
+        for descriptor in matching {
+            let tools = if descriptor.tools.is_empty() {
+                "all tools".to_string()
+            } else {
+                descriptor.tools.join(", ")
+            };
+            let source = match descriptor.source {
+                crate::hooks::HookSource::Global => "global",
+                crate::hooks::HookSource::Workspace => "workspace",
+                crate::hooks::HookSource::Runtime => "runtime",
+            };
+            content.push_str(&format!(
+                "- `{}` from `{}` for `{}`\n  `{}`\n",
+                descriptor.name, source, tools, descriptor.command
+            ));
+        }
+        self.messages.add_local_command_result(content);
+    }
+
+    async fn restore_rewind_checkpoint(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
+        self.agent.restore_checkpoint(&entry.checkpoint).await?;
+        self.messages
+            .replace_history_from_messages(&entry.checkpoint.history);
+        self.messages.reset_scrollback_cursor_for_session_switch();
+        self.current_text.clear();
+        self.last_result_text = None;
+        self.last_error = None;
+        self.streaming_buffer.clear();
+        self.messages.clear_streaming_text();
+        self.clear_tool_monitor();
+        self.pending_transcript_reset = true;
+        self.footer
+            .set_status_message(format!("Rewound to {}", entry.label));
+        Ok(())
+    }
+
+    fn apply_pending_transcript_reset(
+        &mut self,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        if !self.pending_transcript_reset {
+            return Ok(());
+        }
+
+        let height = terminal.size()?.height as usize;
+        self.pending_transcript_reset = false;
+        self.messages.reset_scrollback_cursor_for_session_switch();
+        if height > 0 {
+            self.insert_lines_before(terminal, vec![Line::from(""); height])?;
+        }
+        Ok(())
+    }
+
+    async fn submit_slash_dialog(&mut self) -> Result<()> {
+        let dialog = self.slash_dialog.clone();
+        match dialog {
+            Some(SlashDialogState::Hooks(state)) => {
+                if let Some(selected) = state.dialog.selected() {
+                    self.render_hook_details(state.events[selected], &state.descriptors);
+                }
+                self.dismiss_slash_dialog();
+            }
+            Some(SlashDialogState::Rewind(state)) => {
+                if let Some(selected) = state.dialog.selected() {
+                    if let Some(Some(entry)) = state.entries.get(selected) {
+                        self.restore_rewind_checkpoint(entry).await?;
+                    }
+                }
+                self.dismiss_slash_dialog();
+            }
+            None => {}
+        }
+        Ok(())
     }
 
     #[allow(dead_code)]
@@ -1837,6 +2073,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             AppMode::Normal => self.handle_normal_key(key).await,
             AppMode::Input => self.handle_input_key(key, terminal).await,
             AppMode::Approval => self.handle_approval_key(key).await,
+            AppMode::SlashDialog => self.handle_slash_dialog_key(key).await,
         }
     }
 
@@ -1877,6 +2114,40 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     dialog.selected = 2; // Always Approve
                 }
                 self.submit_approval().await;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_slash_dialog_key(&mut self, key: crossterm::event::KeyEvent) -> Result<()> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Up) => {
+                if let Some(dialog) = &mut self.slash_dialog {
+                    match dialog {
+                        SlashDialogState::Hooks(state) => state.dialog.select_previous(),
+                        SlashDialogState::Rewind(state) => state.dialog.select_previous(),
+                    }
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Down) => {
+                if let Some(dialog) = &mut self.slash_dialog {
+                    match dialog {
+                        SlashDialogState::Hooks(state) => state.dialog.select_next(),
+                        SlashDialogState::Rewind(state) => state.dialog.select_next(),
+                    }
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Enter) => {
+                self.submit_slash_dialog().await?;
+            }
+            (KeyModifiers::NONE, KeyCode::Esc)
+            | (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                if matches!(self.slash_dialog, Some(SlashDialogState::Hooks(_))) {
+                    self.messages
+                        .add_local_command_result("Hooks dialog dismissed".to_string());
+                }
+                self.dismiss_slash_dialog();
             }
             _ => {}
         }
@@ -2540,46 +2811,94 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
-        // --- SLASH COMMANDS ---
-        if trimmed.starts_with('/') {
-            let command = trimmed.to_lowercase();
-            if command == "/compact" || command == "/compress" {
-                self.input.clear();
-                // Set flag to flush buffer before compaction
-                self.flush_before_compaction = true;
-                return Ok(());
-            }
-            if command == "/context" {
-                self.input.clear();
-                let info = self.build_context_info();
-                let turn = self.messages.current_turn();
-                self.messages.add_context_report(info, turn);
-                return Ok(());
-            }
-            if command == "/new-agent" {
-                self.input.clear();
-                self.pending_new_agent = true;
-                return Ok(());
-            }
-            if command == "/help" {
-                self.input.clear();
-                let help_text = "\
+        if let Some(command) = SlashCommand::parse(trimmed) {
+            match command {
+                SlashCommand::Compact => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.flush_before_compaction = true;
+                    return Ok(());
+                }
+                SlashCommand::Context => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let info = self.build_context_info();
+                    let turn = self.messages.current_turn();
+                    self.messages.add_context_report(info, turn);
+                    return Ok(());
+                }
+                SlashCommand::NewAgent => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.pending_new_agent = true;
+                    return Ok(());
+                }
+                SlashCommand::Help => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let help_text = "\
 **Available Commands**
 - `/help`: Show this help message
 - `/compact` or `/compress`: Force context compaction
-- `/context`: Toggle context sidebar
+- `/context`: Show current context usage
+- `/hooks`: Inspect configured hook phases
 - `/new-agent`: Spawn new agent session
-- `/test`: Run integration tests
+- `/rewind`: Restore an earlier local checkpoint
+- `/exit`: Quit
 - `Ctrl+C` / `Esc`: Cancel active stream
 - `Tab` / `Shift+Tab`: Switch sessions
 - `Ctrl+]` / `Ctrl+[`: Switch to child / parent session
 - `Ctrl+Backspace`: Close active session";
-                self.messages.add_assistant(help_text.to_string());
-                return Ok(());
+                    self.messages
+                        .add_local_command_result(help_text.to_string());
+                    return Ok(());
+                }
+                SlashCommand::Hooks => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.show_hooks_dialog();
+                    return Ok(());
+                }
+                SlashCommand::Rewind { steps } => {
+                    self.input.clear();
+                    if let Some(steps) = steps {
+                        if steps > 0 && steps <= self.rewind_checkpoints.len() {
+                            let index = self.rewind_checkpoints.len() - steps;
+                            let entry = self.rewind_checkpoints[index].clone();
+                            self.restore_rewind_checkpoint(&entry).await?;
+                        } else {
+                            self.messages.add_local_command_result(format!(
+                                "No rewind checkpoint available for {steps} step(s)."
+                            ));
+                        }
+                    } else {
+                        self.show_rewind_dialog().await?;
+                    }
+                    return Ok(());
+                }
+                SlashCommand::Exit => {
+                    self.input.clear();
+                    self.should_quit = true;
+                    return Ok(());
+                }
+                SlashCommand::Unknown(name) => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.messages
+                        .add_local_command_result(format!("Unknown skill: {name}"));
+                    return Ok(());
+                }
             }
-            // Unknown command: send as user message
         }
 
+        self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+            .await?;
         self.messages.add_user(trimmed.to_string());
 
         self.input.clear();
@@ -2750,6 +3069,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         if let Some(ref dialog) = self.approval_dialog {
             dialog.render(frame, size);
+        }
+
+        if let Some(ref dialog) = self.slash_dialog {
+            match dialog {
+                SlashDialogState::Hooks(state) => state.dialog.render(frame, size),
+                SlashDialogState::Rewind(state) => state.dialog.render(frame, size),
+            }
         }
 
         // Render sidebar if open
@@ -3667,6 +3993,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         let (should_quit, session_stream_rx, session_approval_rx) = {
                             let session = &mut self.sessions[active_idx];
                             session.handle_event(event, &mut terminal).await?;
+                            session.apply_pending_transcript_reset(&mut terminal)?;
                             session.flush_unrendered_history(&mut terminal)?;
                             if session.flush_before_compaction {
                                 session.flush_streaming_buffer(&mut terminal)?;
@@ -3815,6 +4142,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 #[cfg(test)]
 mod tests {
     use super::{App, MonitorStatus, Session, ToolMonitorState};
+    use crate::agent::messages::{ContentBlock, Message};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{
         backend::{CrosstermBackend, TestBackend},
@@ -4344,6 +4672,104 @@ mod tests {
 
         assert!(session.input.is_shortcuts_visible());
         assert!(session.input.get_input().is_empty());
+    }
+
+    #[tokio::test]
+    async fn slash_hooks_opens_dialog() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        for ch in "/hooks".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session.submit_input().await.expect("hooks command");
+
+        assert!(matches!(session.mode, super::AppMode::SlashDialog));
+        match session.slash_dialog.as_ref() {
+            Some(super::SlashDialogState::Hooks(state)) => {
+                assert_eq!(state.events.len(), 3);
+                assert_eq!(state.events[0], crate::hooks::HookEvent::PreToolUse);
+            }
+            other => panic!("expected hooks dialog, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn slash_unknown_skill_stays_local() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        for ch in "/btw".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session.submit_input().await.expect("unknown skill command");
+
+        assert!(matches!(session.mode, super::AppMode::Input));
+        assert!(session.stream_rx.is_none());
+        let rendered = session
+            .messages
+            .take_unrendered_lines(80)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("Unknown skill: btw"));
+    }
+
+    #[tokio::test]
+    async fn slash_rewind_restores_checkpoint() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session
+            .capture_rewind_checkpoint("before".to_string())
+            .await
+            .expect("checkpoint");
+
+        {
+            let history = session.agent.history();
+            let mut history = history.write().await;
+            history.push(Message::user("hello"));
+            history.push(Message::assistant(vec![ContentBlock::Text {
+                text: "world".to_string(),
+            }]));
+        }
+        session.messages.add_user("hello".to_string());
+        session.messages.add_assistant("world".to_string());
+
+        for ch in "/rewind 1".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session.submit_input().await.expect("rewind command");
+
+        let history = session.agent.history();
+        let history = history.read().await;
+        assert!(history.is_empty());
+        assert!(session.pending_transcript_reset);
+        let rendered = session
+            .messages
+            .take_unrendered_lines(80)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!rendered.contains("hello"));
+        assert!(!rendered.contains("world"));
+    }
+
+    #[test]
+    fn rewind_transcript_reset_inserts_spacer_lines_and_clears_pending_flag() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.pending_transcript_reset = true;
+
+        session
+            .apply_pending_transcript_reset(&mut terminal)
+            .expect("rewind reset should succeed");
+
+        assert!(!session.pending_transcript_reset);
     }
 
     #[test]

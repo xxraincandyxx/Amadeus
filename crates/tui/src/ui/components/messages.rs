@@ -141,6 +141,10 @@ pub enum HistoryItem {
         timestamp: Instant,
         turn: usize,
     },
+    LocalCommand {
+        content: String,
+        timestamp: Instant,
+    },
     SubAgentPrompt {
         content: String,
         depth: usize,
@@ -359,6 +363,15 @@ impl MessagesComponent {
         });
     }
 
+    pub fn add_local_command_result(&mut self, content: String) {
+        self.finalize_pending_tool_group();
+        self.streaming_text = None;
+        self.items.push(HistoryItem::LocalCommand {
+            content,
+            timestamp: Instant::now(),
+        });
+    }
+
     pub fn add_subagent_prompt(&mut self, content: String, depth: usize) {
         self.finalize_pending_tool_group();
         let turn = self.current_turn;
@@ -383,6 +396,90 @@ impl MessagesComponent {
         self.streaming_text = None;
         self.streaming_thinking = None;
         self.pending_tool_group = None;
+    }
+
+    pub fn replace_history_from_messages(&mut self, history: &[crate::agent::messages::Message]) {
+        let tool_expansion_enabled = self.tool_expansion_enabled;
+        *self = Self::new();
+        self.tool_expansion_enabled = tool_expansion_enabled;
+
+        let mut pending_tools =
+            std::collections::HashMap::<String, (String, Option<String>)>::new();
+
+        for message in history {
+            match message.role.as_str() {
+                "user" => {
+                    let text = message
+                        .content
+                        .iter()
+                        .filter_map(|block| match block {
+                            crate::agent::messages::ContentBlock::Text { text } => {
+                                Some(text.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+
+                    if !text.trim().is_empty() {
+                        self.add_user(text);
+                    }
+
+                    for block in &message.content {
+                        if let crate::agent::messages::ContentBlock::ToolResult {
+                            tool_use_id,
+                            content,
+                        } = block
+                        {
+                            if let Some((tool_name, command)) = pending_tools.remove(tool_use_id) {
+                                self.start_tool(
+                                    tool_use_id.clone(),
+                                    tool_name.clone(),
+                                    command.clone(),
+                                );
+                                self.complete_tool(tool_use_id, content.clone(), false, command);
+                            }
+                        }
+                    }
+                }
+                "assistant" => {
+                    let text = message
+                        .content
+                        .iter()
+                        .filter_map(|block| match block {
+                            crate::agent::messages::ContentBlock::Text { text } => {
+                                Some(text.as_str())
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n\n");
+
+                    if !text.trim().is_empty() {
+                        self.add_assistant(text);
+                    }
+
+                    for block in &message.content {
+                        if let crate::agent::messages::ContentBlock::ToolUse { id, name, input } =
+                            block
+                        {
+                            let command = if name == "bash" {
+                                input
+                                    .get("command")
+                                    .and_then(|value| value.as_str())
+                                    .map(str::to_string)
+                            } else {
+                                None
+                            };
+                            pending_tools.insert(id.clone(), (name.clone(), command));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        self.mark_last_item_rendered();
     }
 
     pub fn render_assistant_chunk(
@@ -916,6 +1013,21 @@ impl MessagesComponent {
                 lines.push(Line::from(""));
             }
 
+            HistoryItem::LocalCommand { content, .. } => {
+                let content_lines = render_markdown(content, content_width);
+                for (i, content_line) in content_lines.into_iter().enumerate() {
+                    let mut spans = Vec::new();
+                    if i == 0 {
+                        spans.push(Span::styled("❯ ", Style::default().fg(colors.text.accent)));
+                    } else {
+                        spans.push(Span::raw("  "));
+                    }
+                    spans.extend(content_line.spans.into_iter());
+                    lines.push(Line::from(spans));
+                }
+                lines.push(Line::from(""));
+            }
+
             HistoryItem::SubAgentPrompt {
                 content,
                 depth,
@@ -1034,6 +1146,7 @@ impl MessagesComponent {
         match item {
             HistoryItem::User { turn, .. } => Some(*turn),
             HistoryItem::Assistant { turn, .. } => Some(*turn),
+            HistoryItem::LocalCommand { .. } => None,
             HistoryItem::SubAgentPrompt { turn, .. } => Some(*turn),
             HistoryItem::Thinking { turn, .. } => Some(*turn),
             HistoryItem::ToolGroup { turn, .. } => Some(*turn),

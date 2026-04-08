@@ -51,15 +51,18 @@ impl Command {
 }
 
 pub fn get_available_commands() -> Vec<Command> {
-    vec![
-        Command::new("/compact", "Trigger context compaction"),
-        Command::new("/compress", "Trigger context compaction"),
-        Command::new("/context", "Toggle context sidebar"),
-        Command::new("/help", "Show available commands"),
-        Command::new("/kill", "Kill an agent by name or ID"),
-        Command::new("/new-agent", "Create a new agent with a specific profile"),
-        Command::new("/agents", "List all active agents"),
-    ]
+    crate::commands::SLASH_COMMAND_SPECS
+        .iter()
+        .flat_map(|spec| {
+            let mut commands = vec![Command::new(&format!("/{}", spec.name), spec.summary)];
+            commands.extend(
+                spec.aliases
+                    .iter()
+                    .map(|alias| Command::new(&format!("/{}", alias), spec.summary)),
+            );
+            commands
+        })
+        .collect()
 }
 
 pub struct CompletionState {

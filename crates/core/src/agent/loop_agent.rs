@@ -158,6 +158,12 @@ pub struct SessionStats {
     pub duration_ms: u64,
 }
 
+#[derive(Debug, Clone)]
+pub struct SessionCheckpoint {
+    pub history: Vec<Message>,
+    pub todos: Vec<TodoItem>,
+}
+
 /// A builder for creating an Agent.
 pub struct AgentBuilder<C: LLMClient> {
     client: C,
@@ -631,6 +637,31 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
     pub fn todos(&self) -> Arc<StdRwLock<TodoManager>> {
         Arc::clone(&self.todo_manager)
+    }
+
+    pub async fn checkpoint(&self) -> Result<SessionCheckpoint> {
+        let history = self.history.read().await.clone();
+        let todos = self
+            .todo_manager
+            .read()
+            .map_err(|_| AgentError::InvalidResponse("Todo state lock poisoned".to_string()))?
+            .cloned_items();
+
+        Ok(SessionCheckpoint { history, todos })
+    }
+
+    pub async fn restore_checkpoint(&self, checkpoint: &SessionCheckpoint) -> Result<()> {
+        let mut history = self.history.write().await;
+        *history = checkpoint.history.clone();
+        drop(history);
+
+        let mut todos = self
+            .todo_manager
+            .write()
+            .map_err(|_| AgentError::InvalidResponse("Todo state lock poisoned".to_string()))?;
+        todos.replace_items(checkpoint.todos.clone());
+
+        Ok(())
     }
 
     /// Run a single turn with a prompt and return the result.

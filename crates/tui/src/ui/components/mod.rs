@@ -26,6 +26,7 @@ mod messages;
 mod phrase_cycler;
 pub mod sessions;
 mod sidebar;
+mod slash_dialog;
 mod spinner;
 mod status;
 mod status_bar;
@@ -42,6 +43,7 @@ pub use messages::{CompressionItem, CompressionStatus, HistoryItem, MessagesComp
 pub use phrase_cycler::{PhraseCycler, PhraseMode};
 pub use sessions::{SessionBrowser, SessionMetadata};
 pub use sidebar::{ContextInfo, FileSidebar, HelpSidebar, Sidebar, SidebarKind, SkillSidebar};
+pub use slash_dialog::{SlashDialog, SlashDialogItem};
 pub use spinner::GeminiSpinner;
 pub use status_bar::StatusBar;
 pub use tool_group::{ToolCall, ToolGroup, ToolStatus};
