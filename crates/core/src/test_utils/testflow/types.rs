@@ -148,7 +148,6 @@ pub struct ConfigSnapshot {
     pub workspace_hook_path: String,
     pub agents_dir: String,
     pub skills_dir: String,
-    pub workspace_env_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

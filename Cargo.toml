@@ -57,7 +57,6 @@ amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-f
 tokio = { version = "1.39", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1.0"
 anyhow = "1.0"

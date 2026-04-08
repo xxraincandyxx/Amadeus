@@ -21,7 +21,8 @@
 
 //! # Configuration
 //!
-//! Load and manage agent configuration from environment variables.
+//! Load and manage agent configuration from hierarchical settings files and
+//! process environment overrides.
 //!
 //! ## Environment Variables
 //!
@@ -41,7 +42,7 @@
 //! ```rust,ignore
 //! use crate::agent::config::Config;
 //!
-//! // Load from .env file and environment
+//! // Load from .amadeus/settings.json, ~/.amadeus/settings.json, and env vars
 //! let config = Config::load()?;
 //!
 //! println!("Provider: {:?}", config.provider);
@@ -75,6 +76,14 @@ use std::path::PathBuf;
 
 // Serde for serialization
 use serde::{Deserialize, Serialize};
+
+const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250929";
+const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
+const DEFAULT_MAX_OUTPUT_BYTES: usize = 50_000;
+const DEFAULT_CONTEXT_WINDOW_SIZE: u32 = 200_000;
+const DEFAULT_COMPACT_THRESHOLD_PERCENT: u8 = 75;
+const DEFAULT_COMPACT_PRESERVE_RECENT: usize = 6;
+const DEFAULT_MAX_SUBAGENT_DEPTH: usize = 2;
 
 /*
  * ============================================================================
@@ -264,18 +273,18 @@ impl Default for Config {
             provider: Provider::Anthropic,
             api_key: String::new(),
             base_url: None,
-            model: "claude-sonnet-4-5-20250929".to_string(),
+            model: DEFAULT_MODEL.to_string(),
             workdir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
-            timeout_seconds: 300,
-            max_output_bytes: 50_000,
+            timeout_seconds: DEFAULT_TIMEOUT_SECONDS,
+            max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
             blocked_commands: vec!["rm -rf /".to_string()],
             session_log_dir: None,
             session_log_compress: false,
-            context_window_size: 200_000,
+            context_window_size: DEFAULT_CONTEXT_WINDOW_SIZE,
             auto_compact: true,
-            compact_threshold_percent: 75,
-            compact_preserve_recent: 6,
-            max_subagent_depth: 2,
+            compact_threshold_percent: DEFAULT_COMPACT_THRESHOLD_PERCENT,
+            compact_preserve_recent: DEFAULT_COMPACT_PRESERVE_RECENT,
+            max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
             permission_mode: PermissionMode::WorkspaceWrite,
         }
     }
@@ -332,27 +341,17 @@ impl Config {
         self.workspace_config_root().join("skills")
     }
 
-    /// Returns the workspace environment file.
-    pub fn workspace_env_path(&self) -> PathBuf {
-        self.workspace_config_root().join("env")
-    }
-
-    /// Returns the global environment file.
-    pub fn global_env_path() -> Option<PathBuf> {
-        Self::global_config_root().map(|root| root.join("env"))
-    }
-
     // -------------------------------------------------------------------------
     // LOAD METHOD
     // -------------------------------------------------------------------------
 
-    /// Load configuration from environment variables.
+    /// Load configuration from hierarchical settings and environment overrides.
     ///
     /// This method:
-    /// 1. Loads .env file (if present) using dotenvy
-    /// 2. Reads environment variables
-    /// 3. Falls back to defaults for optional values
-    /// 4. Returns error if required values are missing
+    /// 1. Loads `~/.amadeus/settings.json`
+    /// 2. Loads `<workdir>/.amadeus/settings.json`
+    /// 3. Applies process environment variables as the highest-priority override
+    /// 4. Returns an error if required credentials are still missing
     ///
     /// # Errors
     ///
@@ -386,12 +385,6 @@ impl Config {
         Self::load_with_hierarchy_internal(&workdir, false)
     }
 
-    fn load_env_file(path: &Path) {
-        if path.exists() {
-            let _ = dotenvy::from_path(path);
-        }
-    }
-
     fn validate_credentials(&self) -> Result<()> {
         match self.provider {
             Provider::Anthropic if self.api_key.is_empty() => {
@@ -402,256 +395,6 @@ impl Config {
             }
             _ => Ok(()),
         }
-    }
-
-    fn load_from_environment() -> Result<Self> {
-        dotenvy::dotenv().ok();
-
-        // ---------------------------------------------------------------------
-        // DETERMINE PROVIDER
-        // ---------------------------------------------------------------------
-
-        // Read the PROVIDER environment variable
-        //
-        // `env::var("PROVIDER")` returns Result<String, VarError>
-        // - Ok(value) if the variable is set
-        // - Err(VarError) if not set
-        //
-        // `.as_deref()` converts Result<String, E> to Result<&str, E>
-        // This lets us compare the string contents without ownership issues
-        //
-        // `.as_deref()` is like:
-        //   match env::var("PROVIDER") {
-        //       Ok(s) => Ok(&s[..]),  // Borrow the String as &str
-        //       Err(e) => Err(e),
-        //   }
-        let provider = match env::var("PROVIDER").as_deref() {
-            // If PROVIDER is "openai" or "OpenAI", use OpenAI provider
-            // The `|` is "or" pattern - matches either value
-            Ok("openai") | Ok("OpenAI") => Provider::OpenAI,
-
-            // For any other value (including unset), default to Anthropic
-            // `_` is the "wildcard pattern" - matches anything
-            _ => Provider::Anthropic,
-        };
-
-        // ---------------------------------------------------------------------
-        // GET API KEY
-        // ---------------------------------------------------------------------
-
-        // Get the appropriate API key based on provider
-        //
-        // `match &provider` borrows provider (doesn't move it)
-        // We need to use provider again later, so we borrow instead of move
-        let api_key = match &provider {
-            // If using Anthropic, get ANTHROPIC_API_KEY
-            Provider::Anthropic => {
-                // Try to get the environment variable
-                env::var("ANTHROPIC_API_KEY")
-                    // If it fails, convert the error to AgentError::MissingEnvVar
-                    //
-                    // `map_err` transforms the error type:
-                    // - Takes a closure: |_| AgentError::MissingEnvVar(...)
-                    // - _ ignores the original error (we don't need its details)
-                    // - Returns our custom error instead
-                    //
-                    // The `?` operator then:
-                    // - If Ok(value): extract the value and continue
-                    // - If Err(e): return Err(e) from this function immediately
-                    .map_err(|_| AgentError::MissingEnvVar("ANTHROPIC_API_KEY".into()))?
-            }
-
-            // If using OpenAI, get OPENAI_API_KEY
-            // Same pattern as above
-            Provider::OpenAI => env::var("OPENAI_API_KEY")
-                .map_err(|_| AgentError::MissingEnvVar("OPENAI_API_KEY".into()))?,
-        };
-
-        // ---------------------------------------------------------------------
-        // GET OPTIONAL BASE URL
-        // ---------------------------------------------------------------------
-
-        // Get base URL for the selected provider (optional)
-        //
-        // match &provider again - we're comparing the same value
-        // But since we borrowed it before (match &provider), it's still valid
-        let base_url = match &provider {
-            // For Anthropic, try to get ANTHROPIC_BASE_URL
-            //
-            // `.ok()` converts Result to Option:
-            // - Ok(value) -> Some(value)
-            // - Err(_) -> None
-            //
-            // This is perfect for optional config - if not set, we get None
-            Provider::Anthropic => env::var("ANTHROPIC_BASE_URL").ok(),
-
-            // Same for OpenAI
-            Provider::OpenAI => env::var("OPENAI_BASE_URL").ok(),
-        };
-
-        // ---------------------------------------------------------------------
-        // GET MODEL (WITH DEFAULTS)
-        // ---------------------------------------------------------------------
-
-        // Get model ID, with provider-specific defaults
-        //
-        // `unwrap_or_else()` is used to provide a default value
-        // It takes a closure (anonymous function) that generates the default
-        //
-        // Signature: fn unwrap_or_else<E, F>(self, f: F) -> T
-        //   where F: FnOnce(E) -> T
-        //
-        // If the Result is Ok, return the value
-        // If Err, call the closure to generate a default
-        let model = env::var("MODEL_ID").unwrap_or_else(|_| {
-            // The closure receives the error (which we ignore with _)
-            // It must return a String (the default model)
-
-            // Match on provider to choose appropriate default
-            match &provider {
-                // Default Anthropic model
-                // `.to_string()` converts &str to String
-                Provider::Anthropic => "claude-sonnet-4-5-20250929".to_string(),
-
-                // Default OpenAI model
-                Provider::OpenAI => "gpt-4".to_string(),
-            }
-        });
-
-        // ---------------------------------------------------------------------
-        // PARSE MAX OUTPUT SIZE (v2)
-        // ---------------------------------------------------------------------
-
-        // Get MAX_OUTPUT_BYTES environment variable
-        // Default to 50,000 bytes (50KB) if not set or parsing fails
-        //
-        // This limits tool output size to prevent context window overflow
-        let max_output_bytes = env::var("MAX_OUTPUT_BYTES")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(50_000);
-
-        // ---------------------------------------------------------------------
-        // PARSE BLOCKED COMMANDS (v2)
-        // ---------------------------------------------------------------------
-
-        // Get BLOCKED_COMMANDS environment variable
-        // Comma-separated list of blocked command patterns
-        //
-        // Default: ["rm -rf /"] (most dangerous command)
-        // Example: BLOCKED_COMMANDS="rm -rf /,sudo,mkfs"
-        let blocked_commands = env::var("BLOCKED_COMMANDS")
-            .ok()
-            .map(|s| {
-                s.split(',')
-                    .map(|cmd| cmd.trim().to_string())
-                    .filter(|cmd| !cmd.is_empty())
-                    .collect()
-            })
-            .unwrap_or_else(|| vec!["rm -rf /".to_string()]);
-
-        // ---------------------------------------------------------------------
-        // PARSE SESSION LOG DIR
-        // ---------------------------------------------------------------------
-
-        let session_log_dir = env::var("SESSION_LOG_DIR").ok().map(PathBuf::from);
-        let session_log_compress = env::var("SESSION_LOG_COMPRESS")
-            .ok()
-            .and_then(|s| s.parse::<bool>().ok())
-            .unwrap_or(false);
-
-        // ---------------------------------------------------------------------
-        // PARSE CONTEXT WINDOW SIZE
-        // ---------------------------------------------------------------------
-
-        // Get CONTEXT_WINDOW_SIZE environment variable
-        // Default to 200,000 tokens (Claude's context window)
-        // Common values: 128000 (GPT-4), 200000 (Claude), 1000000 (Gemini 1.5)
-        let context_window_size = env::var("CONTEXT_WINDOW_SIZE")
-            .ok()
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(200_000);
-
-        // ---------------------------------------------------------------------
-        // PARSE COMPACTION SETTINGS
-        // ---------------------------------------------------------------------
-
-        // Enable/disable automatic compaction
-        let auto_compact = env::var("AUTO_COMPACT")
-            .ok()
-            .and_then(|s| s.parse::<bool>().ok())
-            .unwrap_or(true);
-
-        // Threshold percentage for compaction trigger
-        let compact_threshold_percent = env::var("COMPACT_THRESHOLD_PERCENT")
-            .ok()
-            .and_then(|s| s.parse::<u8>().ok())
-            .unwrap_or(75);
-
-        // Number of recent messages to preserve
-        let compact_preserve_recent = env::var("COMPACT_PRESERVE_RECENT")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(6);
-
-        // ---------------------------------------------------------------------
-        // PARSE SUB-AGENT DEPTH
-        // ---------------------------------------------------------------------
-
-        let max_subagent_depth = env::var("MAX_SUBAGENT_DEPTH")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(2);
-
-        // ---------------------------------------------------------------------
-        // BUILD AND RETURN CONFIG
-        // ---------------------------------------------------------------------
-
-        // Create a new Config instance
-        // This is a "struct expression" - initializes all fields
-        Ok(Self {
-            provider, // Field shorthand: provider: provider
-            api_key,  // Same as: api_key: api_key
-            base_url, // Same as: base_url: base_url
-            model,    // Same as: model: model
-
-            // Get current working directory
-            //
-            // `env::current_dir()` returns Result<PathBuf, io::Error>
-            // The `?` operator:
-            // - If Ok(path): extract the PathBuf and continue
-            // - If Err(e): convert to AgentError::Io and return early
-            //
-            // Note: AgentError has #[from] for io::Error, so conversion
-            // from io::Error to AgentError::Io is automatic
-            workdir: env::current_dir()?,
-
-            // Hardcoded timeout of 300 seconds (5 minutes)
-            // Could be made configurable via env var if needed
-            timeout_seconds: 300,
-
-            // v2: Tool settings
-            max_output_bytes,
-            blocked_commands,
-
-            session_log_dir,
-            session_log_compress,
-
-            // Context window management
-            context_window_size,
-
-            // Compaction settings
-            auto_compact,
-            compact_threshold_percent,
-            compact_preserve_recent,
-
-            // Sub-agent settings
-            max_subagent_depth,
-            permission_mode: env::var("PERMISSION_MODE")
-                .ok()
-                .and_then(|value| PermissionMode::parse(&value))
-                .unwrap_or(PermissionMode::WorkspaceWrite),
-        })
     }
 
     // -------------------------------------------------------------------------
@@ -831,11 +574,6 @@ impl Config {
             }
         }
 
-        if let Some(global_env_path) = Self::global_env_path() {
-            Self::load_env_file(&global_env_path);
-        }
-        Self::load_env_file(&config.workspace_env_path());
-
         config = config.merge_env();
         config.workdir = workdir.to_path_buf();
         if validate_credentials {
@@ -929,9 +667,97 @@ impl Config {
     ///
     /// Environment variables take highest priority.
     pub fn merge_env(mut self) -> Self {
-        if let Ok(environment) = Self::load_from_environment() {
-            self = self.merge(environment);
+        // Provider
+        if let Ok(provider) = env::var("PROVIDER") {
+            self.provider = match provider.to_lowercase().as_str() {
+                "openai" => Provider::OpenAI,
+                _ => Provider::Anthropic,
+            };
         }
+
+        match &self.provider {
+            Provider::Anthropic => {
+                if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
+                    self.api_key = key;
+                }
+                if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
+                    self.base_url = Some(url);
+                }
+            }
+            Provider::OpenAI => {
+                if let Ok(key) = env::var("OPENAI_API_KEY") {
+                    self.api_key = key;
+                }
+                if let Ok(url) = env::var("OPENAI_BASE_URL") {
+                    self.base_url = Some(url);
+                }
+            }
+        }
+
+        if let Ok(model) = env::var("MODEL_ID") {
+            self.model = model;
+        }
+
+        if let Ok(max_bytes) = env::var("MAX_OUTPUT_BYTES") {
+            if let Ok(bytes) = max_bytes.parse::<usize>() {
+                self.max_output_bytes = bytes;
+            }
+        }
+
+        if let Ok(blocked) = env::var("BLOCKED_COMMANDS") {
+            self.blocked_commands = blocked
+                .split(',')
+                .map(|cmd| cmd.trim().to_string())
+                .filter(|cmd| !cmd.is_empty())
+                .collect();
+        }
+
+        if let Ok(log_dir) = env::var("SESSION_LOG_DIR") {
+            self.session_log_dir = Some(PathBuf::from(log_dir));
+        }
+
+        if let Ok(compress) = env::var("SESSION_LOG_COMPRESS") {
+            if let Ok(value) = compress.parse::<bool>() {
+                self.session_log_compress = value;
+            }
+        }
+
+        if let Ok(timeout) = env::var("TIMEOUT_SECONDS") {
+            if let Ok(seconds) = timeout.parse::<u64>() {
+                self.timeout_seconds = seconds;
+            }
+        }
+
+        if let Ok(auto_compact) = env::var("AUTO_COMPACT") {
+            if let Ok(value) = auto_compact.parse::<bool>() {
+                self.auto_compact = value;
+            }
+        }
+
+        if let Ok(threshold) = env::var("COMPACT_THRESHOLD_PERCENT") {
+            if let Ok(value) = threshold.parse::<u8>() {
+                self.compact_threshold_percent = value;
+            }
+        }
+
+        if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
+            if let Ok(value) = preserve.parse::<usize>() {
+                self.compact_preserve_recent = value;
+            }
+        }
+
+        if let Ok(max_depth) = env::var("MAX_SUBAGENT_DEPTH") {
+            if let Ok(value) = max_depth.parse::<usize>() {
+                self.max_subagent_depth = value;
+            }
+        }
+
+        if let Ok(permission_mode) = env::var("PERMISSION_MODE") {
+            if let Some(mode) = PermissionMode::parse(&permission_mode) {
+                self.permission_mode = mode;
+            }
+        }
+
         self
     }
 
@@ -1009,7 +835,7 @@ mod tests {
     }
 
     #[test]
-    fn load_with_hierarchy_reads_workspace_env_file() {
+    fn load_with_hierarchy_ignores_workspace_env_file() {
         let temp = tempdir().unwrap();
         let workdir = temp.path().join("workspace");
         let workspace_root = workdir.join(".amadeus");
@@ -1026,7 +852,7 @@ mod tests {
 
         let config = Config::load_with_hierarchy(&workdir).unwrap();
 
-        assert_eq!(config.model, "env-model");
+        assert_eq!(config.model, DEFAULT_MODEL);
 
         restore_env("PROVIDER", provider);
         restore_env("ANTHROPIC_API_KEY", anthropic_key);

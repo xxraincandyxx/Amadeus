@@ -1,0 +1,7 @@
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "model": "claude-sonnet-4-5-20250929",
+  "session_log_dir": "logs/sessions",
+  "session_log_compress": true
+}

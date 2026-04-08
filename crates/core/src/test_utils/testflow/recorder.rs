@@ -125,7 +125,6 @@ impl SessionRecorder {
             workspace_hook_path: config.workspace_hooks_path().to_string_lossy().to_string(),
             agents_dir: config.agents_dir().to_string_lossy().to_string(),
             skills_dir: config.skills_dir().to_string_lossy().to_string(),
-            workspace_env_path: config.workspace_env_path().to_string_lossy().to_string(),
         };
     }
 

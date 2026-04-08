@@ -18,6 +18,15 @@
 // @end-amadeus-header
 
 use amadeus::agent::config::{Config, Provider};
+use tempfile::tempdir;
+
+fn restore_env(key: &str, original: Option<String>) {
+    if let Some(value) = original {
+        std::env::set_var(key, value);
+    } else {
+        std::env::remove_var(key);
+    }
+}
 
 #[test]
 fn test_provider_equality() {
@@ -59,4 +68,66 @@ fn parity_doc_exists_and_mentions_reference_baseline() {
     let doc = std::fs::read_to_string(&doc_path).expect("docs/EVALUATION.md must exist");
     assert!(doc.contains("refs/claw-code-parity/rust/PARITY.md"));
     assert!(doc.contains("Amadeus vs claw-code-parity Evaluation"));
+}
+
+#[test]
+fn load_with_hierarchy_reads_workspace_settings_json() {
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    std::fs::write(
+        settings_dir.join("settings.json"),
+        r#"{"provider":"openai","api_key":"json-key","model":"gpt-test"}"#,
+    )
+    .unwrap();
+
+    let provider = std::env::var("PROVIDER").ok();
+    let anthropic = std::env::var("ANTHROPIC_API_KEY").ok();
+    let openai = std::env::var("OPENAI_API_KEY").ok();
+    std::env::remove_var("PROVIDER");
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    std::env::remove_var("OPENAI_API_KEY");
+
+    let config = Config::load_with_hierarchy(temp.path()).unwrap();
+
+    restore_env("PROVIDER", provider);
+    restore_env("ANTHROPIC_API_KEY", anthropic);
+    restore_env("OPENAI_API_KEY", openai);
+
+    assert_eq!(config.provider, Provider::OpenAI);
+    assert_eq!(config.api_key, "json-key");
+    assert_eq!(config.model, "gpt-test");
+}
+
+#[test]
+fn load_with_hierarchy_ignores_legacy_dotenv_files() {
+    let temp = tempdir().unwrap();
+    std::fs::write(
+        temp.path().join(".env"),
+        "PROVIDER=openai\nOPENAI_API_KEY=legacy-key\nMODEL_ID=legacy-model\n",
+    )
+    .unwrap();
+
+    let provider = std::env::var("PROVIDER").ok();
+    let anthropic = std::env::var("ANTHROPIC_API_KEY").ok();
+    let openai = std::env::var("OPENAI_API_KEY").ok();
+    let model = std::env::var("MODEL_ID").ok();
+    std::env::remove_var("PROVIDER");
+    std::env::remove_var("ANTHROPIC_API_KEY");
+    std::env::remove_var("OPENAI_API_KEY");
+    std::env::remove_var("MODEL_ID");
+
+    let current_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp.path()).unwrap();
+    let config = Config::load_for_assessment().unwrap();
+    std::env::set_current_dir(current_dir).unwrap();
+
+    restore_env("PROVIDER", provider);
+    restore_env("ANTHROPIC_API_KEY", anthropic);
+    restore_env("OPENAI_API_KEY", openai);
+    restore_env("MODEL_ID", model);
+
+    assert_eq!(config.provider, Provider::Anthropic);
+    assert!(config.api_key.is_empty());
+    assert_eq!(config.model, "claude-sonnet-4-5-20250929");
 }
