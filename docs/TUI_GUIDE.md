@@ -6,11 +6,15 @@
 
 ### Prerequisites
 
-1. Set your API keys in `.env`:
+1. Set your API keys in `.amadeus/settings.json`:
    ```bash
-   PROVIDER=anthropic  # or "openai"
-   ANTHROPIC_API_KEY=sk-ant-xxx
-   OPENAI_API_KEY=sk-xxx
+   mkdir -p .amadeus
+   ```
+   ```json
+   {
+     "provider": "anthropic",
+     "api_key": "sk-ant-xxx"
+   }
    ```
 
 2. Run the TUI:
@@ -345,10 +349,11 @@ The bottom status line displays:
 
 Enable automatic conversation logging:
 
-```bash
-# .env
-SESSION_LOG_DIR=logs/sessions
-SESSION_LOG_COMPRESS=true
+```json
+{
+  "session_log_dir": "logs/sessions",
+  "session_log_compress": true
+}
 ```
 
 Log format: Structured JSON (or `.json.gz`)

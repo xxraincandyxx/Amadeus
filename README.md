@@ -32,13 +32,11 @@ Parity progress against the `refs/claw-code-parity` reference is tracked in `doc
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
 
-# Copy environment template
-cp .env.example .env
+# Copy structured settings template
+mkdir -p .amadeus
+cp .amadeus/settings.example.json .amadeus/settings.json
 
-# Add your API key to .env
-# ANTHROPIC_API_KEY=sk-ant-xxx  (for Anthropic)
-# or
-# OPENAI_API_KEY=sk-xxx  (for OpenAI)
+# Add your provider and API key to .amadeus/settings.json
 
 # Build the project
 cargo build --release
@@ -232,7 +230,7 @@ The policy system blocks:
 
 ## Configuration
 
-Environment variables (`.env`):
+Structured settings (`.amadeus/settings.json` or `~/.amadeus/settings.json`):
 
 ```bash
 # Provider selection

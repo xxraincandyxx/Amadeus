@@ -27,7 +27,13 @@ default = []
 
 # Testing/Examples
 api = ["amadeus_core/api", "dep:amadeus_api", "supervisor"]
-tui = ["amadeus_core/tui", "dep:amadeus_tui", "concurrency"]
+tui = [
+  "amadeus_core/tui",
+  "dep:amadeus_tui",
+  "dep:crossterm",
+  "dep:ratatui",
+  "concurrency",
+]
 test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
 # Concurrency & Multi-Agent
@@ -50,7 +56,6 @@ amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-f
 tokio = { version = "1.39", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-dotenvy = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 flate2 = "1.0"
 anyhow = "1.0"
@@ -59,6 +64,7 @@ futures = "0.3"
 async-trait = "0.1"
 async-stream = "0.3"
 bytes = "1.0"
+crossterm = { version = "0.27", features = ["event-stream"], optional = true }
 
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
@@ -67,6 +73,7 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 walkdir = "2.5"
 glob = "0.3"
 regex = "1.10"
+ratatui = { version = "0.28", optional = true }
 url = "2.5"
 
 libc = "0.2.182"
