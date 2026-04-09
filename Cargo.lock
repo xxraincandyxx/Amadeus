@@ -314,6 +314,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "compaction",
+ "context",
+ "dirs",
+ "permissions",
+ "prompts",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+]
+
+[[package]]
 name = "context"
 version = "0.1.0"
 dependencies = [
@@ -332,6 +347,7 @@ dependencies = [
  "chrono",
  "commands",
  "compaction",
+ "config",
  "context",
  "dirs",
  "flate2",
