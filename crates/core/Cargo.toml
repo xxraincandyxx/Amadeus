@@ -33,6 +33,7 @@ amadeus_events = { package = "events", path = "../events" }
 amadeus_messages = { package = "messages", path = "../messages" }
 amadeus_ids = { package = "ids", path = "../ids" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
+amadeus_profiles = { package = "profiles", path = "../profiles" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
 amadeus_skills = { package = "skills", path = "../skills" }
 tokio = { version = "1.39", features = ["full"] }

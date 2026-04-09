@@ -360,6 +360,7 @@ dependencies = [
  "messages",
  "mockito",
  "permissions",
+ "profiles",
  "prompts",
  "rand 0.8.5",
  "regex",
@@ -1521,6 +1522,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "profiles"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

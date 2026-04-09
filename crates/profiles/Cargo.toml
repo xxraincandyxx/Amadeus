@@ -1,0 +1,16 @@
+[package]
+name = "profiles"
+version = "0.1.0"
+edition = "2021"
+description = "Shared agent profile definitions for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "profiles", "sdk"]
+categories = ["development-tools"]
+
+[lib]
+name = "amadeus_profiles"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
