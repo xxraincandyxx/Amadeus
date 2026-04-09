@@ -23,6 +23,7 @@
 use std::path::PathBuf;
 
 use amadeus_config::ConfigError;
+use amadeus_runtime::RuntimeError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -148,6 +149,14 @@ impl From<ConfigError> for AgentError {
             ConfigError::MissingEnvVar(name) => AgentError::MissingEnvVar(name),
             ConfigError::Serde(error) => AgentError::Serde(error),
             ConfigError::Io(error) => AgentError::Io(error),
+        }
+    }
+}
+
+impl From<RuntimeError> for AgentError {
+    fn from(error: RuntimeError) -> Self {
+        match error {
+            RuntimeError::Command(message) => AgentError::Command(message),
         }
     }
 }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/api", "crates/commands", "crates/compaction", "crates/config", "crates/context", "crates/core", "crates/events", "crates/hooks", "crates/ids", "crates/messages", "crates/permissions", "crates/profiles", "crates/prompts", "crates/skills", "crates/tui"]
+members = ["crates/api", "crates/commands", "crates/compaction", "crates/config", "crates/context", "crates/core", "crates/events", "crates/hooks", "crates/ids", "crates/messages", "crates/permissions", "crates/profiles", "crates/prompts", "crates/runtime", "crates/skills", "crates/tui"]
 resolver = "2"
 
 [package]

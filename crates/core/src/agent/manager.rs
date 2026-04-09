@@ -159,7 +159,8 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         if !self.agents.iter().any(|agent| agent.id == agent_id) {
             return Err(AgentError::Command(format!("Unknown agent: {}", agent_id)));
         }
-        self.teams.add_member(team_id, agent_id)
+        self.teams.add_member(team_id, agent_id)?;
+        Ok(())
     }
 
     /// Execute a team task using the best available local agent.

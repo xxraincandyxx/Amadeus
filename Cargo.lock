@@ -365,6 +365,7 @@ dependencies = [
  "rand 0.8.5",
  "regex",
  "reqwest",
+ "runtime",
  "rustc_version_runtime",
  "serde",
  "serde_json",
@@ -1734,6 +1735,18 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "runtime"
+version = "0.1.0"
+dependencies = [
+ "events",
+ "ids",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
