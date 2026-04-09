@@ -157,7 +157,7 @@ async fn test_e2e_product_development_flow() {
     println!("👥 Spawning the product orchestra...");
 
     let _: Vec<AgentId> = orchestra
-        .spawn_with_client(
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Alice (PM)").capability("product")],
             StoryClient {
                 role: "PM".into(),
@@ -168,7 +168,7 @@ async fn test_e2e_product_development_flow() {
         .expect("Failed to spawn PM");
 
     let _: Vec<AgentId> = orchestra
-        .spawn_with_client(
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Bob (Coder)").capability("code")],
             StoryClient {
                 role: "Coder".into(),
@@ -179,7 +179,7 @@ async fn test_e2e_product_development_flow() {
         .expect("Failed to spawn Coder");
 
     let _: Vec<AgentId> = orchestra
-        .spawn_with_client(
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Charlie (Reviewer)").capability("review")],
             StoryClient {
                 role: "Reviewer".into(),

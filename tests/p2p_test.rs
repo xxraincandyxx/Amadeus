@@ -170,7 +170,7 @@ async fn test_p2p_delegation() {
         OrchestraRuntime::new(requester_client.clone(), config, create_test_config());
 
     let _: Vec<AgentId> = orchestra
-        .spawn_with_client(
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Requester").capability("logic-capability")],
             requester_client,
         )
@@ -178,7 +178,7 @@ async fn test_p2p_delegation() {
         .expect("Failed to spawn requester");
 
     let calc_ids: Vec<AgentId> = orchestra
-        .spawn_with_client(
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Calculator").capability("math-capability")],
             calculator_client,
         )
@@ -219,6 +219,6 @@ async fn test_p2p_delegation() {
     assert!(out.contains("answer is 4"), "Output was: '{}'", out);
 
     // Verify math worker was actually called
-    let calculator_info = orchestra_arc.worker(*calculator_id).await.unwrap();
+    let calculator_info = orchestra_arc.agent_info(*calculator_id).await.unwrap();
     assert_eq!(calculator_info.completed_tasks, 1);
 }

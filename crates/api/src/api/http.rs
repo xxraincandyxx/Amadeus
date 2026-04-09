@@ -188,11 +188,11 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     config: Arc<Config>,
 ) -> Result<()> {
     let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config));
-    let default_orchestra_id = orchestrator.ensure_default_team(OrchestraLeader::User);
+    let default_orchestra_id = orchestrator.ensure_default_orchestra(OrchestraLeader::User);
     let main_agent_id = orchestrator
         .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
-    orchestrator.add_agent_to_team(default_orchestra_id, main_agent_id)?;
+    orchestrator.add_agent_to_orchestra(default_orchestra_id, main_agent_id)?;
     let orchestrator = Arc::new(RwLock::new(orchestrator));
 
     let state = Arc::new(AppState {

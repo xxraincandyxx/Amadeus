@@ -140,7 +140,7 @@ async fn test_high_concurrency_p2p() {
             peer_chance: 0.5,
         };
         let _: Vec<AgentId> = orchestra
-            .spawn_with_client(
+            .spawn_agents_with_client(
                 vec![WorkerConfig::new(format!("Worker-{}", i)).capability("worker")],
                 worker_client,
             )
