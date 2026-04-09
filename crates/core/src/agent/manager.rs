@@ -18,7 +18,6 @@
 // - module: crate::core::id::AgentId
 // - module: crate::error
 // - module: amadeus_runtime::agent
-// - protocol: serde serialization
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects: none
@@ -39,7 +38,7 @@ use crate::agent::worker::{Task, TaskResult, WorkerConfig};
 use crate::client::LLMClient;
 use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
-pub use amadeus_runtime::{AgentInfo, AgentStatus};
+pub use amadeus_runtime::{select_agent, AgentInfo, AgentRouteCandidate, AgentStatus};
 
 /// Manages multiple agents and coordinates between them.
 pub struct AgentManager<C: LLMClient> {
@@ -363,57 +362,38 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
     }
 
     fn select_agent_index(&self, team_id: Option<TeamId>, task: &Task) -> Result<usize> {
-        let candidate_ids = team_id.and_then(|team_id| {
+        let allowed_ids = team_id.and_then(|team_id| {
             self.teams
                 .get_team(team_id)
                 .map(|team| team.members.clone())
         });
+        let candidates = self
+            .agents
+            .iter()
+            .map(|handle| AgentRouteCandidate {
+                id: handle.id,
+                capabilities: handle.capabilities.clone(),
+            })
+            .collect::<Vec<_>>();
+        let selected_id = select_agent(
+            &candidates,
+            self.active_agent_id(),
+            allowed_ids.as_deref(),
+            task,
+        );
 
-        let mut selected_index = None;
-
-        for (index, handle) in self.agents.iter().enumerate() {
-            if let Some(candidate_ids) = &candidate_ids {
-                if !candidate_ids.contains(&handle.id) {
-                    continue;
+        selected_id
+            .and_then(|agent_id| self.agents.iter().position(|handle| handle.id == agent_id))
+            .ok_or_else(|| {
+                if task.required_capabilities.is_empty() {
+                    AgentError::Command("No agents available".to_string())
+                } else {
+                    AgentError::Command(format!(
+                        "No agent matched capabilities: {}",
+                        task.required_capabilities.join(", ")
+                    ))
                 }
-            }
-
-            if task
-                .required_capabilities
-                .iter()
-                .all(|capability| handle.capabilities.contains(capability))
-            {
-                selected_index = Some(index);
-                if index == self.active_index {
-                    break;
-                }
-            }
-        }
-
-        if selected_index.is_none() && task.required_capabilities.is_empty() {
-            selected_index = if let Some(candidate_ids) = &candidate_ids {
-                self.agents
-                    .iter()
-                    .enumerate()
-                    .find(|(_, handle)| candidate_ids.contains(&handle.id))
-                    .map(|(index, _)| index)
-            } else if self.agents.is_empty() {
-                None
-            } else {
-                Some(self.active_index.min(self.agents.len() - 1))
-            };
-        }
-
-        selected_index.ok_or_else(|| {
-            if task.required_capabilities.is_empty() {
-                AgentError::Command("No agents available".to_string())
-            } else {
-                AgentError::Command(format!(
-                    "No agent matched capabilities: {}",
-                    task.required_capabilities.join(", ")
-                ))
-            }
-        })
+            })
     }
 
     /// Get the total number of agents.

@@ -39,7 +39,7 @@ pub enum RuntimeError {
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
-pub use agent::{AgentInfo, AgentStatus};
+pub use agent::{select_agent, AgentInfo, AgentRouteCandidate, AgentStatus};
 pub use scheduler::{select_worker, DispatchStrategy, SupervisorConfig};
 pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus};
 pub use worker::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
