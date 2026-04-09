@@ -273,7 +273,7 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         // =====================================================================
         // Health check endpoint (Stateless)
         .route("/health", get(health))
-        // Chat endpoint (Stateless wrapper around Supervisor)
+        // Chat endpoint (Stateless wrapper around the orchestra orchestrator)
         .route("/chat", post(chat))
         // Execute endpoint (Direct tool access)
         .route("/execute", post(execute))

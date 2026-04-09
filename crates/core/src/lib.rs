@@ -68,7 +68,8 @@ pub use agent::{
 #[cfg(feature = "orchestra")]
 #[deprecated(note = "use AgentOrchestrator and orchestra::* types instead")]
 pub use agent::{
-    AgentManager, AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
+    AgentInfo as LegacyAgentInfo, AgentManager, AgentStatus as LegacyAgentStatus, AgentTeam,
+    TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
 };
 
 #[cfg(feature = "orchestra")]

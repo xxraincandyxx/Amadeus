@@ -116,6 +116,31 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     ) -> Result<TaskResult> {
         self.inner.execute_task(orchestra_id, task).await
     }
+
+    /// List all active agents.
+    pub fn list_agents(&self) -> Vec<AgentInfo> {
+        self.inner.list_agents()
+    }
+
+    /// Get info for a specific agent.
+    pub fn get_agent(&self, agent_id: &AgentId) -> Option<AgentInfo> {
+        self.inner.get_agent(agent_id)
+    }
+
+    /// Get the currently active agent ID.
+    pub fn active_agent_id(&self) -> Option<AgentId> {
+        self.inner.active_agent_id()
+    }
+
+    /// Switch the active agent.
+    pub fn switch_to(&mut self, agent_id: &AgentId) -> Result<()> {
+        self.inner.switch_to(agent_id)
+    }
+
+    /// Remove an agent from the orchestrator.
+    pub fn kill(&mut self, agent_id: &AgentId) -> Result<()> {
+        self.inner.kill(agent_id)
+    }
 }
 
 impl<C: LLMClient> Deref for AgentOrchestrator<C> {

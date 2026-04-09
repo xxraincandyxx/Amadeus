@@ -21,7 +21,7 @@ pub mod config;
 pub mod events;
 pub mod loop_agent;
 #[cfg(feature = "orchestra")]
-pub mod manager; // NEW: Multi-agent manager
+pub mod manager;
 pub mod messages;
 #[cfg(feature = "orchestra")]
 pub mod orchestra;
@@ -42,12 +42,16 @@ pub use config::{Config, Provider};
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
 #[cfg(feature = "orchestra")]
-pub use manager::{AgentInfo, AgentManager, AgentStatus}; // NEW
+#[deprecated(
+    note = "use crate::agent::orchestra::{AgentInfo, AgentOrchestrator, AgentStatus}"
+)]
+pub use manager::AgentManager;
 pub use messages::{ContentBlock, Message};
 #[cfg(feature = "orchestra")]
 pub use orchestra::{
-    AgentOrchestra, AgentOrchestrator, OrchestraConfig, OrchestraLeader, OrchestraRegistry,
-    OrchestraRuntime, OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
+    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, OrchestraConfig, OrchestraLeader,
+    OrchestraRegistry, OrchestraRuntime, OrchestraStatus, OrchestraStrategy, OrchestraTask,
+    OrchestraTaskStatus,
 };
 pub use profile::AgentProfile; // NEW
 #[cfg(feature = "orchestra")]
