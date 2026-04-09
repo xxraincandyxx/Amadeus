@@ -11,6 +11,9 @@
 // - type: crate::agent::worker::TaskResult
 // - type: crate::agent::worker::WorkerStatus
 // - type: crate::agent::worker::WorkerInfo
+// - type: crate::agent::worker::RunOutcome
+// - function: crate::agent::worker::mark_worker_task_started
+// - function: crate::agent::worker::finalize_worker_task
 // uses:
 // - module: amadeus_runtime
 // invariants:
@@ -22,4 +25,7 @@
 
 //! Compatibility re-exports for worker runtime types.
 
-pub use amadeus_runtime::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
+pub use amadeus_runtime::{
+    finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome, Task, TaskResult,
+    WorkerConfig, WorkerInfo, WorkerStatus,
+};

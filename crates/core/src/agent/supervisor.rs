@@ -48,7 +48,10 @@ use crate::core::id::AgentId;
 use crate::error::{AgentError, Result};
 use crate::tools::peer::PeerTool;
 
-use super::worker::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
+use super::worker::{
+    finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome, Task, TaskResult,
+    WorkerConfig, WorkerInfo, WorkerStatus,
+};
 
 /// Internal worker entry.
 struct WorkerEntry<C: LLMClient> {
@@ -326,62 +329,27 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
 
         {
             let mut info = entry.info.write().await;
-            info.status = WorkerStatus::Busy;
-            info.active_tasks += 1;
+            mark_worker_task_started(&mut info);
         }
 
         let agent = entry.agent.clone();
         debug!(worker_id = %worker_id, task_id = %task_id, "Dispatching task");
 
         let result = tokio::time::timeout(task_timeout, agent.run(&prompt)).await;
-
-        let task_res = match result {
-            Ok(Ok(run_result)) => TaskResult {
-                task_id,
-                worker_id,
-                success: true,
-                output: Some(run_result.text),
-                error: None,
+        let outcome = match result {
+            Ok(Ok(run_result)) => Ok(RunOutcome {
+                text: run_result.text,
                 duration_ms: 0,
                 tool_calls: run_result.tool_calls,
-            },
-            Ok(Err(e)) => TaskResult {
-                task_id,
-                worker_id,
-                success: false,
-                output: None,
-                error: Some(e.to_string()),
-                duration_ms: 0,
-                tool_calls: Vec::new(),
-            },
-            Err(_) => TaskResult {
-                task_id,
-                worker_id,
-                success: false,
-                output: None,
-                error: Some("Task timed out".to_string()),
-                duration_ms: 0,
-                tool_calls: Vec::new(),
-            },
+            }),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err("Task timed out".to_string()),
         };
 
         {
             let mut info = entry.info.write().await;
-            info.active_tasks = info.active_tasks.saturating_sub(1);
-
-            if task_res.success {
-                info.completed_tasks += 1;
-            } else {
-                info.total_errors += 1;
-            }
-
-            info.status = if info.active_tasks > 0 {
-                WorkerStatus::Busy
-            } else {
-                WorkerStatus::Idle
-            };
+            let task_res = finalize_worker_task(&mut info, task_id, worker_id, outcome);
+            return Ok(task_res);
         }
-
-        Ok(task_res)
     }
 }

@@ -11,6 +11,8 @@
 // - type: crate::worker::TaskResult
 // - type: crate::worker::WorkerStatus
 // - type: crate::worker::WorkerInfo
+// - function: crate::worker::mark_worker_task_started
+// - function: crate::worker::finalize_worker_task
 // uses:
 // - module: amadeus_events
 // - module: amadeus_ids
@@ -154,5 +156,135 @@ impl WorkerInfo {
     pub fn is_available(&self) -> bool {
         matches!(self.status, WorkerStatus::Idle | WorkerStatus::Busy)
             && self.active_tasks < self.max_concurrent
+    }
+}
+
+pub fn mark_worker_task_started(info: &mut WorkerInfo) {
+    info.status = WorkerStatus::Busy;
+    info.active_tasks += 1;
+}
+
+pub fn finalize_worker_task(
+    info: &mut WorkerInfo,
+    task_id: String,
+    worker_id: AgentId,
+    outcome: std::result::Result<RunOutcome, String>,
+) -> TaskResult {
+    info.active_tasks = info.active_tasks.saturating_sub(1);
+
+    let task_result = match outcome {
+        Ok(run_outcome) => {
+            info.completed_tasks += 1;
+            TaskResult {
+                task_id,
+                worker_id,
+                success: true,
+                output: Some(run_outcome.text),
+                error: None,
+                duration_ms: run_outcome.duration_ms,
+                tool_calls: run_outcome.tool_calls,
+            }
+        }
+        Err(error) => {
+            info.total_errors += 1;
+            TaskResult {
+                task_id,
+                worker_id,
+                success: false,
+                output: None,
+                error: Some(error),
+                duration_ms: 0,
+                tool_calls: Vec::new(),
+            }
+        }
+    };
+
+    info.status = if info.active_tasks > 0 {
+        WorkerStatus::Busy
+    } else {
+        WorkerStatus::Idle
+    };
+
+    task_result
+}
+
+#[derive(Debug, Clone)]
+pub struct RunOutcome {
+    pub text: String,
+    pub duration_ms: u64,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+#[cfg(test)]
+mod tests {
+    use amadeus_ids::AgentId;
+
+    use super::{
+        finalize_worker_task, mark_worker_task_started, RunOutcome, WorkerInfo, WorkerStatus,
+    };
+
+    fn worker_info() -> WorkerInfo {
+        WorkerInfo {
+            id: AgentId::new(),
+            name: "worker".to_string(),
+            capabilities: Vec::new(),
+            status: WorkerStatus::Idle,
+            active_tasks: 0,
+            max_concurrent: 2,
+            completed_tasks: 0,
+            total_errors: 0,
+        }
+    }
+
+    #[test]
+    fn mark_worker_task_started_sets_busy_state() {
+        let mut info = worker_info();
+
+        mark_worker_task_started(&mut info);
+
+        assert_eq!(info.status, WorkerStatus::Busy);
+        assert_eq!(info.active_tasks, 1);
+    }
+
+    #[test]
+    fn finalize_worker_task_records_success() {
+        let worker_id = AgentId::new();
+        let mut info = worker_info();
+        mark_worker_task_started(&mut info);
+
+        let result = finalize_worker_task(
+            &mut info,
+            "task-1".to_string(),
+            worker_id,
+            Ok(RunOutcome {
+                text: "done".to_string(),
+                duration_ms: 42,
+                tool_calls: Vec::new(),
+            }),
+        );
+
+        assert!(result.success);
+        assert_eq!(result.output.as_deref(), Some("done"));
+        assert_eq!(info.completed_tasks, 1);
+        assert_eq!(info.status, WorkerStatus::Idle);
+    }
+
+    #[test]
+    fn finalize_worker_task_records_failure() {
+        let worker_id = AgentId::new();
+        let mut info = worker_info();
+        mark_worker_task_started(&mut info);
+
+        let result = finalize_worker_task(
+            &mut info,
+            "task-1".to_string(),
+            worker_id,
+            Err("boom".to_string()),
+        );
+
+        assert!(!result.success);
+        assert_eq!(result.error.as_deref(), Some("boom"));
+        assert_eq!(info.total_errors, 1);
+        assert_eq!(info.status, WorkerStatus::Idle);
     }
 }
