@@ -29,6 +29,7 @@
 // - module: crate::concurrency::LockManager
 // - module: crate::core::id
 // - module: crate::error
+// - module: crate::telemetry
 // - module: crate::tools::peer::PeerTool
 // - module: amadeus_runtime
 // - runtime: tokio async runtime
@@ -55,6 +56,7 @@ use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
+use crate::telemetry::{TelemetryEvent, TelemetryRecorder};
 use crate::tools::peer::PeerTool;
 use amadeus_runtime::select_worker;
 pub use amadeus_runtime::{
@@ -79,16 +81,22 @@ pub(crate) struct OrchestratedAgent<C: LLMClient> {
 pub(crate) struct OrchestraRoster<C: LLMClient> {
     client: C,
     config: Arc<Config>,
+    telemetry: Option<Arc<TelemetryRecorder>>,
     pub(crate) agents: Vec<OrchestratedAgent<C>>,
     pub(crate) active_index: usize,
     name_counter: usize,
 }
 
 impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
-    pub(crate) fn new(client: C, config: Arc<Config>) -> Self {
+    pub(crate) fn new(
+        client: C,
+        config: Arc<Config>,
+        telemetry: Option<Arc<TelemetryRecorder>>,
+    ) -> Self {
         Self {
             client,
             config,
+            telemetry,
             agents: Vec::new(),
             active_index: 0,
             name_counter: 0,
@@ -277,6 +285,8 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
             self.name_counter += 1;
             format!("{}-{}", profile.display_name(), self.name_counter)
         });
+        let telemetry_name = name.clone();
+        let telemetry_capabilities = capabilities.clone();
 
         let id = AgentId::new();
         let agent_config = if let Some(model) = model_override {
@@ -288,6 +298,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
         };
         let agent = Agent::builder(self.client.clone(), agent_config)
             .with_default_tools()
+            .with_optional_telemetry(self.telemetry.clone())
             .build();
 
         self.agents.push(OrchestratedAgent {
@@ -299,6 +310,16 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
             status: AgentStatus::Idle,
             task_count: 0,
         });
+
+        AgentOrchestrator::<C>::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::WorkerSpawned {
+                runtime_id: "local-roster".to_string(),
+                worker_id: id,
+                name: telemetry_name,
+                capabilities: telemetry_capabilities,
+            },
+        );
 
         if self.agents.len() == 1 {
             self.active_index = 0;
@@ -322,15 +343,32 @@ struct QueueEntry {
 pub struct AgentOrchestrator<C: LLMClient> {
     roster: OrchestraRoster<C>,
     orchestras: OrchestraRegistry,
+    telemetry: Option<Arc<TelemetryRecorder>>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     /// Create a new orchestrator.
     pub fn new(client: C, config: Arc<Config>) -> Self {
         Self {
-            roster: OrchestraRoster::new(client, config),
+            roster: OrchestraRoster::new(client, config, None),
             orchestras: OrchestraRegistry::new(),
+            telemetry: None,
         }
+    }
+
+    fn emit_telemetry(recorder: &Option<Arc<TelemetryRecorder>>, event: TelemetryEvent) {
+        if let Some(recorder) = recorder {
+            if let Err(error) = recorder.record(event) {
+                warn!(error = %error, "Failed to record telemetry event");
+            }
+        }
+    }
+
+    /// Attach a telemetry recorder to the orchestrator and its roster-created agents.
+    pub fn with_telemetry(mut self, telemetry: Arc<TelemetryRecorder>) -> Self {
+        self.telemetry = Some(Arc::clone(&telemetry));
+        self.roster.telemetry = Some(telemetry);
+        self
     }
 
     /// Create a new agent using the given profile.
@@ -385,6 +423,7 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         orchestra_id: Option<TeamId>,
         task: Task,
     ) -> Result<TaskResult> {
+        let task_id = task.id.clone();
         let target_orchestra_id = orchestra_id.or_else(|| self.orchestras.default_team_id());
         let allowed_ids = target_orchestra_id.and_then(|team_id| {
             self.orchestras
@@ -404,6 +443,14 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         }
 
         self.roster.mark_running(selected_index);
+        Self::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::TaskDispatched {
+                runtime_id: "local-orchestrator".to_string(),
+                task_id: task_id.clone(),
+                worker_id: selected_id,
+            },
+        );
 
         let start = Instant::now();
         let result = agent.run(&task.prompt).await;
@@ -441,6 +488,17 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
             self.orchestras
                 .record_result(team_id, &task.id, selected_id, &task_result)?;
         }
+
+        Self::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::TaskCompleted {
+                runtime_id: "local-orchestrator".to_string(),
+                task_id,
+                worker_id: selected_id,
+                success: task_result.success,
+                duration_ms,
+            },
+        );
 
         if task_result.success {
             Ok(task_result)
@@ -507,9 +565,11 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
 
 /// Canonical queued runtime for background orchestra execution.
 pub struct OrchestraRuntime<C: LLMClient> {
+    runtime_id: String,
     client: C,
     config: OrchestraConfig,
     sdk_config: Arc<Config>,
+    telemetry: Option<Arc<TelemetryRecorder>>,
     workers: Arc<RwLock<HashMap<AgentId, WorkerEntry<C>>>>,
     lock_manager: Arc<Mutex<LockManager>>,
     next_worker_idx: Arc<Mutex<usize>>,
@@ -523,9 +583,11 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     pub fn new(client: C, config: OrchestraConfig, sdk_config: Arc<Config>) -> Self {
         let (help_tx, help_rx) = mpsc::channel(100);
         Self {
+            runtime_id: uuid::Uuid::new_v4().to_string(),
             client,
             config,
             sdk_config,
+            telemetry: None,
             workers: Arc::new(RwLock::new(HashMap::new())),
             lock_manager: Arc::new(Mutex::new(LockManager::new())),
             next_worker_idx: Arc::new(Mutex::new(0)),
@@ -533,6 +595,20 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             help_rx: Mutex::new(help_rx),
             task_queue: Mutex::new(VecDeque::new()),
         }
+    }
+
+    fn emit_telemetry(&self, event: TelemetryEvent) {
+        if let Some(recorder) = &self.telemetry {
+            if let Err(error) = recorder.record(event) {
+                warn!(error = %error, "Failed to record telemetry event");
+            }
+        }
+    }
+
+    /// Attach a telemetry recorder to the runtime and spawned agents.
+    pub fn with_telemetry(mut self, telemetry: Arc<TelemetryRecorder>) -> Self {
+        self.telemetry = Some(telemetry);
+        self
     }
 
     /// Get the lock manager for resource coordination.
@@ -567,6 +643,8 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
 
         for worker_config in configs {
             let id = worker_config.id.unwrap_or_else(AgentId::new);
+            let name = worker_config.name.clone();
+            let capabilities = worker_config.capabilities.clone();
 
             let worker_sdk_config = if let Some(model) = worker_config.model {
                 let mut cfg = (*self.sdk_config).clone();
@@ -579,6 +657,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             let agent =
                 crate::agent::loop_agent::AgentBuilder::new(client.clone(), worker_sdk_config)
                     .with_default_tools()
+                    .with_optional_telemetry(self.telemetry.clone())
                     .register_tool(Box::new(PeerTool::new(id, self.help_tx.clone())))
                     .build();
 
@@ -600,6 +679,13 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                     agent,
                 },
             );
+
+            self.emit_telemetry(TelemetryEvent::WorkerSpawned {
+                runtime_id: self.runtime_id.clone(),
+                worker_id: id,
+                name,
+                capabilities,
+            });
 
             ids.push(id);
         }
@@ -635,6 +721,8 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                         let strategy = self.config.strategy;
                         let timeout_dur = self.config.task_timeout;
                         let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+                        let runtime_id = self.runtime_id.clone();
+                        let telemetry = self.telemetry.clone();
 
                         tokio::spawn(async move {
                             let worker_selection = {
@@ -646,7 +734,14 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                                 Ok(id) => {
                                     let workers_guard = workers_map.read().await;
                                     if let Some(entry) = workers_guard.get(&id) {
-                                        let result = Self::dispatch_internal(id, entry, help_req.task, timeout_dur).await;
+                                        let result = Self::dispatch_internal(
+                                            runtime_id.clone(),
+                                            telemetry.clone(),
+                                            id,
+                                            entry,
+                                            help_req.task,
+                                            timeout_dur,
+                                        ).await;
                                         let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
                                             task_id: "error".to_string(),
                                             worker_id: id,
@@ -690,6 +785,10 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             if queue.len() >= self.config.max_pending_tasks {
                 return Err(AgentError::Config("Task queue is full".to_string()));
             }
+            self.emit_telemetry(TelemetryEvent::TaskQueued {
+                runtime_id: self.runtime_id.clone(),
+                task_id: task.id.clone(),
+            });
             queue.push_back(QueueEntry {
                 task,
                 response_tx: tx,
@@ -712,6 +811,8 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             let workers_map = Arc::clone(&self.workers);
             let strategy = self.config.strategy;
             let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+            let runtime_id = self.runtime_id.clone();
+            let telemetry = self.telemetry.clone();
 
             let worker_selection = {
                 let workers_guard = workers_map.read().await;
@@ -720,12 +821,23 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
 
             if let Ok(id) = worker_selection {
                 let timeout_dur = self.config.task_timeout;
+                self.emit_telemetry(TelemetryEvent::TaskDispatched {
+                    runtime_id: self.runtime_id.clone(),
+                    task_id: entry.task.id.clone(),
+                    worker_id: id,
+                });
                 tokio::spawn(async move {
                     let workers_guard = workers_map.read().await;
                     if let Some(worker_entry) = workers_guard.get(&id) {
-                        let result =
-                            Self::dispatch_internal(id, worker_entry, entry.task, timeout_dur)
-                                .await;
+                        let result = Self::dispatch_internal(
+                            runtime_id,
+                            telemetry,
+                            id,
+                            worker_entry,
+                            entry.task,
+                            timeout_dur,
+                        )
+                        .await;
                         let _ = entry.response_tx.send(result).await;
                     }
                 });
@@ -757,6 +869,8 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     }
 
     async fn dispatch_internal(
+        runtime_id: String,
+        telemetry: Option<Arc<TelemetryRecorder>>,
         worker_id: AgentId,
         entry: &WorkerEntry<C>,
         task: Task,
@@ -768,6 +882,15 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         {
             let mut info = entry.info.write().await;
             mark_worker_task_started(&mut info);
+            AgentOrchestrator::<C>::emit_telemetry(
+                &telemetry,
+                TelemetryEvent::WorkerStateChanged {
+                    runtime_id: runtime_id.clone(),
+                    worker_id,
+                    state: "running".to_string(),
+                    active_tasks: info.active_tasks,
+                },
+            );
         }
 
         let agent = entry.agent.clone();
@@ -785,6 +908,27 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         };
 
         let mut info = entry.info.write().await;
-        Ok(finalize_worker_task(&mut info, task_id, worker_id, outcome))
+        let task_result = finalize_worker_task(&mut info, task_id, worker_id, outcome);
+        let state = if task_result.success { "idle" } else { "error" }.to_string();
+        AgentOrchestrator::<C>::emit_telemetry(
+            &telemetry,
+            TelemetryEvent::WorkerStateChanged {
+                runtime_id: runtime_id.clone(),
+                worker_id,
+                state,
+                active_tasks: info.active_tasks,
+            },
+        );
+        AgentOrchestrator::<C>::emit_telemetry(
+            &telemetry,
+            TelemetryEvent::TaskCompleted {
+                runtime_id,
+                task_id: task_result.task_id.clone(),
+                worker_id,
+                success: task_result.success,
+                duration_ms: task_result.duration_ms,
+            },
+        );
+        Ok(task_result)
     }
 }

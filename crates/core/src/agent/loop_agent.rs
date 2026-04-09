@@ -21,6 +21,7 @@
 // - module: crate::error
 // - module: crate::hooks
 // - module: crate::policy::Policy
+// - module: crate::telemetry
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects:
@@ -57,6 +58,7 @@ use crate::error::{AgentError, Result};
 use crate::hooks::{HookAction, HookRegistry};
 use crate::permissions::{PermissionDecision, PermissionEnforcer};
 use crate::policy::Policy;
+use crate::telemetry::{TelemetryEvent, TelemetryRecorder};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::SubAgentTool;
 use crate::tools::{TodoItem, TodoManager};
@@ -176,6 +178,7 @@ pub struct AgentBuilder<C: LLMClient> {
     todo_manager: Arc<StdRwLock<TodoManager>>,
     hooks: HookRegistry,
     policy: Policy,
+    telemetry: Option<Arc<TelemetryRecorder>>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -192,6 +195,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             todo_manager: Arc::new(StdRwLock::new(TodoManager::new())),
             hooks,
             policy: Policy::default(),
+            telemetry: None,
         }
     }
 
@@ -254,6 +258,16 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    pub fn with_telemetry(mut self, telemetry: Arc<TelemetryRecorder>) -> Self {
+        self.telemetry = Some(telemetry);
+        self
+    }
+
+    pub fn with_optional_telemetry(mut self, telemetry: Option<Arc<TelemetryRecorder>>) -> Self {
+        self.telemetry = telemetry;
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
@@ -290,6 +304,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             subagent_depth: self.subagent_depth,
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator,
+            telemetry: self.telemetry,
         }
     }
 }
@@ -308,6 +323,7 @@ pub struct Agent<C: LLMClient> {
     subagent_depth: usize,
     delegate_subagents: bool,
     subagent_coordinator: Arc<SubAgentCoordinator>,
+    telemetry: Option<Arc<TelemetryRecorder>>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -377,6 +393,14 @@ pub fn create_approval_channels() -> (ApprovalChannels, ApprovalHandle) {
 }
 
 impl<C: LLMClient + Clone + 'static> Agent<C> {
+    fn emit_telemetry(recorder: &Option<Arc<TelemetryRecorder>>, event: TelemetryEvent) {
+        if let Some(recorder) = recorder {
+            if let Err(error) = recorder.record(event) {
+                warn!(error = %error, "Failed to record telemetry event");
+            }
+        }
+    }
+
     /// Create a new agent with default tools.
     pub fn new(client: C, config: Arc<Config>) -> Self {
         AgentBuilder::new(client, config)
@@ -468,6 +492,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             .with_tools(child_tools)
             .with_hooks(self.hooks.clone())
             .with_policy(self.policy())
+            .with_optional_telemetry(self.telemetry.clone())
             .with_subagent_depth(depth)
             .build()
     }
@@ -505,6 +530,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             subagent_depth: self.subagent_depth,
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),
+            telemetry: self.telemetry.clone(),
         };
 
         // Run with the rendered prompt
@@ -677,17 +703,44 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     async fn run_internal(&self, prompt: &str, max_turns: Option<usize>) -> Result<RunResult> {
         debug!("Starting agent run");
         let start = Instant::now();
+        let session_id = uuid::Uuid::new_v4().to_string();
+
+        Self::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::SessionStarted {
+                session_id: session_id.clone(),
+                model: self.config.model.clone(),
+                prompt: Some(prompt.to_string()),
+                subagent_depth: self.subagent_depth,
+            },
+        );
+        Self::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::PromptSubmitted {
+                session_id: session_id.clone(),
+                prompt: prompt.to_string(),
+            },
+        );
 
         {
             let mut history_guard = self.history.write().await;
             history_guard.push(Message::user(prompt));
         }
 
-        let mut stream = self.run_stream_with_limits(None, max_turns);
+        let mut stream = self.run_stream_with_limits(None, max_turns, Some(session_id.clone()));
         while let Some(event) = stream.next().await {
             match event? {
                 AgentEvent::Done { result } => {
                     let duration_ms = start.elapsed().as_millis() as u64;
+                    Self::emit_telemetry(
+                        &self.telemetry,
+                        TelemetryEvent::SessionCompleted {
+                            session_id: session_id.clone(),
+                            duration_ms,
+                            tool_calls: result.tool_calls.len(),
+                            output_len: result.text.len(),
+                        },
+                    );
                     info!(
                         duration_ms = duration_ms,
                         tool_calls = result.tool_calls.len(),
@@ -706,12 +759,26 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                     return Ok(result);
                 }
                 AgentEvent::Error { message } => {
+                    Self::emit_telemetry(
+                        &self.telemetry,
+                        TelemetryEvent::SessionFailed {
+                            session_id: session_id.clone(),
+                            error: message.clone(),
+                        },
+                    );
                     warn!(error = %message, "Agent run failed");
                     return Err(AgentError::Api(message));
                 }
                 _ => {}
             }
         }
+        Self::emit_telemetry(
+            &self.telemetry,
+            TelemetryEvent::SessionFailed {
+                session_id,
+                error: AgentError::StreamEndedUnexpectedly.to_string(),
+            },
+        );
         Err(AgentError::StreamEndedUnexpectedly)
     }
 
@@ -720,7 +787,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     /// Use `run_stream_with_approval()` for interactive approval flow.
     pub fn run_stream(&self) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         // Run without approval channels - will auto-deny approvals
-        self.run_stream_with_limits(None, None)
+        self.run_stream_with_limits(None, None, None)
     }
 
     /// Run the agent loop with optional approval channels.
@@ -730,13 +797,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         &self,
         approval_channels: Option<ApprovalChannels>,
     ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
-        self.run_stream_with_limits(approval_channels, None)
+        self.run_stream_with_limits(approval_channels, None, None)
     }
 
     fn run_stream_with_limits(
         &self,
         mut approval_channels: Option<ApprovalChannels>,
         max_turns: Option<usize>,
+        session_id: Option<String>,
     ) -> Pin<Box<dyn Stream<Item = Result<AgentEvent>> + Send>> {
         let agent = self.clone();
         let client = self.client.clone();
@@ -745,6 +813,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let history = Arc::clone(&self.history);
         let hooks = self.hooks.clone();
         let policy = Arc::clone(&self.policy);
+        let telemetry = self.telemetry.clone();
+        let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
         let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
 
@@ -941,6 +1011,16 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                                     debug!(tool = %name, approval_id = %approval_id, "Tool requires approval");
 
+                                    Agent::<C>::emit_telemetry(
+                                        &telemetry,
+                                        TelemetryEvent::ApprovalRequested {
+                                            session_id: session_id.clone(),
+                                            approval_id: approval_id.clone(),
+                                            tool: name.clone(),
+                                            reason: reason.clone(),
+                                        },
+                                    );
+
                                     // Emit approval required event
                                     yield Ok(AgentEvent::ApprovalRequired {
                                         request: request.clone(),
@@ -968,6 +1048,21 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         debug!(tool = %name, "No approval channels, auto-denying");
                                         None
                                     };
+
+                                    Agent::<C>::emit_telemetry(
+                                        &telemetry,
+                                        TelemetryEvent::ApprovalResolved {
+                                            session_id: session_id.clone(),
+                                            approval_id: approval_id.clone(),
+                                            tool: name.clone(),
+                                            decision: match decision {
+                                                Some(ApprovalDecision::Approve) => "approve".to_string(),
+                                                Some(ApprovalDecision::AlwaysApprove) => "always_approve".to_string(),
+                                                Some(ApprovalDecision::Deny) => "deny".to_string(),
+                                                None => "no_handler".to_string(),
+                                            },
+                                        },
+                                    );
 
                                     match decision {
                                         Some(ApprovalDecision::Approve) => {
@@ -1010,6 +1105,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                             continue; // Skip execution
                                         }
                                     }
+
+                                    Agent::<C>::emit_telemetry(
+                                        &telemetry,
+                                        TelemetryEvent::ToolStarted {
+                                            session_id: session_id.clone(),
+                                            tool_call_id: id.clone(),
+                                            tool: name.clone(),
+                                            input: input.clone(),
+                                            parent_id: None,
+                                        },
+                                    );
 
                                     if name == SUB_AGENT_TOOL_NAME && agent.delegate_subagents {
                                         let prompt = input
@@ -1104,6 +1210,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         client.clone(),
                                         Arc::clone(&config),
                                         Arc::clone(&policy),
+                                        telemetry.clone(),
+                                        session_id.clone(),
                                         agent.subagent_depth,
                                         id,
                                         name,
@@ -1228,12 +1336,25 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         continue;
                                     }
 
+                                    Agent::<C>::emit_telemetry(
+                                        &telemetry,
+                                        TelemetryEvent::ToolStarted {
+                                            session_id: session_id.clone(),
+                                            tool_call_id: id.clone(),
+                                            tool: name.clone(),
+                                            input: input.clone(),
+                                            parent_id: None,
+                                        },
+                                    );
+
                                     let mut tool_events = Agent::<C>::execute_tool_call_stream(
                                         &tools,
                                         &hooks,
                                         client.clone(),
                                         Arc::clone(&config),
                                         Arc::clone(&policy),
+                                        telemetry.clone(),
+                                        session_id.clone(),
                                         agent.subagent_depth,
                                         id,
                                         name,
@@ -1371,6 +1492,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
     async fn execute_tool_call(
         tools: &ToolRegistry,
         hooks: &HookRegistry,
+        telemetry: Option<Arc<TelemetryRecorder>>,
+        session_id: String,
         id: String,
         name: String,
         input: serde_json::Value,
@@ -1392,6 +1515,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
         debug!(tool = %name, duration_ms = duration_ms, "Tool executed");
 
+        Agent::<C>::emit_telemetry(
+            &telemetry,
+            TelemetryEvent::ToolCompleted {
+                session_id,
+                tool_call_id: id.clone(),
+                tool: name.clone(),
+                duration_ms,
+                is_error,
+            },
+        );
+
         ToolExecutionRecord::new(id, name, input, output, is_error)
     }
 
@@ -1402,6 +1536,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         client: C,
         config: Arc<Config>,
         policy: Arc<RwLock<Policy>>,
+        telemetry: Option<Arc<TelemetryRecorder>>,
+        session_id: String,
         subagent_depth: usize,
         id: String,
         name: String,
@@ -1418,6 +1554,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                     config,
                     hooks,
                     policy,
+                    telemetry,
+                    session_id,
                     subagent_depth,
                     id,
                     input,
@@ -1433,7 +1571,15 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 heartbeat.tick().await;
 
                 let tool_name = name.clone();
-                let exec = Agent::<C>::execute_tool_call(&tools, &hooks, id.clone(), name, input);
+                let exec = Agent::<C>::execute_tool_call(
+                    &tools,
+                    &hooks,
+                    telemetry,
+                    session_id,
+                    id.clone(),
+                    name,
+                    input,
+                );
                 tokio::pin!(exec);
 
                 loop {
@@ -1464,6 +1610,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         config: Arc<Config>,
         hooks: HookRegistry,
         policy: Arc<RwLock<Policy>>,
+        telemetry: Option<Arc<TelemetryRecorder>>,
+        session_id: String,
         subagent_depth: usize,
         id: String,
         input: serde_json::Value,
@@ -1500,6 +1648,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             .with_tools(child_tools)
             .with_hooks(hooks.clone())
             .with_policy(child_policy)
+            .with_optional_telemetry(telemetry.clone())
             .with_subagent_depth(next_depth)
             .build();
 
@@ -1509,7 +1658,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             history.push(Message::user(&prompt));
         }
 
-        let mut stream = child.run_stream_with_limits(None, Some(30));
+        let mut stream = child.run_stream_with_limits(None, Some(30), None);
         let mut buffered_output = String::new();
         let mut final_output: Option<String> = None;
         let mut is_error = false;
@@ -1676,6 +1825,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         {
             warn!(tool = SUB_AGENT_TOOL_NAME, error = %error, "Hook error on complete");
         }
+
+        Agent::<C>::emit_telemetry(
+            &telemetry,
+            TelemetryEvent::ToolCompleted {
+                session_id,
+                tool_call_id: id.clone(),
+                tool: SUB_AGENT_TOOL_NAME.to_string(),
+                duration_ms,
+                is_error,
+            },
+        );
 
         let _ = tx
             .send(AgentEvent::ToolComplete {
