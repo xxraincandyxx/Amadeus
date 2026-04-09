@@ -7,9 +7,12 @@
 // - module: crate::hooks
 // - type: crate::hooks::HookAction
 // - type: crate::hooks::HookEvent
+// - type: crate::hooks::HookDescriptor
+// - type: crate::hooks::HookSource
 // - trait: crate::hooks::Hook
 // - type: crate::hooks::HookRegistry
 // uses:
+// - module: amadeus_hooks
 // - module: crate::agent::config::Config
 // - module: crate::error::Result
 // - format: JSON values
@@ -68,64 +71,10 @@ use serde_json::Value;
 use std::path::Path;
 use std::sync::Arc;
 
+pub use amadeus_hooks::{HookAction, HookDescriptor, HookEvent, HookSource};
+
 use crate::agent::config::Config;
 use crate::error::Result;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HookSource {
-    Global,
-    Workspace,
-    Runtime,
-}
-
-/// Actions that a hook can return from `on_tool_start`.
-#[derive(Debug, Clone)]
-pub enum HookAction {
-    /// Continue with normal execution.
-    Continue,
-    /// Modify the tool input before execution.
-    ModifyInput(Value),
-    /// Block the tool execution with a reason.
-    Block(String),
-}
-
-/// Hook events that can trigger hooks.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HookEvent {
-    /// Before a tool is executed.
-    PreToolUse,
-    /// After a tool completes successfully.
-    PostToolUse,
-    /// After a tool completes with an error.
-    PostToolUseFailure,
-}
-
-impl HookEvent {
-    pub fn title(&self) -> &'static str {
-        match self {
-            Self::PreToolUse => "PreToolUse",
-            Self::PostToolUse => "PostToolUse",
-            Self::PostToolUseFailure => "PostToolUseFailure",
-        }
-    }
-
-    pub fn summary(&self) -> &'static str {
-        match self {
-            Self::PreToolUse => "Before tool execution",
-            Self::PostToolUse => "After tool execution",
-            Self::PostToolUseFailure => "After tool execution fails",
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HookDescriptor {
-    pub name: String,
-    pub event: HookEvent,
-    pub command: String,
-    pub tools: Vec<String>,
-    pub source: HookSource,
-}
 
 /// Trait for implementing hooks.
 #[async_trait]

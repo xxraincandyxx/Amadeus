@@ -25,6 +25,7 @@ full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-util
 
 [dependencies]
 amadeus_commands = { package = "commands", path = "../commands" }
+amadeus_hooks = { package = "hooks", path = "../hooks" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
 amadeus_skills = { package = "skills", path = "../skills" }
 tokio = { version = "1.39", features = ["full"] }
