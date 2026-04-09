@@ -22,7 +22,7 @@
 // - type: crate::agent::orchestra::WorkerStatus
 // uses:
 // - module: crate::agent::config::Config
-// - module: crate::agent::manager
+// - module: crate::agent::loop_agent::Agent
 // - module: crate::agent::profile::AgentProfile
 // - module: crate::agent::supervisor
 // - module: crate::agent::worker
@@ -30,7 +30,7 @@
 // - module: crate::concurrency::LockManager
 // - module: crate::core::id
 // - module: crate::error
-// - module: amadeus_runtime::orchestra
+// - module: amadeus_runtime
 // invariants:
 // - Orchestra naming remains the primary public surface while legacy modules stay deprecated.
 // side_effects: none
@@ -42,19 +42,261 @@
 
 use std::sync::Arc;
 
-pub use super::manager::{AgentInfo, AgentStatus};
 pub use super::worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
 use crate::agent::config::Config;
+use crate::agent::loop_agent::Agent;
 use crate::agent::profile::AgentProfile;
 use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::{AgentId, TeamId};
-use crate::error::Result;
+use crate::error::{AgentError, Result};
 pub use amadeus_runtime::{
-    AgentOrchestra, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraStatus,
-    OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
+    AgentInfo, AgentOrchestra, AgentStatus, OrchestraConfig, OrchestraLeader, OrchestraRegistry,
+    OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
 };
 use tokio::sync::Mutex;
+
+pub(crate) struct OrchestratedAgent<C: LLMClient> {
+    pub(crate) id: AgentId,
+    pub(crate) agent: Agent<C>,
+    pub(crate) name: String,
+    pub(crate) profile: AgentProfile,
+    pub(crate) capabilities: Vec<String>,
+    pub(crate) status: AgentStatus,
+    pub(crate) task_count: usize,
+}
+
+pub(crate) struct OrchestraRoster<C: LLMClient> {
+    client: C,
+    config: Arc<Config>,
+    pub(crate) agents: Vec<OrchestratedAgent<C>>,
+    pub(crate) active_index: usize,
+    name_counter: usize,
+}
+
+impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
+    pub(crate) fn new(client: C, config: Arc<Config>) -> Self {
+        Self {
+            client,
+            config,
+            agents: Vec::new(),
+            active_index: 0,
+            name_counter: 0,
+        }
+    }
+
+    pub(crate) async fn create_agent(
+        &mut self,
+        name: Option<String>,
+        profile: AgentProfile,
+    ) -> Result<AgentId> {
+        self.create_agent_with_capabilities(name, profile, Vec::new(), None)
+            .await
+    }
+
+    pub(crate) async fn spawn_agent(&mut self, config: WorkerConfig) -> Result<AgentId> {
+        self.create_agent_with_capabilities(
+            Some(config.name),
+            AgentProfile::Default,
+            config.capabilities,
+            config.model,
+        )
+        .await
+    }
+
+    pub(crate) fn list_agents(&self) -> Vec<AgentInfo> {
+        amadeus_runtime::list_agent_info(&self.roster_entries(), self.active_agent_id())
+    }
+
+    pub(crate) fn get_agent(&self, agent_id: &AgentId) -> Option<AgentInfo> {
+        amadeus_runtime::get_agent_info(&self.roster_entries(), *agent_id)
+    }
+
+    pub(crate) fn active_agent_id(&self) -> Option<AgentId> {
+        self.agents.get(self.active_index).map(|handle| handle.id)
+    }
+
+    pub(crate) fn switch_to(&mut self, agent_id: &AgentId) -> Result<()> {
+        if let Some(index) = amadeus_runtime::find_agent_index(&self.roster_entries(), *agent_id) {
+            self.active_index = index;
+            Ok(())
+        } else {
+            Err(AgentError::Command(format!("Unknown agent: {}", agent_id)))
+        }
+    }
+
+    pub(crate) fn kill(&mut self, agent_id: &AgentId) -> Result<()> {
+        if self.agents.len() == 1 {
+            return Err(AgentError::Command(
+                "Cannot kill the last agent".to_string(),
+            ));
+        }
+
+        let index = self
+            .agents
+            .iter()
+            .position(|agent| &agent.id == agent_id)
+            .ok_or_else(|| AgentError::Command(format!("Unknown agent: {}", agent_id)))?;
+        self.agents.remove(index);
+        self.active_index = amadeus_runtime::normalize_active_index_after_removal(
+            self.agents.len(),
+            self.active_index,
+        );
+        Ok(())
+    }
+
+    pub(crate) fn contains(&self, agent_id: AgentId) -> bool {
+        self.agents.iter().any(|agent| agent.id == agent_id)
+    }
+
+    pub(crate) fn select_agent_index(
+        &self,
+        allowed_ids: Option<&[AgentId]>,
+        task: &Task,
+    ) -> Result<usize> {
+        let candidates = self
+            .agents
+            .iter()
+            .map(|handle| amadeus_runtime::AgentRouteCandidate {
+                id: handle.id,
+                capabilities: handle.capabilities.clone(),
+            })
+            .collect::<Vec<_>>();
+        let selected_id =
+            amadeus_runtime::select_agent(&candidates, self.active_agent_id(), allowed_ids, task);
+
+        selected_id
+            .and_then(|agent_id| self.agents.iter().position(|handle| handle.id == agent_id))
+            .ok_or_else(|| {
+                if task.required_capabilities.is_empty() {
+                    AgentError::Command("No agents available".to_string())
+                } else {
+                    AgentError::Command(format!(
+                        "No agent matched capabilities: {}",
+                        task.required_capabilities.join(", ")
+                    ))
+                }
+            })
+    }
+
+    pub(crate) fn agent_id_at(&self, index: usize) -> AgentId {
+        self.agents[index].id
+    }
+
+    pub(crate) fn agent_clone_at(&self, index: usize) -> Agent<C> {
+        self.agents[index].agent.clone()
+    }
+
+    pub(crate) fn mark_running(&mut self, index: usize) {
+        self.agents[index].status = AgentStatus::Running;
+        self.active_index = index;
+    }
+
+    pub(crate) fn mark_idle(&mut self, index: usize) {
+        self.agents[index].status = AgentStatus::Idle;
+    }
+
+    pub(crate) fn mark_error(&mut self, index: usize) {
+        self.agents[index].status = AgentStatus::Error;
+    }
+
+    pub(crate) fn increment_task_count(&mut self, index: usize) {
+        self.agents[index].task_count += 1;
+    }
+
+    pub(crate) fn peer_info(
+        &self,
+        exclude_agent_id: &AgentId,
+    ) -> Vec<crate::tools::peer::PeerInfo> {
+        self.agents
+            .iter()
+            .filter(|agent| &agent.id != exclude_agent_id)
+            .map(|agent| crate::tools::peer::PeerInfo {
+                id: agent.id,
+                name: agent.name.clone(),
+                profile: agent.profile.to_string(),
+                description: agent.capabilities.join(", "),
+            })
+            .collect()
+    }
+
+    pub(crate) fn call_peer_enabled(&self) -> bool {
+        self.agents.len() >= 2
+    }
+
+    pub(crate) fn agent_count(&self) -> usize {
+        self.agents.len()
+    }
+
+    pub(crate) fn switch_next(&mut self) {
+        if let Some(index) = amadeus_runtime::next_agent_index(self.agents.len(), self.active_index)
+        {
+            self.active_index = index;
+        }
+    }
+
+    pub(crate) fn switch_prev(&mut self) {
+        if let Some(index) =
+            amadeus_runtime::previous_agent_index(self.agents.len(), self.active_index)
+        {
+            self.active_index = index;
+        }
+    }
+
+    fn roster_entries(&self) -> Vec<AgentInfo> {
+        self.agents
+            .iter()
+            .map(|handle| AgentInfo {
+                id: handle.id,
+                name: handle.name.clone(),
+                profile: handle.profile.clone(),
+                status: handle.status,
+                task_count: handle.task_count,
+            })
+            .collect()
+    }
+
+    async fn create_agent_with_capabilities(
+        &mut self,
+        name: Option<String>,
+        profile: AgentProfile,
+        capabilities: Vec<String>,
+        model_override: Option<String>,
+    ) -> Result<AgentId> {
+        let name = name.unwrap_or_else(|| {
+            self.name_counter += 1;
+            format!("{}-{}", profile.display_name(), self.name_counter)
+        });
+
+        let id = AgentId::new();
+        let agent_config = if let Some(model) = model_override {
+            let mut config = (*self.config).clone();
+            config.model = model;
+            Arc::new(config)
+        } else {
+            Arc::clone(&self.config)
+        };
+        let agent = Agent::builder(self.client.clone(), agent_config)
+            .with_default_tools()
+            .build();
+
+        self.agents.push(OrchestratedAgent {
+            id,
+            agent,
+            name,
+            profile: profile.clone(),
+            capabilities,
+            status: AgentStatus::Idle,
+            task_count: 0,
+        });
+
+        if self.agents.len() == 1 {
+            self.active_index = 0;
+        }
+
+        Ok(id)
+    }
+}
 
 /// Canonical orchestra-aware agent registry and routing surface.
 pub struct AgentOrchestrator<C: LLMClient> {
