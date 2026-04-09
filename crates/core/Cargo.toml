@@ -26,6 +26,7 @@ full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-util
 [dependencies]
 amadeus_commands = { package = "commands", path = "../commands" }
 amadeus_hooks = { package = "hooks", path = "../hooks" }
+amadeus_context = { package = "context", path = "../context" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
 amadeus_skills = { package = "skills", path = "../skills" }

@@ -307,6 +307,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "context"
+version = "0.1.0"
+dependencies = [
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
 name = "core"
 version = "0.1.0"
 dependencies = [
@@ -316,6 +324,7 @@ dependencies = [
  "bytes",
  "chrono",
  "commands",
+ "context",
  "dirs",
  "flate2",
  "futures",

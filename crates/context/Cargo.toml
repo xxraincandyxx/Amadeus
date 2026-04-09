@@ -1,0 +1,18 @@
+[package]
+name = "context"
+version = "0.1.0"
+edition = "2021"
+description = "Project context loading for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_context"
+path = "src/lib.rs"
+
+[dependencies]
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3.10"
