@@ -29,6 +29,10 @@ let mut client = McpClient::connect(&config).await?;
 let tools = client.list_tools().await?;
 ```
 
+Documentation example file:
+
+- [servers.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/mcp/servers.example.json)
+
 Planned settings direction:
 
 - user/project/local MCP server definitions under `.amadeus`

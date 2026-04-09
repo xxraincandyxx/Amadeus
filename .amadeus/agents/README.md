@@ -45,3 +45,8 @@ Current note:
 
 - These markdown files are discoverable as context inventory today.
 - A fuller structured agent-definition format is still evolving under the orchestra/runtime roadmap.
+
+Examples:
+
+- [reviewer/AGENT.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/reviewer/AGENT.example.md)
+- [planner/agent.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/planner/agent.example.md)

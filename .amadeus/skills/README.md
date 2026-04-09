@@ -48,3 +48,4 @@ Notes:
 Working example:
 
 - [feature-assessment-loop/SKILL.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/feature-assessment-loop/SKILL.md)
+- [code-review/SKILL.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/code-review/SKILL.example.md)

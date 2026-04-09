@@ -26,8 +26,13 @@ Current supported layout:
 Example files in this repo:
 
 - [settings.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/settings.example.json)
+- [settings.local.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/settings.local.example.json)
 - [hooks/local-hooks.json](/Users/raincandy_u/Dev/amadeus/.amadeus/hooks/local-hooks.json)
 - [skills/feature-assessment-loop/SKILL.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/feature-assessment-loop/SKILL.md)
+- [skills/code-review/SKILL.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/code-review/SKILL.example.md)
+- [agents/reviewer/AGENT.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/reviewer/AGENT.example.md)
+- [agents/planner/agent.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/planner/agent.example.md)
+- [mcp/servers.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/mcp/servers.example.json)
 
 Current settings sections:
 
