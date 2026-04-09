@@ -27,9 +27,7 @@
 // - tests/agent_integration_test.rs
 // @end-amadeus-header
 
-//! # Supervisor Pattern
-//!
-//! Manages a pool of worker agents with configurable dispatch strategies.
+//! Legacy queued runtime backing the orchestra execution surface.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
@@ -79,7 +77,7 @@ pub struct Supervisor<C: LLMClient> {
 }
 
 impl<C: LLMClient + Clone + 'static> Supervisor<C> {
-    /// Create a new supervisor.
+    /// Create a new orchestra runtime.
     pub fn new(client: C, config: SupervisorConfig, sdk_config: Arc<Config>) -> Self {
         let (help_tx, help_rx) = mpsc::channel(100);
         Self {
@@ -110,13 +108,20 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
         &self.sdk_config
     }
 
-    /// Spawn worker agents.
-    pub async fn spawn(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
-        self.spawn_with_client(configs, self.client.clone()).await
+    /// Spawn agents into the queued orchestra runtime.
+    pub async fn spawn_agents(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
+        self.spawn_agents_with_client(configs, self.client.clone())
+            .await
     }
 
-    /// Spawn worker agents with a specific client.
-    pub async fn spawn_with_client(
+    /// Spawn worker agents.
+    #[deprecated(note = "use spawn_agents")]
+    pub async fn spawn(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
+        self.spawn_agents(configs).await
+    }
+
+    /// Spawn agents with a specific client implementation.
+    pub async fn spawn_agents_with_client(
         &mut self,
         configs: Vec<WorkerConfig>,
         client: C,
@@ -168,8 +173,18 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
         Ok(ids)
     }
 
-    /// Get worker info.
-    pub async fn worker(&self, id: AgentId) -> Option<WorkerInfo> {
+    /// Spawn worker agents with a specific client.
+    #[deprecated(note = "use spawn_agents_with_client")]
+    pub async fn spawn_with_client(
+        &mut self,
+        configs: Vec<WorkerConfig>,
+        client: C,
+    ) -> Result<Vec<AgentId>> {
+        self.spawn_agents_with_client(configs, client).await
+    }
+
+    /// Get agent execution info.
+    pub async fn agent_info(&self, id: AgentId) -> Option<WorkerInfo> {
         let workers = self.workers.read().await;
         if let Some(w) = workers.get(&id) {
             Some(w.info.read().await.clone())
@@ -178,9 +193,15 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
         }
     }
 
-    /// Run the supervisor background loop to process help requests.
+    /// Get worker info.
+    #[deprecated(note = "use agent_info")]
+    pub async fn worker(&self, id: AgentId) -> Option<WorkerInfo> {
+        self.agent_info(id).await
+    }
+
+    /// Run the orchestra background loop to process delegated work.
     pub async fn run(&self) -> Result<()> {
-        info!("Supervisor loop started");
+        info!("Orchestra runtime loop started");
 
         let mut interval = tokio::time::interval(Duration::from_millis(100));
 

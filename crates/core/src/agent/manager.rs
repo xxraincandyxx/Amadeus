@@ -3,7 +3,7 @@
 // layer: agent
 // status: active
 // feature_flags:
-// - team
+// - orchestra
 // provides:
 // - module: crate::agent::manager
 // - type: crate::agent::manager::AgentStatus
@@ -25,7 +25,7 @@
 // - tests/agent_integration_test.rs
 // @end-amadeus-header
 
-//! Agent Manager - handles multiple agents and coordination between them.
+//! Legacy orchestration registry implementation backing the orchestra surface.
 
 use std::sync::Arc;
 use std::time::Instant;
@@ -125,40 +125,68 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         .await
     }
 
-    /// Create a new team and return its identifier.
-    pub fn create_team(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
+    /// Create a new orchestra and return its identifier.
+    pub fn create_orchestra(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
         self.teams.create_team(name, leader)
     }
 
-    /// Ensure there is always a default team for task routing.
-    pub fn ensure_default_team(&mut self, leader: TeamLeader) -> TeamId {
+    /// Create a new team and return its identifier.
+    #[deprecated(note = "use create_orchestra")]
+    pub fn create_team(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
+        self.create_orchestra(name, leader)
+    }
+
+    /// Ensure there is always a default orchestra for task routing.
+    pub fn ensure_default_orchestra(&mut self, leader: TeamLeader) -> TeamId {
         if let Some(team_id) = self.teams.default_team_id() {
             return team_id;
         }
         self.teams.create_team("default", leader)
     }
 
-    /// List all teams.
-    pub fn list_teams(&self) -> Vec<AgentTeam> {
+    /// Ensure there is always a default team for task routing.
+    #[deprecated(note = "use ensure_default_orchestra")]
+    pub fn ensure_default_team(&mut self, leader: TeamLeader) -> TeamId {
+        self.ensure_default_orchestra(leader)
+    }
+
+    /// List all orchestras.
+    pub fn list_orchestras(&self) -> Vec<AgentTeam> {
         self.teams.list_teams()
     }
 
-    /// Add an agent to a team.
-    pub fn add_agent_to_team(&mut self, team_id: TeamId, agent_id: AgentId) -> Result<()> {
+    /// List all teams.
+    #[deprecated(note = "use list_orchestras")]
+    pub fn list_teams(&self) -> Vec<AgentTeam> {
+        self.list_orchestras()
+    }
+
+    /// Add an agent to an orchestra.
+    pub fn add_agent_to_orchestra(
+        &mut self,
+        orchestra_id: TeamId,
+        agent_id: AgentId,
+    ) -> Result<()> {
         if !self.agents.iter().any(|agent| agent.id == agent_id) {
             return Err(AgentError::Command(format!("Unknown agent: {}", agent_id)));
         }
-        self.teams.add_member(team_id, agent_id)?;
+        self.teams.add_member(orchestra_id, agent_id)?;
         Ok(())
     }
 
-    /// Execute a team task using the best available local agent.
+    /// Add an agent to a team.
+    #[deprecated(note = "use add_agent_to_orchestra")]
+    pub fn add_agent_to_team(&mut self, team_id: TeamId, agent_id: AgentId) -> Result<()> {
+        self.add_agent_to_orchestra(team_id, agent_id)
+    }
+
+    /// Execute an orchestra task using the best available local agent.
     pub async fn execute_task(
         &mut self,
-        team_id: Option<TeamId>,
+        orchestra_id: Option<TeamId>,
         task: Task,
     ) -> Result<TaskResult> {
-        let target_team_id = team_id.or_else(|| self.teams.default_team_id());
+        let target_team_id = orchestra_id.or_else(|| self.teams.default_team_id());
         let selected_index = self.select_agent_index(target_team_id, &task)?;
         let selected_id = self.agents[selected_index].id;
         let agent = self.agents[selected_index].agent.clone();

@@ -86,17 +86,17 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
 
     /// Create a new orchestra and return its identifier.
     pub fn create_orchestra(&mut self, name: impl Into<String>, leader: OrchestraLeader) -> TeamId {
-        self.inner.create_team(name, leader)
+        self.inner.create_orchestra(name, leader)
     }
 
     /// Ensure there is always a default orchestra for task routing.
     pub fn ensure_default_orchestra(&mut self, leader: OrchestraLeader) -> TeamId {
-        self.inner.ensure_default_team(leader)
+        self.inner.ensure_default_orchestra(leader)
     }
 
     /// List all orchestras.
     pub fn list_orchestras(&self) -> Vec<AgentOrchestra> {
-        self.inner.list_teams()
+        self.inner.list_orchestras()
     }
 
     /// Add an agent to an orchestra.
@@ -105,7 +105,7 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         orchestra_id: TeamId,
         agent_id: AgentId,
     ) -> Result<()> {
-        self.inner.add_agent_to_team(orchestra_id, agent_id)
+        self.inner.add_agent_to_orchestra(orchestra_id, agent_id)
     }
 
     /// Execute a task using the best available local agent in the selected orchestra.
@@ -162,7 +162,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
 
     /// Spawn agents into the orchestra runtime.
     pub async fn spawn_agents(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
-        self.inner.spawn(configs).await
+        self.inner.spawn_agents(configs).await
     }
 
     /// Spawn agents using a specific client implementation.
@@ -171,12 +171,12 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         configs: Vec<WorkerConfig>,
         client: C,
     ) -> Result<Vec<AgentId>> {
-        self.inner.spawn_with_client(configs, client).await
+        self.inner.spawn_agents_with_client(configs, client).await
     }
 
     /// Get execution info for a specific agent in the orchestra runtime.
     pub async fn agent_info(&self, agent_id: AgentId) -> Option<WorkerInfo> {
-        self.inner.worker(agent_id).await
+        self.inner.agent_info(agent_id).await
     }
 
     /// Run the orchestra background loop to process delegated work.
