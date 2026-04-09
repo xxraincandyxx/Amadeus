@@ -777,9 +777,18 @@ impl Config {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::{Mutex, OnceLock};
+
     use super::*;
 
     use tempfile::tempdir;
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .expect("env test lock poisoned")
+    }
 
     fn restore_env(key: &str, value: Option<String>) {
         match value {
@@ -790,6 +799,7 @@ mod tests {
 
     #[test]
     fn load_with_hierarchy_prefers_workspace_settings() {
+        let _guard = env_lock();
         let temp = tempdir().unwrap();
         let workdir = temp.path().join("workspace");
         let workspace_root = workdir.join(".amadeus");
@@ -836,6 +846,7 @@ mod tests {
 
     #[test]
     fn load_with_hierarchy_ignores_workspace_env_file() {
+        let _guard = env_lock();
         let temp = tempdir().unwrap();
         let workdir = temp.path().join("workspace");
         let workspace_root = workdir.join(".amadeus");

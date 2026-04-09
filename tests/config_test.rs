@@ -18,7 +18,15 @@
 // @end-amadeus-header
 
 use amadeus::agent::config::{Config, Provider};
+use std::sync::{Mutex, OnceLock};
 use tempfile::tempdir;
+
+fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("env test lock poisoned")
+}
 
 fn restore_env(key: &str, original: Option<String>) {
     if let Some(value) = original {
@@ -46,6 +54,7 @@ fn test_provider_debug_formatting() {
 
 #[test]
 fn test_config_timeout_value() {
+    let _guard = env_lock();
     std::env::set_var("ANTHROPIC_API_KEY", "test-key");
     std::env::set_var("PROVIDER", "anthropic");
 
@@ -55,6 +64,7 @@ fn test_config_timeout_value() {
 
 #[test]
 fn test_config_workdir_type() {
+    let _guard = env_lock();
     std::env::set_var("ANTHROPIC_API_KEY", "test-key");
     std::env::set_var("PROVIDER", "anthropic");
 
@@ -72,6 +82,7 @@ fn parity_doc_exists_and_mentions_reference_baseline() {
 
 #[test]
 fn load_with_hierarchy_reads_workspace_settings_json() {
+    let _guard = env_lock();
     let temp = tempdir().unwrap();
     let settings_dir = temp.path().join(".amadeus");
     std::fs::create_dir_all(&settings_dir).unwrap();
@@ -101,6 +112,7 @@ fn load_with_hierarchy_reads_workspace_settings_json() {
 
 #[test]
 fn load_with_hierarchy_ignores_legacy_dotenv_files() {
+    let _guard = env_lock();
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join(".env"),
