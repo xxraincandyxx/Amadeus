@@ -11,6 +11,7 @@
 // - type: crate::agent::compaction::ContextCompactor
 // - type: crate::agent::compaction::CompactionEvent
 // uses:
+// - module: amadeus_compaction
 // - module: crate::agent::messages
 // - module: crate::client::LLMClient
 // - module: crate::error::Result
@@ -63,101 +64,13 @@
 //! 3. Tool results are truncated if they exceed size limits
 //! 4. Essential context (errors, decisions) is retained
 
-use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
+
+pub use amadeus_compaction::{CompactionConfig, CompactionResult, CompressionStatus};
 
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::LLMClient;
 use crate::error::Result;
-
-/// Configuration for context compaction behavior.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CompactionConfig {
-    /// Threshold percentage of context window to trigger compaction.
-    /// Default: 75 (trigger when at 75% of context window)
-    pub threshold_percent: u8,
-
-    /// Target percentage after compaction.
-    /// Default: 30 (compact down to 30% of context window)
-    pub target_percent: u8,
-
-    /// Number of recent messages to always preserve.
-    /// Default: 6 (typically 3 turns of user/assistant pairs)
-    pub preserve_recent: usize,
-
-    /// Whether to use LLM for summarization (vs simple truncation).
-    /// Default: true
-    pub use_llm_summary: bool,
-
-    /// Maximum characters for the generated summary.
-    /// Default: 2000
-    pub max_summary_chars: usize,
-
-    /// Minimum messages before compaction is considered.
-    /// Default: 10
-    pub min_messages: usize,
-
-    /// Maximum characters for tool results before truncation.
-    /// Default: 5000
-    pub max_tool_result_chars: usize,
-}
-
-impl Default for CompactionConfig {
-    fn default() -> Self {
-        Self {
-            threshold_percent: 75,
-            target_percent: 30,
-            preserve_recent: 6,
-            use_llm_summary: true,
-            max_summary_chars: 2000,
-            min_messages: 10,
-            max_tool_result_chars: 5000,
-        }
-    }
-}
-
-/// Outcome of a compaction attempt.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum CompressionStatus {
-    /// Compaction succeeded — history was rewritten.
-    Compressed,
-    /// Compaction would have inflated context — history left untouched.
-    Inflated,
-    /// LLM summary was empty — history left untouched.
-    EmptySummary,
-    /// No compaction was needed.
-    Noop,
-    /// LLM summarization skipped (previous failure); content was truncated only.
-    TruncatedOnly,
-}
-
-/// Result of a compaction operation.
-#[derive(Debug, Clone)]
-pub struct CompactionResult {
-    /// Original message count before compaction.
-    pub original_count: usize,
-
-    /// Message count after compaction.
-    pub compacted_count: usize,
-
-    /// Estimated original token count before compaction.
-    pub original_tokens: usize,
-
-    /// Estimated token count after compaction.
-    pub new_tokens: usize,
-
-    /// Estimated tokens saved by compaction.
-    pub tokens_saved: usize,
-
-    /// Summary of compacted content (if LLM was used).
-    pub summary: Option<String>,
-
-    /// Number of messages that were summarized.
-    pub messages_summarized: usize,
-
-    /// Outcome status of the compaction attempt.
-    pub status: CompressionStatus,
-}
 
 /// Structured compression prompt for LLM summarization.
 const COMPRESSION_PROMPT: &str = r#"You are a specialized system component responsible for distilling chat history into a structured XML <state_snapshot>.
