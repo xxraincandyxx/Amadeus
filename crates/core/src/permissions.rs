@@ -1,15 +1,13 @@
 // @amadeus-header
-// summary: Permission mode enforcement for tool execution and read-only assessment runs.
+// summary: Permission enforcement for tool execution built on shared permission policy types.
 // layer: policy
 // status: active
 // feature_flags: none
 // provides:
 // - module: crate::permissions
-// - type: crate::permissions::PermissionMode
-// - type: crate::permissions::PermissionDecision
 // - type: crate::permissions::PermissionEnforcer
 // uses:
-// - module: crate::agent::config::Config
+// - module: amadeus_permissions
 // - module: crate::tools::bash
 // - format: JSON values
 // invariants:
@@ -21,57 +19,12 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+pub use amadeus_permissions::{PermissionDecision, PermissionMode};
 
 use crate::agent::config::Config;
 use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-pub enum PermissionMode {
-    ReadOnly,
-    #[default]
-    WorkspaceWrite,
-    DangerFullAccess,
-    Prompt,
-}
-
-impl PermissionMode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ReadOnly => "read-only",
-            Self::WorkspaceWrite => "workspace-write",
-            Self::DangerFullAccess => "danger-full-access",
-            Self::Prompt => "prompt",
-        }
-    }
-
-    pub fn parse(input: &str) -> Option<Self> {
-        match input.trim().to_ascii_lowercase().as_str() {
-            "read-only" | "readonly" => Some(Self::ReadOnly),
-            "workspace-write" | "workspace_write" | "accept-edits" | "acceptedits" => {
-                Some(Self::WorkspaceWrite)
-            }
-            "danger-full-access" | "danger_full_access" | "danger" => Some(Self::DangerFullAccess),
-            "prompt" => Some(Self::Prompt),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PermissionDecision {
-    Allow,
-    Ask {
-        required: PermissionMode,
-        reason: String,
-    },
-    Deny {
-        required: PermissionMode,
-        reason: String,
-    },
-}
 
 #[derive(Debug, Clone)]
 pub struct PermissionEnforcer {
