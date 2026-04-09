@@ -350,6 +350,7 @@ dependencies = [
  "config",
  "context",
  "dirs",
+ "events",
  "flate2",
  "futures",
  "glob",
@@ -559,6 +560,15 @@ checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "events"
+version = "0.1.0"
+dependencies = [
+ "compaction",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

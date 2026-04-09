@@ -29,6 +29,7 @@ amadeus_hooks = { package = "hooks", path = "../hooks" }
 amadeus_config = { package = "config", path = "../config" }
 amadeus_context = { package = "context", path = "../context" }
 amadeus_compaction = { package = "compaction", path = "../compaction" }
+amadeus_events = { package = "events", path = "../events" }
 amadeus_messages = { package = "messages", path = "../messages" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
