@@ -30,7 +30,7 @@ use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind
 #[derive(Debug, Clone)]
 pub struct PermissionEnforcer {
     active_mode: PermissionMode,
-    workspace_root: PathBuf,
+    workspace_roots: Vec<PathBuf>,
     rules: Vec<PermissionRule>,
 }
 
@@ -38,13 +38,12 @@ impl PermissionEnforcer {
     pub fn from_config(config: &Config) -> Self {
         Self {
             active_mode: config.permission_mode,
-            workspace_root: config.workdir.clone(),
-            rules: config
-                .permissions
-                .rules
-                .iter()
-                .filter_map(|rule| PermissionRule::parse(rule))
-                .collect(),
+            workspace_roots: {
+                let mut roots = vec![config.workdir.clone()];
+                roots.extend(config.permissions.additional_directories.iter().cloned());
+                roots
+            },
+            rules: build_rules(config),
         }
     }
 
@@ -152,10 +151,16 @@ impl PermissionEnforcer {
         let absolute = if candidate.is_absolute() {
             candidate.to_path_buf()
         } else {
-            self.workspace_root.join(candidate)
+            self.workspace_roots
+                .first()
+                .cloned()
+                .unwrap_or_default()
+                .join(candidate)
         };
 
-        absolute.starts_with(&self.workspace_root)
+        self.workspace_roots
+            .iter()
+            .any(|workspace_root| absolute.starts_with(workspace_root))
     }
 
     fn reason(&self, tool_name: &str, required: PermissionMode, input: &Value) -> String {
@@ -181,6 +186,39 @@ impl PermissionEnforcer {
             _ => format!("tool '{tool_name}' needs {}", required.as_str()),
         }
     }
+}
+
+fn build_rules(config: &Config) -> Vec<PermissionRule> {
+    let mut rules = Vec::new();
+    rules.extend(
+        config
+            .permissions
+            .deny
+            .iter()
+            .filter_map(|rule| PermissionRule::parse(&format!("deny:{rule}"))),
+    );
+    rules.extend(
+        config
+            .permissions
+            .ask
+            .iter()
+            .filter_map(|rule| PermissionRule::parse(&format!("ask:{rule}"))),
+    );
+    rules.extend(
+        config
+            .permissions
+            .allow
+            .iter()
+            .filter_map(|rule| PermissionRule::parse(&format!("allow:{rule}"))),
+    );
+    rules.extend(
+        config
+            .permissions
+            .rules
+            .iter()
+            .filter_map(|rule| PermissionRule::parse(rule)),
+    );
+    rules
 }
 
 #[cfg(test)]
@@ -280,6 +318,46 @@ mod tests {
         config.permissions.rules = vec!["deny:tool(write_file)".to_string()];
         let enforcer = PermissionEnforcer::from_config(&config);
 
+        assert!(matches!(
+            enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
+            PermissionDecision::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn additional_directories_extend_workspace_boundary() {
+        let mut config = make_config(PermissionMode::WorkspaceWrite);
+        config
+            .permissions
+            .additional_directories
+            .push(PathBuf::from("/tmp/extra"));
+        let enforcer = PermissionEnforcer::from_config(&config);
+
+        assert_eq!(
+            enforcer.check(
+                "write_file",
+                &serde_json::json!({"path": "/tmp/extra/notes.md"})
+            ),
+            PermissionDecision::Allow
+        );
+    }
+
+    #[test]
+    fn structured_rule_arrays_are_honored_in_priority_order() {
+        let mut config = make_config(PermissionMode::ReadOnly);
+        config.permissions.allow = vec!["tool(read_file)".to_string()];
+        config.permissions.ask = vec!["bash(git:*)".to_string()];
+        config.permissions.deny = vec!["tool(write_file)".to_string()];
+        let enforcer = PermissionEnforcer::from_config(&config);
+
+        assert_eq!(
+            enforcer.check("read_file", &serde_json::json!({"path": "notes.md"})),
+            PermissionDecision::Allow
+        );
+        assert!(matches!(
+            enforcer.check("bash", &serde_json::json!({"command": "git:status"})),
+            PermissionDecision::Ask { .. }
+        ));
         assert!(matches!(
             enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
             PermissionDecision::Deny { .. }

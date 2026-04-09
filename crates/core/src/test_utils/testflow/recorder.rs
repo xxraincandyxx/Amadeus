@@ -119,11 +119,21 @@ impl SessionRecorder {
                 .into_iter()
                 .map(|root| root.to_string_lossy().to_string())
                 .collect(),
-            global_hook_path: Config::global_hooks_path()
-                .map(|path| path.to_string_lossy().to_string()),
-            workspace_hook_path: config.workspace_hooks_path().to_string_lossy().to_string(),
-            agents_dir: config.agents_dir().to_string_lossy().to_string(),
-            skills_dir: config.skills_dir().to_string_lossy().to_string(),
+            hook_paths: config
+                .hook_paths()
+                .into_iter()
+                .map(|(path, _)| path.to_string_lossy().to_string())
+                .collect(),
+            agent_roots: config
+                .agent_roots()
+                .into_iter()
+                .map(|(_, path)| path.to_string_lossy().to_string())
+                .collect(),
+            skill_roots: config
+                .skill_roots()
+                .into_iter()
+                .map(|(_, path)| path.to_string_lossy().to_string())
+                .collect(),
         };
     }
 

@@ -32,10 +32,12 @@ pub mod registry {
 pub use amadeus_skills::{Skill, SkillError};
 
 pub fn load_for_config(config: &Config) -> Result<registry::SkillRegistry, SkillError> {
-    let global_skills = Config::global_config_root()
-        .as_ref()
-        .map(|root| root.join("skills"));
-    registry::SkillRegistry::load_with_roots(global_skills.as_deref(), &config.skills_dir())
+    let mut roots = config.skill_roots();
+    let workspace = roots
+        .pop()
+        .unwrap_or_else(|| ("Project".to_string(), config.skills_dir()));
+    let global = roots.first().map(|(_, path)| path.as_path());
+    registry::SkillRegistry::load_with_roots(global, &workspace.1)
 }
 
 #[cfg(test)]

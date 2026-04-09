@@ -144,10 +144,9 @@ pub struct ConfigSnapshot {
     pub workdir: String,
     pub permission_mode: String,
     pub config_roots: Vec<String>,
-    pub global_hook_path: Option<String>,
-    pub workspace_hook_path: String,
-    pub agents_dir: String,
-    pub skills_dir: String,
+    pub hook_paths: Vec<String>,
+    pub agent_roots: Vec<String>,
+    pub skill_roots: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

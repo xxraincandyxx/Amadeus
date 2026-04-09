@@ -268,18 +268,17 @@ fn estimate_message_tokens(message: &Message) -> usize {
 }
 
 fn build_skill_groups(config: &crate::agent::Config) -> Vec<ContextSectionGroup> {
-    let mut groups = Vec::new();
-    if let Some(global_root) = crate::agent::Config::global_config_root() {
-        groups.push(ContextSectionGroup {
-            title: Some("User".to_string()),
-            entries: load_skill_entries(&global_root.join("skills"), &global_root),
-        });
-    }
-    groups.push(ContextSectionGroup {
-        title: Some("Project".to_string()),
-        entries: load_skill_entries(&config.skills_dir(), &config.workdir),
-    });
-    groups
+    config
+        .skill_roots()
+        .into_iter()
+        .map(|(title, path)| {
+            let base = path.parent().unwrap_or(&config.workdir);
+            ContextSectionGroup {
+                title: Some(title.clone()),
+                entries: load_skill_entries(&path, base),
+            }
+        })
+        .collect()
 }
 
 fn load_skill_entries(path: &Path, base: &Path) -> Vec<ContextEntry> {
@@ -303,18 +302,17 @@ fn load_skill_entries(path: &Path, base: &Path) -> Vec<ContextEntry> {
 }
 
 fn build_custom_agent_groups(config: &crate::agent::Config) -> Vec<ContextSectionGroup> {
-    let mut groups = Vec::new();
-    if let Some(global_root) = crate::agent::Config::global_config_root() {
-        groups.push(ContextSectionGroup {
-            title: Some("User".to_string()),
-            entries: load_markdown_inventory(&global_root.join("agents"), &global_root),
-        });
-    }
-    groups.push(ContextSectionGroup {
-        title: Some("Project".to_string()),
-        entries: load_markdown_inventory(&config.agents_dir(), &config.workdir),
-    });
-    groups
+    config
+        .agent_roots()
+        .into_iter()
+        .map(|(title, path)| {
+            let base = path.parent().unwrap_or(&config.workdir);
+            ContextSectionGroup {
+                title: Some(title.clone()),
+                entries: load_markdown_inventory(&path, base),
+            }
+        })
+        .collect()
 }
 
 fn load_markdown_inventory(path: &Path, base: &Path) -> Vec<ContextEntry> {

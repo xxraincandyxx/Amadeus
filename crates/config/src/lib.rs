@@ -25,6 +25,7 @@
 //! Structured configuration loading for Amadeus runtimes.
 
 use std::env;
+use std::path::Component;
 use std::path::{Path, PathBuf};
 
 use amadeus_compaction::CompactionConfig;
@@ -92,6 +93,14 @@ pub struct PermissionSettings {
     pub mode: PermissionMode,
     #[serde(default)]
     pub rules: Vec<String>,
+    #[serde(default)]
+    pub allow: Vec<String>,
+    #[serde(default)]
+    pub ask: Vec<String>,
+    #[serde(default)]
+    pub deny: Vec<String>,
+    #[serde(default)]
+    pub additional_directories: Vec<PathBuf>,
 }
 
 impl Default for PermissionSettings {
@@ -99,6 +108,10 @@ impl Default for PermissionSettings {
         Self {
             mode: PermissionMode::WorkspaceWrite,
             rules: Vec::new(),
+            allow: Vec::new(),
+            ask: Vec::new(),
+            deny: Vec::new(),
+            additional_directories: Vec::new(),
         }
     }
 }
@@ -203,6 +216,24 @@ impl Config {
 
     pub fn skills_dir(&self) -> PathBuf {
         self.workspace_config_root().join("skills")
+    }
+
+    pub fn agent_roots(&self) -> Vec<(String, PathBuf)> {
+        let mut roots = Vec::new();
+        if let Some(global_root) = Self::global_config_root() {
+            roots.push(("User".to_string(), global_root.join("agents")));
+        }
+        roots.push(("Project".to_string(), self.agents_dir()));
+        roots
+    }
+
+    pub fn skill_roots(&self) -> Vec<(String, PathBuf)> {
+        let mut roots = Vec::new();
+        if let Some(global_root) = Self::global_config_root() {
+            roots.push(("User".to_string(), global_root.join("skills")));
+        }
+        roots.push(("Project".to_string(), self.skills_dir()));
+        roots
     }
 
     pub fn settings_layers(workdir: &Path) -> Vec<(PathBuf, HookSource)> {
@@ -381,7 +412,9 @@ impl Config {
                 self.permission_mode
             },
             hooks: if !other.hooks.files.is_empty() {
-                other.hooks
+                HookSettings {
+                    files: append_unique_paths(self.hooks.files, other.hooks.files),
+                }
             } else {
                 self.hooks
             },
@@ -391,7 +424,21 @@ impl Config {
                 self.telemetry
             },
             permissions: if other.permissions != PermissionSettings::default() {
-                other.permissions
+                PermissionSettings {
+                    mode: if other.permissions.mode != PermissionMode::WorkspaceWrite {
+                        other.permissions.mode
+                    } else {
+                        self.permissions.mode
+                    },
+                    rules: append_unique_strings(self.permissions.rules, other.permissions.rules),
+                    allow: append_unique_strings(self.permissions.allow, other.permissions.allow),
+                    ask: append_unique_strings(self.permissions.ask, other.permissions.ask),
+                    deny: append_unique_strings(self.permissions.deny, other.permissions.deny),
+                    additional_directories: append_unique_paths(
+                        self.permissions.additional_directories,
+                        other.permissions.additional_directories,
+                    ),
+                }
             } else {
                 self.permissions
             },
@@ -626,11 +673,14 @@ impl Config {
 
         if let Some(hooks) = json.get("hooks").and_then(|v| v.as_object()) {
             if let Some(files) = hooks.get("files").and_then(|v| v.as_array()) {
-                self.hooks.files = files
-                    .iter()
-                    .filter_map(|v| v.as_str())
-                    .map(|path| resolve_path(base_dir, path))
-                    .collect();
+                self.hooks.files = append_unique_paths(
+                    self.hooks.files.clone(),
+                    files
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|path| resolve_path(base_dir, path))
+                        .collect(),
+                );
             }
         }
 
@@ -656,7 +706,33 @@ impl Config {
                 self.permissions.mode = mode;
             }
             if let Some(rules) = permissions.get("rules").and_then(|v| v.as_array()) {
-                self.permissions.rules = parse_string_list(rules);
+                self.permissions.rules =
+                    append_unique_strings(self.permissions.rules.clone(), parse_string_list(rules));
+            }
+            if let Some(allow) = permissions.get("allow").and_then(|v| v.as_array()) {
+                self.permissions.allow =
+                    append_unique_strings(self.permissions.allow.clone(), parse_string_list(allow));
+            }
+            if let Some(ask) = permissions.get("ask").and_then(|v| v.as_array()) {
+                self.permissions.ask =
+                    append_unique_strings(self.permissions.ask.clone(), parse_string_list(ask));
+            }
+            if let Some(deny) = permissions.get("deny").and_then(|v| v.as_array()) {
+                self.permissions.deny =
+                    append_unique_strings(self.permissions.deny.clone(), parse_string_list(deny));
+            }
+            if let Some(additional_directories) = permissions
+                .get("additionalDirectories")
+                .and_then(|v| v.as_array())
+            {
+                self.permissions.additional_directories = append_unique_paths(
+                    self.permissions.additional_directories.clone(),
+                    additional_directories
+                        .iter()
+                        .filter_map(|v| v.as_str())
+                        .map(|path| resolve_path(base_dir, path))
+                        .collect(),
+                );
             }
         }
     }
@@ -672,12 +748,28 @@ fn parse_provider(input: &str) -> Provider {
 fn resolve_path(base_dir: Option<&Path>, input: &str) -> PathBuf {
     let path = PathBuf::from(input);
     if path.is_absolute() {
-        path
+        normalize_path(path)
     } else if let Some(base_dir) = base_dir {
-        base_dir.join(path)
+        normalize_path(base_dir.join(path))
     } else {
-        path
+        normalize_path(path)
     }
+}
+
+fn normalize_path(path: PathBuf) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                normalized.pop();
+            }
+            Component::RootDir | Component::Prefix(_) | Component::Normal(_) => {
+                normalized.push(component.as_os_str());
+            }
+        }
+    }
+    normalized
 }
 
 fn parse_string_list(values: &[Value]) -> Vec<String> {
@@ -685,6 +777,26 @@ fn parse_string_list(values: &[Value]) -> Vec<String> {
         .iter()
         .filter_map(|v| v.as_str().map(ToString::to_string))
         .collect()
+}
+
+fn append_unique_strings(existing: Vec<String>, incoming: Vec<String>) -> Vec<String> {
+    let mut merged = existing;
+    for value in incoming {
+        if !merged.contains(&value) {
+            merged.push(value);
+        }
+    }
+    merged
+}
+
+fn append_unique_paths(existing: Vec<PathBuf>, incoming: Vec<PathBuf>) -> Vec<PathBuf> {
+    let mut merged = existing;
+    for value in incoming {
+        if !merged.contains(&value) {
+            merged.push(value);
+        }
+    }
+    merged
 }
 
 #[cfg(test)]
@@ -750,6 +862,20 @@ mod tests {
         );
         assert_eq!(config.agents_dir(), workspace_root.join("agents"));
         assert_eq!(config.skills_dir(), workspace_root.join("skills"));
+        assert_eq!(
+            config.agent_roots(),
+            vec![
+                ("User".to_string(), global_root.join("agents")),
+                ("Project".to_string(), workspace_root.join("agents"))
+            ]
+        );
+        assert_eq!(
+            config.skill_roots(),
+            vec![
+                ("User".to_string(), global_root.join("skills")),
+                ("Project".to_string(), workspace_root.join("skills"))
+            ]
+        );
 
         restore_env("PROVIDER", provider);
         restore_env("HOME", home);
@@ -845,7 +971,12 @@ mod tests {
             &path,
             r#"{
                 "api_key":"x",
-                "permissions":{"mode":"prompt","rules":["bash(git:*)"]},
+                "permissions":{
+                    "mode":"prompt",
+                    "rules":["allow:bash(git:*)"],
+                    "allow":["tool(read_file)"],
+                    "additionalDirectories":["../shared"]
+                },
                 "telemetry":{"enabled":true,"jsonl_path":"logs/telemetry.jsonl"},
                 "hooks":{"files":["custom-hooks.json"]}
             }"#,
@@ -856,7 +987,18 @@ mod tests {
 
         assert_eq!(config.permission_mode, PermissionMode::Prompt);
         assert_eq!(config.permissions.mode, PermissionMode::Prompt);
-        assert_eq!(config.permissions.rules, vec!["bash(git:*)".to_string()]);
+        assert_eq!(
+            config.permissions.rules,
+            vec!["allow:bash(git:*)".to_string()]
+        );
+        assert_eq!(
+            config.permissions.allow,
+            vec!["tool(read_file)".to_string()]
+        );
+        assert_eq!(
+            config.permissions.additional_directories,
+            vec![temp.path().join("shared")]
+        );
         assert!(config.telemetry.enabled);
         assert_eq!(
             config.telemetry.jsonl_path,
@@ -891,5 +1033,75 @@ mod tests {
             .iter()
             .any(|(path, source)| *source == HookSource::Local
                 && *path == workdir.join(".amadeus/custom.json")));
+    }
+
+    #[test]
+    fn layered_settings_merge_arrays_across_scopes() {
+        let _guard = env_lock();
+        let temp = tempdir().unwrap();
+        let workdir = temp.path().join("workspace");
+        let workspace_root = workdir.join(".amadeus");
+        std::fs::create_dir_all(&workspace_root).unwrap();
+
+        let provider = env::var("PROVIDER").ok();
+        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
+        let home = env::var("HOME").ok();
+
+        env::remove_var("PROVIDER");
+        env::set_var("ANTHROPIC_API_KEY", "merge-key");
+
+        let fake_home = temp.path().join("home");
+        let global_root = fake_home.join(".amadeus");
+        std::fs::create_dir_all(&global_root).unwrap();
+        env::set_var("HOME", &fake_home);
+
+        std::fs::write(
+            global_root.join("settings.json"),
+            r#"{
+                "api_key":"global-key",
+                "hooks":{"files":["global-hooks.json"]},
+                "permissions":{"allow":["tool(read_file)"]}
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace_root.join("settings.json"),
+            r#"{
+                "hooks":{"files":["project-hooks.json"]},
+                "permissions":{"ask":["bash(git:*)"]}
+            }"#,
+        )
+        .unwrap();
+        std::fs::write(
+            workspace_root.join("settings.local.json"),
+            r#"{
+                "hooks":{"files":["local-hooks.json"]},
+                "permissions":{"deny":["tool(write_file)"]}
+            }"#,
+        )
+        .unwrap();
+
+        let config = Config::load_with_hierarchy(&workdir).unwrap();
+        assert_eq!(
+            config.hooks.files,
+            vec![
+                global_root.join("global-hooks.json"),
+                workspace_root.join("project-hooks.json"),
+                workspace_root.join("local-hooks.json")
+            ]
+        );
+        assert_eq!(
+            config.permissions.allow,
+            vec!["tool(read_file)".to_string()]
+        );
+        assert_eq!(config.permissions.ask, vec!["bash(git:*)".to_string()]);
+        assert_eq!(
+            config.permissions.deny,
+            vec!["tool(write_file)".to_string()]
+        );
+
+        restore_env("PROVIDER", provider);
+        restore_env("ANTHROPIC_API_KEY", anthropic_key);
+        restore_env("HOME", home);
     }
 }
