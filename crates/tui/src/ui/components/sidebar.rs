@@ -13,6 +13,7 @@
 // - type: crate::ui::components::sidebar::SkillSidebar
 // - type: crate::ui::components::sidebar::ContextInfo
 // uses:
+// - type: crate::commands::ContextReport
 // - module: crate::skills::Skill
 // - module: crate::ui::get_colors
 // - runtime: ratatui terminal rendering
@@ -34,6 +35,8 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use walkdir::WalkDir;
+
+pub type ContextInfo = crate::ContextReport;
 
 use crate::skills::Skill;
 use crate::ui::get_colors;
@@ -499,75 +502,5 @@ impl SkillSidebar {
         );
 
         frame.render_widget(paragraph, area);
-    }
-}
-
-/// Data used to populate the context sidebar.
-#[derive(Debug, Clone)]
-pub struct ContextInfo {
-    pub model_name: String,
-    pub context_window_size: u32,
-    pub total_tokens: usize,
-    /// System prompt tokens
-    pub system_prompt_tokens: usize,
-    /// Tool definitions tokens
-    pub tools_tokens: usize,
-    /// MCP tools tokens (placeholder)
-    pub mcp_tools_tokens: usize,
-    /// Memory files tokens (placeholder)
-    pub memory_files_tokens: usize,
-    /// Skills tokens (placeholder)
-    pub skills_tokens: usize,
-    /// Conversation history tokens
-    pub conversation_tokens: usize,
-    /// Per-tool token estimates (name, estimated schema tokens)
-    pub tool_details: Vec<(String, usize)>,
-    /// MCP tool details (placeholder)
-    pub mcp_tool_details: Vec<(String, usize)>,
-    /// Memory file details (placeholder)
-    pub memory_file_details: Vec<(String, usize)>,
-    /// Skill details (name, estimated tokens)
-    pub skill_details: Vec<(String, usize)>,
-    /// Per-message token estimates (role, estimated tokens)
-    pub message_details: Vec<(String, usize)>,
-}
-
-impl ContextInfo {
-    /// Estimate total tokens for the context info.
-    pub fn used_tokens(&self) -> usize {
-        self.system_prompt_tokens + self.tools_tokens + self.conversation_tokens
-    }
-
-    /// Free space remaining in the context window.
-    pub fn free_tokens(&self) -> usize {
-        (self.context_window_size as usize).saturating_sub(self.used_tokens())
-    }
-
-    /// Usage percentage (0-100).
-    pub fn usage_percent(&self) -> u8 {
-        if self.context_window_size == 0 {
-            return 0;
-        }
-        let pct = (self.used_tokens() as f64 / self.context_window_size as f64 * 100.0) as u8;
-        pct.min(100)
-    }
-
-    /// Percentage of the context window used by a token count.
-    pub fn pct_of(&self, tokens: usize) -> f64 {
-        if self.context_window_size == 0 {
-            return 0.0;
-        }
-        tokens as f64 / self.context_window_size as f64 * 100.0
-    }
-
-    /// Format a token count for display.
-    pub fn fmt_tokens(n: usize) -> String {
-        if n >= 1_000_000 {
-            format!("{:.1}M", n as f64 / 1_000_000.0)
-        } else if n >= 1000 {
-            format!("{:.1}k", n as f64 / 1000.0)
-        } else {
-            n.to_string()
-        }
     }
 }

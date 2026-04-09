@@ -58,7 +58,7 @@ use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent, SessionCheckpoint};
 use crate::client::LLMClient;
-use crate::commands::SlashCommand;
+use crate::commands::{build_context_report, SlashCommand};
 use crate::error::Result;
 use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
@@ -2695,96 +2695,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     }
 
     fn build_context_info(&self) -> ContextInfo {
-        let config = self.agent.config();
-        let context_window_size = config.context_window_size;
-        let model_name = config.model.clone();
-
-        // Estimate system prompt tokens (~4 chars per token)
-        let system_prompt = config.system_prompt(false);
-        let system_prompt_tokens = system_prompt.len().div_ceil(4);
-
-        // Estimate tool schema tokens
-        let registry = self.agent.registry();
-        let mut tools_tokens: usize = 0;
-        let mut tool_details: Vec<(String, usize)> = Vec::new();
-        for name in registry.names() {
-            let schema_size = registry
-                .get(name)
-                .map(|tool| {
-                    serde_json::to_string(tool.schema())
-                        .unwrap_or_default()
-                        .len()
-                })
-                .unwrap_or(0);
-            let tokens = schema_size.div_ceil(4);
-            tool_details.push((name.to_string(), tokens));
-            tools_tokens += tokens;
-        }
-        tool_details.sort_by(|a, b| b.1.cmp(&a.1));
-
-        // Estimate conversation history tokens
-        let history = self.agent.history();
-        let history_guard = match history.try_read() {
-            Ok(guard) => guard,
-            Err(_) => {
-                return ContextInfo {
-                    model_name,
-                    context_window_size,
-                    total_tokens: system_prompt_tokens + tools_tokens,
-                    system_prompt_tokens,
-                    tools_tokens,
-                    mcp_tools_tokens: 0,
-                    memory_files_tokens: 0,
-                    skills_tokens: 0,
-                    conversation_tokens: 0,
-                    tool_details,
-                    mcp_tool_details: Vec::new(),
-                    memory_file_details: Vec::new(),
-                    skill_details: Vec::new(),
-                    message_details: Vec::new(),
-                }
-            }
-        };
-        let mut conversation_tokens: usize = 0;
-        let mut message_details: Vec<(String, usize)> = Vec::new();
-        for msg in history_guard.iter() {
-            let msg_chars: usize = msg
-                .content
-                .iter()
-                .map(|block| match block {
-                    crate::agent::messages::ContentBlock::Text { text } => text.len(),
-                    crate::agent::messages::ContentBlock::ToolUse { name, input, .. } => {
-                        name.len() + input.to_string().len()
-                    }
-                    crate::agent::messages::ContentBlock::ToolResult { content, .. } => {
-                        content.len()
-                    }
-                })
-                .sum();
-            let msg_tokens = msg_chars.div_ceil(4);
-            conversation_tokens += msg_tokens;
-            message_details.push((msg.role.clone(), msg_tokens));
-        }
-        message_details.sort_by(|a, b| b.1.cmp(&a.1));
-
-        let total_tokens = system_prompt_tokens + tools_tokens + conversation_tokens;
-
-        ContextInfo {
-            model_name,
-            context_window_size,
-            total_tokens,
-            system_prompt_tokens,
-            tools_tokens,
-            mcp_tools_tokens: 0,
-            memory_files_tokens: 0,
-            skills_tokens: 0,
-            conversation_tokens,
-            tool_details,
-            mcp_tool_details: Vec::new(),
-            memory_file_details: Vec::new(),
-            skill_details: Vec::new(),
-            message_details,
-        }
+        build_context_report(&self.agent)
     }
 
     async fn submit_input(&mut self) -> Result<()> {

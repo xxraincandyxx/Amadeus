@@ -1287,95 +1287,26 @@ impl MessagesComponent {
             Style::default().fg(colors.ui.comment),
         )]));
 
-        // System prompt
-        let sys_pct = info.pct_of(info.system_prompt_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("System prompt", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.system_prompt_tokens),
-                    sys_pct,
+        for (label, icon, tokens) in [
+            ("System prompt", "  ⛁ ", info.system_prompt_tokens),
+            ("Core tools", "  ⛁ ", info.system_tools_tokens),
+            ("Additional tools", "  ⛁ ", info.additional_tools_tokens),
+            ("Memory files", "  ⛁ ", info.memory_files_tokens),
+            ("Messages", "  ⛁ ", info.conversation_tokens),
+        ] {
+            lines.push(Line::from(vec![
+                Span::raw(icon),
+                Span::styled(label, Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    format!(
+                        ": {} tokens ({:.1}%)",
+                        crate::ui::components::ContextInfo::fmt_tokens(tokens),
+                        info.pct_of(tokens),
+                    ),
+                    Style::default().fg(colors.text.secondary),
                 ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // System tools
-        let tools_pct = info.pct_of(info.tools_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("System tools", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.tools_tokens),
-                    tools_pct,
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // MCP tools
-        let mcp_pct = info.pct_of(info.mcp_tools_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("MCP tools", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.mcp_tools_tokens),
-                    mcp_pct,
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Memory files
-        let mem_pct = info.pct_of(info.memory_files_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("Memory files", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.memory_files_tokens),
-                    mem_pct,
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Skills
-        let skills_pct = info.pct_of(info.skills_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("Skills", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.skills_tokens),
-                    skills_pct,
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
-
-        // Messages
-        let conv_pct = info.pct_of(info.conversation_tokens);
-        lines.push(Line::from(vec![
-            Span::raw("  ⛁ "),
-            Span::styled("Messages", Style::default().fg(colors.text.primary)),
-            Span::styled(
-                format!(
-                    ": {} tokens ({:.1}%)",
-                    crate::ui::components::ContextInfo::fmt_tokens(info.conversation_tokens),
-                    conv_pct,
-                ),
-                Style::default().fg(colors.text.secondary),
-            ),
-        ]));
+            ]));
+        }
 
         // Free space
         lines.push(Line::from(vec![
@@ -1410,113 +1341,70 @@ impl MessagesComponent {
 
         lines.push(Line::from(""));
 
-        // ── MCP tools section ──
-        lines.push(Line::from(vec![
-            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
-            Span::styled("MCP tools", Style::default().fg(colors.text.primary)),
-            Span::styled(" · /mcp", Style::default().fg(colors.ui.comment)),
-        ]));
-        if info.mcp_tool_details.is_empty() {
+        for section in &info.sections {
             lines.push(Line::from(vec![
-                Span::raw("  └ "),
-                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
+                Span::styled("❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled(
+                    section.title.clone(),
+                    Style::default().fg(colors.text.primary),
+                ),
+                Span::styled(
+                    section
+                        .command_hint
+                        .as_ref()
+                        .map(|hint| format!(" · {}", hint))
+                        .unwrap_or_default(),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]));
-        } else {
-            for (name, tokens) in &info.mcp_tool_details {
+            let mut rendered_any_entry = false;
+            for group in &section.groups {
+                if let Some(title) = &group.title {
+                    lines.push(Line::from(vec![
+                        Span::raw(""),
+                        Span::styled(title.clone(), Style::default().fg(colors.text.secondary)),
+                    ]));
+                }
+                if group.entries.is_empty() {
+                    continue;
+                }
+                rendered_any_entry = true;
+                for entry in &group.entries {
+                    lines.push(Line::from(vec![
+                        Span::raw("  └ "),
+                        Span::styled(
+                            entry.label.clone(),
+                            Style::default().fg(colors.text.primary),
+                        ),
+                        Span::styled(
+                            format!(
+                                ": {} tokens",
+                                crate::ui::components::ContextInfo::fmt_tokens(entry.tokens)
+                            ),
+                            Style::default().fg(colors.text.secondary),
+                        ),
+                    ]));
+                }
+            }
+            if !rendered_any_entry {
                 lines.push(Line::from(vec![
                     Span::raw("  └ "),
-                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
-                    Span::styled(
-                        format!(
-                            ": {} tokens",
-                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
-                        ),
-                        Style::default().fg(colors.text.secondary),
-                    ),
+                    Span::styled("(none)", Style::default().fg(colors.ui.comment)),
                 ]));
             }
+            lines.push(Line::from(""));
         }
 
-        lines.push(Line::from(""));
-
-        // ── Memory files section ──
-        lines.push(Line::from(vec![
-            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
-            Span::styled("Memory files", Style::default().fg(colors.text.primary)),
-            Span::styled(" · /memory", Style::default().fg(colors.ui.comment)),
-        ]));
-        if info.memory_file_details.is_empty() {
-            lines.push(Line::from(vec![
-                Span::raw("  └ "),
-                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
-            ]));
-        } else {
-            for (name, tokens) in &info.memory_file_details {
+        if !info.suggestions.is_empty() {
+            lines.push(Line::from(vec![Span::styled(
+                "Suggestions",
+                Style::default().fg(colors.text.primary),
+            )]));
+            for suggestion in &info.suggestions {
                 lines.push(Line::from(vec![
-                    Span::raw("  └ "),
-                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
+                    Span::raw("  ℹ "),
                     Span::styled(
-                        format!(
-                            ": {} tokens",
-                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
-                        ),
-                        Style::default().fg(colors.text.secondary),
-                    ),
-                ]));
-            }
-        }
-
-        lines.push(Line::from(""));
-
-        // ── Skills section ──
-        lines.push(Line::from(vec![
-            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
-            Span::styled("Skills", Style::default().fg(colors.text.primary)),
-            Span::styled(" · /skills", Style::default().fg(colors.ui.comment)),
-        ]));
-        if info.skill_details.is_empty() {
-            lines.push(Line::from(vec![
-                Span::raw("  └ "),
-                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
-            ]));
-        } else {
-            for (name, tokens) in &info.skill_details {
-                lines.push(Line::from(vec![
-                    Span::raw("  └ "),
-                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
-                    Span::styled(
-                        format!(
-                            ": {} tokens",
-                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
-                        ),
-                        Style::default().fg(colors.text.secondary),
-                    ),
-                ]));
-            }
-        }
-
-        lines.push(Line::from(""));
-
-        // ── User section (from .amadeus/skills/) ──
-        lines.push(Line::from(vec![
-            Span::styled("❯ ", Style::default().fg(colors.text.accent)),
-            Span::styled("User", Style::default().fg(colors.text.primary)),
-        ]));
-        if info.tool_details.is_empty() {
-            lines.push(Line::from(vec![
-                Span::raw("  └ "),
-                Span::styled("(none)", Style::default().fg(colors.ui.comment)),
-            ]));
-        } else {
-            for (name, tokens) in &info.tool_details {
-                lines.push(Line::from(vec![
-                    Span::raw("  └ "),
-                    Span::styled(name.clone(), Style::default().fg(colors.text.primary)),
-                    Span::styled(
-                        format!(
-                            ": {} tokens",
-                            crate::ui::components::ContextInfo::fmt_tokens(*tokens)
-                        ),
+                        suggestion.clone(),
                         Style::default().fg(colors.text.secondary),
                     ),
                 ]));
@@ -1667,6 +1555,7 @@ impl Default for MessagesComponent {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{ContextEntry, ContextSection, ContextSectionGroup};
     use ratatui::{backend::TestBackend, Terminal};
 
     #[test]
@@ -1838,6 +1727,74 @@ mod tests {
 
         assert!(rendered.contains("Compacting context"));
         assert!(rendered.contains("%"));
+    }
+
+    #[test]
+    fn test_context_report_renders_sections_and_suggestions() {
+        let mut messages = MessagesComponent::new();
+        messages.add_context_report(
+            crate::ui::components::ContextInfo {
+                model_name: "claude-sonnet".to_string(),
+                context_window_size: 200_000,
+                system_prompt_tokens: 6_300,
+                system_tools_tokens: 12_900,
+                additional_tools_tokens: 1_200,
+                memory_files_tokens: 886,
+                conversation_tokens: 81_200,
+                sections: vec![
+                    ContextSection {
+                        title: "Tools".to_string(),
+                        command_hint: Some("/help".to_string()),
+                        groups: vec![
+                            ContextSectionGroup {
+                                title: Some("Core".to_string()),
+                                entries: vec![ContextEntry {
+                                    label: "bash".to_string(),
+                                    tokens: 1_000,
+                                }],
+                            },
+                            ContextSectionGroup {
+                                title: Some("Additional".to_string()),
+                                entries: vec![ContextEntry {
+                                    label: "search_docs".to_string(),
+                                    tokens: 200,
+                                }],
+                            },
+                        ],
+                    },
+                    ContextSection {
+                        title: "Skills Inventory".to_string(),
+                        command_hint: Some("/skills".to_string()),
+                        groups: vec![ContextSectionGroup {
+                            title: Some("Project".to_string()),
+                            entries: vec![ContextEntry {
+                                label: "skills/review/SKILL.md".to_string(),
+                                tokens: 130,
+                            }],
+                        }],
+                    },
+                ],
+                suggestions: vec![
+                    "Messages dominate the live window.".to_string(),
+                    "Skills and custom agents below are inventory only.".to_string(),
+                ],
+            },
+            3,
+        );
+
+        let lines = messages.take_unrendered_lines(100);
+        let rendered = lines
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("[3] /context"));
+        assert!(rendered.contains("Additional tools"));
+        assert!(rendered.contains("Skills Inventory"));
+        assert!(rendered.contains("search_docs"));
+        assert!(rendered.contains("Suggestions"));
+        assert!(rendered.contains("inventory only"));
     }
 
     #[test]
