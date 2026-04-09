@@ -24,23 +24,28 @@
 // - module: crate::agent::config::Config
 // - module: crate::agent::loop_agent::Agent
 // - module: crate::agent::profile::AgentProfile
-// - module: crate::agent::supervisor
 // - module: crate::agent::worker
 // - module: crate::client::LLMClient
 // - module: crate::concurrency::LockManager
 // - module: crate::core::id
 // - module: crate::error
+// - module: crate::tools::peer::PeerTool
 // - module: amadeus_runtime
+// - runtime: tokio async runtime
 // invariants:
 // - Orchestra naming remains the primary public surface while legacy modules stay deprecated.
-// side_effects: none
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Sends or receives messages across async channels.
 // tests:
 // - tests/agent_integration_test.rs
 // - tests/p2p_test.rs
 // - tests/e2e_product_flow.rs
 // @end-amadeus-header
 
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
+use std::time::Duration;
 
 pub use super::worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
 use crate::agent::config::Config;
@@ -50,11 +55,16 @@ use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
+use crate::tools::peer::PeerTool;
+use amadeus_runtime::select_worker;
 pub use amadeus_runtime::{
     AgentInfo, AgentOrchestra, AgentStatus, OrchestraConfig, OrchestraLeader, OrchestraRegistry,
     OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
 };
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tracing::{debug, info, warn};
+
+use super::worker::{finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome};
 
 pub(crate) struct OrchestratedAgent<C: LLMClient> {
     pub(crate) id: AgentId,
@@ -298,6 +308,16 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
     }
 }
 
+struct WorkerEntry<C: LLMClient> {
+    info: Arc<RwLock<WorkerInfo>>,
+    agent: Agent<C>,
+}
+
+struct QueueEntry {
+    task: Task,
+    response_tx: mpsc::Sender<Result<TaskResult>>,
+}
+
 /// Canonical orchestra-aware agent registry and routing surface.
 pub struct AgentOrchestrator<C: LLMClient> {
     inner: super::manager::AgentManager<C>,
@@ -386,35 +406,53 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
 
 /// Canonical queued runtime for background orchestra execution.
 pub struct OrchestraRuntime<C: LLMClient> {
-    inner: super::supervisor::Supervisor<C>,
+    client: C,
+    config: OrchestraConfig,
+    sdk_config: Arc<Config>,
+    workers: Arc<RwLock<HashMap<AgentId, WorkerEntry<C>>>>,
+    lock_manager: Arc<Mutex<LockManager>>,
+    next_worker_idx: Arc<Mutex<usize>>,
+    help_tx: mpsc::Sender<HelpRequest>,
+    help_rx: Mutex<mpsc::Receiver<HelpRequest>>,
+    task_queue: Mutex<VecDeque<QueueEntry>>,
 }
 
 impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     /// Create a new orchestra runtime.
     pub fn new(client: C, config: OrchestraConfig, sdk_config: Arc<Config>) -> Self {
+        let (help_tx, help_rx) = mpsc::channel(100);
         Self {
-            inner: super::supervisor::Supervisor::new(client, config, sdk_config),
+            client,
+            config,
+            sdk_config,
+            workers: Arc::new(RwLock::new(HashMap::new())),
+            lock_manager: Arc::new(Mutex::new(LockManager::new())),
+            next_worker_idx: Arc::new(Mutex::new(0)),
+            help_tx,
+            help_rx: Mutex::new(help_rx),
+            task_queue: Mutex::new(VecDeque::new()),
         }
     }
 
     /// Get the lock manager for resource coordination.
     pub fn lock_manager(&self) -> Arc<Mutex<LockManager>> {
-        self.inner.lock_manager()
+        Arc::clone(&self.lock_manager)
     }
 
     /// Get the base LLM client.
     pub fn client(&self) -> &C {
-        self.inner.client()
+        &self.client
     }
 
     /// Get the base SDK configuration.
     pub fn config(&self) -> &Arc<Config> {
-        self.inner.config()
+        &self.sdk_config
     }
 
     /// Spawn agents into the orchestra runtime.
     pub async fn spawn_agents(&mut self, configs: Vec<WorkerConfig>) -> Result<Vec<AgentId>> {
-        self.inner.spawn_agents(configs).await
+        self.spawn_agents_with_client(configs, self.client.clone())
+            .await
     }
 
     /// Spawn agents using a specific client implementation.
@@ -423,21 +461,229 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         configs: Vec<WorkerConfig>,
         client: C,
     ) -> Result<Vec<AgentId>> {
-        self.inner.spawn_agents_with_client(configs, client).await
+        let mut ids = Vec::new();
+        let mut workers = self.workers.write().await;
+
+        for worker_config in configs {
+            let id = worker_config.id.unwrap_or_else(AgentId::new);
+
+            let worker_sdk_config = if let Some(model) = worker_config.model {
+                let mut cfg = (*self.sdk_config).clone();
+                cfg.model = model;
+                Arc::new(cfg)
+            } else {
+                Arc::clone(&self.sdk_config)
+            };
+
+            let agent =
+                crate::agent::loop_agent::AgentBuilder::new(client.clone(), worker_sdk_config)
+                    .with_default_tools()
+                    .register_tool(Box::new(PeerTool::new(id, self.help_tx.clone())))
+                    .build();
+
+            let info = WorkerInfo {
+                id,
+                name: worker_config.name,
+                capabilities: worker_config.capabilities,
+                status: WorkerStatus::Idle,
+                active_tasks: 0,
+                max_concurrent: worker_config.max_concurrent,
+                completed_tasks: 0,
+                total_errors: 0,
+            };
+
+            workers.insert(
+                id,
+                WorkerEntry {
+                    info: Arc::new(RwLock::new(info)),
+                    agent,
+                },
+            );
+
+            ids.push(id);
+        }
+
+        info!(workers = ids.len(), "Workers spawned");
+        Ok(ids)
     }
 
     /// Get execution info for a specific agent in the orchestra runtime.
     pub async fn agent_info(&self, agent_id: AgentId) -> Option<WorkerInfo> {
-        self.inner.agent_info(agent_id).await
+        let workers = self.workers.read().await;
+        if let Some(worker) = workers.get(&agent_id) {
+            Some(worker.info.read().await.clone())
+        } else {
+            None
+        }
     }
 
     /// Run the orchestra background loop to process delegated work.
     pub async fn run(&self) -> Result<()> {
-        self.inner.run().await
+        info!("Orchestra runtime loop started");
+
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+
+        loop {
+            tokio::select! {
+                help_req_opt = async {
+                    let mut help_rx = self.help_rx.lock().await;
+                    help_rx.recv().await
+                } => {
+                    if let Some(help_req) = help_req_opt {
+                        let workers_map = Arc::clone(&self.workers);
+                        let strategy = self.config.strategy;
+                        let timeout_dur = self.config.task_timeout;
+                        let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+
+                        tokio::spawn(async move {
+                            let worker_selection = {
+                                let workers_guard = workers_map.read().await;
+                                Self::select_worker(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
+                            };
+
+                            match worker_selection {
+                                Ok(id) => {
+                                    let workers_guard = workers_map.read().await;
+                                    if let Some(entry) = workers_guard.get(&id) {
+                                        let result = Self::dispatch_internal(id, entry, help_req.task, timeout_dur).await;
+                                        let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
+                                            task_id: "error".to_string(),
+                                            worker_id: id,
+                                            success: false,
+                                            output: None,
+                                            error: Some(e.to_string()),
+                                            duration_ms: 0,
+                                            tool_calls: Vec::new(),
+                                        }));
+                                    }
+                                }
+                                Err(error) => {
+                                    warn!("Failed to find worker for help request: {}", error);
+                                    let _ = help_req.response_tx.send(TaskResult {
+                                        task_id: help_req.task.id,
+                                        worker_id: AgentId::new(),
+                                        success: false,
+                                        output: None,
+                                        error: Some(format!("No available worker for help request: {}", error)),
+                                        duration_ms: 0,
+                                        tool_calls: Vec::new(),
+                                    });
+                                }
+                            }
+                        });
+                    }
+                }
+
+                _ = interval.tick() => {
+                    self.process_queue().await;
+                }
+            }
+        }
     }
 
     /// Execute a task through the queued orchestra runtime.
     pub async fn execute(&self, task: Task) -> Result<TaskResult> {
-        self.inner.execute(task).await
+        let (tx, mut rx) = mpsc::channel(1);
+        {
+            let mut queue = self.task_queue.lock().await;
+            if queue.len() >= self.config.max_pending_tasks {
+                return Err(AgentError::Config("Task queue is full".to_string()));
+            }
+            queue.push_back(QueueEntry {
+                task,
+                response_tx: tx,
+            });
+        }
+
+        rx.recv()
+            .await
+            .ok_or_else(|| AgentError::Command("Task response channel closed".to_string()))?
+    }
+
+    async fn process_queue(&self) {
+        let mut queue = self.task_queue.lock().await;
+        if queue.is_empty() {
+            return;
+        }
+
+        let mut next_queue = VecDeque::new();
+        while let Some(entry) = queue.pop_front() {
+            let workers_map = Arc::clone(&self.workers);
+            let strategy = self.config.strategy;
+            let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+
+            let worker_selection = {
+                let workers_guard = workers_map.read().await;
+                Self::select_worker(&workers_guard, &entry.task, strategy, next_idx_mutex).await
+            };
+
+            if let Ok(id) = worker_selection {
+                let timeout_dur = self.config.task_timeout;
+                tokio::spawn(async move {
+                    let workers_guard = workers_map.read().await;
+                    if let Some(worker_entry) = workers_guard.get(&id) {
+                        let result =
+                            Self::dispatch_internal(id, worker_entry, entry.task, timeout_dur)
+                                .await;
+                        let _ = entry.response_tx.send(result).await;
+                    }
+                });
+            } else {
+                next_queue.push_back(entry);
+            }
+        }
+        *queue = next_queue;
+    }
+
+    async fn select_worker(
+        workers: &HashMap<AgentId, WorkerEntry<C>>,
+        task: &Task,
+        strategy: OrchestraStrategy,
+        next_idx_mutex: Arc<Mutex<usize>>,
+    ) -> Result<AgentId> {
+        let mut candidates = Vec::new();
+        for entry in workers.values() {
+            let info = entry.info.read().await;
+            candidates.push(info.clone());
+        }
+
+        let worker_id = {
+            let mut next_idx = next_idx_mutex.lock().await;
+            select_worker(&candidates, task, strategy, &mut next_idx)
+        };
+
+        worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))
+    }
+
+    async fn dispatch_internal(
+        worker_id: AgentId,
+        entry: &WorkerEntry<C>,
+        task: Task,
+        task_timeout: Duration,
+    ) -> Result<TaskResult> {
+        let task_id = task.id.clone();
+        let prompt = task.prompt.clone();
+
+        {
+            let mut info = entry.info.write().await;
+            mark_worker_task_started(&mut info);
+        }
+
+        let agent = entry.agent.clone();
+        debug!(worker_id = %worker_id, task_id = %task_id, "Dispatching task");
+
+        let result = tokio::time::timeout(task_timeout, agent.run(&prompt)).await;
+        let outcome = match result {
+            Ok(Ok(run_result)) => Ok(RunOutcome {
+                text: run_result.text,
+                duration_ms: 0,
+                tool_calls: run_result.tool_calls,
+            }),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err("Task timed out".to_string()),
+        };
+
+        let mut info = entry.info.write().await;
+        Ok(finalize_worker_task(&mut info, task_id, worker_id, outcome))
     }
 }

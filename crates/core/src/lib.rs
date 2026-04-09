@@ -74,4 +74,5 @@ pub use agent::{
 
 #[cfg(feature = "orchestra")]
 #[deprecated(note = "use OrchestraRuntime and orchestra::* types instead")]
+#[allow(deprecated)]
 pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};

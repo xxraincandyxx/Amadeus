@@ -64,6 +64,7 @@ pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTa
 #[deprecated(
     note = "use crate::agent::orchestra::{OrchestraRuntime, OrchestraStrategy, OrchestraConfig}"
 )]
+#[allow(deprecated)]
 pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
 
 #[cfg(feature = "orchestra")]
