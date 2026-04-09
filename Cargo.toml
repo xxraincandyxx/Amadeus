@@ -39,6 +39,7 @@ test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", 
 # Concurrency & Multi-Agent
 concurrency = ["amadeus_core/concurrency"]
 orchestra = ["amadeus_core/orchestra", "concurrency"]
+# Legacy aliases retained for compatibility; prefer `orchestra`.
 team = ["orchestra"]
 supervisor = ["orchestra"]
 # Context Management

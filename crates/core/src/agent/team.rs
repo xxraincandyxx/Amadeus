@@ -1,7 +1,7 @@
 // @amadeus-header
-// summary: Compatibility wrapper re-exporting team runtime types from the runtime crate.
+// summary: Deprecated team shim forwarding to orchestra-compatible runtime types.
 // layer: agent
-// status: active
+// status: deprecated
 // feature_flags:
 // - team
 // provides:
@@ -15,14 +15,17 @@
 // uses:
 // - module: amadeus_runtime
 // invariants:
-// - Public team paths remain stable while implementation lives outside core.
+// - Legacy team paths remain available as deprecated aliases over orchestra-compatible runtime types.
 // side_effects: none
 // tests:
 // - cmd: cargo test -p core team_registry_tracks_shared_tasks --features full
 // @end-amadeus-header
 
-//! Compatibility re-exports for team runtime types.
+//! Deprecated compatibility re-exports for legacy team runtime types.
 
+#[deprecated(
+    note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
+)]
 pub use amadeus_runtime::{
     AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
 };

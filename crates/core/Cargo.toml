@@ -19,6 +19,7 @@ tui = ["concurrency"]
 test-utils = ["tempfile", "rustc_version_runtime"]
 concurrency = []
 orchestra = ["concurrency"]
+# Legacy aliases retained for compatibility; prefer `orchestra`.
 team = ["orchestra"]
 supervisor = ["orchestra"]
 context = []

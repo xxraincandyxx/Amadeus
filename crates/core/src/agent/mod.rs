@@ -21,15 +21,20 @@ pub mod config;
 pub mod events;
 pub mod loop_agent;
 #[cfg(feature = "orchestra")]
+#[deprecated(note = "use crate::agent::orchestra::AgentOrchestrator")]
 pub mod manager;
 pub mod messages;
 #[cfg(feature = "orchestra")]
 pub mod orchestra;
 pub mod profile; // NEW: Agent profiles
 #[cfg(feature = "orchestra")]
+#[deprecated(
+    note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
+)]
 pub mod team;
 
 #[cfg(feature = "orchestra")]
+#[deprecated(note = "use crate::agent::orchestra::OrchestraRuntime")]
 pub mod supervisor;
 
 #[cfg(feature = "orchestra")]
