@@ -1,0 +1,12 @@
+[package]
+name = "prompts"
+version = "0.1.0"
+edition = "2021"
+description = "Shared prompt templates for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_prompts"
+path = "src/lib.rs"

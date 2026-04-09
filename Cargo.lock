@@ -324,6 +324,7 @@ dependencies = [
  "libc",
  "mockito",
  "permissions",
+ "prompts",
  "rand 0.8.5",
  "regex",
  "reqwest",
@@ -1460,6 +1461,10 @@ checksum = "8fd00f0bb2e90d81d1044c2b32617f68fcb9fa3bb7640c23e9c748e53fb30934"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "prompts"
+version = "0.1.0"
 
 [[package]]
 name = "quote"
