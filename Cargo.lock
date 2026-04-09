@@ -355,6 +355,7 @@ dependencies = [
  "futures",
  "glob",
  "hooks",
+ "ids",
  "libc",
  "messages",
  "mockito",
@@ -1076,6 +1077,14 @@ checksum = "3acae9609540aa318d1bc588455225fb2085b9ed0c4f6bd0d9d5bcd86f1a0344"
 dependencies = [
  "icu_normalizer",
  "icu_properties",
+]
+
+[[package]]
+name = "ids"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "uuid",
 ]
 
 [[package]]

@@ -1,0 +1,17 @@
+[package]
+name = "ids"
+version = "0.1.0"
+edition = "2021"
+description = "Shared identifier primitives for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "ids", "sdk"]
+categories = ["development-tools"]
+
+[lib]
+name = "amadeus_ids"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+uuid = { version = "1.10", features = ["v4", "serde"] }
