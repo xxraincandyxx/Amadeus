@@ -24,6 +24,7 @@ context = []
 full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
 
 [dependencies]
+amadeus_commands = { package = "commands", path = "../commands" }
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1"

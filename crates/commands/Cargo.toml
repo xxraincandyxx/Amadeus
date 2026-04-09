@@ -1,0 +1,12 @@
+[package]
+name = "commands"
+version = "0.1.0"
+edition = "2021"
+description = "Transport-agnostic slash command definitions for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_commands"
+path = "src/lib.rs"
