@@ -61,7 +61,7 @@ Location: `src/agent/loop_agent.rs`
 │                                                             │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Initialize Compactor                                │   │
-│  │  if config.auto_compact {                             │   │
+│  │  if config.auto_compact {                            │   │
 │  │      compactor = ContextCompactor::new(...)          │   │
 │  │  }                                                   │   │
 │  └──────────────────────────────────────────────────────┘   │
