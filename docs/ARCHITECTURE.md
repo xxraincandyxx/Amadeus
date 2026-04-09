@@ -734,7 +734,7 @@ Structured configuration via `.amadeus/settings.json` and `~/.amadeus/settings.j
 | Concurrent Execution (JoinSet) | ✅ Complete | Parallel processing |
 | Task Queuing & Backpressure | ✅ Complete | Centralized TaskQueue |
 | P2P Help System | ✅ Complete | PeerTool integration |
-| Supervisor/Worker | ✅ Complete | Multi-agent coordination |
+| Orchestra Runtime | ✅ Complete | Multi-agent coordination |
 | TUI Interface | ✅ Complete | ratatui-based |
 | HTTP API | ✅ Complete | axum-based |
 | Actor-based Agents | ⏳ Planned | Persistent tasks with mailboxes |

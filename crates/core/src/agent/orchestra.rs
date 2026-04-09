@@ -51,7 +51,6 @@ pub use super::worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus
 use crate::agent::config::Config;
 use crate::agent::loop_agent::Agent;
 use crate::agent::profile::AgentProfile;
-use crate::agent::team::{TeamLeader, TeamRegistry};
 use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::{AgentId, TeamId};
@@ -322,7 +321,7 @@ struct QueueEntry {
 /// Canonical orchestra-aware agent registry and routing surface.
 pub struct AgentOrchestrator<C: LLMClient> {
     roster: OrchestraRoster<C>,
-    orchestras: TeamRegistry,
+    orchestras: OrchestraRegistry,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
@@ -330,7 +329,7 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     pub fn new(client: C, config: Arc<Config>) -> Self {
         Self {
             roster: OrchestraRoster::new(client, config),
-            orchestras: TeamRegistry::new(),
+            orchestras: OrchestraRegistry::new(),
         }
     }
 
@@ -400,7 +399,7 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
 
         if let Some(team_id) = target_orchestra_id {
             self.orchestras
-                .queue_task(team_id, task.clone(), TeamLeader::User)?;
+                .queue_task(team_id, task.clone(), OrchestraLeader::User)?;
             self.orchestras.claim_task(team_id, &task.id, selected_id)?;
         }
 

@@ -13,7 +13,6 @@
 // - module: crate::agent::config::Config
 // - module: crate::agent::orchestra
 // - module: crate::agent::profile::AgentProfile
-// - module: crate::agent::team
 // - module: crate::agent::worker
 // - module: crate::client::LLMClient
 // - module: crate::core::id
@@ -31,9 +30,8 @@ use std::sync::Arc;
 pub use amadeus_runtime::{AgentInfo, AgentStatus};
 
 use crate::agent::config::Config;
-use crate::agent::orchestra::AgentOrchestrator;
+use crate::agent::orchestra::{AgentOrchestra, AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
-use crate::agent::team::{AgentTeam, TeamLeader};
 use crate::agent::worker::{Task, TaskResult, WorkerConfig};
 use crate::client::LLMClient;
 use crate::core::id::{AgentId, TeamId};
@@ -64,30 +62,30 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
         self.inner.spawn_agent(config).await
     }
 
-    pub fn create_orchestra(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
+    pub fn create_orchestra(&mut self, name: impl Into<String>, leader: OrchestraLeader) -> TeamId {
         self.inner.create_orchestra(name, leader)
     }
 
     #[deprecated(note = "use create_orchestra")]
-    pub fn create_team(&mut self, name: impl Into<String>, leader: TeamLeader) -> TeamId {
+    pub fn create_team(&mut self, name: impl Into<String>, leader: OrchestraLeader) -> TeamId {
         self.create_orchestra(name, leader)
     }
 
-    pub fn ensure_default_orchestra(&mut self, leader: TeamLeader) -> TeamId {
+    pub fn ensure_default_orchestra(&mut self, leader: OrchestraLeader) -> TeamId {
         self.inner.ensure_default_orchestra(leader)
     }
 
     #[deprecated(note = "use ensure_default_orchestra")]
-    pub fn ensure_default_team(&mut self, leader: TeamLeader) -> TeamId {
+    pub fn ensure_default_team(&mut self, leader: OrchestraLeader) -> TeamId {
         self.ensure_default_orchestra(leader)
     }
 
-    pub fn list_orchestras(&self) -> Vec<AgentTeam> {
+    pub fn list_orchestras(&self) -> Vec<AgentOrchestra> {
         self.inner.list_orchestras()
     }
 
     #[deprecated(note = "use list_orchestras")]
-    pub fn list_teams(&self) -> Vec<AgentTeam> {
+    pub fn list_teams(&self) -> Vec<AgentOrchestra> {
         self.list_orchestras()
     }
 
