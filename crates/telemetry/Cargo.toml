@@ -1,0 +1,23 @@
+[package]
+name = "telemetry"
+version = "0.1.0"
+edition = "2021"
+description = "Structured telemetry sinks and event recording for Amadeus runtime surfaces"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "telemetry", "observability"]
+categories = ["development-tools"]
+
+[lib]
+name = "amadeus_telemetry"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus_ids = { package = "ids", path = "../ids" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"

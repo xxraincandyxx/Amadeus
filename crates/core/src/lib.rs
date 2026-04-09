@@ -37,6 +37,7 @@ pub mod permissions;
 pub mod policy;
 pub mod prompts;
 pub mod skills;
+pub mod telemetry;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub mod tools;
@@ -51,6 +52,10 @@ pub use commands::{
 };
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
+pub use telemetry::{
+    JsonlSink, MemorySink, TelemetryEntry, TelemetryError, TelemetryEvent, TelemetryRecorder,
+    TelemetrySink,
+};
 
 #[cfg(feature = "concurrency")]
 pub use concurrency::{

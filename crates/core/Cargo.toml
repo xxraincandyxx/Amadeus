@@ -39,6 +39,7 @@ amadeus_profiles = { package = "profiles", path = "../profiles" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
 amadeus_runtime = { package = "runtime", path = "../runtime" }
 amadeus_skills = { package = "skills", path = "../skills" }
+amadeus_telemetry = { package = "telemetry", path = "../telemetry" }
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1"
