@@ -45,6 +45,7 @@ pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
 #[deprecated(
     note = "use crate::agent::orchestra::{AgentInfo, AgentOrchestrator, AgentStatus}"
 )]
+#[allow(deprecated)]
 pub use manager::AgentManager;
 pub use messages::{ContentBlock, Message};
 #[cfg(feature = "orchestra")]

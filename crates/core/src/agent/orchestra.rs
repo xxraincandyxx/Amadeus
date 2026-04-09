@@ -45,12 +45,13 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub use super::worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
 use crate::agent::config::Config;
 use crate::agent::loop_agent::Agent;
 use crate::agent::profile::AgentProfile;
+use crate::agent::team::{TeamLeader, TeamRegistry};
 use crate::client::LLMClient;
 use crate::concurrency::LockManager;
 use crate::core::id::{AgentId, TeamId};
@@ -320,14 +321,16 @@ struct QueueEntry {
 
 /// Canonical orchestra-aware agent registry and routing surface.
 pub struct AgentOrchestrator<C: LLMClient> {
-    inner: super::manager::AgentManager<C>,
+    roster: OrchestraRoster<C>,
+    orchestras: TeamRegistry,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     /// Create a new orchestrator.
     pub fn new(client: C, config: Arc<Config>) -> Self {
         Self {
-            inner: super::manager::AgentManager::new(client, config),
+            roster: OrchestraRoster::new(client, config),
+            orchestras: TeamRegistry::new(),
         }
     }
 
@@ -337,27 +340,31 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         name: Option<String>,
         profile: AgentProfile,
     ) -> Result<AgentId> {
-        self.inner.create_agent(name, profile).await
+        self.roster.create_agent(name, profile).await
     }
 
     /// Spawn a new agent using worker-style runtime configuration.
     pub async fn spawn_agent(&mut self, config: WorkerConfig) -> Result<AgentId> {
-        self.inner.spawn_teammate(config).await
+        self.roster.spawn_agent(config).await
     }
 
     /// Create a new orchestra and return its identifier.
     pub fn create_orchestra(&mut self, name: impl Into<String>, leader: OrchestraLeader) -> TeamId {
-        self.inner.create_orchestra(name, leader)
+        self.orchestras.create_team(name, leader)
     }
 
     /// Ensure there is always a default orchestra for task routing.
     pub fn ensure_default_orchestra(&mut self, leader: OrchestraLeader) -> TeamId {
-        self.inner.ensure_default_orchestra(leader)
+        if let Some(orchestra_id) = self.orchestras.default_team_id() {
+            orchestra_id
+        } else {
+            self.orchestras.create_team("default", leader)
+        }
     }
 
     /// List all orchestras.
     pub fn list_orchestras(&self) -> Vec<AgentOrchestra> {
-        self.inner.list_orchestras()
+        self.orchestras.list_teams()
     }
 
     /// Add an agent to an orchestra.
@@ -366,7 +373,11 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         orchestra_id: TeamId,
         agent_id: AgentId,
     ) -> Result<()> {
-        self.inner.add_agent_to_orchestra(orchestra_id, agent_id)
+        if !self.roster.contains(agent_id) {
+            return Err(AgentError::Command(format!("Unknown agent: {}", agent_id)));
+        }
+        self.orchestras.add_member(orchestra_id, agent_id)?;
+        Ok(())
     }
 
     /// Execute a task using the best available local agent in the selected orchestra.
@@ -375,32 +386,123 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         orchestra_id: Option<TeamId>,
         task: Task,
     ) -> Result<TaskResult> {
-        self.inner.execute_task(orchestra_id, task).await
+        let target_orchestra_id = orchestra_id.or_else(|| self.orchestras.default_team_id());
+        let allowed_ids = target_orchestra_id.and_then(|team_id| {
+            self.orchestras
+                .get_team(team_id)
+                .map(|team| team.members.clone())
+        });
+        let selected_index = self
+            .roster
+            .select_agent_index(allowed_ids.as_deref(), &task)?;
+        let selected_id = self.roster.agent_id_at(selected_index);
+        let agent = self.roster.agent_clone_at(selected_index);
+
+        if let Some(team_id) = target_orchestra_id {
+            self.orchestras
+                .queue_task(team_id, task.clone(), TeamLeader::User)?;
+            self.orchestras.claim_task(team_id, &task.id, selected_id)?;
+        }
+
+        self.roster.mark_running(selected_index);
+
+        let start = Instant::now();
+        let result = agent.run(&task.prompt).await;
+        let duration_ms = start.elapsed().as_millis() as u64;
+        self.roster.mark_idle(selected_index);
+
+        let task_result = match result {
+            Ok(run_result) => {
+                self.roster.increment_task_count(selected_index);
+                TaskResult {
+                    task_id: task.id.clone(),
+                    worker_id: selected_id,
+                    success: true,
+                    output: Some(run_result.text),
+                    error: None,
+                    duration_ms,
+                    tool_calls: run_result.tool_calls,
+                }
+            }
+            Err(error) => {
+                self.roster.mark_error(selected_index);
+                TaskResult {
+                    task_id: task.id.clone(),
+                    worker_id: selected_id,
+                    success: false,
+                    output: None,
+                    error: Some(error.to_string()),
+                    duration_ms,
+                    tool_calls: Vec::new(),
+                }
+            }
+        };
+
+        if let Some(team_id) = target_orchestra_id {
+            self.orchestras
+                .record_result(team_id, &task.id, selected_id, &task_result)?;
+        }
+
+        if task_result.success {
+            Ok(task_result)
+        } else {
+            Err(AgentError::Command(
+                task_result
+                    .error
+                    .clone()
+                    .unwrap_or_else(|| "Task execution failed".to_string()),
+            ))
+        }
     }
 
     /// List all active agents.
     pub fn list_agents(&self) -> Vec<AgentInfo> {
-        self.inner.list_agents()
+        self.roster.list_agents()
     }
 
     /// Get info for a specific agent.
     pub fn get_agent(&self, agent_id: &AgentId) -> Option<AgentInfo> {
-        self.inner.get_agent(agent_id)
+        self.roster.get_agent(agent_id)
     }
 
     /// Get the currently active agent ID.
     pub fn active_agent_id(&self) -> Option<AgentId> {
-        self.inner.active_agent_id()
+        self.roster.active_agent_id()
     }
 
     /// Switch the active agent.
     pub fn switch_to(&mut self, agent_id: &AgentId) -> Result<()> {
-        self.inner.switch_to(agent_id)
+        self.roster.switch_to(agent_id)
     }
 
     /// Remove an agent from the orchestrator.
     pub fn kill(&mut self, agent_id: &AgentId) -> Result<()> {
-        self.inner.kill(agent_id)
+        self.roster.kill(agent_id)
+    }
+
+    /// Switch to the next agent.
+    pub fn switch_next(&mut self) {
+        self.roster.switch_next();
+    }
+
+    /// Switch to the previous agent.
+    pub fn switch_prev(&mut self) {
+        self.roster.switch_prev();
+    }
+
+    /// Get peer information for the call-peer tool.
+    pub fn get_peers(&self, exclude_agent_id: &AgentId) -> Vec<crate::tools::peer::PeerInfo> {
+        self.roster.peer_info(exclude_agent_id)
+    }
+
+    /// Check if call-peer should be enabled.
+    pub fn is_call_peer_enabled(&self) -> bool {
+        self.roster.call_peer_enabled()
+    }
+
+    /// Get the total number of agents.
+    pub fn agent_count(&self) -> usize {
+        self.roster.agent_count()
     }
 }
 
