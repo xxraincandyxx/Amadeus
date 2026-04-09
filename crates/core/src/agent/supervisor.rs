@@ -15,6 +15,7 @@
 // - module: crate::concurrency::LockManager
 // - module: crate::core::id::AgentId
 // - module: crate::error
+// - module: amadeus_runtime::scheduler
 // - module: crate::tools::peer::PeerTool
 // - runtime: tokio async runtime
 // invariants:
@@ -34,6 +35,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
+use amadeus_runtime::select_worker;
+pub use amadeus_runtime::{DispatchStrategy, SupervisorConfig};
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, info, warn};
 
@@ -46,45 +49,6 @@ use crate::error::{AgentError, Result};
 use crate::tools::peer::PeerTool;
 
 use super::worker::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
-
-/// Strategy for dispatching tasks to workers.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum DispatchStrategy {
-    /// Rotate through workers in order.
-    #[default]
-    RoundRobin,
-    /// Pick worker with fewest active tasks.
-    LeastLoaded,
-    /// Match task requirements to worker capabilities.
-    CapabilityMatch,
-}
-
-/// Configuration for the supervisor.
-#[derive(Debug, Clone)]
-pub struct SupervisorConfig {
-    /// Dispatch strategy.
-    pub strategy: DispatchStrategy,
-    /// Maximum pending tasks in queue.
-    pub max_pending_tasks: usize,
-    /// Task execution timeout.
-    pub task_timeout: Duration,
-    /// Whether to retry failed tasks.
-    pub retry_failed_tasks: bool,
-    /// Maximum retry attempts.
-    pub max_retries: u8,
-}
-
-impl Default for SupervisorConfig {
-    fn default() -> Self {
-        Self {
-            strategy: DispatchStrategy::default(),
-            max_pending_tasks: 100,
-            task_timeout: Duration::from_secs(300),
-            retry_failed_tasks: true,
-            max_retries: 3,
-        }
-    }
-}
 
 /// Internal worker entry.
 struct WorkerEntry<C: LLMClient> {
@@ -231,10 +195,10 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
                         let next_idx_mutex = Arc::clone(&self.next_worker_idx);
 
                         tokio::spawn(async move {
-                            let worker_selection = {
-                                let workers_guard = workers_map.read().await;
-                                Self::select_worker_internal(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
-                            };
+                        let worker_selection = {
+                            let workers_guard = workers_map.read().await;
+                            Self::select_worker(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
+                        };
 
                             match worker_selection {
                                 Ok(id) => {
@@ -291,8 +255,7 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
 
             let worker_selection = {
                 let workers_guard = workers_map.read().await;
-                Self::select_worker_internal(&workers_guard, &entry.task, strategy, next_idx_mutex)
-                    .await
+                Self::select_worker(&workers_guard, &entry.task, strategy, next_idx_mutex).await
             };
 
             if let Ok(id) = worker_selection {
@@ -332,40 +295,21 @@ impl<C: LLMClient + Clone + 'static> Supervisor<C> {
             .ok_or_else(|| AgentError::Command("Task response channel closed".to_string()))?
     }
 
-    async fn select_worker_internal(
+    async fn select_worker(
         workers: &HashMap<AgentId, WorkerEntry<C>>,
         task: &Task,
         strategy: DispatchStrategy,
         next_idx_mutex: Arc<Mutex<usize>>,
     ) -> Result<AgentId> {
         let mut candidates = Vec::new();
-        for (id, entry) in workers {
+        for entry in workers.values() {
             let info = entry.info.read().await;
-            if info.is_available() {
-                candidates.push((*id, info.clone()));
-            }
+            candidates.push(info.clone());
         }
 
-        let worker_id = match strategy {
-            DispatchStrategy::RoundRobin => {
-                if candidates.is_empty() {
-                    None
-                } else {
-                    let mut next_idx = next_idx_mutex.lock().await;
-                    let idx = *next_idx % candidates.len();
-                    *next_idx += 1;
-                    Some(candidates[idx].0)
-                }
-            }
-            DispatchStrategy::LeastLoaded => candidates
-                .iter()
-                .min_by_key(|(_, info)| info.active_tasks)
-                .map(|(id, _)| *id),
-            DispatchStrategy::CapabilityMatch => candidates
-                .iter()
-                .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
-                .min_by_key(|(_, info)| info.active_tasks)
-                .map(|(id, _)| *id),
+        let worker_id = {
+            let mut next_idx = next_idx_mutex.lock().await;
+            select_worker(&candidates, task, strategy, &mut next_idx)
         };
 
         worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))
