@@ -5,8 +5,14 @@
 // feature_flags: none
 // provides:
 // - module: crate::commands
+// - module: crate::commands::context
+// - fn: crate::commands::context::build_context_report
 // - type: crate::commands::SlashCommand
 // - type: crate::commands::SlashCommandSpec
+// - type: crate::commands::context::ContextEntry
+// - type: crate::commands::context::ContextReport
+// - type: crate::commands::context::ContextSection
+// - type: crate::commands::context::ContextSectionGroup
 // - const: crate::commands::SLASH_COMMAND_SPECS
 // uses: none
 // invariants:
@@ -15,6 +21,12 @@
 // tests:
 // - cmd: cargo test -p core slash_command --features full
 // @end-amadeus-header
+
+pub mod context;
+
+pub use context::{
+    build_context_report, ContextEntry, ContextReport, ContextSection, ContextSectionGroup,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlashCommandSpec {
