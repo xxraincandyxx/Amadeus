@@ -5,6 +5,8 @@
 // feature_flags: none
 // provides:
 // - module: crate
+// - type: crate::EventEntry
+// - type: crate::Event
 // - type: crate::RunResult
 // - type: crate::ToolCall
 // - type: crate::ApprovalDecision
@@ -24,8 +26,66 @@
 //! Shared agent event model types.
 
 use amadeus_compaction::CompressionStatus;
+use amadeus_ids::AgentId;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventEntry {
+    pub timestamp: DateTime<Utc>,
+    pub event: Event,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Event {
+    AgentSpawned {
+        id: AgentId,
+        role: String,
+    },
+    AgentTerminated {
+        id: AgentId,
+        reason: String,
+    },
+    AgentThinking {
+        id: AgentId,
+        content: String,
+    },
+    ToolCallStart {
+        agent: AgentId,
+        tool: String,
+        args: Value,
+    },
+    ToolCallComplete {
+        agent: AgentId,
+        tool: String,
+        result: Value,
+        duration_ms: u64,
+    },
+    ToolCallError {
+        agent: AgentId,
+        tool: String,
+        error: String,
+    },
+    MessageSent {
+        from: AgentId,
+        to: AgentId,
+        content: String,
+    },
+}
+
+impl Event {
+    pub fn timestamp(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+
+    pub fn to_entry(&self) -> EventEntry {
+        EventEntry {
+            timestamp: self.timestamp(),
+            event: self.clone(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RunResult {
@@ -144,5 +204,20 @@ mod tests {
         assert_ne!(ApprovalDecision::Approve, ApprovalDecision::Deny);
         assert_ne!(ApprovalDecision::Approve, ApprovalDecision::AlwaysApprove);
         assert_ne!(ApprovalDecision::Deny, ApprovalDecision::AlwaysApprove);
+    }
+
+    #[test]
+    fn event_to_entry_preserves_payload() {
+        let event = Event::AgentThinking {
+            id: AgentId::new(),
+            content: "thinking".to_string(),
+        };
+
+        let entry = event.to_entry();
+
+        match entry.event {
+            Event::AgentThinking { content, .. } => assert_eq!(content, "thinking"),
+            _ => panic!("unexpected event payload"),
+        }
     }
 }
