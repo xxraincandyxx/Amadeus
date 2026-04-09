@@ -14,14 +14,15 @@ path = "src/lib.rs"
 
 [features]
 default = []
-api = ["team"]
+api = ["orchestra"]
 tui = ["concurrency"]
 test-utils = ["tempfile", "rustc_version_runtime"]
 concurrency = []
-team = ["concurrency"]
-supervisor = ["concurrency"]
+orchestra = ["concurrency"]
+team = ["orchestra"]
+supervisor = ["orchestra"]
 context = []
-full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
 
 [dependencies]
 amadeus_commands = { package = "commands", path = "../commands" }

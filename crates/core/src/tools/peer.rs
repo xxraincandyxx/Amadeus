@@ -3,8 +3,7 @@
 // layer: tools
 // status: active
 // feature_flags:
-// - supervisor
-// - team
+// - orchestra
 // provides:
 // - module: crate::tools::peer
 // - type: crate::tools::peer::PeerInfo
@@ -29,7 +28,7 @@
 
 //! # Peer Help Tool
 //!
-//! Allows agents to request assistance from other workers in the swarm.
+//! Allows agents to request assistance from other agents in the orchestra.
 
 use serde::{Deserialize, Serialize};
 
@@ -48,31 +47,31 @@ pub struct PeerInfo {
     pub description: String,
 }
 
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use async_trait::async_trait;
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use serde_json::{json, Value};
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use tokio::sync::{mpsc, oneshot};
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use tracing::{debug, info};
 
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use crate::agent::worker::{HelpRequest, Task};
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use crate::error::{AgentError, Result};
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 use crate::tools::tool_trait::Tool;
 
 /// A tool that delegates tasks to other agents.
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 pub struct PeerTool {
     requester_id: AgentId,
     help_tx: mpsc::Sender<HelpRequest>,
     schema: Value,
 }
 
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 impl PeerTool {
     /// Create a new PeerTool.
     pub fn new(requester_id: AgentId, help_tx: mpsc::Sender<HelpRequest>) -> Self {
@@ -104,7 +103,7 @@ impl PeerTool {
     }
 }
 
-#[cfg(any(feature = "team", feature = "supervisor"))]
+#[cfg(feature = "orchestra")]
 #[async_trait]
 impl Tool for PeerTool {
     fn name(&self) -> &'static str {

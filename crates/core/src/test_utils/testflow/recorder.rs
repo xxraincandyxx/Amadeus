@@ -6,7 +6,7 @@
 // - api
 // - concurrency
 // - context
-// - supervisor
+// - orchestra
 // - test-utils
 // - tui
 // provides:
@@ -420,8 +420,8 @@ fn get_enabled_features() -> Vec<String> {
     features.push("tui".to_string());
     #[cfg(feature = "api")]
     features.push("api".to_string());
-    #[cfg(feature = "supervisor")]
-    features.push("supervisor".to_string());
+    #[cfg(feature = "orchestra")]
+    features.push("orchestra".to_string());
     #[cfg(feature = "concurrency")]
     features.push("concurrency".to_string());
     #[cfg(feature = "context")]

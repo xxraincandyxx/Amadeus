@@ -28,7 +28,7 @@
 
 //! # Agent Management Handlers
 //!
-//! HTTP handlers for multi-agent management endpoints.
+//! HTTP handlers for orchestra agent-management endpoints.
 
 use axum::{
     extract::{Path, State},
@@ -50,9 +50,9 @@ use crate::client::LLMClient;
 pub async fn list_agents<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
 ) -> Result<Json<ListAgentsResponse>, Json<ErrorResponse>> {
-    let agent_manager = state.agent_manager.read().await;
-    let agents = agent_manager.list_agents();
-    let active_id = agent_manager.active_agent_id();
+    let orchestrator = state.orchestrator.read().await;
+    let agents = orchestrator.list_agents();
+    let active_id = orchestrator.active_agent_id();
 
     let agents_api = agents
         .into_iter()
@@ -84,10 +84,10 @@ pub async fn create_agent<C: LLMClient + Clone + 'static>(
         _ => AgentProfile::Custom(format!("Custom profile: {}", request.profile)),
     };
 
-    let mut agent_manager = state.agent_manager.write().await;
-    match agent_manager.create_agent(request.name, profile).await {
+    let mut orchestrator = state.orchestrator.write().await;
+    match orchestrator.create_agent(request.name, profile).await {
         Ok(agent_id) => {
-            if let Some(agent_info) = agent_manager.get_agent(&agent_id) {
+            if let Some(agent_info) = orchestrator.get_agent(&agent_id) {
                 Ok(Json(CreateAgentResponse {
                     agent: crate::api::types::AgentInfo {
                         id: agent_info.id.to_string(),
@@ -147,8 +147,8 @@ pub async fn kill_agent<C: LLMClient + Clone + 'static>(
         ))
     })?;
 
-    let mut agent_manager = state.agent_manager.write().await;
-    match agent_manager.kill(&agent_uuid) {
+    let mut orchestrator = state.orchestrator.write().await;
+    match orchestrator.kill(&agent_uuid) {
         Ok(()) => Ok(Json(KillAgentResponse { success: true })),
         Err(e) => Err(Json(ErrorResponse::from_agent_error(&e))),
     }
@@ -169,10 +169,10 @@ pub async fn switch_agent<C: LLMClient + Clone + 'static>(
         ))
     })?;
 
-    let mut agent_manager = state.agent_manager.write().await;
-    match agent_manager.switch_to(&agent_uuid) {
+    let mut orchestrator = state.orchestrator.write().await;
+    match orchestrator.switch_to(&agent_uuid) {
         Ok(()) => {
-            let new_active = agent_manager
+            let new_active = orchestrator
                 .active_agent_id()
                 .map(|id| id.to_string())
                 .unwrap_or_default();

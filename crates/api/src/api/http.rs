@@ -15,8 +15,7 @@
 // - route: /stream
 // uses:
 // - module: crate::agent::config::Config
-// - module: crate::agent::manager::AgentManager
-// - module: crate::agent::team
+// - module: crate::agent::orchestra
 // - module: crate::client::LLMClient
 // - module: crate::error::Result
 // - runtime: tokio async runtime
@@ -37,7 +36,7 @@
 //! ## Architecture
 //!
 //! The server uses a shared `AppState` to provide handlers access to the
-//! core client, configuration, and team-aware agent manager.
+//! core client, configuration, and orchestra-aware agent orchestrator.
 //!
 //! ```text
 //! ┌─────────────────────────────────────────────────────────────┐
@@ -105,9 +104,8 @@ use std::sync::Arc;
 
 // Internal dependencies
 use crate::agent::config::Config;
-use crate::agent::manager::AgentManager;
+use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
-use crate::agent::team::TeamLeader;
 use crate::api::handlers::{
     agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
     get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
@@ -127,16 +125,16 @@ use tokio::sync::RwLock;
 /// Shared application state.
 ///
 /// This struct is passed to every request handler via Axum's `State` extractor.
-/// It provides access to the shared client, config, and team-aware agent manager.
+/// It provides access to the shared client, config, and orchestra-aware agent orchestrator.
 pub struct AppState<C: LLMClient> {
     /// The shared base LLM client.
     pub client: C,
     /// The shared runtime configuration.
     pub config: Arc<Config>,
-    /// The multi-agent manager for standalone agent management.
-    pub agent_manager: Arc<RwLock<AgentManager<C>>>,
-    /// The default user-led team used by stateless task endpoints.
-    pub default_team_id: crate::core::id::TeamId,
+    /// The multi-agent orchestrator for standalone agent management.
+    pub orchestrator: Arc<RwLock<AgentOrchestrator<C>>>,
+    /// The default user-led orchestra used by stateless task endpoints.
+    pub default_orchestra_id: crate::core::id::TeamId,
 }
 
 /*
@@ -147,7 +145,7 @@ pub struct AppState<C: LLMClient> {
 
 /// Run the HTTP server.
 ///
-/// Starts an Axum server on the specified port, using the provided supervisor
+/// Starts an Axum server on the specified port, using the provided orchestra
 /// for task orchestration.
 ///
 /// # Arguments
@@ -171,7 +169,7 @@ pub struct AppState<C: LLMClient> {
 /// | Path | Method | Handler | Description |
 /// |------|--------|---------|-------------|
 /// | `/health` | GET | `health` | Health check |
-/// | `/chat` | POST | `chat` | Stateless chat via agent team |
+/// | `/chat` | POST | `chat` | Stateless chat via agent orchestra |
 /// | `/execute` | POST | `execute` | Direct bash command execution |
 /// | `/stream` | GET | `stream` | SSE event streaming |
 /// | `/tasks` | POST | `tasks` | Multi-agent task execution |
@@ -189,19 +187,19 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     client: C,
     config: Arc<Config>,
 ) -> Result<()> {
-    let mut manager = AgentManager::new(client.clone(), Arc::clone(&config));
-    let default_team_id = manager.ensure_default_team(TeamLeader::User);
-    let main_agent_id = manager
+    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config));
+    let default_orchestra_id = orchestrator.ensure_default_team(OrchestraLeader::User);
+    let main_agent_id = orchestrator
         .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
-    manager.add_agent_to_team(default_team_id, main_agent_id)?;
-    let agent_manager = Arc::new(RwLock::new(manager));
+    orchestrator.add_agent_to_team(default_orchestra_id, main_agent_id)?;
+    let orchestrator = Arc::new(RwLock::new(orchestrator));
 
     let state = Arc::new(AppState {
         client,
         config,
-        agent_manager,
-        default_team_id,
+        orchestrator,
+        default_orchestra_id,
     });
 
     // -------------------------------------------------------------------------

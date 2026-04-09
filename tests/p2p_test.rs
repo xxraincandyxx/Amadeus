@@ -1,18 +1,17 @@
-#![cfg(feature = "supervisor")]
+#![cfg(feature = "orchestra")]
 // @amadeus-header
 // summary: Integration tests covering p2p test behavior.
 // layer: test
 // status: test-only
 // feature_flags:
 // - full
-// - supervisor
+// - orchestra
 // provides:
 // - module: tests::p2p_test
 // uses:
 // - module: amadeus::agent::config::Config
 // - module: amadeus::agent::messages
-// - module: amadeus::agent::supervisor
-// - module: amadeus::agent::worker
+// - module: amadeus::agent::orchestra
 // - module: amadeus::client
 // - module: amadeus::core::AgentId
 // - module: amadeus::error::Result
@@ -32,8 +31,9 @@ use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
-use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
+use amadeus::agent::orchestra::{
+    OrchestraConfig, OrchestraRuntime, OrchestraStrategy, Task, TaskResult, WorkerConfig,
+};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::core::AgentId;
 use amadeus::error::Result;
@@ -160,15 +160,16 @@ async fn test_p2p_delegation() {
         responses: Arc::new(Mutex::new(calculator_responses)),
     };
 
-    // 2. Setup Supervisor
-    let config = SupervisorConfig {
-        strategy: DispatchStrategy::CapabilityMatch,
+    // 2. Setup orchestra runtime
+    let config = OrchestraConfig {
+        strategy: OrchestraStrategy::CapabilityMatch,
         ..Default::default()
     };
 
-    let mut supervisor = Supervisor::new(requester_client.clone(), config, create_test_config());
+    let mut orchestra =
+        OrchestraRuntime::new(requester_client.clone(), config, create_test_config());
 
-    let _: Vec<AgentId> = supervisor
+    let _: Vec<AgentId> = orchestra
         .spawn_with_client(
             vec![WorkerConfig::new("Requester").capability("logic-capability")],
             requester_client,
@@ -176,7 +177,7 @@ async fn test_p2p_delegation() {
         .await
         .expect("Failed to spawn requester");
 
-    let calc_ids: Vec<AgentId> = supervisor
+    let calc_ids: Vec<AgentId> = orchestra
         .spawn_with_client(
             vec![WorkerConfig::new("Calculator").capability("math-capability")],
             calculator_client,
@@ -185,11 +186,11 @@ async fn test_p2p_delegation() {
         .expect("Failed to spawn calculator");
     let calculator_id = &calc_ids[0];
 
-    // 3. Start supervisor loop in background
-    let supervisor_arc: Arc<Supervisor<SimpleMockClient>> = Arc::new(supervisor);
-    let supervisor_clone: Arc<Supervisor<SimpleMockClient>> = Arc::clone(&supervisor_arc);
+    // 3. Start orchestra runtime in background
+    let orchestra_arc: Arc<OrchestraRuntime<SimpleMockClient>> = Arc::new(orchestra);
+    let orchestra_clone: Arc<OrchestraRuntime<SimpleMockClient>> = Arc::clone(&orchestra_arc);
     tokio::spawn(async move {
-        supervisor_clone.run().await.unwrap();
+        orchestra_clone.run().await.unwrap();
     });
 
     // 4. Execute task
@@ -197,7 +198,7 @@ async fn test_p2p_delegation() {
         Task::new("main-task", "Start logical flow").requires(vec!["logic-capability".to_string()]);
 
     println!("Executing main task...");
-    let res: TaskResult = supervisor_arc
+    let res: TaskResult = orchestra_arc
         .execute(task)
         .await
         .expect("Failed to execute task");
@@ -218,6 +219,6 @@ async fn test_p2p_delegation() {
     assert!(out.contains("answer is 4"), "Output was: '{}'", out);
 
     // Verify math worker was actually called
-    let calculator_info = supervisor_arc.worker(*calculator_id).await.unwrap();
+    let calculator_info = orchestra_arc.worker(*calculator_id).await.unwrap();
     assert_eq!(calculator_info.completed_tasks, 1);
 }

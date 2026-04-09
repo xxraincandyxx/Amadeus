@@ -270,13 +270,13 @@ pub struct ExecuteResponse {
 
 /*
  * ============================================================================
- * SUPERVISOR ENDPOINT TYPES
+ * ORCHESTRA ENDPOINT TYPES
  * ============================================================================
  */
 
 /// Request body for the `/tasks` endpoint.
 ///
-/// Dispatches a task to the multi-agent supervisor.
+/// Dispatches a task to the multi-agent orchestra runtime.
 #[derive(Debug, Deserialize)]
 pub struct TaskRequest {
     /// Unique ID for the task.

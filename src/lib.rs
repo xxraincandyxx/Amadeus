@@ -6,7 +6,7 @@
 // - api
 // - concurrency
 // - context
-// - supervisor
+// - orchestra
 // - test-utils
 // - tui
 // provides:

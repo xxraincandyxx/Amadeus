@@ -26,7 +26,7 @@ required-features = ["full"]
 default = []
 
 # Testing/Examples
-api = ["amadeus_core/api", "dep:amadeus_api", "team"]
+api = ["amadeus_core/api", "dep:amadeus_api", "orchestra"]
 tui = [
   "amadeus_core/tui",
   "dep:amadeus_tui",
@@ -38,13 +38,14 @@ test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", 
 
 # Concurrency & Multi-Agent
 concurrency = ["amadeus_core/concurrency"]
-team = ["amadeus_core/team", "concurrency"]
-supervisor = ["amadeus_core/supervisor", "concurrency"]
+orchestra = ["amadeus_core/orchestra", "concurrency"]
+team = ["orchestra"]
+supervisor = ["orchestra"]
 # Context Management
 context = ["amadeus_core/context"]
 
 # All features
-full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
 
 [dependencies]
 amadeus_core = { package = "core", path = "crates/core", default-features = false }
@@ -118,4 +119,4 @@ required-features = ["test-utils"]
 [[test]]
 name = "e2e_product_flow"
 path = "tests/e2e_product_flow.rs"
-required-features = ["supervisor"]
+required-features = ["orchestra"]

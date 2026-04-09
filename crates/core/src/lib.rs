@@ -6,8 +6,7 @@
 // - api
 // - concurrency
 // - context
-// - supervisor
-// - team
+// - orchestra
 // - test-utils
 // - tui
 // provides:
@@ -59,14 +58,19 @@ pub use concurrency::{
     LockError, LockManager, LockMode, LockStatus,
 };
 
-#[cfg(feature = "team")]
+#[cfg(feature = "orchestra")]
 pub use agent::{
-    AgentTeam, Task, TaskResult, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
-    WorkerConfig, WorkerInfo, WorkerStatus,
+    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, OrchestraConfig, OrchestraLeader,
+    OrchestraRegistry, OrchestraRuntime, OrchestraStatus, OrchestraStrategy, OrchestraTask,
+    OrchestraTaskStatus, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus,
 };
 
-#[cfg(feature = "supervisor")]
-pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};
+#[cfg(feature = "orchestra")]
+#[deprecated(note = "use AgentOrchestrator and orchestra::* types instead")]
+pub use agent::{
+    AgentManager, AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
+};
 
-#[cfg(all(feature = "supervisor", not(feature = "team")))]
-pub use agent::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};
+#[cfg(feature = "orchestra")]
+#[deprecated(note = "use OrchestraRuntime and orchestra::* types instead")]
+pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};

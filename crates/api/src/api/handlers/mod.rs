@@ -88,7 +88,7 @@ pub mod execute;
 /// GET endpoint for SSE streaming responses.
 pub mod stream;
 
-/// Tasks handler for multi-agent supervisor.
+/// Tasks handler for orchestra task dispatch.
 pub mod tasks;
 
 /// Sessions handler for session management.

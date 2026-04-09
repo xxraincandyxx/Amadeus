@@ -39,10 +39,10 @@ pub async fn chat<C: LLMClient + Clone + 'static>(
     Json(request): Json<ChatRequest>,
 ) -> std::result::Result<Json<ChatResponse>, Json<ErrorResponse>> {
     let task = Task::new("chat-request".to_string(), request.message);
-    let mut agent_manager = state.agent_manager.write().await;
+    let mut orchestrator = state.orchestrator.write().await;
 
-    match agent_manager
-        .execute_task(Some(state.default_team_id), task)
+    match orchestrator
+        .execute_task(Some(state.default_orchestra_id), task)
         .await
     {
         Ok(result) => Ok(Json(ChatResponse {
