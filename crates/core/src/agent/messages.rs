@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Agent subsystem code for messages.
+// summary: Compatibility wrapper re-exporting message model types from the messages crate.
 // layer: agent
 // status: active
 // feature_flags: none
@@ -8,69 +8,14 @@
 // - type: crate::agent::messages::ContentBlock
 // - type: crate::agent::messages::Message
 // uses:
-// - protocol: serde serialization
-// - format: JSON values
+// - module: amadeus_messages
 // invariants:
-// - Listed interfaces stay aligned with the implementation in this file.
+// - Public message model paths remain stable while implementation lives outside core.
 // side_effects: none
 // tests:
 // - tests/messages_test.rs
 // @end-amadeus-header
 
-//! # Message Types
-//!
-//! Types for representing conversation messages and content blocks.
+//! Compatibility re-exports for message model types.
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type")]
-pub enum ContentBlock {
-    #[serde(rename = "text")]
-    Text { text: String },
-
-    #[serde(rename = "tool_use")]
-    ToolUse {
-        id: String,
-        name: String,
-        input: Value,
-    },
-
-    #[serde(rename = "tool_result")]
-    ToolResult {
-        tool_use_id: String,
-        content: String,
-    },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Message {
-    pub role: String,
-    pub content: Vec<ContentBlock>,
-}
-
-impl Message {
-    pub fn user(text: &str) -> Self {
-        Self {
-            role: "user".to_string(),
-            content: vec![ContentBlock::Text {
-                text: text.to_string(),
-            }],
-        }
-    }
-
-    pub fn assistant(content: Vec<ContentBlock>) -> Self {
-        Self {
-            role: "assistant".to_string(),
-            content,
-        }
-    }
-
-    pub fn tool_results(results: Vec<ContentBlock>) -> Self {
-        Self {
-            role: "user".to_string(),
-            content: results,
-        }
-    }
-}
+pub use amadeus_messages::{ContentBlock, Message};
