@@ -1010,6 +1010,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             let source = match descriptor.source {
                 crate::hooks::HookSource::Global => "global",
                 crate::hooks::HookSource::Workspace => "workspace",
+                crate::hooks::HookSource::Local => "local",
                 crate::hooks::HookSource::Runtime => "runtime",
             };
             content.push_str(&format!(

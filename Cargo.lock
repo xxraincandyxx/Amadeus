@@ -320,6 +320,7 @@ dependencies = [
  "compaction",
  "context",
  "dirs",
+ "hooks",
  "permissions",
  "prompts",
  "serde",

@@ -15,6 +15,7 @@ path = "src/lib.rs"
 [dependencies]
 amadeus_compaction = { package = "compaction", path = "../compaction" }
 amadeus_context = { package = "context", path = "../context" }
+amadeus_hooks = { package = "hooks", path = "../hooks" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
 dirs = "5.0"

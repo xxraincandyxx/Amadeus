@@ -26,6 +26,7 @@ use serde_json::Value;
 pub enum HookSource {
     Global,
     Workspace,
+    Local,
     Runtime,
 }
 

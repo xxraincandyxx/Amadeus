@@ -209,21 +209,10 @@ impl HookRegistry {
     pub fn load_for_config(config: &Config) -> Result<Self> {
         let mut registry = Self::new();
 
-        if let Some(global_hooks_path) = Config::global_hooks_path() {
-            if global_hooks_path.exists() {
-                registry.merge(Self::load_from_file_with_source(
-                    &global_hooks_path,
-                    HookSource::Global,
-                )?);
+        for (path, source) in config.hook_paths() {
+            if path.exists() {
+                registry.merge(Self::load_from_file_with_source(&path, source)?);
             }
-        }
-
-        let workspace_hooks_path = config.workspace_hooks_path();
-        if workspace_hooks_path.exists() {
-            registry.merge(Self::load_from_file_with_source(
-                &workspace_hooks_path,
-                HookSource::Workspace,
-            )?);
         }
 
         Ok(registry)
