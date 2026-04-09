@@ -22,6 +22,7 @@
 
 use std::path::PathBuf;
 
+use amadeus_config::ConfigError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -137,6 +138,17 @@ impl AgentError {
 impl From<tokio::task::JoinError> for AgentError {
     fn from(e: tokio::task::JoinError) -> Self {
         AgentError::JoinError(e.to_string())
+    }
+}
+
+impl From<ConfigError> for AgentError {
+    fn from(error: ConfigError) -> Self {
+        match error {
+            ConfigError::Config(message) => AgentError::Config(message),
+            ConfigError::MissingEnvVar(name) => AgentError::MissingEnvVar(name),
+            ConfigError::Serde(error) => AgentError::Serde(error),
+            ConfigError::Io(error) => AgentError::Io(error),
+        }
     }
 }
 
