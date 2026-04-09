@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 
 pub use amadeus_permissions::{PermissionDecision, PermissionMode};
+use amadeus_permissions::{PermissionRule, PermissionRuleAction};
 
 use crate::agent::config::Config;
 use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind};
@@ -30,6 +31,7 @@ use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind
 pub struct PermissionEnforcer {
     active_mode: PermissionMode,
     workspace_root: PathBuf,
+    rules: Vec<PermissionRule>,
 }
 
 impl PermissionEnforcer {
@@ -37,6 +39,12 @@ impl PermissionEnforcer {
         Self {
             active_mode: config.permission_mode,
             workspace_root: config.workdir.clone(),
+            rules: config
+                .permissions
+                .rules
+                .iter()
+                .filter_map(|rule| PermissionRule::parse(rule))
+                .collect(),
         }
     }
 
@@ -46,6 +54,14 @@ impl PermissionEnforcer {
 
     pub fn check(&self, tool_name: &str, input: &Value) -> PermissionDecision {
         let required = self.required_mode_for(tool_name, input);
+        if let Some(rule_decision) = self.rule_decision(tool_name, input, required) {
+            return rule_decision;
+        }
+
+        if self.active_mode == PermissionMode::Allow {
+            return PermissionDecision::Allow;
+        }
+
         if self.active_mode == PermissionMode::Prompt {
             return PermissionDecision::Ask {
                 required,
@@ -98,6 +114,33 @@ impl PermissionEnforcer {
             },
             _ => PermissionMode::DangerFullAccess,
         }
+    }
+
+    fn rule_decision(
+        &self,
+        tool_name: &str,
+        input: &Value,
+        required: PermissionMode,
+    ) -> Option<PermissionDecision> {
+        let command = input.get("command").and_then(|value| value.as_str());
+        let matched_rule = self
+            .rules
+            .iter()
+            .find(|rule| rule.matches(tool_name, command))?;
+
+        let reason = match matched_rule.action {
+            PermissionRuleAction::Allow => format!("permission rule allowed {tool_name}"),
+            PermissionRuleAction::Ask => {
+                format!("permission rule requires approval for {tool_name}")
+            }
+            PermissionRuleAction::Deny => format!("permission rule denied {tool_name}"),
+        };
+
+        Some(match matched_rule.action {
+            PermissionRuleAction::Allow => PermissionDecision::Allow,
+            PermissionRuleAction::Ask => PermissionDecision::Ask { required, reason },
+            PermissionRuleAction::Deny => PermissionDecision::Deny { required, reason },
+        })
     }
 
     fn path_within_workspace(&self, input: &Value) -> bool {
@@ -206,6 +249,40 @@ mod tests {
                 required: PermissionMode::DangerFullAccess,
                 ..
             }
+        ));
+    }
+
+    #[test]
+    fn allow_mode_bypasses_required_mode_checks() {
+        let enforcer = PermissionEnforcer::from_config(&make_config(PermissionMode::Allow));
+
+        assert_eq!(
+            enforcer.check("write_file", &serde_json::json!({"path": "../notes.md"})),
+            PermissionDecision::Allow
+        );
+    }
+
+    #[test]
+    fn permission_rules_override_mode_checks() {
+        let mut config = make_config(PermissionMode::ReadOnly);
+        config.permissions.rules = vec!["allow:bash(git:*)".to_string()];
+        let enforcer = PermissionEnforcer::from_config(&config);
+
+        assert_eq!(
+            enforcer.check("bash", &serde_json::json!({"command": "git:status"})),
+            PermissionDecision::Allow
+        );
+    }
+
+    #[test]
+    fn deny_rules_block_even_in_allow_mode() {
+        let mut config = make_config(PermissionMode::Allow);
+        config.permissions.rules = vec!["deny:tool(write_file)".to_string()];
+        let enforcer = PermissionEnforcer::from_config(&config);
+
+        assert!(matches!(
+            enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
+            PermissionDecision::Deny { .. }
         ));
     }
 }
