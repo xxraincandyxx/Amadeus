@@ -11,7 +11,7 @@
 // - module: crate::api::http::AppState
 // - module: crate::api::types
 // - module: crate::client::LLMClient
-// - module: crate::skills::registry::SkillRegistry
+// - module: crate::skills
 // - protocol: axum HTTP handlers
 // invariants:
 // - Handler request and response handling stays aligned with route contracts.
@@ -31,7 +31,7 @@ use std::sync::Arc;
 use crate::api::http::AppState;
 use crate::api::types::{ErrorResponse, SkillSummary, SkillsResponse};
 use crate::client::LLMClient;
-use crate::skills::registry::SkillRegistry;
+use crate::skills;
 
 /// GET /skills
 ///
@@ -41,7 +41,7 @@ pub async fn list_skills<C: LLMClient + Clone + 'static>(
 ) -> std::result::Result<Json<SkillsResponse>, Json<ErrorResponse>> {
     let config = &state.config;
 
-    let registry = match SkillRegistry::load_for_config(config) {
+    let registry = match skills::load_for_config(config) {
         Ok(r) => r,
         Err(e) => return Err(Json(ErrorResponse::new("SkillLoadError", e.to_string()))),
     };

@@ -26,6 +26,7 @@ full = ["api", "tui", "concurrency", "team", "supervisor", "context", "test-util
 [dependencies]
 amadeus_commands = { package = "commands", path = "../commands" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
+amadeus_skills = { package = "skills", path = "../skills" }
 tokio = { version = "1.39", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1"

@@ -1,0 +1,20 @@
+[package]
+name = "skills"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable skill templates and registry for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_skills"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+tracing = "0.1"
+
+[dev-dependencies]
+tempfile = "3.10"

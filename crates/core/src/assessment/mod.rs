@@ -44,7 +44,6 @@ use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
 use crate::hooks::{Hook, HookAction, HookRegistry};
 use crate::permissions::PermissionMode;
-use crate::skills::registry::SkillRegistry;
 
 const DEFAULT_SKILL_NAME: &str = "feature-assessment-loop";
 
@@ -142,7 +141,7 @@ impl<C: LLMClient + Clone + 'static> AssessmentRunner<C> {
     }
 
     pub async fn run(&self, assessment: AssessmentConfig) -> Result<AssessmentResult> {
-        let registry = SkillRegistry::load_for_config(self.config.as_ref())
+        let registry = crate::skills::load_for_config(self.config.as_ref())
             .map_err(|error| AgentError::Config(error.to_string()))?;
         let skill = registry
             .get(&assessment.skill_name)
