@@ -5,6 +5,7 @@
 // feature_flags: none
 // provides:
 // - module: crate
+// - module: crate::agent
 // - module: crate::scheduler
 // - module: crate::team
 // - module: crate::worker
@@ -23,6 +24,7 @@
 
 //! Runtime coordination primitives for Amadeus.
 
+pub mod agent;
 pub mod scheduler;
 pub mod team;
 pub mod worker;
@@ -37,6 +39,7 @@ pub enum RuntimeError {
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
+pub use agent::{AgentInfo, AgentStatus};
 pub use scheduler::{select_worker, DispatchStrategy, SupervisorConfig};
 pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus};
 pub use worker::{HelpRequest, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

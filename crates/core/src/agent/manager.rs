@@ -17,6 +17,7 @@
 // - module: crate::client::LLMClient
 // - module: crate::core::id::AgentId
 // - module: crate::error
+// - module: amadeus_runtime::agent
 // - protocol: serde serialization
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
@@ -30,8 +31,6 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use serde::{Deserialize, Serialize};
-
 use crate::agent::config::Config;
 use crate::agent::loop_agent::Agent;
 use crate::agent::profile::AgentProfile;
@@ -40,33 +39,7 @@ use crate::agent::worker::{Task, TaskResult, WorkerConfig};
 use crate::client::LLMClient;
 use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
-
-/// Status of an agent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum AgentStatus {
-    /// Agent is idle, waiting for input
-    Idle,
-    /// Agent is currently processing a request
-    Running,
-    /// Agent has an error
-    Error,
-}
-
-/// Information about an agent (returned to API/UI).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AgentInfo {
-    /// Unique agent identifier.
-    pub id: AgentId,
-    /// User-defined name for the agent.
-    pub name: String,
-    /// Agent profile/type.
-    pub profile: AgentProfile,
-    /// Current status.
-    pub status: AgentStatus,
-    /// Number of tasks completed.
-    pub task_count: usize,
-}
+pub use amadeus_runtime::{AgentInfo, AgentStatus};
 
 /// Manages multiple agents and coordinates between them.
 pub struct AgentManager<C: LLMClient> {

@@ -1743,6 +1743,7 @@ version = "0.1.0"
 dependencies = [
  "events",
  "ids",
+ "profiles",
  "serde",
  "serde_json",
  "thiserror",
