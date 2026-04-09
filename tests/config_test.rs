@@ -74,10 +74,10 @@ fn test_config_workdir_type() {
 
 #[test]
 fn parity_doc_exists_and_mentions_reference_baseline() {
-    let doc_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/EVALUATION.md");
-    let doc = std::fs::read_to_string(&doc_path).expect("docs/EVALUATION.md must exist");
-    assert!(doc.contains("refs/claw-code-parity/rust/PARITY.md"));
-    assert!(doc.contains("Amadeus vs claw-code-parity Evaluation"));
+    let doc_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("docs/ROADMAP_PARITY.md");
+    let doc = std::fs::read_to_string(&doc_path).expect("docs/ROADMAP_PARITY.md must exist");
+    assert!(doc.contains("claw-code-parity"));
+    assert!(doc.contains("current architectural gaps"));
 }
 
 #[test]
