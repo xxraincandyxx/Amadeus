@@ -38,7 +38,11 @@ use crate::agent::worker::{Task, TaskResult, WorkerConfig};
 use crate::client::LLMClient;
 use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
-pub use amadeus_runtime::{select_agent, AgentInfo, AgentRouteCandidate, AgentStatus};
+pub use amadeus_runtime::{
+    find_agent_index, get_agent_info, list_agent_info, next_agent_index,
+    normalize_active_index_after_removal, previous_agent_index, select_agent, AgentInfo,
+    AgentRouteCandidate, AgentStatus,
+};
 
 /// Manages multiple agents and coordinates between them.
 pub struct AgentManager<C: LLMClient> {
@@ -74,6 +78,19 @@ struct AgentHandle<C: LLMClient> {
 }
 
 impl<C: LLMClient + Clone + 'static> AgentManager<C> {
+    fn roster_entries(&self) -> Vec<AgentInfo> {
+        self.agents
+            .iter()
+            .map(|handle| AgentInfo {
+                id: handle.id,
+                name: handle.name.clone(),
+                profile: handle.profile.clone(),
+                status: handle.status,
+                task_count: handle.task_count,
+            })
+            .collect()
+    }
+
     /// Create a new agent manager.
     pub fn new(client: C, config: Arc<Config>) -> Self {
         Self {
@@ -248,37 +265,12 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// List all active agents.
     pub fn list_agents(&self) -> Vec<AgentInfo> {
-        self.agents
-            .iter()
-            .enumerate()
-            .map(|(i, handle)| {
-                AgentInfo {
-                    id: handle.id,
-                    name: handle.name.clone(),
-                    profile: handle.profile.clone(),
-                    status: if i == self.active_index {
-                        AgentStatus::Running // Active agent is "running" from user perspective
-                    } else {
-                        handle.status
-                    },
-                    task_count: handle.task_count,
-                }
-            })
-            .collect()
+        list_agent_info(&self.roster_entries(), self.active_agent_id())
     }
 
     /// Get info for a specific agent.
     pub fn get_agent(&self, agent_id: &AgentId) -> Option<AgentInfo> {
-        self.agents
-            .iter()
-            .find(|handle| &handle.id == agent_id)
-            .map(|handle| AgentInfo {
-                id: handle.id,
-                name: handle.name.clone(),
-                profile: handle.profile.clone(),
-                status: handle.status,
-                task_count: handle.task_count,
-            })
+        get_agent_info(&self.roster_entries(), *agent_id)
     }
 
     /// Get the currently active agent.
@@ -293,7 +285,7 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// Switch to a different agent by ID.
     pub fn switch_to(&mut self, agent_id: &AgentId) -> Result<()> {
-        if let Some(index) = self.agents.iter().position(|agent| &agent.id == agent_id) {
+        if let Some(index) = find_agent_index(&self.roster_entries(), *agent_id) {
             self.active_index = index;
             Ok(())
         } else {
@@ -303,19 +295,15 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
 
     /// Switch to the next agent.
     pub fn switch_next(&mut self) {
-        if !self.agents.is_empty() {
-            self.active_index = (self.active_index + 1) % self.agents.len();
+        if let Some(index) = next_agent_index(self.agents.len(), self.active_index) {
+            self.active_index = index;
         }
     }
 
     /// Switch to the previous agent.
     pub fn switch_prev(&mut self) {
-        if !self.agents.is_empty() {
-            self.active_index = if self.active_index == 0 {
-                self.agents.len() - 1
-            } else {
-                self.active_index - 1
-            };
+        if let Some(index) = previous_agent_index(self.agents.len(), self.active_index) {
+            self.active_index = index;
         }
     }
 
@@ -333,10 +321,8 @@ impl<C: LLMClient + Clone + 'static> AgentManager<C> {
             .position(|agent| &agent.id == agent_id)
             .ok_or_else(|| AgentError::Command(format!("Unknown agent: {}", agent_id)))?;
         self.agents.remove(index);
-
-        if self.active_index >= self.agents.len() {
-            self.active_index = 0;
-        }
+        self.active_index =
+            normalize_active_index_after_removal(self.agents.len(), self.active_index);
 
         Ok(())
     }
