@@ -40,7 +40,6 @@
 // - tests/e2e_product_flow.rs
 // @end-amadeus-header
 
-use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 pub use super::manager::{AgentInfo, AgentStatus};
@@ -143,20 +142,6 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     }
 }
 
-impl<C: LLMClient> Deref for AgentOrchestrator<C> {
-    type Target = super::manager::AgentManager<C>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<C: LLMClient> DerefMut for AgentOrchestrator<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
-    }
-}
-
 /// Canonical queued runtime for background orchestra execution.
 pub struct OrchestraRuntime<C: LLMClient> {
     inner: super::supervisor::Supervisor<C>,
@@ -212,13 +197,5 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     /// Execute a task through the queued orchestra runtime.
     pub async fn execute(&self, task: Task) -> Result<TaskResult> {
         self.inner.execute(task).await
-    }
-}
-
-impl<C: LLMClient> Deref for OrchestraRuntime<C> {
-    type Target = super::supervisor::Supervisor<C>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
     }
 }
