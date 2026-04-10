@@ -45,5 +45,5 @@
 pub mod adapter;
 pub mod client;
 
-pub use adapter::McpToolAdapter;
+pub use adapter::{create_mcp_tool_pack, McpToolAdapter};
 pub use client::{McpClient, McpServerConfig, McpToolSchema};
