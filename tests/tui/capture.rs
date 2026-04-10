@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: TUI test support for capture.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui::capture
+// - type: tests::tui::capture::TuiFrameSnapshot
+// - type: tests::tui::capture::CursorSnapshot
+// - type: tests::tui::capture::FooterSnapshot
+// - type: tests::tui::capture::HeaderSnapshot
+// - type: tests::tui::capture::CellSnapshot
+// - type: tests::tui::capture::RegionsSnapshot
+// - type: tests::tui::capture::InputRegionSnapshot
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test capture --features full
+// @end-amadeus-header
+
 //! TUI Frame Capture
 //!
 //! Captures complete terminal state including all cells, cursor, and styling.
@@ -35,7 +59,6 @@ pub struct FooterSnapshot {
     pub model: String,
     pub context_pct: u8,
     pub agent_name: Option<String>,
-    pub is_mesh: bool,
     pub sandbox_status: String,
 }
 
@@ -210,9 +233,6 @@ impl TuiFrameSnapshot {
             "║ Footer: {} [{}] {}%",
             self.footer.model, self.footer.cwd, self.footer.context_pct
         ));
-        if self.footer.is_mesh {
-            output.push_str(" MESH");
-        }
         if let Some(ref name) = self.footer.agent_name {
             output.push_str(&format!(" [{}]", name));
         }

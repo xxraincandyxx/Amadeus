@@ -1,0 +1,49 @@
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "model": "claude-sonnet-4-5-20250929",
+  "workdir": ".",
+  "timeout_seconds": 300,
+  "max_output_bytes": 50000,
+  "blocked_commands": [
+    "rm -rf /"
+  ],
+  "session_log_dir": "logs/sessions",
+  "session_log_compress": true,
+  "context_window_size": 200000,
+  "auto_compact": true,
+  "compact_threshold_percent": 75,
+  "compact_preserve_recent": 6,
+  "max_subagent_depth": 2,
+  "permission_mode": "workspace-write",
+  "hooks": {
+    "files": [
+      "hooks/local-hooks.json"
+    ]
+  },
+  "telemetry": {
+    "enabled": true,
+    "jsonl_path": "logs/telemetry/events.jsonl"
+  },
+  "permissions": {
+    "mode": "workspace-write",
+    "allow": [
+      "tool(read_file)",
+      "bash(git:*)"
+    ],
+    "ask": [
+      "tool(write_file)",
+      "bash(cargo test*)"
+    ],
+    "deny": [
+      "tool(edit_file)"
+    ],
+    "rules": [
+      "allow:tool(glob)",
+      "deny:bash(rm -rf*)"
+    ],
+    "additionalDirectories": [
+      "../shared"
+    ]
+  }
+}

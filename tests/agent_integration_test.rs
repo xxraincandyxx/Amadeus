@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Integration tests covering agent integration test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::agent_integration_test
+// uses:
+// - module: amadeus::test_utils
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Runs external commands or subprocesses.
+// tests:
+// - cmd: cargo test agent_integration_test --features full
+// @end-amadeus-header
+
 //! # Agent Integration Tests
 //!
 //! Integration tests for the agent using patterns inspired by gemini-cli.

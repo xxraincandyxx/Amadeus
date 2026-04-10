@@ -3,6 +3,7 @@
 
 .DS_Store
 .env
+.amadeus/settings.json
 
 # Logging files
 /logs
@@ -19,3 +20,4 @@ test_*.txt
 # User notes
 Song Lyric.txt
 joke.txt
+.gitnexus

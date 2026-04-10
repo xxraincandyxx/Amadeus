@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: Runnable example for main usage.
+// layer: example
+// status: experimental
+// feature_flags:
+// - full
+// provides:
+// - module: example::tui
+// uses:
+// - runtime: anyhow error handling
+// invariants:
+// - Example code remains runnable against the current public API.
+// side_effects: none
+// tests:
+// - cmd: cargo run --example tui --features full
+// @end-amadeus-header
+
 //! # TUI Example - SDK Test Harness
 //!
 //! This is a test harness for the Amadeus SDK.

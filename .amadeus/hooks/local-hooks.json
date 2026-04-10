@@ -1,0 +1,45 @@
+{
+  "hooks": [
+    {
+      "type": "shell",
+      "name": "log-bash-commands",
+      "event": "pre_tool_use",
+      "command": "jq -r '\"[hook] \" + .tool_name + \" \" + (.tool_input.command // \"\")' >> .amadeus/logs/hook-events.log",
+      "tools": [
+        "bash"
+      ],
+      "block_on_error": false
+    },
+    {
+      "type": "shell",
+      "name": "block-dangerous-rm",
+      "event": "pre_tool_use",
+      "command": "if echo \"$HOOK_TOOL_INPUT\" | jq -e '.command | test(\"rm -rf /|sudo rm -rf\")' >/dev/null; then echo 'dangerous command blocked'; exit 2; fi",
+      "tools": [
+        "bash"
+      ],
+      "block_on_error": true
+    },
+    {
+      "type": "shell",
+      "name": "record-write-results",
+      "event": "post_tool_use",
+      "command": "jq -r '\"[hook] \" + .tool_name + \" duration_ms=\" + (.duration_ms|tostring)' >> .amadeus/logs/hook-events.log",
+      "tools": [
+        "write_file",
+        "edit_file"
+      ],
+      "env": {
+        "HOOK_LOG_SCOPE": "local"
+      },
+      "block_on_error": false
+    },
+    {
+      "type": "shell",
+      "name": "capture-tool-failures",
+      "event": "post_tool_use_failure",
+      "command": "jq -r '\"[hook][failure] \" + .tool_name + \" output=\" + (.tool_output // \"\")' >> .amadeus/logs/hook-errors.log",
+      "block_on_error": false
+    }
+  ]
+}

@@ -1,3 +1,24 @@
+// @amadeus-header
+// summary: Integration tests covering todo test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::todo_test
+// uses:
+// - module: amadeus::agent::loop_agent::Agent
+// - module: amadeus::agent
+// - module: amadeus::client::anthropic::AnthropicClient
+// - module: amadeus::client::StreamEvent
+// - module: amadeus::tools
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test todo_test --features full
+// @end-amadeus-header
+
 use std::sync::Arc;
 
 use amadeus::agent::loop_agent::Agent;
@@ -31,7 +52,7 @@ async fn default_tools_include_todo() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
     let agent = Agent::new(client, Arc::new(create_test_config()));
 
-    assert!(agent.registry().names().contains(&"todo"));
+    assert!(agent.registry().names().contains(&"todo".to_string()));
 }
 
 #[tokio::test]

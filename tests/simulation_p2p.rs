@@ -1,3 +1,28 @@
+// @amadeus-header
+// summary: Integration tests covering simulation p2p behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::simulation_p2p
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::messages
+// - module: amadeus::agent::orchestra
+// - module: amadeus::client
+// - module: amadeus::core::AgentId
+// - module: amadeus::error::Result
+// - runtime: tokio async runtime
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test simulation_p2p --features full
+// @end-amadeus-header
+
 use serde_json::json;
 use std::sync::Arc;
 use std::time::Duration;
@@ -5,8 +30,9 @@ use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
-use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
+use amadeus::agent::orchestra::{
+    OrchestraConfig, OrchestraRuntime, OrchestraStrategy, Task, TaskResult, WorkerConfig,
+};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::core::AgentId;
 use amadeus::error::Result;
@@ -90,8 +116,8 @@ async fn test_high_concurrency_p2p() {
     let num_workers = 5;
     let num_tasks = 120; // More than the default queue limit (100)
 
-    let config = SupervisorConfig {
-        strategy: DispatchStrategy::LeastLoaded,
+    let config = OrchestraConfig {
+        strategy: OrchestraStrategy::LeastLoaded,
         task_timeout: Duration::from_secs(10),
         max_pending_tasks: 50, // Set a low limit to trigger overflow
         ..Default::default()
@@ -104,7 +130,7 @@ async fn test_high_concurrency_p2p() {
         peer_chance: 0.5,
     };
 
-    let mut supervisor = Supervisor::new(base_client.clone(), config, create_test_config());
+    let mut orchestra = OrchestraRuntime::new(base_client.clone(), config, create_test_config());
 
     // Spawn workers
     for i in 0..num_workers {
@@ -113,8 +139,8 @@ async fn test_high_concurrency_p2p() {
             call_count: Arc::new(Mutex::new(0)),
             peer_chance: 0.5,
         };
-        let _: Vec<AgentId> = supervisor
-            .spawn_with_client(
+        let _: Vec<AgentId> = orchestra
+            .spawn_agents_with_client(
                 vec![WorkerConfig::new(format!("Worker-{}", i)).capability("worker")],
                 worker_client,
             )
@@ -122,11 +148,11 @@ async fn test_high_concurrency_p2p() {
             .expect("Failed to spawn worker");
     }
 
-    let supervisor = Arc::new(supervisor);
-    let supervisor_clone: Arc<Supervisor<SimulationMockClient>> = Arc::clone(&supervisor);
+    let orchestra = Arc::new(orchestra);
+    let orchestra_clone: Arc<OrchestraRuntime<SimulationMockClient>> = Arc::clone(&orchestra);
     tokio::spawn(async move {
-        if let Err(e) = supervisor_clone.run().await {
-            eprintln!("Supervisor loop error: {}", e);
+        if let Err(e) = orchestra_clone.run().await {
+            eprintln!("Orchestra runtime error: {}", e);
         }
     });
 
@@ -137,7 +163,7 @@ async fn test_high_concurrency_p2p() {
 
     let mut handles: Vec<tokio::task::JoinHandle<amadeus::Result<TaskResult>>> = Vec::new();
     for i in 0..num_tasks {
-        let s: Arc<Supervisor<SimulationMockClient>> = Arc::clone(&supervisor);
+        let s: Arc<OrchestraRuntime<SimulationMockClient>> = Arc::clone(&orchestra);
         handles.push(tokio::spawn(async move {
             let task = Task::new(format!("task-{}", i), "Execute simulation task")
                 .requires(vec!["worker".to_string()]);

@@ -1,11 +1,37 @@
+// @amadeus-header
+// summary: Integration tests covering e2e product flow behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::e2e_product_flow
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::messages
+// - module: amadeus::agent::orchestra
+// - module: amadeus::client
+// - module: amadeus::core::AgentId
+// - module: amadeus::error::Result
+// - runtime: tokio async runtime
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Spawns asynchronous tasks.
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test e2e_product_flow --features full
+// @end-amadeus-header
+
 use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
-use amadeus::agent::supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
-use amadeus::agent::worker::{Task, TaskResult, WorkerConfig};
+use amadeus::agent::orchestra::{
+    OrchestraConfig, OrchestraRuntime, OrchestraStrategy, Task, TaskResult, WorkerConfig,
+};
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::core::AgentId;
 use amadeus::error::Result;
@@ -113,12 +139,12 @@ async fn test_e2e_product_development_flow() {
 🎭 --- STARTING E2E PRODUCT DEVELOPMENT FLOW --- 🎭"
     );
 
-    let config = SupervisorConfig {
-        strategy: DispatchStrategy::CapabilityMatch,
+    let config = OrchestraConfig {
+        strategy: OrchestraStrategy::CapabilityMatch,
         ..Default::default()
     };
 
-    let mut supervisor = Supervisor::new(
+    let mut orchestra = OrchestraRuntime::new(
         StoryClient {
             role: "Base".into(),
             turn: Arc::new(Mutex::new(0)),
@@ -127,11 +153,11 @@ async fn test_e2e_product_development_flow() {
         create_test_config(),
     );
 
-    // 1. Setup the Team
-    println!("👥 Spawning the product team...");
+    // 1. Setup the orchestra
+    println!("👥 Spawning the product orchestra...");
 
-    let _: Vec<AgentId> = supervisor
-        .spawn_with_client(
+    let _: Vec<AgentId> = orchestra
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Alice (PM)").capability("product")],
             StoryClient {
                 role: "PM".into(),
@@ -141,8 +167,8 @@ async fn test_e2e_product_development_flow() {
         .await
         .expect("Failed to spawn PM");
 
-    let _: Vec<AgentId> = supervisor
-        .spawn_with_client(
+    let _: Vec<AgentId> = orchestra
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Bob (Coder)").capability("code")],
             StoryClient {
                 role: "Coder".into(),
@@ -152,8 +178,8 @@ async fn test_e2e_product_development_flow() {
         .await
         .expect("Failed to spawn Coder");
 
-    let _: Vec<AgentId> = supervisor
-        .spawn_with_client(
+    let _: Vec<AgentId> = orchestra
+        .spawn_agents_with_client(
             vec![WorkerConfig::new("Charlie (Reviewer)").capability("review")],
             StoryClient {
                 role: "Reviewer".into(),
@@ -163,10 +189,10 @@ async fn test_e2e_product_development_flow() {
         .await
         .expect("Failed to spawn Reviewer");
 
-    let supervisor = Arc::new(supervisor);
-    let supervisor_clone: Arc<Supervisor<StoryClient>> = Arc::clone(&supervisor);
+    let orchestra = Arc::new(orchestra);
+    let orchestra_clone: Arc<OrchestraRuntime<StoryClient>> = Arc::clone(&orchestra);
     tokio::spawn(async move {
-        let _ = supervisor_clone.run().await;
+        let _ = orchestra_clone.run().await;
     });
 
     // 2. The Narrative
@@ -178,7 +204,7 @@ async fn test_e2e_product_development_flow() {
     );
     let plan_task =
         Task::new("plan-1", "Design the Calculator feature").requires(vec!["product".into()]);
-    let plan_res: TaskResult = supervisor
+    let plan_res: TaskResult = orchestra
         .execute(plan_task)
         .await
         .expect("Failed to execute plan task");
@@ -191,7 +217,7 @@ async fn test_e2e_product_development_flow() {
     );
     let code_task = Task::new("code-1", "Implement the Calculator as per the PM's plan")
         .requires(vec!["code".into()]);
-    let code_res: TaskResult = supervisor
+    let code_res: TaskResult = orchestra
         .execute(code_task)
         .await
         .expect("Failed to execute code task");
@@ -204,7 +230,7 @@ async fn test_e2e_product_development_flow() {
     );
     let review_task = Task::new("review-1", "Verify the Calculator implementation")
         .requires(vec!["review".into()]);
-    let review_res: TaskResult = supervisor
+    let review_res: TaskResult = orchestra
         .execute(review_task)
         .await
         .expect("Failed to execute review task");

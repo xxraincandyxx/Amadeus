@@ -7,10 +7,12 @@
 Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It provides multi-provider compatibility (Anthropic Claude, OpenAI GPT), streaming responses, an extensible tool system, and both TUI and HTTP API interfaces.
 
 **Key Capabilities:**
-- Concurrent execution with `tokio::task::JoinSet` for parallel task processing
-- Task queuing and backpressure control via centralized `TaskQueue`
+- Core-first agent runtime shared by TUI and HTTP adapters
+- Orchestra-based multi-agent coordination with a shared task list
+- Task queuing and backpressure control via the orchestra runtime
 - P2P recursive delegation through `PeerTool` for inter-agent collaboration
-- Resilient error handling with deadlock prevention and saturation management
+
+Parity with the `refs/claw-code-parity` reference is treated as a behavioral testing problem. Architecture and README claims should only describe flows that are covered by automated tests in this repository.
 
 ---
 
@@ -21,12 +23,12 @@ Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It 
 │                           Amadeus SDK                                   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐    │
-│  │     Agent       │     │    Supervisor   │     │      Mesh       │    │
-│  │     Loop        │     │    (Workers)    │     │  (Coordination) │    │
-│  └────────┬────────┘     └────────┬────────┘     └────────┬────────┘    │
-│           │                       │                       │             │
-│           └───────────────────────┼───────────────────────┘             │
+│  ┌─────────────────┐     ┌──────────────────────────────────────────┐    │
+│  │     Agent       │     │                Orchestra                 │    │
+│  │     Loop        │     │    Registry + Shared Task Runtime       │    │
+│  └────────┬────────┘     └──────────────────┬───────────────────────┘    │
+│           │                                  │                           │
+│           └──────────────────────────────────┘                           │
 │                                   │                                     │
 │           ┌───────────────────────┴───────────────────────┐             │
 │           │              Tool Registry                    │             │
@@ -73,7 +75,7 @@ Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It 
 
 | Module | Purpose |
 |--------|---------|
-| `agent/` | Agent loop, configuration, messages, events, supervisor, worker |
+| `agent/` | Agent loop, orchestration surface, configuration, messages, events, worker |
 | `client/` | LLM provider abstraction (trait-based) |
 | `tools/` | Tool registry and implementations |
 | `policy/` | Approval/policy system |
@@ -87,8 +89,8 @@ Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It 
 | `ui/` | `tui` | Terminal UI (ratatui) |
 | `api/` | `api` | HTTP REST API (axum) |
 | `concurrency/` | `concurrency` | Lock management |
-| `supervisor/` | `supervisor` | Multi-agent coordination |
-| `mesh/` | `mesh` | Distributed agent mesh |
+| `orchestra/` | `orchestra` | Canonical multi-agent coordination surface |
+| `manager/`, `supervisor/`, `team/` | `orchestra` | Deprecated compatibility shims |
 | `mcp/` | - | Model Context Protocol |
 | `skills/` | - | Reusable prompt templates |
 | `benchmark/` | - | Benchmark & evaluation |
@@ -100,7 +102,7 @@ lib.rs
 ├── agent/
 │   ├── config.rs          ← Depends on: error, context
 │   ├── loop_agent.rs      ← Depends on: client, tools, policy, hooks
-│   ├── supervisor.rs      ← Depends on: concurrency
+│   ├── orchestra.rs       ← Depends on: concurrency, worker, peer tool
 │   └── ...
 ├── client/
 │   ├── mod.rs             ← Defines LLMClient trait
@@ -372,11 +374,15 @@ Automatic session logging with:
 
 ## Multi-Agent Orchestration
 
-### Supervisor-Worker Pattern
+### Orchestra Pattern
 
-Amadeus uses a **Supervisor-Worker** pattern where a central supervisor manages a pool of specialized agents.
+Amadeus now treats **orchestra** as the canonical coordination surface. An orchestra owns:
+- the local agent roster
+- the shared task list for an agent team
+- direct local task routing
+- queued worker execution for delegated work
 
-> **📖 For detailed usage examples, see [SUPERVISOR.md](./SUPERVISOR.md)**
+Legacy `Supervisor`, `AgentManager`, and `team` names remain only as deprecated compatibility shims over the orchestra implementation.
 
 | Feature | Implementation |
 |---------|----------------|
@@ -385,9 +391,9 @@ Amadeus uses a **Supervisor-Worker** pattern where a central supervisor manages 
 | **Load Balancing** | `LeastLoaded`, `RoundRobin`, and `CapabilityMatch` strategies |
 | **P2P Help** | Recursive sub-tasking via the `HelpRequest` bus |
 
-### The Supervisor Loop
+### The Orchestra Runtime Loop
 
-The Supervisor runs a reactive background loop that handles two main event sources:
+The queued orchestra runtime runs a reactive background loop that handles two main event sources:
 1. **P2P Help Requests**: Incoming from agents via `HelpRequest` channels
 2. **Task Queue**: Periodic processing of pending tasks whenever workers become available
 
@@ -408,11 +414,11 @@ pub async fn run(&self) -> Result<()> {
 
 ### Task Buffering
 
-When `Supervisor::execute` is called and no workers are immediately available, the task is pushed into a `VecDeque`. This ensures bursty traffic doesn't fail immediately, provided it stays within the `max_pending_tasks` limit.
+When `OrchestraRuntime::execute` is called and no workers are immediately available, the task is pushed into a `VecDeque`. This ensures bursty traffic doesn't fail immediately, provided it stays within the `max_pending_tasks` limit.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        SUPERVISOR                               │
+│                        ORCHESTRA                                │
 │                                                                 │
 │   Task Queue: [Task1, Task2, Task3, ...]                        │
 │                                                                 │
@@ -421,26 +427,22 @@ When `Supervisor::execute` is called and no workers are immediately available, t
 │                                                                 │
 │ ─────────────────────────────────────────────────────────────── │
 │                                                                 │
-│ ### AgentManager (Standalone Multi-Agent)                       │
-│                                                                 │
-│ For simpler use cases, `AgentManager` provides a lightweight    │
-│ alternative to the Supervisor pattern:                          │
-│                                                                 │
-│ - Multiple independent agents with different profiles            │
-│ - API-first design (REST endpoints for all operations)          │
-│ - TUI integration via ApiClient                                 │
-│ - Agent switching in terminal UI                                │
-│                                                                 │
-│ ```rust                                                         │
-│ let mut manager = AgentManager::new(client, config);            │
-│ manager.create_agent(None, AgentProfile::Debug).await;           │
-│ manager.create_agent(None, AgentProfile::Docs).await;           │
-│ let agents = manager.list_agents();                             │
-│ manager.switch_next();                                          │
-│ ```                                                             │
-│                                                                 │
-│ See [REST_API.md](./REST_API.md#5-multi-agent-endpoints)       │
-│ for HTTP API details.
+│ ### AgentOrchestrator                                            │
+│                                                                  │
+│ `AgentOrchestrator` is the primary API for local orchestration:  │
+│                                                                  │
+│ - Multiple agents with different profiles and capabilities       │
+│ - Orchestra/team membership and shared task tracking             │
+│ - Direct local task routing                                      │
+│ - Agent switching in the TUI and HTTP surfaces                   │
+│                                                                  │
+│ ```rust                                                          │
+│ let mut orchestrator = AgentOrchestrator::new(client, config);   │
+│ orchestrator.create_agent(None, AgentProfile::Debug).await?;     │
+│ orchestrator.create_agent(None, AgentProfile::Docs).await?;      │
+│ let agents = orchestrator.list_agents();                         │
+│ orchestrator.switch_next();                                      │
+│ ```                                                              │
 │   │ 2 tasks │  │ 0 tasks │  │ 3 tasks │  │ 1 task  │            │
 │   │ [bash]  │  │ [web]   │  │ [file]  │  │ [bash]  │            │
 │   └─────────┘  └─────────┘  └─────────┘  └─────────┘            │
@@ -450,7 +452,7 @@ When `Supervisor::execute` is called and no workers are immediately available, t
 
 ### Dispatch Strategies
 
-The Supervisor supports three load balancing strategies for distributing tasks across worker agents.
+The orchestra runtime supports three load balancing strategies for distributing tasks across worker agents.
 
 #### RoundRobin (default)
 
@@ -553,11 +555,11 @@ Selected: Worker C (has bash, lowest active count = 1)
 
 #### Configuration
 
-Set the dispatch strategy in `SupervisorConfig`:
+Set the dispatch strategy in `OrchestraConfig`:
 
 ```rust
-let config = SupervisorConfig {
-    strategy: DispatchStrategy::LeastLoaded,
+let config = OrchestraConfig {
+    strategy: OrchestraStrategy::LeastLoaded,
     max_pending_tasks: 100,
     task_timeout: Duration::from_secs(300),
     retry_failed_tasks: true,
@@ -592,11 +594,11 @@ let worker_configs = vec![
 
 ### The PeerTool
 
-Agents are initialized with a `PeerTool`, which allows them to send `HelpRequest`s back to the Supervisor. This enables recursive collaboration where a Coder agent can ask a Reviewer agent for feedback mid-task.
+Agents are initialized with a `PeerTool`, which allows them to send `HelpRequest`s back to the orchestra runtime. This enables recursive collaboration where a Coder agent can ask a Reviewer agent for feedback mid-task.
 
 ### Deadlock Prevention
 
-To prevent circular dependency deadlocks (e.g., Worker A waits for Worker B, who is waiting for Worker A), the Supervisor implements:
+To prevent circular dependency deadlocks (e.g., Worker A waits for Worker B, who is waiting for Worker A), the orchestra runtime implements:
 1. **Timeout Enforcement**: Every task has a `task_timeout`
 2. **Saturation Errors**: If a help request cannot be fulfilled because all potential workers are busy, it returns an error immediately rather than queuing indefinitely (which would block the requester)
 
@@ -656,7 +658,7 @@ Tasks are spawned as independent Tokio tasks. In a batch of 5 tasks taking 2s ea
 
 ### Backpressure Control
 
-The `SupervisorConfig::max_pending_tasks` (default: 100) prevents OOM and API exhaustion by rejecting new tasks when the buffer is full.
+The `OrchestraConfig::max_pending_tasks` (default: 100) prevents OOM and API exhaustion by rejecting new tasks when the buffer is full.
 
 ---
 
@@ -667,23 +669,24 @@ The `SupervisorConfig::max_pending_tasks` (default: 100) prevents OOM and API ex
 default = []
 
 # Testing/Examples
-api = ["axum", "tower", "tower-http", "tokio-util", "supervisor"]
+api = ["axum", "tower", "tower-http", "tokio-util", "orchestra"]
 tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
 test-utils = ["tempfile"]
 
 # Concurrency & Multi-Agent
 concurrency = []
-supervisor = ["concurrency"]
-mesh = ["supervisor"]
+orchestra = ["concurrency"]
+team = ["orchestra"]       # deprecated alias
+supervisor = ["orchestra"] # deprecated alias
 
 # Context Management
 context = []
 
 # All features
-full = ["api", "tui", "concurrency", "supervisor", "mesh", "context", "test-utils"]
+full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
 ```
 
-Feature flag chain: `mesh` → `supervisor` → `concurrency`
+Feature flag chain: `team`/`supervisor` → `orchestra` → `concurrency`
 
 ---
 
@@ -698,7 +701,7 @@ Feature flag chain: `mesh` → `supervisor` → `concurrency`
 
 ## Configuration
 
-Environment-based configuration via `.env`:
+Structured configuration via `.amadeus/settings.json` and `~/.amadeus/settings.json`:
 - Provider selection (Anthropic/OpenAI)
 - API keys and endpoints
 - Model selection
@@ -706,7 +709,7 @@ Environment-based configuration via `.env`:
 - Timeout settings
 - Session logging
 - Context window management
-- Blocked commands
+- Permission and hook settings
 
 ---
 
@@ -731,7 +734,7 @@ Environment-based configuration via `.env`:
 | Concurrent Execution (JoinSet) | ✅ Complete | Parallel processing |
 | Task Queuing & Backpressure | ✅ Complete | Centralized TaskQueue |
 | P2P Help System | ✅ Complete | PeerTool integration |
-| Supervisor/Worker | ✅ Complete | Multi-agent coordination |
+| Orchestra Runtime | ✅ Complete | Multi-agent coordination |
 | TUI Interface | ✅ Complete | ratatui-based |
 | HTTP API | ✅ Complete | axum-based |
 | Actor-based Agents | ⏳ Planned | Persistent tasks with mailboxes |

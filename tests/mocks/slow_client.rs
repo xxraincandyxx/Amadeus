@@ -1,4 +1,24 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Test mock implementation for slow client.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::mocks::slow_client
+// - type: tests::mocks::slow_client::SlowMockClient
+// uses:
+// - module: amadeus::agent::messages::Message
+// - module: amadeus::client
+// - module: amadeus::error::Result
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test slow_client --features full
+// @end-amadeus-header
 
 use std::pin::Pin;
 use std::time::Duration;

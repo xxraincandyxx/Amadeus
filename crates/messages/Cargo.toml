@@ -1,0 +1,17 @@
+[package]
+name = "messages"
+version = "0.1.0"
+edition = "2021"
+description = "Shared conversation message model types for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "messages", "sdk"]
+categories = ["development-tools"]
+
+[lib]
+name = "amadeus_messages"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

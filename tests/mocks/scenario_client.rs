@@ -1,4 +1,30 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Test mock implementation for scenario client.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::mocks::scenario_client
+// - type: tests::mocks::scenario_client::ScenarioDefinition
+// - type: tests::mocks::scenario_client::ScenarioStepDef
+// - type: tests::mocks::scenario_client::StreamEventDef
+// - type: tests::mocks::scenario_client::CapturedRequest
+// - type: tests::mocks::scenario_client::ScenarioMockClient
+// uses:
+// - module: amadeus::agent::messages::Message
+// - module: amadeus::client
+// - module: amadeus::error
+// - runtime: tokio async runtime
+// - protocol: serde serialization
+// - runtime: futures streams
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test scenario_client --features full
+// @end-amadeus-header
 
 use std::collections::VecDeque;
 use std::pin::Pin;

@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Integration tests covering compaction test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::compaction_test
+// uses:
+// - module: amadeus::agent::compaction
+// - module: amadeus::agent::messages
+// - module: amadeus::client::StreamEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test compaction_test --features full
+// @end-amadeus-header
+
 //! # Compaction Integration Tests
 //!
 //! Integration tests for the context compaction mechanism.

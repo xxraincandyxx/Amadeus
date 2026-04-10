@@ -1,3 +1,27 @@
+// @amadeus-header
+// summary: TUI test support for comparison.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui::comparison
+// - type: tests::tui::comparison::FrameDiff
+// - type: tests::tui::comparison::StyleChange
+// - type: tests::tui::comparison::CursorChange
+// - type: tests::tui::comparison::FooterChanges
+// - type: tests::tui::comparison::HeaderChanges
+// - type: tests::tui::comparison::DiffSummary
+// - fn: tests::tui::comparison::compare
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test comparison --features full
+// @end-amadeus-header
+
 //! Snapshot Comparison
 //!
 //! Compares TUI frames and produces human-readable diffs.
@@ -43,7 +67,6 @@ pub struct FooterChanges {
     pub model: Option<String>,
     pub context_pct: Option<String>,
     pub agent_name: Option<String>,
-    pub is_mesh: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -148,7 +171,6 @@ pub fn compare(expected: &TuiFrameSnapshot, actual: &TuiFrameSnapshot) -> FrameD
             expected.footer.agent_name.clone(),
             actual.footer.agent_name.clone(),
         ),
-        is_mesh: diff_bool(expected.footer.is_mesh, actual.footer.is_mesh),
     };
     let footer_changed = !is_footer_default(&footer_changes);
 
@@ -224,7 +246,6 @@ fn is_footer_default(f: &FooterChanges) -> bool {
         && f.model.is_none()
         && f.context_pct.is_none()
         && f.agent_name.is_none()
-        && f.is_mesh.is_none()
 }
 
 fn is_header_default(h: &HeaderChanges) -> bool {

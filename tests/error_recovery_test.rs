@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: Integration tests covering error recovery test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::error_recovery_test
+// uses:
+// - module: amadeus::client::StreamEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test error_recovery_test --features full
+// @end-amadeus-header
+
 use amadeus::client::StreamEvent;
 
 #[path = "scenarios/mod.rs"]

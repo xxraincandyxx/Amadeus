@@ -1,3 +1,22 @@
+// @amadeus-header
+// summary: Integration tests covering agent test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::agent_test
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::agent::loop_agent::Agent
+// - module: amadeus::client::anthropic::AnthropicClient
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test agent_test --features full
+// @end-amadeus-header
+
 use std::sync::Arc;
 
 use amadeus::agent::config::Config;

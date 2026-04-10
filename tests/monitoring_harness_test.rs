@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Integration tests covering monitoring harness test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::monitoring_harness_test
+// uses:
+// - module: amadeus::client::StreamEvent
+// - format: JSON values
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test monitoring_harness_test --features full
+// @end-amadeus-header
+
 use amadeus::client::StreamEvent;
 use serde_json::json;
 
@@ -9,10 +27,11 @@ mod mocks;
 
 use mocks::ScenarioMockClient;
 use scenarios::{
-    assert_timeline_event_labels, assert_timeline_has_thinking, assert_timeline_has_token_usage,
-    assert_timeline_history_len, assert_timeline_history_roles, assert_timeline_is_done,
-    assert_timeline_text_contains, assert_timeline_thinking_contains, assert_timeline_tool_count,
-    assert_timeline_tool_names, ScenarioBuilder, ScenarioRunner,
+    assert_timeline_event_labels, assert_timeline_has_approval,
+    assert_timeline_has_approval_decision, assert_timeline_has_thinking,
+    assert_timeline_has_token_usage, assert_timeline_history_len, assert_timeline_history_roles,
+    assert_timeline_is_done, assert_timeline_text_contains, assert_timeline_thinking_contains,
+    assert_timeline_tool_count, assert_timeline_tool_names, ScenarioBuilder, ScenarioRunner,
 };
 
 #[tokio::test]
@@ -138,4 +157,61 @@ async fn test_monitoring_timeline_exposes_missing_default_policy_monitoring_gap(
     let tool_errors = timeline.tool_errors();
     assert_eq!(tool_errors.len(), 1);
     assert!(tool_errors[0].output.contains("No such file or directory") || tool_errors[0].is_error);
+}
+
+#[tokio::test]
+async fn scenario_runner_can_script_approval_decisions() {
+    let client = ScenarioMockClient::scripted(vec![
+        vec![
+            StreamEvent::ToolCallStart {
+                id: "tool_1".to_string(),
+                name: "bash".to_string(),
+            },
+            StreamEvent::ToolCallDelta {
+                arguments: json!({"command": "rm -rf /"}).to_string(),
+            },
+            StreamEvent::ToolCallDone("tool_1".to_string()),
+            StreamEvent::StopReason("tool_use".to_string()),
+        ],
+        vec![
+            StreamEvent::TextDelta("Denied as expected.".to_string()),
+            StreamEvent::StopReason("end_turn".to_string()),
+        ],
+    ]);
+
+    let scenario = ScenarioBuilder::new("approval_roundtrip")
+        .description("Drive approval decisions through the scenario runner")
+        .user_says("Delete the root filesystem.")
+        .approve_tool("bash", false)
+        .build();
+
+    let timeline = ScenarioRunner::new(scenario)
+        .execute_timeline(client)
+        .await
+        .expect("timeline execution failed");
+
+    assert_timeline_has_approval(&timeline);
+    assert_timeline_has_approval_decision(&timeline, "bash", false);
+}
+
+#[tokio::test]
+async fn scenario_runner_supports_fixture_backed_approval_scenarios() {
+    let client =
+        ScenarioMockClient::from_json(include_str!("fixtures/scenarios/approval_roundtrip.json"))
+            .expect("fixture should deserialize");
+
+    let scenario = ScenarioBuilder::new("approval_roundtrip_fixture")
+        .description("Drive approval decisions with fixture-backed LLM output")
+        .user_says("Delete the root filesystem.")
+        .approve_tool("bash", false)
+        .build();
+
+    let timeline = ScenarioRunner::new(scenario)
+        .execute_timeline(client)
+        .await
+        .expect("timeline execution failed");
+
+    assert_timeline_has_approval(&timeline);
+    assert_timeline_has_approval_decision(&timeline, "bash", false);
+    assert_timeline_text_contains(&timeline, "Denied as expected.");
 }

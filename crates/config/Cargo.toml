@@ -1,0 +1,27 @@
+[package]
+name = "config"
+version = "0.1.0"
+edition = "2021"
+description = "Structured configuration loading for Amadeus runtimes"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "config", "sdk"]
+categories = ["config", "development-tools"]
+
+[lib]
+name = "amadeus_config"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus_compaction = { package = "compaction", path = "../compaction" }
+amadeus_context = { package = "context", path = "../context" }
+amadeus_hooks = { package = "hooks", path = "../hooks" }
+amadeus_permissions = { package = "permissions", path = "../permissions" }
+amadeus_prompts = { package = "prompts", path = "../prompts" }
+dirs = "5.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"

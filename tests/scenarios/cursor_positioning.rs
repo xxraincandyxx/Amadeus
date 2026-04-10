@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Scenario testing support for cursor positioning.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::cursor_positioning
+// uses: none
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test cursor_positioning --features full
+// @end-amadeus-header
+
 const VIEWPORT_HEIGHT: u16 = 3;
 
 struct CursorState {

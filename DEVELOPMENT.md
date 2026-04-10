@@ -68,6 +68,7 @@ Amadeus prioritizes **Mock-First Testing** to ensure stability without API costs
 2. **Defensive Programming**: Use `crate::error::Result` and avoid `unwrap()`.
 3. **Google Style**: Follow the strict Google Rust Style Guide (2-space indent, snake_case).
 4. **Validation**: Always run `cargo check` and relevant tests before pushing.
+5. **Header Maintenance**: In-scope source files must carry and maintain the canonical header defined in `docs/SOURCE_FILE_HEADERS.md`.
 
 ---
 *El Psy Kongroo*

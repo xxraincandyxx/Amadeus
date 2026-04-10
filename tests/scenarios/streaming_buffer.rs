@@ -1,3 +1,19 @@
+// @amadeus-header
+// summary: Scenario testing support for streaming buffer.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::streaming_buffer
+// uses: none
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test streaming_buffer --features full
+// @end-amadeus-header
+
 use std::time::{Duration, Instant};
 
 struct StreamingBuffer {

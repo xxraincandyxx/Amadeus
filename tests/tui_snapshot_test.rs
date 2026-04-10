@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Integration tests covering tui snapshot test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui_snapshot_test
+// uses:
+// - module: amadeus::client::StreamEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects:
+// - Writes output to stdout or stderr.
+// tests:
+// - cmd: cargo test tui_snapshot_test --features full
+// @end-amadeus-header
+
 //! TUI Snapshot Tests
 //!
 //! Visual regression tests that capture and verify complete terminal output.

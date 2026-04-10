@@ -1,3 +1,21 @@
+// @amadeus-header
+// summary: Integration tests covering messages test behavior.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::messages_test
+// uses:
+// - module: amadeus::agent::messages
+// - format: JSON values
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test messages_test --features full
+// @end-amadeus-header
+
 use amadeus::agent::messages::{ContentBlock, Message};
 use serde_json::json;
 

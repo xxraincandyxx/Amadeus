@@ -1,0 +1,41 @@
+[package]
+name = "tui"
+version = "0.1.0"
+edition = "2021"
+description = "Terminal UI adapter crate for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_tui"
+path = "src/lib.rs"
+
+[features]
+default = []
+test-utils = ["amadeus_core/test-utils"]
+
+[dependencies]
+amadeus_core = { package = "core", path = "../core", default-features = false, features = ["tui"] }
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+colored = "2.1"
+crossterm = { version = "0.27", features = ["bracketed-paste", "event-stream"] }
+dirs = "5.0"
+futures = "0.3"
+lazy_static = "1.4"
+rand = "0.8"
+ratatui = "0.28"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.39", features = ["full"] }
+tracing = "0.1"
+tui-textarea = "0.6"
+unicode-width = "0.2"
+urlencoding = "2.1"
+uuid = { version = "1.10", features = ["v4", "serde"] }
+walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3.10"

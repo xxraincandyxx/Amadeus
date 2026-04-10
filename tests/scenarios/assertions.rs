@@ -1,4 +1,27 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Scenario testing support for assertions.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::assertions
+// - fn: tests::scenarios::assertions::assert_events_contain_text
+// - fn: tests::scenarios::assertions::assert_tool_call_count
+// - fn: tests::scenarios::assertions::assert_tool_call_order
+// - fn: tests::scenarios::assertions::assert_no_errors
+// - fn: tests::scenarios::assertions::assert_streaming_monotonic
+// - fn: tests::scenarios::assertions::assert_response_length
+// - fn: tests::scenarios::assertions::assert_event_sequence
+// uses:
+// - module: amadeus::agent::events::AgentEvent
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test assertions --features full
+// @end-amadeus-header
 
 use amadeus::agent::events::AgentEvent;
 
@@ -194,6 +217,32 @@ pub fn assert_timeline_approval_for_tool(tl: &EventTimeline, tool_name: &str) {
         "Expected approval for tool '{}', found approvals for: {:?}",
         tool_name,
         approvals.iter().map(|a| &a.tool).collect::<Vec<_>>()
+    );
+}
+
+pub fn assert_timeline_has_approval_decision(tl: &EventTimeline, tool_name: &str, approve: bool) {
+    let found = tl.approval_decisions().iter().any(|decision| {
+        decision.tool == tool_name
+            && matches!(
+                (decision.decision, approve),
+                (amadeus::agent::events::ApprovalDecision::Approve, true)
+                    | (
+                        amadeus::agent::events::ApprovalDecision::AlwaysApprove,
+                        true
+                    )
+                    | (amadeus::agent::events::ApprovalDecision::Deny, false)
+            )
+    });
+
+    assert!(
+        found,
+        "Expected approval decision for tool '{}' with approve={}, found {:?}",
+        tool_name,
+        approve,
+        tl.approval_decisions()
+            .iter()
+            .map(|decision| format!("{}:{:?}", decision.tool, decision.decision))
+            .collect::<Vec<_>>()
     );
 }
 

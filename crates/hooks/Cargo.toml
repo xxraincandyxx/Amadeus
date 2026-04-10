@@ -1,0 +1,15 @@
+[package]
+name = "hooks"
+version = "0.1.0"
+edition = "2021"
+description = "Shared hook event and policy model for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_hooks"
+path = "src/lib.rs"
+
+[dependencies]
+serde_json = "1.0"

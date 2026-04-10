@@ -1,0 +1,868 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Amadeus Header Map</title>
+  <style>
+    :root {
+      --bg: #f3efe3;
+      --bg-soft: #fffaf0;
+      --ink: #16211f;
+      --muted: #5e6f6a;
+      --line: rgba(22, 33, 31, 0.12);
+      --card: rgba(255, 250, 240, 0.82);
+      --shadow: 0 24px 70px rgba(48, 39, 20, 0.16);
+      --core: #0f766e;
+      --agent: #ef4444;
+      --client: #2563eb;
+      --tools: #f97316;
+      --policy: #7c3aed;
+      --ui: #0f766e;
+      --api: #0284c7;
+      --benchmark: #ca8a04;
+      --test: #64748b;
+      --example: #db2777;
+      --script: #166534;
+      --infra: #4b5563;
+      --active: #166534;
+      --experimental: #b45309;
+      --deprecated: #b91c1c;
+      --test-only: #475569;
+      --generated: #6d28d9;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(15, 118, 110, 0.16), transparent 32%),
+        radial-gradient(circle at top right, rgba(239, 68, 68, 0.12), transparent 28%),
+        linear-gradient(180deg, #fcf7ea 0%, #efe7d4 100%);
+    }
+
+    body {
+      padding: 28px;
+    }
+
+    .shell {
+      max-width: 1480px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 22px;
+    }
+
+    .panel {
+      background: var(--card);
+      backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.55);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+    }
+
+    .controls {
+      padding: 26px 22px;
+      position: sticky;
+      top: 24px;
+      align-self: start;
+    }
+
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 10px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 42px;
+      line-height: 0.95;
+      font-weight: 700;
+    }
+
+    .lede {
+      margin: 14px 0 24px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.5;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .stat {
+      background: rgba(255, 255, 255, 0.58);
+      border: 1px solid rgba(22, 33, 31, 0.08);
+      border-radius: 18px;
+      padding: 14px 14px 12px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 26px;
+      margin-bottom: 4px;
+    }
+
+    .stat span {
+      font-size: 12px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .field {
+      margin-bottom: 18px;
+    }
+
+    .field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .field input {
+      width: 100%;
+      border: 1px solid rgba(22, 33, 31, 0.12);
+      border-radius: 14px;
+      padding: 12px 14px;
+      font: inherit;
+      background: rgba(255, 255, 255, 0.76);
+      color: var(--ink);
+      outline: none;
+    }
+
+    .field input:focus {
+      border-color: rgba(15, 118, 110, 0.45);
+      box-shadow: 0 0 0 4px rgba(15, 118, 110, 0.1);
+    }
+
+    .chip-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .chip {
+      border: 1px solid rgba(22, 33, 31, 0.1);
+      background: rgba(255, 255, 255, 0.68);
+      color: var(--ink);
+      border-radius: 999px;
+      padding: 7px 12px;
+      font: inherit;
+      font-size: 13px;
+      cursor: pointer;
+      transition: 140ms ease;
+    }
+
+    .chip:hover {
+      transform: translateY(-1px);
+      border-color: rgba(22, 33, 31, 0.22);
+    }
+
+    .chip.active {
+      background: var(--ink);
+      color: #fffaf0;
+      border-color: var(--ink);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    .button {
+      border: 0;
+      border-radius: 14px;
+      padding: 11px 14px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .button.primary {
+      background: var(--ink);
+      color: #fffaf0;
+    }
+
+    .button.secondary {
+      background: rgba(255, 255, 255, 0.7);
+      color: var(--ink);
+      border: 1px solid rgba(22, 33, 31, 0.1);
+    }
+
+    .stage {
+      padding: 22px;
+      overflow: hidden;
+      min-height: 860px;
+      position: relative;
+    }
+
+    .stage-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .stage-header h2 {
+      margin: 0;
+      font-size: 28px;
+    }
+
+    .stage-header p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      max-width: 740px;
+      line-height: 1.45;
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: end;
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+    }
+
+    .map {
+      position: relative;
+      min-height: 760px;
+      border-radius: 24px;
+      background:
+        linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0.34)),
+        radial-gradient(circle at center, rgba(15, 118, 110, 0.07), transparent 48%);
+      border: 1px solid rgba(22, 33, 31, 0.08);
+      overflow: auto;
+      padding: 26px 26px 30px;
+    }
+
+    .empty {
+      padding: 48px 18px;
+      text-align: center;
+      color: var(--muted);
+    }
+
+    .mind-root {
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      min-width: 920px;
+    }
+
+    .root-card {
+      align-self: center;
+      text-align: center;
+      background: linear-gradient(135deg, rgba(22,33,31,0.96), rgba(15,118,110,0.84));
+      color: #fffaf0;
+      border-radius: 26px;
+      padding: 22px 28px;
+      box-shadow: 0 16px 50px rgba(15, 118, 110, 0.22);
+      min-width: 320px;
+    }
+
+    .root-card strong {
+      display: block;
+      font-size: 32px;
+      margin-bottom: 6px;
+    }
+
+    .root-card span {
+      color: rgba(255, 250, 240, 0.76);
+      font-size: 14px;
+    }
+
+    .layer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 18px;
+      align-items: start;
+    }
+
+    .layer {
+      border-radius: 24px;
+      border: 1px solid rgba(22, 33, 31, 0.08);
+      background: rgba(255, 255, 255, 0.7);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .layer::before {
+      content: "";
+      position: absolute;
+      inset: 0 0 auto;
+      height: 5px;
+      background: var(--layer-color, var(--ink));
+    }
+
+    .layer-head {
+      padding: 18px 18px 14px;
+      border-bottom: 1px solid rgba(22, 33, 31, 0.06);
+    }
+
+    .layer-head h3 {
+      margin: 0;
+      font-size: 22px;
+      text-transform: capitalize;
+    }
+
+    .layer-head p {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .file-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 16px;
+    }
+
+    .node {
+      position: relative;
+      padding: 16px;
+      border-radius: 18px;
+      background: rgba(252, 247, 234, 0.92);
+      border: 1px solid rgba(22, 33, 31, 0.08);
+      box-shadow: 0 12px 24px rgba(22, 33, 31, 0.06);
+    }
+
+    .node::before {
+      content: "";
+      position: absolute;
+      top: -12px;
+      left: 22px;
+      width: 1px;
+      height: 12px;
+      background: rgba(22, 33, 31, 0.14);
+    }
+
+    .file-stack .node:first-child::before {
+      display: none;
+    }
+
+    .node-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: start;
+      margin-bottom: 10px;
+    }
+
+    .path {
+      font-size: 13px;
+      color: var(--muted);
+      word-break: break-all;
+    }
+
+    .summary {
+      margin: 6px 0 0;
+      font-size: 15px;
+      line-height: 1.38;
+    }
+
+    .badge {
+      flex: 0 0 auto;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: #fffaf0;
+      background: var(--status-color, var(--ink));
+    }
+
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 10px 0 12px;
+    }
+
+    .tag {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      border-radius: 999px;
+      padding: 5px 9px;
+      background: rgba(22, 33, 31, 0.06);
+      color: var(--muted);
+    }
+
+    .metric-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .metric {
+      background: rgba(255, 255, 255, 0.68);
+      border-radius: 14px;
+      padding: 10px 10px 8px;
+      border: 1px solid rgba(22, 33, 31, 0.06);
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 20px;
+      margin-bottom: 2px;
+    }
+
+    .metric span {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+    }
+
+    .section {
+      margin-top: 12px;
+    }
+
+    .section h4 {
+      margin: 0 0 8px;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+    }
+
+    .mini-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+
+    .mini-pill {
+      display: inline-flex;
+      align-items: center;
+      max-width: 100%;
+      padding: 6px 9px;
+      border-radius: 12px;
+      background: rgba(22, 33, 31, 0.055);
+      font-size: 12px;
+      line-height: 1.25;
+    }
+
+    @media (max-width: 1100px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+
+      .controls {
+        position: static;
+      }
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 16px;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .stage {
+        padding: 18px;
+      }
+
+      .map {
+        padding: 18px;
+      }
+
+      .mind-root {
+        min-width: 0;
+      }
+
+      .metric-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel controls">
+      <p class="eyebrow">Header Graph</p>
+      <h1>Source Mindspace</h1>
+      <p class="lede">
+        An interactive map of the repository built from the source-file headers.
+        Search by file, summary, interface, or feature flag and narrow the view by layer or status.
+      </p>
+
+      <div class="stat-grid">
+        <div class="stat"><strong id="visible-count">0</strong><span>Visible Files</span></div>
+        <div class="stat"><strong id="layer-count">0</strong><span>Visible Layers</span></div>
+        <div class="stat"><strong id="provide-count">0</strong><span>Provides</span></div>
+        <div class="stat"><strong id="use-count">0</strong><span>Uses</span></div>
+      </div>
+
+      <div class="field">
+        <label for="search">Search</label>
+        <input id="search" type="search" placeholder="path, summary, interface, feature..." />
+      </div>
+
+      <div class="field">
+        <label>Layer</label>
+        <div id="layer-filters" class="chip-group"></div>
+      </div>
+
+      <div class="field">
+        <label>Status</label>
+        <div id="status-filters" class="chip-group"></div>
+      </div>
+
+      <div class="field">
+        <label>Feature Flag</label>
+        <div id="feature-filters" class="chip-group"></div>
+      </div>
+
+      <div class="actions">
+        <button id="reset" class="button secondary" type="button">Reset Filters</button>
+        <button id="expand" class="button primary" type="button">Show Full Map</button>
+      </div>
+    </aside>
+
+    <main class="panel stage">
+      <div class="stage-header">
+        <div>
+          <p class="eyebrow">Generated View</p>
+          <h2>Layered Repository Mindmap</h2>
+          <p>
+            Files are grouped by architectural layer and visualized as node clusters.
+            Each node shows status, interface density, and its most important provided and consumed boundaries.
+          </p>
+        </div>
+        <div id="legend" class="legend"></div>
+      </div>
+      <section id="map" class="map"></section>
+    </main>
+  </div>
+
+  <script>
+    const DATA = {"generated_from":"source-file headers","file_count":169,"layers":["agent","api","benchmark","client","core","example","infra","policy","script","test","tools","ui"],"statuses":["active","experimental","test-only"],"feature_flags":["api","concurrency","context","full","mesh","supervisor","test-utils","tui"],"records":[{"path":"count-code.sh","name":"count-code.sh","layer":"script","status":"active","summary":"Repository code counting helper for tracked source files and totals.","feature_flags":["full"],"provides":["cmd: count-code.sh"],"uses":["cmd: cloc"],"invariants":["Script command flow remains non-interactive and order-dependent."],"side_effects":["Reads filesystem state.","Runs external commands or subprocesses.","Writes output to stdout or stderr."],"tests":["cmd: bash ./count-code.sh"],"score":2},{"path":"examples/client_rest.sh","name":"client_rest.sh","layer":"example","status":"experimental","summary":"Runnable example for client rest usage.","feature_flags":["full"],"provides":["cmd: examples/client_rest.sh"],"uses":["cmd: curl","cmd: jq"],"invariants":["Example code remains runnable against the current public API."],"side_effects":["Performs network or HTTP operations.","Runs external commands or subprocesses.","Writes output to stdout or stderr."],"tests":["cmd: bash ./examples/client_rest.sh"],"score":3},{"path":"examples/server/main.rs","name":"main.rs","layer":"example","status":"experimental","summary":"Runnable example for main usage.","feature_flags":["full"],"provides":["module: example::server"],"uses":["runtime: anyhow error handling","runtime: tokio task scheduling"],"invariants":["Example code remains runnable against the current public API."],"side_effects":["Spawns asynchronous tasks."],"tests":["cmd: cargo run --example server --features full"],"score":3},{"path":"examples/test_inline.rs","name":"test_inline.rs","layer":"example","status":"experimental","summary":"Runnable example for test inline usage.","feature_flags":["full"],"provides":["module: example::test_inline"],"uses":["runtime: ratatui terminal rendering","runtime: crossterm terminal events","runtime: anyhow error handling"],"invariants":["Example code remains runnable against the current public API."],"side_effects":[],"tests":["cmd: cargo run --example test_inline --features full"],"score":4},{"path":"examples/test_layout.rs","name":"test_layout.rs","layer":"example","status":"experimental","summary":"Runnable example for test layout usage.","feature_flags":["full"],"provides":["module: example::test_layout"],"uses":["runtime: ratatui terminal rendering","runtime: crossterm terminal events","runtime: anyhow error handling"],"invariants":["Example code remains runnable against the current public API."],"side_effects":[],"tests":["cmd: cargo run --example test_layout --features full"],"score":4},{"path":"examples/tui/main.rs","name":"main.rs","layer":"example","status":"experimental","summary":"Runnable example for main usage.","feature_flags":["full"],"provides":["module: example::tui"],"uses":["runtime: anyhow error handling"],"invariants":["Example code remains runnable against the current public API."],"side_effects":[],"tests":["cmd: cargo run --example tui --features full"],"score":2},{"path":"scripts/check_source_headers.py","name":"check_source_headers.py","layer":"script","status":"active","summary":"Validates mandatory source-file headers across in-scope repository code.","feature_flags":["full"],"provides":["cmd: scripts/check_source_headers.py"],"uses":["cmd: python3","artifact: source file headers"],"invariants":["Validation scope stays aligned with docs/SOURCE_FILE_HEADERS.md.","Required header fields and interface-kind rules stay enforced consistently."],"side_effects":["Reads filesystem state.","Writes output to stdout or stderr."],"tests":["cmd: python3 scripts/check_source_headers.py"],"score":3},{"path":"scripts/generate_header_mindmap.py","name":"generate_header_mindmap.py","layer":"script","status":"active","summary":"Generates a Mermaid mindmap from source-file header metadata.","feature_flags":["full"],"provides":["cmd: scripts/generate_header_mindmap.py","format: Mermaid mindmap"],"uses":["cmd: python3","artifact: source file headers"],"invariants":["Mindmap grouping stays derived from committed source-file headers.","Missing or malformed headers are reported without crashing by default."],"side_effects":["Reads filesystem state.","Writes output to stdout or a target file."],"tests":["cmd: python3 scripts/generate_header_mindmap.py --stdout"],"score":4},{"path":"scripts/generate_header_webui.py","name":"generate_header_webui.py","layer":"script","status":"active","summary":"Generates a static web UI from source-file header metadata.","feature_flags":["full"],"provides":["cmd: scripts/generate_header_webui.py","artifact: docs/header_map.html","format: header metadata JSON"],"uses":["cmd: python3","artifact: source file headers"],"invariants":["The rendered UI stays derived from committed source-file headers.","Missing or malformed headers warn by default and fail only in strict mode."],"side_effects":["Reads filesystem state.","Writes output to stdout or generated files."],"tests":["cmd: python3 scripts/generate_header_webui.py --stdout | head"],"score":5},{"path":"scripts/run-benchmark.sh","name":"run-benchmark.sh","layer":"script","status":"active","summary":"Project automation script for run-benchmark.","feature_flags":[],"provides":["cmd: scripts/run-benchmark.sh"],"uses":["cmd: cargo"],"invariants":["Script command flow remains non-interactive and order-dependent."],"side_effects":["Runs external commands or subprocesses."],"tests":["cmd: bash ./scripts/run-benchmark.sh"],"score":2},{"path":"src/agent/compaction.rs","name":"compaction.rs","layer":"agent","status":"active","summary":"Agent subsystem code for compaction.","feature_flags":[],"provides":["module: crate::agent::compaction","type: crate::agent::compaction::CompactionConfig","type: crate::agent::compaction::CompressionStatus","type: crate::agent::compaction::CompactionResult","type: crate::agent::compaction::ContextCompactor","type: crate::agent::compaction::CompactionEvent"],"uses":["module: crate::agent::messages","module: crate::client::LLMClient","module: crate::error::Result","protocol: serde serialization","runtime: tracing instrumentation"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/compaction_test.rs"],"score":11},{"path":"src/agent/config.rs","name":"config.rs","layer":"agent","status":"active","summary":"Agent subsystem code for config.","feature_flags":[],"provides":["module: crate::agent::config","type: crate::agent::config::Provider","type: crate::agent::config::Config"],"uses":["module: crate::error","protocol: serde serialization","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/config_test.rs"],"score":6},{"path":"src/agent/events.rs","name":"events.rs","layer":"agent","status":"active","summary":"Agent subsystem code for events.","feature_flags":[],"provides":["module: crate::agent::events","type: crate::agent::events::RunResult","type: crate::agent::events::ToolCall","type: crate::agent::events::ApprovalDecision","type: crate::agent::events::ApprovalRequest","type: crate::agent::events::AgentEvent"],"uses":["module: crate::agent::compaction::CompressionStatus","protocol: serde serialization","format: JSON values"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/agent_integration_test.rs"],"score":9},{"path":"src/agent/loop_agent.rs","name":"loop_agent.rs","layer":"agent","status":"active","summary":"ReAct agent loop handling LLM turns, tools, approvals, and session logs.","feature_flags":[],"provides":["module: crate::agent::loop_agent","type: crate::agent::loop_agent::SessionLog","type: crate::agent::loop_agent::SessionStats","type: crate::agent::loop_agent::AgentBuilder","type: crate::agent::loop_agent::Agent","type: crate::agent::loop_agent::ApprovalChannels","type: crate::agent::loop_agent::ApprovalHandle","type: crate::agent::loop_agent::SubAgentResult"],"uses":["module: crate::agent::compaction::ContextCompactor","module: crate::agent::config::Config","module: crate::agent::events","module: crate::agent::messages","module: crate::client","module: crate::error","module: crate::hooks","module: crate::policy::Policy"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state.","Spawns asynchronous tasks.","Sends or receives messages across async channels."],"tests":["tests/agent_integration_test.rs"],"score":16},{"path":"src/agent/manager.rs","name":"manager.rs","layer":"agent","status":"active","summary":"Agent subsystem code for manager.","feature_flags":[],"provides":["module: crate::agent::manager","type: crate::agent::manager::AgentStatus","type: crate::agent::manager::AgentInfo","type: crate::agent::manager::AgentManager"],"uses":["module: crate::agent::config::Config","module: crate::agent::loop_agent::Agent","module: crate::agent::profile::AgentProfile","module: crate::client::LLMClient","module: crate::core::id::AgentId","module: crate::error","protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/agent_integration_test.rs"],"score":11},{"path":"src/agent/mesh.rs","name":"mesh.rs","layer":"agent","status":"active","summary":"Agent subsystem code for mesh.","feature_flags":[],"provides":["module: crate::agent::mesh","type: crate::agent::mesh::MeshInfo","type: crate::agent::mesh::MeshManager"],"uses":["protocol: serde serialization","runtime: tracing instrumentation","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/agent_integration_test.rs"],"score":6},{"path":"src/agent/messages.rs","name":"messages.rs","layer":"agent","status":"active","summary":"Agent subsystem code for messages.","feature_flags":[],"provides":["module: crate::agent::messages","type: crate::agent::messages::ContentBlock","type: crate::agent::messages::Message"],"uses":["protocol: serde serialization","format: JSON values"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/messages_test.rs"],"score":5},{"path":"src/agent/mod.rs","name":"mod.rs","layer":"agent","status":"active","summary":"Module root for the agent subsystem and its exports.","feature_flags":["supervisor"],"provides":["module: crate::agent"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/agent/profile.rs","name":"profile.rs","layer":"agent","status":"active","summary":"Agent subsystem code for profile.","feature_flags":[],"provides":["module: crate::agent::profile","type: crate::agent::profile::AgentProfile"],"uses":["protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/agent_integration_test.rs"],"score":3},{"path":"src/agent/supervisor.rs","name":"supervisor.rs","layer":"agent","status":"active","summary":"Multi-agent supervisor coordinating worker tasks, scheduling, and routing.","feature_flags":[],"provides":["module: crate::agent::supervisor","type: crate::agent::supervisor::DispatchStrategy","type: crate::agent::supervisor::SupervisorConfig","type: crate::agent::supervisor::Supervisor"],"uses":["module: crate::agent::config::Config","module: crate::agent::loop_agent::Agent","module: crate::client::LLMClient","module: crate::concurrency::LockManager","module: crate::core::id::AgentId","module: crate::error","module: crate::tools::peer::PeerTool","runtime: tokio async runtime"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Spawns asynchronous tasks.","Sends or receives messages across async channels."],"tests":["tests/agent_integration_test.rs"],"score":12},{"path":"src/agent/worker.rs","name":"worker.rs","layer":"agent","status":"active","summary":"Worker agent execution and task lifecycle handling for supervision.","feature_flags":[],"provides":["module: crate::agent::worker","type: crate::agent::worker::WorkerConfig","type: crate::agent::worker::Task","type: crate::agent::worker::HelpRequest","type: crate::agent::worker::TaskResult","type: crate::agent::worker::WorkerStatus","type: crate::agent::worker::WorkerInfo"],"uses":["module: crate::agent::events::ToolCall","module: crate::core::id::AgentId","runtime: tokio async runtime","protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Sends or receives messages across async channels."],"tests":["tests/agent_integration_test.rs"],"score":11},{"path":"src/api/handlers/agents.rs","name":"agents.rs","layer":"api","status":"active","summary":"HTTP handler implementation for agents routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::agents","fn: crate::api::handlers::agents::list_agents","fn: crate::api::handlers::agents::create_agent","fn: crate::api::handlers::agents::get_agent","fn: crate::api::handlers::agents::kill_agent","fn: crate::api::handlers::agents::switch_agent","fn: crate::api::handlers::agents::agent_chat","fn: crate::api::handlers::agents::agent_stream"],"uses":["module: crate::agent::profile::AgentProfile","module: crate::api::http::AppState","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":12},{"path":"src/api/handlers/approvals.rs","name":"approvals.rs","layer":"api","status":"active","summary":"HTTP handler implementation for approvals routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::approvals","const: crate::api::handlers::approvals::APPROVAL_CHANNELS","fn: crate::api::handlers::approvals::register_approval_channel","fn: crate::api::handlers::approvals::remove_approval_channel","fn: crate::api::handlers::approvals::submit_approval","fn: crate::api::handlers::approvals::list_pending_approvals","type: crate::api::handlers::approvals::PendingApproval"],"uses":["module: crate::agent::events::ApprovalDecision","module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","runtime: tokio async runtime","protocol: axum HTTP handlers","protocol: serde serialization"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations.","Sends or receives messages across async channels."],"tests":["tests/agent_integration_test.rs"],"score":14},{"path":"src/api/handlers/chat.rs","name":"chat.rs","layer":"api","status":"active","summary":"HTTP handler implementation for chat routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::chat","fn: crate::api::handlers::chat::chat"],"uses":["module: crate::agent::worker::Task","module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":7},{"path":"src/api/handlers/config.rs","name":"config.rs","layer":"api","status":"active","summary":"HTTP handler implementation for config routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::config","fn: crate::api::handlers::config::get_config","fn: crate::api::handlers::config::update_config"],"uses":["module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/config_test.rs"],"score":7},{"path":"src/api/handlers/execute.rs","name":"execute.rs","layer":"api","status":"active","summary":"HTTP handler implementation for execute routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::execute","fn: crate::api::handlers::execute::execute"],"uses":["module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","module: crate::tools::bash::BashTool","module: crate::tools::tool_trait::Tool","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":8},{"path":"src/api/handlers/health.rs","name":"health.rs","layer":"api","status":"active","summary":"HTTP handler implementation for health routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::health","fn: crate::api::handlers::health::health"],"uses":["module: crate::api::types::HealthResponse","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":4},{"path":"src/api/handlers/history.rs","name":"history.rs","layer":"api","status":"active","summary":"HTTP handler implementation for history routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::history","fn: crate::api::handlers::history::get_history"],"uses":["module: crate::api::http::AppState","module: crate::api::types::HistoryResponse","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":6},{"path":"src/api/handlers/mod.rs","name":"mod.rs","layer":"api","status":"active","summary":"Module root for the handlers subsystem and its exports.","feature_flags":["api"],"provides":["module: crate::api::handlers"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/api/handlers/sessions.rs","name":"sessions.rs","layer":"api","status":"active","summary":"HTTP handler implementation for sessions routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::sessions","fn: crate::api::handlers::sessions::list_sessions","fn: crate::api::handlers::sessions::get_session","fn: crate::api::handlers::sessions::restore_session"],"uses":["module: crate::agent::loop_agent::Agent","module: crate::agent::messages::ContentBlock","module: crate::api::http::AppState","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":9},{"path":"src/api/handlers/skills.rs","name":"skills.rs","layer":"api","status":"active","summary":"HTTP handler implementation for skills routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::skills","fn: crate::api::handlers::skills::list_skills"],"uses":["module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","module: crate::skills::registry::SkillRegistry","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":7},{"path":"src/api/handlers/stream.rs","name":"stream.rs","layer":"api","status":"active","summary":"HTTP handler implementation for stream routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::stream","type: crate::api::handlers::stream::StreamQuery","type: crate::api::handlers::stream::TextEvent","type: crate::api::handlers::stream::ToolStartEvent","type: crate::api::handlers::stream::ToolDoneEvent","type: crate::api::handlers::stream::DoneEvent","type: crate::api::handlers::stream::ErrorEvent","type: crate::api::handlers::stream::TokenUsageEvent"],"uses":["module: crate::agent::events::AgentEvent","module: crate::agent::messages::Message","module: crate::api::http::AppState","module: crate::client::LLMClient","protocol: axum HTTP handlers","protocol: serde serialization","runtime: futures streams"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/streaming_scenarios_test.rs"],"score":15},{"path":"src/api/handlers/tasks.rs","name":"tasks.rs","layer":"api","status":"active","summary":"HTTP handler implementation for tasks routes.","feature_flags":["api"],"provides":["module: crate::api::handlers::tasks","fn: crate::api::handlers::tasks::handle_task"],"uses":["module: crate::agent::worker::Task","module: crate::api::http::AppState","module: crate::api::types","module: crate::client::LLMClient","protocol: axum HTTP handlers"],"invariants":["Handler request and response handling stays aligned with route contracts."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/agent_integration_test.rs"],"score":7},{"path":"src/api/http.rs","name":"http.rs","layer":"api","status":"active","summary":"HTTP server bootstrap and router assembly for the public API.","feature_flags":["api"],"provides":["module: crate::api::http","type: crate::api::http::AppState","fn: crate::api::http::run_server","fn: crate::api::http::create_router","route: /health","route: /chat","route: /execute","route: /stream"],"uses":["module: crate::agent::config::Config","module: crate::agent::manager::AgentManager","module: crate::agent::supervisor::Supervisor","module: crate::client::LLMClient","module: crate::error::Result","runtime: tokio async runtime","protocol: axum HTTP handlers"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations.","Writes output to stdout or stderr."],"tests":["tests/agent_integration_test.rs"],"score":15},{"path":"src/api/mod.rs","name":"mod.rs","layer":"api","status":"active","summary":"Module root for the api subsystem and its exports.","feature_flags":["api"],"provides":["module: crate::api"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/api/prelude.rs","name":"prelude.rs","layer":"api","status":"active","summary":"Public API module code for prelude.","feature_flags":["api"],"provides":["module: crate::api::prelude"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/agent_integration_test.rs"],"score":1},{"path":"src/api/types.rs","name":"types.rs","layer":"api","status":"active","summary":"Public API module code for types.","feature_flags":["api"],"provides":["module: crate::api::types","type: crate::api::types::ChatRequest","type: crate::api::types::ChatResponse","type: crate::api::types::ToolCall","type: crate::api::types::ExecuteRequest","type: crate::api::types::ExecuteResponse","type: crate::api::types::TaskRequest","type: crate::api::types::TaskResponse"],"uses":["protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/agent_integration_test.rs"],"score":9},{"path":"src/benchmark/case.rs","name":"case.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for case.","feature_flags":[],"provides":["module: crate::benchmark::case","type: crate::benchmark::case::BenchmarkMode","type: crate::benchmark::case::BenchmarkCaseConfig","type: crate::benchmark::case::BenchmarkExpectations","type: crate::benchmark::case::BenchmarkThresholds","type: crate::benchmark::case::BenchmarkCase","type: crate::benchmark::case::MockScript","type: crate::benchmark::case::MockStep"],"uses":["module: crate::client::StreamEvent","module: crate::error","protocol: serde serialization","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":12},{"path":"src/benchmark/eval.rs","name":"eval.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for eval.","feature_flags":[],"provides":["module: crate::benchmark::eval","type: crate::benchmark::eval::BenchmarkCheckResult","type: crate::benchmark::eval::BenchmarkEvaluation"],"uses":["protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":4},{"path":"src/benchmark/metrics.rs","name":"metrics.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for metrics.","feature_flags":[],"provides":["module: crate::benchmark::metrics","type: crate::benchmark::metrics::BenchmarkMetrics"],"uses":["module: crate::agent::events::AgentEvent","protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":4},{"path":"src/benchmark/mock.rs","name":"mock.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for mock.","feature_flags":[],"provides":["module: crate::benchmark::mock","type: crate::benchmark::mock::BenchmarkMockClient"],"uses":["module: crate::agent::messages","module: crate::benchmark::case","module: crate::client","module: crate::error","runtime: tokio async runtime","runtime: futures streams"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/mock_functional_test.rs","tests/mock_llm.rs"],"score":8},{"path":"src/benchmark/mod.rs","name":"mod.rs","layer":"benchmark","status":"active","summary":"Module root for the benchmark subsystem and its exports.","feature_flags":[],"provides":["module: crate::benchmark"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/benchmark/report.rs","name":"report.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for report.","feature_flags":[],"provides":["module: crate::benchmark::report","type: crate::benchmark::report::CapturedEvent","type: crate::benchmark::report::RunStatus","type: crate::benchmark::report::BenchmarkCaseRun","type: crate::benchmark::report::BenchmarkRunSummary"],"uses":["module: crate::agent::events","protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":7},{"path":"src/benchmark/runner.rs","name":"runner.rs","layer":"benchmark","status":"active","summary":"Benchmark pipeline code for runner.","feature_flags":[],"provides":["module: crate::benchmark::runner","type: crate::benchmark::runner::BenchmarkRunnerOptions","type: crate::benchmark::runner::BenchmarkRunner"],"uses":["module: crate::agent::config","module: crate::agent::events::AgentEvent","module: crate::agent::loop_agent::Agent","module: crate::agent::messages::Message","module: crate::benchmark::case","module: crate::benchmark::eval::BenchmarkEvaluation","module: crate::benchmark::metrics::BenchmarkMetrics","module: crate::benchmark::mock::BenchmarkMockClient"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":11},{"path":"src/bin/benchmark.rs","name":"benchmark.rs","layer":"script","status":"active","summary":"Source file for benchmark.","feature_flags":[],"provides":["module: bin::benchmark"],"uses":["module: amadeus::agent::Config","module: amadeus::benchmark"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Writes output to stdout or stderr."],"tests":["cmd: cargo test --features full"],"score":3},{"path":"src/client/anthropic.rs","name":"anthropic.rs","layer":"client","status":"active","summary":"Anthropic LLM client implementation for message and streaming requests.","feature_flags":[],"provides":["module: crate::client::anthropic","type: crate::client::anthropic::AnthropicClient"],"uses":["module: crate::agent::messages","module: crate::client::LLMClient","module: crate::client::StreamEvent","module: crate::error","protocol: reqwest HTTP client","format: JSON values","runtime: tracing instrumentation","runtime: futures streams"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/mock_functional_test.rs"],"score":10},{"path":"src/client/mod.rs","name":"mod.rs","layer":"client","status":"active","summary":"Module root for the client subsystem and its exports.","feature_flags":[],"provides":["module: crate::client","type: crate::client::StreamEvent","trait: crate::client::LLMClient"],"uses":["module: crate::agent::messages","module: crate::error::Result","runtime: futures streams"],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":6},{"path":"src/client/openai.rs","name":"openai.rs","layer":"client","status":"active","summary":"OpenAI LLM client implementation for message and streaming requests.","feature_flags":[],"provides":["module: crate::client::openai","type: crate::client::openai::OpenAIClient"],"uses":["module: crate::agent::messages","module: crate::client","module: crate::error","protocol: reqwest HTTP client","format: JSON values","runtime: tracing instrumentation","runtime: futures streams"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/mock_functional_test.rs"],"score":9},{"path":"src/concurrency/file_lock.rs","name":"file_lock.rs","layer":"infra","status":"active","summary":"Concurrency utility code for file lock.","feature_flags":["concurrency"],"provides":["module: crate::concurrency::file_lock","type: crate::concurrency::file_lock::FileReadInfo","type: crate::concurrency::file_lock::FileLockManager","type: crate::concurrency::file_lock::FileReadGuard","type: crate::concurrency::file_lock::FileWriteGuard","type: crate::concurrency::file_lock::FileLockStats"],"uses":["module: crate::core::id::AgentId","module: crate::error","runtime: tokio async runtime","runtime: tracing instrumentation","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":11},{"path":"src/concurrency/lock.rs","name":"lock.rs","layer":"infra","status":"active","summary":"Concurrency utility code for lock.","feature_flags":["concurrency"],"provides":["module: crate::concurrency::lock","type: crate::concurrency::lock::LockMode","type: crate::concurrency::lock::LockEntry","type: crate::concurrency::lock::LockStatus","type: crate::concurrency::lock::LockError","type: crate::concurrency::lock::LockManager"],"uses":["module: crate::core::id::AgentId","runtime: tokio async runtime"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Sends or receives messages across async channels."],"tests":["cmd: cargo test --features full"],"score":8},{"path":"src/concurrency/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the concurrency subsystem and its exports.","feature_flags":["concurrency"],"provides":["module: crate::concurrency"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/context.rs","name":"context.rs","layer":"infra","status":"active","summary":"Source file for context.","feature_flags":[],"provides":["module: crate::context","type: crate::context::ProjectContext","fn: crate::context::load_context_prompt"],"uses":["artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":4},{"path":"src/core/event.rs","name":"event.rs","layer":"core","status":"active","summary":"Core primitive definitions for event.","feature_flags":[],"provides":["module: crate::core::event","type: crate::core::event::EventEntry","type: crate::core::event::Event"],"uses":["protocol: serde serialization","runtime: chrono date and time utilities"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":5},{"path":"src/core/id.rs","name":"id.rs","layer":"core","status":"active","summary":"Core primitive definitions for id.","feature_flags":[],"provides":["module: crate::core::id"],"uses":["protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":2},{"path":"src/core/mod.rs","name":"mod.rs","layer":"core","status":"active","summary":"Module root for the core subsystem and its exports.","feature_flags":[],"provides":["module: crate::core"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/error.rs","name":"error.rs","layer":"infra","status":"active","summary":"Source file for error.","feature_flags":[],"provides":["module: crate::error","type: crate::error::AgentError","type: crate::error::Result"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/error_recovery_test.rs"],"score":3},{"path":"src/hooks/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the hooks subsystem and its exports.","feature_flags":[],"provides":["module: crate::hooks","type: crate::hooks::HookAction","type: crate::hooks::HookEvent","trait: crate::hooks::Hook","type: crate::hooks::HookRegistry"],"uses":["module: crate::error::Result","format: JSON values","artifact: filesystem paths and files"],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/mod.rs"],"score":8},{"path":"src/hooks/shell.rs","name":"shell.rs","layer":"infra","status":"active","summary":"Source file for shell.","feature_flags":[],"provides":["module: crate::hooks::shell","type: crate::hooks::shell::ShellHook"],"uses":["module: crate::error::Result","module: crate::hooks","format: JSON values"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Runs external commands or subprocesses."],"tests":["cmd: cargo test --features full"],"score":5},{"path":"src/lib.rs","name":"lib.rs","layer":"core","status":"active","summary":"Library crate root exposing Amadeus modules and public re-exports.","feature_flags":["api","concurrency","supervisor","test-utils","tui"],"provides":["module: crate"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"src/main.rs","name":"main.rs","layer":"script","status":"active","summary":"CLI entrypoint for TUI mode, server mode, and session recording.","feature_flags":["api","test-utils","tui"],"provides":["module: bin::amadeus"],"uses":["module: amadeus::agent::config","module: amadeus::agent::mesh::MeshManager","module: amadeus::agent::supervisor","module: amadeus::agent::worker::WorkerConfig","module: amadeus::client::anthropic::AnthropicClient","module: amadeus::client::openai::OpenAIClient","module: amadeus::api::http::run_server","module: amadeus::agent::loop_agent::Agent"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Spawns asynchronous tasks.","Writes output to stdout or stderr."],"tests":["cmd: cargo test --features full"],"score":9},{"path":"src/mcp/adapter.rs","name":"adapter.rs","layer":"infra","status":"active","summary":"MCP integration code for adapter.","feature_flags":[],"provides":["module: crate::mcp::adapter","type: crate::mcp::adapter::McpToolAdapter","fn: crate::mcp::adapter::create_mcp_adapters"],"uses":["module: crate::error::Result","module: crate::mcp::client","module: crate::tools::tool_trait::Tool","runtime: tokio async runtime","format: JSON values"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":8},{"path":"src/mcp/client.rs","name":"client.rs","layer":"infra","status":"active","summary":"MCP integration code for client.","feature_flags":[],"provides":["module: crate::mcp::client","type: crate::mcp::client::McpServerConfig","type: crate::mcp::client::McpToolSchema","type: crate::mcp::client::McpClient"],"uses":["module: crate::error","runtime: tokio async runtime","protocol: serde serialization","format: JSON values"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Runs external commands or subprocesses."],"tests":["cmd: cargo test --features full"],"score":8},{"path":"src/mcp/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the mcp subsystem and its exports.","feature_flags":[],"provides":["module: crate::mcp"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/policy/mod.rs","name":"mod.rs","layer":"policy","status":"active","summary":"Module root for the policy subsystem and its exports.","feature_flags":[],"provides":["module: crate::policy","type: crate::policy::ApprovalMode","type: crate::policy::Policy"],"uses":["module: crate::agent::config::Config","module: crate::tools::bash","protocol: serde serialization","format: JSON values"],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":7},{"path":"src/prompts.rs","name":"prompts.rs","layer":"infra","status":"active","summary":"Source file for prompts.","feature_flags":[],"provides":["module: crate::prompts","const: crate::prompts::SYSTEM_PROMPT","fn: crate::prompts::render_system_prompt"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Runs external commands or subprocesses."],"tests":["cmd: cargo test --features full"],"score":3},{"path":"src/skills/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the skills subsystem and its exports.","feature_flags":[],"provides":["module: crate::skills","type: crate::skills::Skill","type: crate::skills::SkillError"],"uses":["protocol: serde serialization","artifact: filesystem paths and files"],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/mod.rs"],"score":5},{"path":"src/skills/registry.rs","name":"registry.rs","layer":"infra","status":"active","summary":"Skills subsystem code for registry.","feature_flags":[],"provides":["module: crate::skills::registry","type: crate::skills::registry::SkillRegistry"],"uses":["artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":3},{"path":"src/test_utils/assertions.rs","name":"assertions.rs","layer":"infra","status":"active","summary":"Test utility code for assertions.","feature_flags":["test-utils"],"provides":["module: crate::test_utils::assertions","fn: crate::test_utils::assertions::assert_eventually","fn: crate::test_utils::assertions::assert_file_created","fn: crate::test_utils::assertions::assert_file_not_created","fn: crate::test_utils::assertions::assert_file_contains","fn: crate::test_utils::assertions::assert_json_contains_keys","fn: crate::test_utils::assertions::assert_json_eq","fn: crate::test_utils::assertions::assert_matches_regex"],"uses":["artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":9},{"path":"src/test_utils/file_system.rs","name":"file_system.rs","layer":"infra","status":"active","summary":"Test utility code for file system.","feature_flags":["test-utils"],"provides":["module: crate::test_utils::file_system","type: crate::test_utils::file_system::FileSystemStructure","type: crate::test_utils::file_system::TmpDirBuilder","type: crate::test_utils::file_system::TmpDirWithStructure","fn: crate::test_utils::file_system::create_tmp_dir","fn: crate::test_utils::file_system::files_equal","fn: crate::test_utils::file_system::file_content_equals","fn: crate::test_utils::file_system::assert_file_contains"],"uses":["runtime: tokio async runtime","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state.","Writes output to stdout or stderr."],"tests":["cmd: cargo test --features full"],"score":10},{"path":"src/test_utils/fixtures.rs","name":"fixtures.rs","layer":"infra","status":"active","summary":"Test utility code for fixtures.","feature_flags":["test-utils"],"provides":["module: crate::test_utils::fixtures","type: crate::test_utils::fixtures::FixtureLoader","type: crate::test_utils::fixtures::GoldenFileManager","type: crate::test_utils::fixtures::GoldenFile","type: crate::test_utils::fixtures::GoldenResponse"],"uses":["protocol: serde serialization","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test --features full"],"score":7},{"path":"src/test_utils/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the test utils subsystem and its exports.","feature_flags":["test-utils"],"provides":["module: crate::test_utils"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/test_utils/testflow/mod.rs","name":"mod.rs","layer":"infra","status":"active","summary":"Module root for the testflow subsystem and its exports.","feature_flags":["test-utils"],"provides":["module: crate::test_utils::testflow"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/test_utils/testflow/recorder.rs","name":"recorder.rs","layer":"infra","status":"active","summary":"Testflow support code for recorder.","feature_flags":["api","concurrency","context","mesh","supervisor","test-utils","tui"],"provides":["module: crate::test_utils::testflow::recorder","type: crate::test_utils::testflow::recorder::SessionRecorder","fn: crate::test_utils::testflow::recorder::load_session"],"uses":["module: crate::error::Result","runtime: tokio async runtime","runtime: chrono date and time utilities","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state.","Writes output to stdout or stderr."],"tests":["cmd: cargo test --features full"],"score":7},{"path":"src/test_utils/testflow/types.rs","name":"types.rs","layer":"infra","status":"active","summary":"Testflow support code for types.","feature_flags":["test-utils"],"provides":["module: crate::test_utils::testflow::types","const: crate::test_utils::testflow::types::TESTFLOW_VERSION","type: crate::test_utils::testflow::types::SessionLog","type: crate::test_utils::testflow::types::SessionMetadata","type: crate::test_utils::testflow::types::ConfigSnapshot","type: crate::test_utils::testflow::types::TimelineEvent","type: crate::test_utils::testflow::types::RecordedEvent","type: crate::test_utils::testflow::types::AgentEventData"],"uses":["protocol: serde serialization","runtime: chrono date and time utilities"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":10},{"path":"src/tools/bash.rs","name":"bash.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for bash.","feature_flags":[],"provides":["module: crate::tools::bash","type: crate::tools::bash::BashInput","type: crate::tools::bash::BashCommandKind","fn: crate::tools::bash::classify_command","type: crate::tools::bash::BashTool","tool: bash"],"uses":["module: crate::agent::config::Config","module: crate::error","module: crate::tools::schema::bash_tool","module: crate::tools::tool_trait::Tool","runtime: tokio async runtime","protocol: serde serialization","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":["Runs external commands or subprocesses."],"tests":["tests/bash_test.rs"],"score":13},{"path":"src/tools/file.rs","name":"file.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for file.","feature_flags":["concurrency"],"provides":["module: crate::tools::file","type: crate::tools::file::ReadFileInput","type: crate::tools::file::WriteFileInput","type: crate::tools::file::EditFileInput","type: crate::tools::file::FileTools","type: crate::tools::file::ReadFileTool","type: crate::tools::file::WriteFileTool","type: crate::tools::file::EditFileTool"],"uses":["module: crate::agent::config::Config","module: crate::concurrency::FileLockManager","module: crate::core::id::AgentId","module: crate::error","module: crate::tools::schema","module: crate::tools::tool_trait::Tool","protocol: serde serialization","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/tool_approval_test.rs"],"score":16},{"path":"src/tools/glob.rs","name":"glob.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for glob.","feature_flags":[],"provides":["module: crate::tools::glob","type: crate::tools::glob::GlobInput","type: crate::tools::glob::GlobTool","tool: glob"],"uses":["module: crate::error","module: crate::tools::schema::glob_tool","module: crate::tools::tool_trait::Tool","protocol: serde serialization","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/tool_approval_test.rs"],"score":9},{"path":"src/tools/grep.rs","name":"grep.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for grep.","feature_flags":[],"provides":["module: crate::tools::grep","type: crate::tools::grep::GrepInput","type: crate::tools::grep::GrepTool","tool: grep"],"uses":["module: crate::error","module: crate::tools::schema::grep_tool","module: crate::tools::tool_trait::Tool","protocol: serde serialization","format: JSON values","artifact: filesystem paths and files"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/tool_approval_test.rs"],"score":10},{"path":"src/tools/mod.rs","name":"mod.rs","layer":"tools","status":"active","summary":"Module root for the tools subsystem and its exports.","feature_flags":["supervisor"],"provides":["module: crate::tools"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/tools/peer.rs","name":"peer.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for peer.","feature_flags":["supervisor"],"provides":["module: crate::tools::peer","type: crate::tools::peer::PeerInfo","type: crate::tools::peer::PeerTool","tool: call_peer"],"uses":["module: crate::core::id::AgentId","module: crate::agent::worker","module: crate::error","module: crate::tools::tool_trait::Tool","runtime: tokio async runtime","protocol: serde serialization","format: JSON values","runtime: tracing instrumentation"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":["Sends or receives messages across async channels."],"tests":["tests/tool_approval_test.rs"],"score":12},{"path":"src/tools/registry.rs","name":"registry.rs","layer":"tools","status":"active","summary":"Registry for tool discovery, schema exposure, and execution lookup.","feature_flags":["concurrency"],"provides":["module: crate::tools::registry","type: crate::tools::registry::ToolRegistry"],"uses":["module: crate::agent::config::Config","module: crate::concurrency::FileLockManager","module: crate::core::id::AgentId","module: crate::error::Result","module: crate::tools::bash::BashTool","module: crate::tools::file","module: crate::tools::glob::GlobTool","module: crate::tools::grep::GrepTool"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/tool_approval_test.rs"],"score":10},{"path":"src/tools/schema.rs","name":"schema.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for schema.","feature_flags":[],"provides":["module: crate::tools::schema","fn: crate::tools::schema::bash_tool","fn: crate::tools::schema::read_file_tool","fn: crate::tools::schema::write_file_tool","fn: crate::tools::schema::edit_file_tool","fn: crate::tools::schema::glob_tool","fn: crate::tools::schema::grep_tool","fn: crate::tools::schema::web_fetch_tool"],"uses":["format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/tool_approval_test.rs"],"score":9},{"path":"src/tools/sub_agent.rs","name":"sub_agent.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for sub agent.","feature_flags":[],"provides":["module: crate::tools::sub_agent","type: crate::tools::sub_agent::SubAgentTool"],"uses":["module: crate::agent::config::Config","module: crate::agent::loop_agent::Agent","module: crate::client::LLMClient","module: crate::hooks::HookRegistry","module: crate::policy::Policy","module: crate::tools::registry::ToolRegistry","module: crate::tools::schema::sub_agent_tool","module: crate::tools::tool_trait::Tool"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/sub_agent_test.rs"],"score":10},{"path":"src/tools/todo.rs","name":"todo.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for todo.","feature_flags":[],"provides":["module: crate::tools::todo","type: crate::tools::todo::TodoStatus","type: crate::tools::todo::TodoItem","type: crate::tools::todo::TodoManager","type: crate::tools::todo::TodoTool","tool: todo"],"uses":["module: crate::error","module: crate::tools::schema::todo_tool","module: crate::tools::tool_trait::Tool","protocol: serde serialization","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/todo_test.rs"],"score":11},{"path":"src/tools/tool_trait.rs","name":"tool_trait.rs","layer":"tools","status":"active","summary":"Core trait contract implemented by all Amadeus tools.","feature_flags":[],"provides":["module: crate::tools::tool_trait","trait: crate::tools::tool_trait::Tool"],"uses":["module: crate::error::Result","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":[],"tests":["tests/tool_approval_test.rs"],"score":4},{"path":"src/tools/web.rs","name":"web.rs","layer":"tools","status":"active","summary":"Tool implementation and support code for web.","feature_flags":[],"provides":["module: crate::tools::web","type: crate::tools::web::WebFetchInput","type: crate::tools::web::WebFetchTool","tool: web_fetch"],"uses":["module: crate::error","module: crate::tools::schema::web_fetch_tool","module: crate::tools::tool_trait::Tool","runtime: tokio async runtime","protocol: reqwest HTTP client","protocol: serde serialization","format: JSON values"],"invariants":["Declared tool interfaces stay aligned with runtime behavior and schema."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/tool_approval_test.rs"],"score":11},{"path":"src/ui/api_client.rs","name":"api_client.rs","layer":"ui","status":"active","summary":"TUI module code for api client.","feature_flags":["tui"],"provides":["module: crate::ui::api_client","type: crate::ui::api_client::AgentInfo","type: crate::ui::api_client::ListAgentsResponse","type: crate::ui::api_client::CreateAgentRequest","type: crate::ui::api_client::CreateAgentResponse","type: crate::ui::api_client::ApiClient"],"uses":["runtime: tokio async runtime","protocol: reqwest HTTP client","protocol: serde serialization"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations."],"tests":["tests/tui_snapshot_test.rs"],"score":9},{"path":"src/ui/app.rs","name":"app.rs","layer":"ui","status":"active","summary":"Main TUI application state, rendering, and event orchestration.","feature_flags":["test-utils","tui"],"provides":["module: crate::ui::app","type: crate::ui::app::AppMode","type: crate::ui::app::App"],"uses":["module: crate::test_utils::testflow::types","module: crate::agent::events","module: crate::agent::loop_agent","module: crate::client::LLMClient","module: crate::error::Result","module: crate::ui::event","module: crate::ui","runtime: tokio async runtime"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Performs network or HTTP operations.","Spawns asynchronous tasks.","Sends or receives messages across async channels."],"tests":["tests/tool_approval_test.rs"],"score":11},{"path":"src/ui/colors.rs","name":"colors.rs","layer":"ui","status":"active","summary":"TUI module code for colors.","feature_flags":["tui"],"provides":["module: crate::ui::colors","type: crate::ui::colors::Theme","const: crate::ui::colors::THEME","type: crate::ui::colors::Palette","fn: crate::ui::colors::print_command","fn: crate::ui::colors::print_tool_result"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Writes output to stdout or stderr."],"tests":["tests/tui_snapshot_test.rs"],"score":7},{"path":"src/ui/components/agent_panel.rs","name":"agent_panel.rs","layer":"ui","status":"active","summary":"TUI component implementation for agent panel.","feature_flags":["tui"],"provides":["module: crate::ui::components::agent_panel","fn: crate::ui::components::agent_panel::render_agent_panel","fn: crate::ui::components::agent_panel::render_agent_dialog"],"uses":["module: crate::ui::api_client::AgentInfo","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/components/approval.rs","name":"approval.rs","layer":"ui","status":"active","summary":"TUI component implementation for approval.","feature_flags":["tui"],"provides":["module: crate::ui::components::approval","type: crate::ui::components::approval::ApprovalResponse","type: crate::ui::components::approval::ApprovalDialog"],"uses":["module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tool_approval_test.rs"],"score":5},{"path":"src/ui/components/compaction_animation.rs","name":"compaction_animation.rs","layer":"ui","status":"active","summary":"TUI component implementation for compaction animation.","feature_flags":["tui"],"provides":["module: crate::ui::components::compaction_animation","type: crate::ui::components::compaction_animation::CompactionState","type: crate::ui::components::compaction_animation::CompactionResult","type: crate::ui::components::compaction_animation::CompactionAnimator"],"uses":["module: crate::ui::constants::COLOR_CYCLE_DURATION_MS","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":6},{"path":"src/ui/components/completion.rs","name":"completion.rs","layer":"ui","status":"active","summary":"TUI component implementation for completion.","feature_flags":["tui"],"provides":["module: crate::ui::components::completion","type: crate::ui::components::completion::Command","fn: crate::ui::components::completion::get_available_commands","type: crate::ui::components::completion::CompletionState","fn: crate::ui::components::completion::render_completion_lines"],"uses":["module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Runs external commands or subprocesses."],"tests":["tests/tui_snapshot_test.rs"],"score":7},{"path":"src/ui/components/diff.rs","name":"diff.rs","layer":"ui","status":"active","summary":"TUI component implementation for diff.","feature_flags":["tui"],"provides":["module: crate::ui::components::diff","type: crate::ui::components::diff::DiffLine","type: crate::ui::components::diff::DiffStatus","type: crate::ui::components::diff::DiffView"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/components/footer.rs","name":"footer.rs","layer":"ui","status":"active","summary":"TUI component implementation for footer.","feature_flags":["tui"],"provides":["module: crate::ui::components::footer","type: crate::ui::components::footer::FooterInfo","type: crate::ui::components::footer::SandboxStatus","type: crate::ui::components::footer::Footer"],"uses":["module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Runs external commands or subprocesses."],"tests":["tests/tui_snapshot_test.rs"],"score":6},{"path":"src/ui/components/input.rs","name":"input.rs","layer":"ui","status":"active","summary":"TUI component implementation for input.","feature_flags":["tui"],"provides":["module: crate::ui::components::input","type: crate::ui::components::input::InputComponent"],"uses":["module: crate::ui::components::completion","module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/components/loading_indicator.rs","name":"loading_indicator.rs","layer":"ui","status":"active","summary":"TUI component implementation for loading indicator.","feature_flags":["tui"],"provides":["module: crate::ui::components::loading_indicator","type: crate::ui::components::loading_indicator::StreamingState","type: crate::ui::components::loading_indicator::LoadingIndicator"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/components/markdown.rs","name":"markdown.rs","layer":"ui","status":"active","summary":"TUI component implementation for markdown.","feature_flags":["tui"],"provides":["module: crate::ui::components::markdown","fn: crate::ui::components::markdown::render_markdown"],"uses":["module: crate::ui::theme_manager::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":4},{"path":"src/ui/components/messages.rs","name":"messages.rs","layer":"ui","status":"active","summary":"TUI component implementation for messages.","feature_flags":["tui"],"provides":["module: crate::ui::components::messages","type: crate::ui::components::messages::CompressionStatus","type: crate::ui::components::messages::CompressionItem","type: crate::ui::components::messages::HistoryItem","type: crate::ui::components::messages::MessagesComponent"],"uses":["module: crate::ui::components::compaction_animation::CompactionAnimator","module: crate::ui::components::markdown::render_markdown","module: crate::ui::components::tool_group","module: crate::ui::get_colors","runtime: ratatui terminal rendering","runtime: tracing instrumentation"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/messages_test.rs"],"score":11},{"path":"src/ui/components/mod.rs","name":"mod.rs","layer":"ui","status":"active","summary":"Module root for the components subsystem and its exports.","feature_flags":["tui"],"provides":["module: crate::ui::components"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/ui/components/phrase_cycler.rs","name":"phrase_cycler.rs","layer":"ui","status":"active","summary":"TUI component implementation for phrase cycler.","feature_flags":["tui"],"provides":["module: crate::ui::components::phrase_cycler","type: crate::ui::components::phrase_cycler::PhraseMode","type: crate::ui::components::phrase_cycler::PhraseCycler"],"uses":["module: crate::ui::constants"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":4},{"path":"src/ui/components/sessions.rs","name":"sessions.rs","layer":"ui","status":"active","summary":"TUI component implementation for sessions.","feature_flags":["tui"],"provides":["module: crate::ui::components::sessions","type: crate::ui::components::sessions::SessionMetadata","type: crate::ui::components::sessions::SessionBrowser"],"uses":["module: crate::agent::messages::Message","runtime: chrono date and time utilities","artifact: filesystem paths and files"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Reads or writes filesystem state."],"tests":["tests/tui_snapshot_test.rs"],"score":6},{"path":"src/ui/components/sidebar.rs","name":"sidebar.rs","layer":"ui","status":"active","summary":"TUI component implementation for sidebar.","feature_flags":["tui"],"provides":["module: crate::ui::components::sidebar","type: crate::ui::components::sidebar::SidebarKind","type: crate::ui::components::sidebar::Sidebar","type: crate::ui::components::sidebar::FileSidebar","type: crate::ui::components::sidebar::HelpSidebar","type: crate::ui::components::sidebar::SkillSidebar","type: crate::ui::components::sidebar::ContextInfo"],"uses":["module: crate::skills::Skill","module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":10},{"path":"src/ui/components/spinner.rs","name":"spinner.rs","layer":"ui","status":"active","summary":"TUI component implementation for spinner.","feature_flags":["tui"],"provides":["module: crate::ui::components::spinner","type: crate::ui::components::spinner::GradientColor","type: crate::ui::components::spinner::GeminiSpinner"],"uses":["module: crate::ui::constants::COLOR_CYCLE_DURATION_MS","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/components/status.rs","name":"status.rs","layer":"ui","status":"active","summary":"TUI component implementation for status.","feature_flags":["tui"],"provides":["module: crate::ui::components::status"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":1},{"path":"src/ui/components/status_bar.rs","name":"status_bar.rs","layer":"ui","status":"active","summary":"TUI component implementation for status bar.","feature_flags":["tui"],"provides":["module: crate::ui::components::status_bar","type: crate::ui::components::status_bar::StatusBar"],"uses":["module: crate::ui::get_colors","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":4},{"path":"src/ui/components/tool_group.rs","name":"tool_group.rs","layer":"ui","status":"active","summary":"TUI component implementation for tool group.","feature_flags":["tui"],"provides":["module: crate::ui::components::tool_group","type: crate::ui::components::tool_group::ToolStatus","type: crate::ui::components::tool_group::ToolCall","type: crate::ui::components::tool_group::ToolGroup","fn: crate::ui::components::tool_group::render_tool_group_with_limit"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":6},{"path":"src/ui/constants/mod.rs","name":"mod.rs","layer":"ui","status":"active","summary":"Module root for the constants subsystem and its exports.","feature_flags":["tui"],"provides":["module: crate::ui::constants","const: crate::ui::constants::PHRASE_CHANGE_INTERVAL_MS","const: crate::ui::constants::COLOR_CYCLE_DURATION_MS","const: crate::ui::constants::SPINNER_FRAME_INTERVAL_MS"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":4},{"path":"src/ui/constants/tips.rs","name":"tips.rs","layer":"ui","status":"active","summary":"UI constant definitions for tips.","feature_flags":["tui"],"provides":["module: crate::ui::constants::tips","const: crate::ui::constants::tips::INFORMATIVE_TIPS"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":2},{"path":"src/ui/constants/witty_phrases.rs","name":"witty_phrases.rs","layer":"ui","status":"active","summary":"UI constant definitions for witty phrases.","feature_flags":["tui"],"provides":["module: crate::ui::constants::witty_phrases","const: crate::ui::constants::witty_phrases::WITTY_LOADING_PHRASES"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":2},{"path":"src/ui/event.rs","name":"event.rs","layer":"ui","status":"active","summary":"TUI module code for event.","feature_flags":["tui"],"provides":["module: crate::ui::event","type: crate::ui::event::AppEvent","type: crate::ui::event::EventHandler"],"uses":["runtime: tokio async runtime","runtime: crossterm terminal events","runtime: tokio task scheduling"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Spawns asynchronous tasks.","Sends or receives messages across async channels."],"tests":["tests/tui_snapshot_test.rs"],"score":6},{"path":"src/ui/mod.rs","name":"mod.rs","layer":"ui","status":"active","summary":"Module root for the ui subsystem and its exports.","feature_flags":["tui"],"provides":["module: crate::ui"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/ui/repl.rs","name":"repl.rs","layer":"ui","status":"active","summary":"TUI module code for repl.","feature_flags":["tui"],"provides":["module: crate::ui::repl","type: crate::ui::repl::Repl"],"uses":["module: crate::agent::loop_agent::Agent","module: crate::client::LLMClient","module: crate::ui::colors::Palette"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":["Writes output to stdout or stderr."],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/scroll/animated_scrollbar.rs","name":"animated_scrollbar.rs","layer":"ui","status":"active","summary":"TUI scroll subsystem code for animated scrollbar.","feature_flags":["tui"],"provides":["module: crate::ui::scroll::animated_scrollbar","type: crate::ui::scroll::animated_scrollbar::AnimationPhase","type: crate::ui::scroll::animated_scrollbar::AnimatedScrollbar"],"uses":["module: crate::ui::semantic_colors::interpolate_color","runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"src/ui/scroll/mod.rs","name":"mod.rs","layer":"ui","status":"active","summary":"Module root for the scroll subsystem and its exports.","feature_flags":["tui"],"provides":["module: crate::ui::scroll"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":1},{"path":"src/ui/scroll/scroll_state.rs","name":"scroll_state.rs","layer":"ui","status":"active","summary":"TUI scroll subsystem code for scroll state.","feature_flags":["tui"],"provides":["module: crate::ui::scroll::scroll_state","type: crate::ui::scroll::scroll_state::ScrollState"],"uses":[],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":2},{"path":"src/ui/semantic_colors.rs","name":"semantic_colors.rs","layer":"ui","status":"active","summary":"TUI module code for semantic colors.","feature_flags":["tui"],"provides":["module: crate::ui::semantic_colors","type: crate::ui::semantic_colors::TextColors","type: crate::ui::semantic_colors::DiffColors","type: crate::ui::semantic_colors::BackgroundColors","type: crate::ui::semantic_colors::BorderColors","type: crate::ui::semantic_colors::UiColors","type: crate::ui::semantic_colors::StatusColors","type: crate::ui::semantic_colors::ScrollbarColors"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":9},{"path":"src/ui/theme_manager.rs","name":"theme_manager.rs","layer":"ui","status":"active","summary":"TUI module code for theme manager.","feature_flags":["tui"],"provides":["module: crate::ui::theme_manager","type: crate::ui::theme_manager::ThemeManager","fn: crate::ui::theme_manager::get_theme","fn: crate::ui::theme_manager::get_colors","fn: crate::ui::theme_manager::set_theme","fn: crate::ui::theme_manager::next_theme","fn: crate::ui::theme_manager::previous_theme","fn: crate::ui::theme_manager::get_available_themes"],"uses":["module: crate::ui::semantic_colors::SemanticColors"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":9},{"path":"src/ui/themes/atom_one_dark.rs","name":"atom_one_dark.rs","layer":"ui","status":"active","summary":"Built-in atom one dark TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::atom_one_dark","type: crate::ui::themes::atom_one_dark::AtomOneDark"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/ayu_dark.rs","name":"ayu_dark.rs","layer":"ui","status":"active","summary":"Built-in ayu dark TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::ayu_dark","type: crate::ui::themes::ayu_dark::AyuDark"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/dark_red.rs","name":"dark_red.rs","layer":"ui","status":"active","summary":"Built-in dark red TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::dark_red","type: crate::ui::themes::dark_red::DarkRed"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/default_dark.rs","name":"default_dark.rs","layer":"ui","status":"active","summary":"Built-in default dark TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::default_dark","type: crate::ui::themes::default_dark::DefaultDark"],"uses":["module: crate::ui::semantic_colors::SemanticColors"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/default_light.rs","name":"default_light.rs","layer":"ui","status":"active","summary":"Built-in default light TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::default_light","type: crate::ui::themes::default_light::DefaultLight"],"uses":["module: crate::ui::semantic_colors::SemanticColors"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/dracula.rs","name":"dracula.rs","layer":"ui","status":"active","summary":"Built-in dracula TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::dracula","type: crate::ui::themes::dracula::Dracula"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/github_dark.rs","name":"github_dark.rs","layer":"ui","status":"active","summary":"Built-in github dark TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::github_dark","type: crate::ui::themes::github_dark::GitHubDark"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/github_light.rs","name":"github_light.rs","layer":"ui","status":"active","summary":"Built-in github light TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::github_light","type: crate::ui::themes::github_light::GitHubLight"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/mod.rs","name":"mod.rs","layer":"ui","status":"active","summary":"Module root for the themes subsystem and its exports.","feature_flags":["tui"],"provides":["module: crate::ui::themes","type: crate::ui::themes::ThemeType","trait: crate::ui::themes::Theme"],"uses":["module: crate::ui::semantic_colors::SemanticColors","runtime: ratatui terminal rendering"],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["tests/mod.rs"],"score":5},{"path":"src/ui/themes/slate_red.rs","name":"slate_red.rs","layer":"ui","status":"active","summary":"Built-in slate red TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::slate_red","type: crate::ui::themes::slate_red::SlateRed"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/solarized_dark.rs","name":"solarized_dark.rs","layer":"ui","status":"active","summary":"Built-in solarized dark TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::solarized_dark","type: crate::ui::themes::solarized_dark::SolarizedDark"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/themes/solarized_light.rs","name":"solarized_light.rs","layer":"ui","status":"active","summary":"Built-in solarized light TUI theme definition.","feature_flags":["tui"],"provides":["module: crate::ui::themes::solarized_light","type: crate::ui::themes::solarized_light::SolarizedLight"],"uses":["runtime: ratatui terminal rendering"],"invariants":["Theme definitions keep semantic roles visually consistent."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":3},{"path":"src/ui/vim.rs","name":"vim.rs","layer":"ui","status":"active","summary":"TUI module code for vim.","feature_flags":["tui"],"provides":["module: crate::ui::vim","type: crate::ui::vim::VimMode","type: crate::ui::vim::VimAction","type: crate::ui::vim::VimHandler"],"uses":["runtime: crossterm terminal events"],"invariants":["Listed interfaces stay aligned with the implementation in this file."],"side_effects":[],"tests":["tests/tui_snapshot_test.rs"],"score":5},{"path":"tests/agent_integration_test.rs","name":"agent_integration_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering agent integration test behavior.","feature_flags":["full"],"provides":["module: tests::agent_integration_test"],"uses":["module: amadeus::test_utils"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Runs external commands or subprocesses."],"tests":["cmd: cargo test agent_integration_test --features full"],"score":2},{"path":"tests/agent_test.rs","name":"agent_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering agent test behavior.","feature_flags":["full"],"provides":["module: tests::agent_test"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::loop_agent::Agent","module: amadeus::client::anthropic::AnthropicClient"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test agent_test --features full"],"score":4},{"path":"tests/bash_test.rs","name":"bash_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering bash test behavior.","feature_flags":["full"],"provides":["module: tests::bash_test"],"uses":["module: amadeus::error::AgentError","module: amadeus::tools::bash","module: amadeus::tools::tool_trait::Tool","format: JSON values","artifact: filesystem paths and files"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test bash_test --features full"],"score":6},{"path":"tests/compaction_test.rs","name":"compaction_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering compaction test behavior.","feature_flags":["full"],"provides":["module: tests::compaction_test"],"uses":["module: amadeus::agent::compaction","module: amadeus::agent::messages","module: amadeus::client::StreamEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test compaction_test --features full"],"score":4},{"path":"tests/config_test.rs","name":"config_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering config test behavior.","feature_flags":["full"],"provides":["module: tests::config_test"],"uses":["module: amadeus::agent::config","artifact: filesystem paths and files"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Reads or writes filesystem state."],"tests":["cmd: cargo test config_test --features full"],"score":3},{"path":"tests/e2e_product_flow.rs","name":"e2e_product_flow.rs","layer":"test","status":"test-only","summary":"Integration tests covering e2e product flow behavior.","feature_flags":["full"],"provides":["module: tests::e2e_product_flow"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::messages","module: amadeus::agent::supervisor","module: amadeus::agent::worker","module: amadeus::client","module: amadeus::core::AgentId","module: amadeus::error::Result","runtime: tokio async runtime"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Spawns asynchronous tasks.","Writes output to stdout or stderr."],"tests":["cmd: cargo test e2e_product_flow --features full"],"score":9},{"path":"tests/error_recovery_test.rs","name":"error_recovery_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering error recovery test behavior.","feature_flags":["full"],"provides":["module: tests::error_recovery_test"],"uses":["module: amadeus::client::StreamEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test error_recovery_test --features full"],"score":2},{"path":"tests/messages_test.rs","name":"messages_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering messages test behavior.","feature_flags":["full"],"provides":["module: tests::messages_test"],"uses":["module: amadeus::agent::messages","format: JSON values"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test messages_test --features full"],"score":3},{"path":"tests/mock_functional_test.rs","name":"mock_functional_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering mock functional test behavior.","feature_flags":["full"],"provides":["module: tests::mock_functional_test","type: tests::mock_functional_test::StatefulMockClient"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::events::AgentEvent","module: amadeus::agent::loop_agent::Agent","module: amadeus::agent::messages","module: amadeus::client","module: amadeus::error::Result","runtime: tokio async runtime","format: JSON values"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test mock_functional_test --features full"],"score":10},{"path":"tests/mock_llm.rs","name":"mock_llm.rs","layer":"test","status":"test-only","summary":"Integration tests covering mock llm behavior.","feature_flags":["full"],"provides":["module: tests::mock_llm","type: tests::mock_llm::MockLLMClient","fn: tests::mock_llm::mock_tool_use_response","fn: tests::mock_llm::mock_text_response","fn: tests::mock_llm::mock_tool_result"],"uses":["module: amadeus::agent::messages","module: amadeus::client","module: amadeus::error::Result","format: JSON values","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test mock_llm --features full"],"score":10},{"path":"tests/mocks/flaky_client.rs","name":"flaky_client.rs","layer":"test","status":"test-only","summary":"Test mock implementation for flaky client.","feature_flags":["full"],"provides":["module: tests::mocks::flaky_client","type: tests::mocks::flaky_client::FlakyMockClient"],"uses":["module: amadeus::agent::messages::Message","module: amadeus::client","module: amadeus::error","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test flaky_client --features full"],"score":6},{"path":"tests/mocks/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for mocks coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::mocks"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"tests/mocks/scenario_client.rs","name":"scenario_client.rs","layer":"test","status":"test-only","summary":"Test mock implementation for scenario client.","feature_flags":["full"],"provides":["module: tests::mocks::scenario_client","type: tests::mocks::scenario_client::ScenarioDefinition","type: tests::mocks::scenario_client::ScenarioStepDef","type: tests::mocks::scenario_client::StreamEventDef","type: tests::mocks::scenario_client::CapturedRequest","type: tests::mocks::scenario_client::ScenarioMockClient"],"uses":["module: amadeus::agent::messages::Message","module: amadeus::client","module: amadeus::error","runtime: tokio async runtime","protocol: serde serialization","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test scenario_client --features full"],"score":12},{"path":"tests/mocks/slow_client.rs","name":"slow_client.rs","layer":"test","status":"test-only","summary":"Test mock implementation for slow client.","feature_flags":["full"],"provides":["module: tests::mocks::slow_client","type: tests::mocks::slow_client::SlowMockClient"],"uses":["module: amadeus::agent::messages::Message","module: amadeus::client","module: amadeus::error::Result","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test slow_client --features full"],"score":6},{"path":"tests/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for tests coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"tests/monitoring_harness_test.rs","name":"monitoring_harness_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering monitoring harness test behavior.","feature_flags":["full"],"provides":["module: tests::monitoring_harness_test"],"uses":["module: amadeus::client::StreamEvent","format: JSON values"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test monitoring_harness_test --features full"],"score":3},{"path":"tests/p2p_test.rs","name":"p2p_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering p2p test behavior.","feature_flags":["full","supervisor"],"provides":["module: tests::p2p_test"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::messages","module: amadeus::agent::supervisor","module: amadeus::agent::worker","module: amadeus::client","module: amadeus::core::AgentId","module: amadeus::error::Result","runtime: tokio async runtime"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Spawns asynchronous tasks.","Writes output to stdout or stderr."],"tests":["cmd: cargo test p2p_test --features full"],"score":9},{"path":"tests/scenarios/assertions.rs","name":"assertions.rs","layer":"test","status":"test-only","summary":"Scenario testing support for assertions.","feature_flags":["full"],"provides":["module: tests::scenarios::assertions","fn: tests::scenarios::assertions::assert_events_contain_text","fn: tests::scenarios::assertions::assert_tool_call_count","fn: tests::scenarios::assertions::assert_tool_call_order","fn: tests::scenarios::assertions::assert_no_errors","fn: tests::scenarios::assertions::assert_streaming_monotonic","fn: tests::scenarios::assertions::assert_response_length","fn: tests::scenarios::assertions::assert_event_sequence"],"uses":["module: amadeus::agent::events::AgentEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test assertions --features full"],"score":9},{"path":"tests/scenarios/builder.rs","name":"builder.rs","layer":"test","status":"test-only","summary":"Scenario testing support for builder.","feature_flags":["full"],"provides":["module: tests::scenarios::builder","type: tests::scenarios::builder::ApprovalScript","type: tests::scenarios::builder::ScenarioStep","type: tests::scenarios::builder::Scenario","type: tests::scenarios::builder::ScenarioBuilder"],"uses":["module: amadeus::client::StreamEvent","format: JSON values"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test builder --features full"],"score":7},{"path":"tests/scenarios/cursor_positioning.rs","name":"cursor_positioning.rs","layer":"test","status":"test-only","summary":"Scenario testing support for cursor positioning.","feature_flags":["full"],"provides":["module: tests::scenarios::cursor_positioning"],"uses":[],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test cursor_positioning --features full"],"score":1},{"path":"tests/scenarios/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for scenarios coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::scenarios"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"tests/scenarios/runner.rs","name":"runner.rs","layer":"test","status":"test-only","summary":"Scenario testing support for runner.","feature_flags":["full"],"provides":["module: tests::scenarios::runner","type: tests::scenarios::runner::ScenarioRunner"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::events","module: amadeus::agent::loop_agent","module: amadeus::agent::messages::Message","module: amadeus::error::Result","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test runner --features full"],"score":8},{"path":"tests/scenarios/streaming_buffer.rs","name":"streaming_buffer.rs","layer":"test","status":"test-only","summary":"Scenario testing support for streaming buffer.","feature_flags":["full"],"provides":["module: tests::scenarios::streaming_buffer"],"uses":[],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test streaming_buffer --features full"],"score":1},{"path":"tests/scenarios/timeline.rs","name":"timeline.rs","layer":"test","status":"test-only","summary":"Scenario testing support for timeline.","feature_flags":["full"],"provides":["module: tests::scenarios::timeline","type: tests::scenarios::timeline::TimestampedEvent","type: tests::scenarios::timeline::EventTimeline","type: tests::scenarios::timeline::TimestampedApprovalDecision","type: tests::scenarios::timeline::ToolCompletionInfo","type: tests::scenarios::timeline::CompactionInfo"],"uses":["module: amadeus::agent::events","module: amadeus::agent::messages::Message"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test timeline --features full"],"score":8},{"path":"tests/simulation_p2p.rs","name":"simulation_p2p.rs","layer":"test","status":"test-only","summary":"Integration tests covering simulation p2p behavior.","feature_flags":["full"],"provides":["module: tests::simulation_p2p"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::messages","module: amadeus::agent::supervisor","module: amadeus::agent::worker","module: amadeus::client","module: amadeus::core::AgentId","module: amadeus::error::Result","runtime: tokio async runtime"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Spawns asynchronous tasks.","Writes output to stdout or stderr."],"tests":["cmd: cargo test simulation_p2p --features full"],"score":9},{"path":"tests/streaming_scenarios_test.rs","name":"streaming_scenarios_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering streaming scenarios test behavior.","feature_flags":["full"],"provides":["module: tests::streaming_scenarios_test"],"uses":["module: amadeus::client::StreamEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test streaming_scenarios_test --features full"],"score":2},{"path":"tests/sub_agent_test.rs","name":"sub_agent_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering sub agent test behavior.","feature_flags":["full"],"provides":["module: tests::sub_agent_test"],"uses":["module: amadeus::agent::config::Config","module: amadeus::agent::loop_agent::Agent","module: amadeus::agent::messages::ContentBlock","module: amadeus::client::StreamEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test sub_agent_test --features full"],"score":5},{"path":"tests/todo_test.rs","name":"todo_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering todo test behavior.","feature_flags":["full"],"provides":["module: tests::todo_test"],"uses":["module: amadeus::agent::loop_agent::Agent","module: amadeus::agent","module: amadeus::client::anthropic::AnthropicClient","module: amadeus::client::StreamEvent","module: amadeus::tools"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test todo_test --features full"],"score":6},{"path":"tests/tool_approval_test.rs","name":"tool_approval_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering tool approval test behavior.","feature_flags":["full"],"provides":["module: tests::tool_approval_test"],"uses":["module: amadeus::client::StreamEvent","format: JSON values"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test tool_approval_test --features full"],"score":3},{"path":"tests/tui/capture.rs","name":"capture.rs","layer":"test","status":"test-only","summary":"TUI test support for capture.","feature_flags":["full"],"provides":["module: tests::tui::capture","type: tests::tui::capture::TuiFrameSnapshot","type: tests::tui::capture::CursorSnapshot","type: tests::tui::capture::FooterSnapshot","type: tests::tui::capture::HeaderSnapshot","type: tests::tui::capture::CellSnapshot","type: tests::tui::capture::RegionsSnapshot","type: tests::tui::capture::InputRegionSnapshot"],"uses":["protocol: serde serialization"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test capture --features full"],"score":9},{"path":"tests/tui/comparison.rs","name":"comparison.rs","layer":"test","status":"test-only","summary":"TUI test support for comparison.","feature_flags":["full"],"provides":["module: tests::tui::comparison","type: tests::tui::comparison::FrameDiff","type: tests::tui::comparison::StyleChange","type: tests::tui::comparison::CursorChange","type: tests::tui::comparison::FooterChanges","type: tests::tui::comparison::HeaderChanges","type: tests::tui::comparison::DiffSummary","fn: tests::tui::comparison::compare"],"uses":["protocol: serde serialization"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test comparison --features full"],"score":9},{"path":"tests/tui/harness.rs","name":"harness.rs","layer":"test","status":"test-only","summary":"TUI test support for harness.","feature_flags":["full"],"provides":["module: tests::tui::harness","type: tests::tui::harness::TuiTestHarness","type: tests::tui::harness::InputEvent","type: tests::tui::harness::InputSequence","fn: tests::tui::harness::run_scenario"],"uses":["module: amadeus::agent::config::Config","module: amadeus::client::LLMClient"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test harness --features full"],"score":7},{"path":"tests/tui/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for tui coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::tui"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"tests/tui/scenarios/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for scenarios coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::tui::scenarios"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"tests/tui/scenarios/scenarios_impl.rs","name":"scenarios_impl.rs","layer":"test","status":"test-only","summary":"TUI scenario test support for scenarios impl.","feature_flags":["full"],"provides":["module: tests::tui::scenarios::scenarios_impl","type: tests::tui::scenarios::scenarios_impl::Scenario","fn: tests::tui::scenarios::scenarios_impl::simple_text","fn: tests::tui::scenarios::scenarios_impl::streaming_text","fn: tests::tui::scenarios::scenarios_impl::with_tool_call","fn: tests::tui::scenarios::scenarios_impl::requiring_approval","fn: tests::tui::scenarios::scenarios_impl::empty","fn: tests::tui::scenarios::scenarios_impl::long_text"],"uses":["module: amadeus::agent::messages","module: amadeus::client::LLMClient","module: amadeus::client::StreamEvent","module: amadeus::error::Result","format: JSON values","runtime: futures streams"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":[],"tests":["cmd: cargo test scenarios_impl --features full"],"score":14},{"path":"tests/tui_snapshot_test.rs","name":"tui_snapshot_test.rs","layer":"test","status":"test-only","summary":"Integration tests covering tui snapshot test behavior.","feature_flags":["full"],"provides":["module: tests::tui_snapshot_test"],"uses":["module: amadeus::client::StreamEvent"],"invariants":["Assertions stay aligned with current user-visible behavior."],"side_effects":["Writes output to stdout or stderr."],"tests":["cmd: cargo test tui_snapshot_test --features full"],"score":2},{"path":"tests/unit/mod.rs","name":"mod.rs","layer":"test","status":"test-only","summary":"Test module root for unit coverage and shared exports.","feature_flags":["full"],"provides":["module: tests::unit"],"uses":[],"invariants":["Module exports stay aligned with child modules and re-exports."],"side_effects":[],"tests":["cmd: cargo test --features full"],"score":1},{"path":"verify.sh","name":"verify.sh","layer":"script","status":"active","summary":"Repository verification runner for formatting, linting, feature checks, and tests.","feature_flags":["full"],"provides":["cmd: verify.sh"],"uses":["cmd: cargo","cmd: python3","cmd: scripts/check_source_headers.py"],"invariants":["Script command flow remains non-interactive and order-dependent."],"side_effects":["Runs external commands or subprocesses.","Writes output to stdout or stderr."],"tests":["cmd: bash ./verify.sh"],"score":4}]};
+
+    const state = {
+      query: "",
+      layer: "all",
+      status: "all",
+      feature: "all",
+      expanded: false,
+    };
+
+    const layerColors = {
+      core: "var(--core)",
+      agent: "var(--agent)",
+      client: "var(--client)",
+      tools: "var(--tools)",
+      policy: "var(--policy)",
+      ui: "var(--ui)",
+      api: "var(--api)",
+      benchmark: "var(--benchmark)",
+      test: "var(--test)",
+      example: "var(--example)",
+      script: "var(--script)",
+      infra: "var(--infra)",
+    };
+
+    const statusColors = {
+      active: "var(--active)",
+      experimental: "var(--experimental)",
+      deprecated: "var(--deprecated)",
+      "test-only": "var(--test)",
+      generated: "var(--generated)",
+    };
+
+    const searchEl = document.getElementById("search");
+    const layerFiltersEl = document.getElementById("layer-filters");
+    const statusFiltersEl = document.getElementById("status-filters");
+    const featureFiltersEl = document.getElementById("feature-filters");
+    const visibleCountEl = document.getElementById("visible-count");
+    const layerCountEl = document.getElementById("layer-count");
+    const provideCountEl = document.getElementById("provide-count");
+    const useCountEl = document.getElementById("use-count");
+    const mapEl = document.getElementById("map");
+    const legendEl = document.getElementById("legend");
+
+    function compactLabel(label) {
+      return label.replace(/^.*?:\s*/, "");
+    }
+
+    function makeChip(label, value, kind) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "chip";
+      button.textContent = label;
+      button.dataset.kind = kind;
+      button.dataset.value = value;
+      button.addEventListener("click", () => {
+        state[kind] = state[kind] === value ? "all" : value;
+        render();
+      });
+      return button;
+    }
+
+    function populateFilters() {
+      layerFiltersEl.appendChild(makeChip("All", "all", "layer"));
+      DATA.layers.forEach((layer) => layerFiltersEl.appendChild(makeChip(layer, layer, "layer")));
+
+      statusFiltersEl.appendChild(makeChip("All", "all", "status"));
+      DATA.statuses.forEach((status) => statusFiltersEl.appendChild(makeChip(status, status, "status")));
+
+      featureFiltersEl.appendChild(makeChip("All", "all", "feature"));
+      DATA.feature_flags.forEach((flag) => featureFiltersEl.appendChild(makeChip(flag, flag, "feature")));
+    }
+
+    function renderLegend() {
+      legendEl.innerHTML = "";
+      DATA.layers.forEach((layer) => {
+        const item = document.createElement("div");
+        item.className = "legend-item";
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        swatch.style.background = layerColors[layer] || "var(--ink)";
+        const label = document.createElement("span");
+        label.textContent = layer;
+        item.append(swatch, label);
+        legendEl.appendChild(item);
+      });
+    }
+
+    function matches(record) {
+      if (state.layer !== "all" && record.layer !== state.layer) return false;
+      if (state.status !== "all" && record.status !== state.status) return false;
+      if (state.feature !== "all" && !record.feature_flags.includes(state.feature)) return false;
+      if (!state.query) return true;
+      const haystack = [
+        record.path,
+        record.summary,
+        record.layer,
+        record.status,
+        ...record.feature_flags,
+        ...record.provides,
+        ...record.uses,
+        ...record.invariants,
+      ].join("\n").toLowerCase();
+      return haystack.includes(state.query);
+    }
+
+    function filteredRecords() {
+      return DATA.records.filter(matches);
+    }
+
+    function renderStats(records) {
+      visibleCountEl.textContent = records.length;
+      layerCountEl.textContent = new Set(records.map((record) => record.layer)).size;
+      provideCountEl.textContent = records.reduce((sum, record) => sum + record.provides.length, 0);
+      useCountEl.textContent = records.reduce((sum, record) => sum + record.uses.length, 0);
+    }
+
+    function updateChips() {
+      document.querySelectorAll(".chip").forEach((chip) => {
+        const kind = chip.dataset.kind;
+        const value = chip.dataset.value;
+        chip.classList.toggle("active", state[kind] === value || (state[kind] === "all" && value === "all"));
+      });
+    }
+
+    function node(record) {
+      const article = document.createElement("article");
+      article.className = "node";
+
+      const head = document.createElement("div");
+      head.className = "node-head";
+
+      const titleWrap = document.createElement("div");
+      const path = document.createElement("div");
+      path.className = "path";
+      path.textContent = record.path;
+      const summary = document.createElement("p");
+      summary.className = "summary";
+      summary.textContent = record.summary;
+      titleWrap.append(path, summary);
+
+      const badge = document.createElement("span");
+      badge.className = "badge";
+      badge.textContent = record.status;
+      badge.style.background = statusColors[record.status] || "var(--ink)";
+      head.append(titleWrap, badge);
+
+      const metaRow = document.createElement("div");
+      metaRow.className = "meta-row";
+      [record.layer, ...record.feature_flags.slice(0, state.expanded ? 6 : 3)].forEach((item) => {
+        const tag = document.createElement("span");
+        tag.className = "tag";
+        tag.textContent = item;
+        metaRow.appendChild(tag);
+      });
+
+      const metricGrid = document.createElement("div");
+      metricGrid.className = "metric-grid";
+      [
+        ["provides", record.provides.length],
+        ["uses", record.uses.length],
+        ["signal", record.score],
+      ].forEach(([label, value]) => {
+        const metric = document.createElement("div");
+        metric.className = "metric";
+        const strong = document.createElement("strong");
+        strong.textContent = String(value);
+        const span = document.createElement("span");
+        span.textContent = label;
+        metric.append(strong, span);
+        metricGrid.appendChild(metric);
+      });
+
+      const sections = [
+        ["provides", record.provides],
+        ["uses", record.uses],
+      ];
+
+      sections.forEach(([title, values]) => {
+        if (!values.length) return;
+        const section = document.createElement("section");
+        section.className = "section";
+        const heading = document.createElement("h4");
+        heading.textContent = title;
+        const list = document.createElement("div");
+        list.className = "mini-list";
+        values.slice(0, state.expanded ? 8 : 4).forEach((value) => {
+          const pill = document.createElement("span");
+          pill.className = "mini-pill";
+          pill.textContent = compactLabel(value);
+          list.appendChild(pill);
+        });
+        section.append(heading, list);
+        article.appendChild(section);
+      });
+
+      article.prepend(metricGrid);
+      article.prepend(metaRow);
+      article.prepend(head);
+      return article;
+    }
+
+    function renderMap(records) {
+      mapEl.innerHTML = "";
+      if (!records.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.innerHTML = "<h3>No files match the current filters.</h3><p>Reset filters or broaden the search query.</p>";
+        mapEl.appendChild(empty);
+        return;
+      }
+
+      const root = document.createElement("div");
+      root.className = "mind-root";
+
+      const rootCard = document.createElement("div");
+      rootCard.className = "root-card";
+      const title = document.createElement("strong");
+      title.textContent = "Amadeus";
+      const caption = document.createElement("span");
+      caption.textContent = `${records.length} visible files mapped from header metadata`;
+      rootCard.append(title, caption);
+      root.appendChild(rootCard);
+
+      const layerGrid = document.createElement("div");
+      layerGrid.className = "layer-grid";
+
+      const grouped = new Map();
+      records.forEach((record) => {
+        if (!grouped.has(record.layer)) grouped.set(record.layer, []);
+        grouped.get(record.layer).push(record);
+      });
+
+      [...grouped.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .forEach(([layer, layerRecords]) => {
+          const block = document.createElement("section");
+          block.className = "layer";
+          block.style.setProperty("--layer-color", layerColors[layer] || "var(--ink)");
+
+          const head = document.createElement("div");
+          head.className = "layer-head";
+          const h3 = document.createElement("h3");
+          h3.textContent = layer;
+          const p = document.createElement("p");
+          p.textContent = `${layerRecords.length} file${layerRecords.length === 1 ? "" : "s"}`;
+          head.append(h3, p);
+
+          const stack = document.createElement("div");
+          stack.className = "file-stack";
+          layerRecords
+            .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))
+            .forEach((record) => stack.appendChild(node(record)));
+
+          block.append(head, stack);
+          layerGrid.appendChild(block);
+        });
+
+      root.appendChild(layerGrid);
+      mapEl.appendChild(root);
+    }
+
+    function render() {
+      state.query = searchEl.value.trim().toLowerCase();
+      const records = filteredRecords();
+      renderStats(records);
+      updateChips();
+      renderMap(records);
+    }
+
+    document.getElementById("reset").addEventListener("click", () => {
+      state.query = "";
+      state.layer = "all";
+      state.status = "all";
+      state.feature = "all";
+      searchEl.value = "";
+      render();
+    });
+
+    document.getElementById("expand").addEventListener("click", (event) => {
+      state.expanded = !state.expanded;
+      event.currentTarget.textContent = state.expanded ? "Show Compact Map" : "Show Full Map";
+      render();
+    });
+
+    searchEl.addEventListener("input", render);
+
+    populateFilters();
+    renderLegend();
+    render();
+  </script>
+</body>
+</html>

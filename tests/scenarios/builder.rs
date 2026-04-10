@@ -1,8 +1,35 @@
 #![allow(dead_code)]
+// @amadeus-header
+// summary: Scenario testing support for builder.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::scenarios::builder
+// - type: tests::scenarios::builder::ApprovalScript
+// - type: tests::scenarios::builder::ScenarioStep
+// - type: tests::scenarios::builder::Scenario
+// - type: tests::scenarios::builder::ScenarioBuilder
+// uses:
+// - module: amadeus::client::StreamEvent
+// - format: JSON values
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test builder --features full
+// @end-amadeus-header
 
 use amadeus::client::StreamEvent;
 use serde_json::Value;
 use std::collections::VecDeque;
+
+#[derive(Debug, Clone)]
+pub struct ApprovalScript {
+    pub tool: String,
+    pub approve: bool,
+}
 
 #[derive(Debug, Clone)]
 pub struct ScenarioStep {
@@ -21,6 +48,7 @@ pub struct Scenario {
     pub description: String,
     pub initial_user_prompt: Option<String>,
     pub steps: VecDeque<ScenarioStep>,
+    pub approvals: VecDeque<ApprovalScript>,
 }
 
 impl Scenario {
@@ -48,6 +76,7 @@ pub struct ScenarioBuilder {
     description: String,
     initial_user_prompt: Option<String>,
     steps: Vec<ScenarioStep>,
+    approvals: Vec<ApprovalScript>,
 }
 
 impl ScenarioBuilder {
@@ -57,6 +86,7 @@ impl ScenarioBuilder {
             description: String::new(),
             initial_user_prompt: None,
             steps: Vec::new(),
+            approvals: Vec::new(),
         }
     }
 
@@ -139,12 +169,21 @@ impl ScenarioBuilder {
         self
     }
 
+    pub fn approve_tool(mut self, tool: &str, approve: bool) -> Self {
+        self.approvals.push(ApprovalScript {
+            tool: tool.to_string(),
+            approve,
+        });
+        self
+    }
+
     pub fn build(self) -> Scenario {
         Scenario {
             name: self.name,
             description: self.description,
             initial_user_prompt: self.initial_user_prompt,
             steps: self.steps.into_iter().collect(),
+            approvals: self.approvals.into_iter().collect(),
         }
     }
 }

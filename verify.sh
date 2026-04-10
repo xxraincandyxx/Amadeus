@@ -1,8 +1,32 @@
 #!/bin/bash
+# @amadeus-header
+# summary: Repository verification runner for formatting, linting, feature checks, and tests.
+# layer: script
+# status: active
+# feature_flags:
+# - full
+# provides:
+# - cmd: verify.sh
+# uses:
+# - cmd: cargo
+# - cmd: python3
+# - cmd: scripts/check_source_headers.py
+# invariants:
+# - Script command flow remains non-interactive and order-dependent.
+# side_effects:
+# - Runs external commands or subprocesses.
+# - Writes output to stdout or stderr.
+# tests:
+# - cmd: bash ./verify.sh
+# @end-amadeus-header
+
 set -e
 
 # Amadeus SDK Sanity Verification Script
 # This script catches build-system, formatting, and feature-flag errors.
+
+echo "🧾 Checking source-file headers..."
+python3 scripts/check_source_headers.py
 
 echo "🎨 Checking formatting..."
 cargo fmt --all -- --check

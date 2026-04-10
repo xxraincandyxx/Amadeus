@@ -1,0 +1,20 @@
+[package]
+name = "events"
+version = "0.1.0"
+edition = "2021"
+description = "Shared agent event model types for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+keywords = ["ai", "agent", "events", "sdk"]
+categories = ["development-tools"]
+
+[lib]
+name = "amadeus_events"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus_compaction = { package = "compaction", path = "../compaction" }
+amadeus_ids = { package = "ids", path = "../ids" }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

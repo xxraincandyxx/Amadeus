@@ -1,4 +1,19 @@
 #![allow(dead_code, unused_imports, clippy::result_large_err)]
+// @amadeus-header
+// summary: Test module root for tui coverage and shared exports.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui
+// uses: none
+// invariants:
+// - Module exports stay aligned with child modules and re-exports.
+// side_effects: none
+// tests:
+// - cmd: cargo test --features full
+// @end-amadeus-header
 
 //! TUI Snapshot Testing Infrastructure
 //!

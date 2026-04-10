@@ -16,6 +16,8 @@ Amadeus is a production-ready AI agent framework that provides:
 - **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
 - **Multi-Agent Coordination**: Supervisor/worker pattern for complex tasks
 
+Parity progress against the `refs/claw-code-parity` reference is tracked in `docs/EVALUATION.md` and only advanced when covered by automated tests.
+
 ## Installation
 
 ### Prerequisites
@@ -30,13 +32,11 @@ Amadeus is a production-ready AI agent framework that provides:
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
 
-# Copy environment template
-cp .env.example .env
+# Copy structured settings template
+mkdir -p .amadeus
+cp .amadeus/settings.example.json .amadeus/settings.json
 
-# Add your API key to .env
-# ANTHROPIC_API_KEY=sk-ant-xxx  (for Anthropic)
-# or
-# OPENAI_API_KEY=sk-xxx  (for OpenAI)
+# Add your provider and API key to .amadeus/settings.json
 
 # Build the project
 cargo build --release
@@ -230,7 +230,7 @@ The policy system blocks:
 
 ## Configuration
 
-Environment variables (`.env`):
+Structured settings (`.amadeus/settings.json` or `~/.amadeus/settings.json`):
 
 ```bash
 # Provider selection

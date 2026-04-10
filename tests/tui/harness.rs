@@ -1,3 +1,25 @@
+// @amadeus-header
+// summary: TUI test support for harness.
+// layer: test
+// status: test-only
+// feature_flags:
+// - full
+// provides:
+// - module: tests::tui::harness
+// - type: tests::tui::harness::TuiTestHarness
+// - type: tests::tui::harness::InputEvent
+// - type: tests::tui::harness::InputSequence
+// - fn: tests::tui::harness::run_scenario
+// uses:
+// - module: amadeus::agent::config::Config
+// - module: amadeus::client::LLMClient
+// invariants:
+// - Assertions stay aligned with current user-visible behavior.
+// side_effects: none
+// tests:
+// - cmd: cargo test harness --features full
+// @end-amadeus-header
+
 //! TUI Test Harness
 //!
 //! Sets up a complete TUI testing environment with mocked LLM.

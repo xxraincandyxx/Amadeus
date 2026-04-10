@@ -1,4 +1,24 @@
 #!/bin/bash
+# @amadeus-header
+# summary: Repository code counting helper for tracked source files and totals.
+# layer: script
+# status: active
+# feature_flags:
+# - full
+# provides:
+# - cmd: count-code.sh
+# uses:
+# - cmd: cloc
+# invariants:
+# - Script command flow remains non-interactive and order-dependent.
+# side_effects:
+# - Reads filesystem state.
+# - Runs external commands or subprocesses.
+# - Writes output to stdout or stderr.
+# tests:
+# - cmd: bash ./count-code.sh
+# @end-amadeus-header
+
 
 # --- Script Configuration & Robustness ---
 # Exit immediately if a command exits with a non-zero status.

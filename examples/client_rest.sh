@@ -1,4 +1,25 @@
 #!/bin/bash
+# @amadeus-header
+# summary: Runnable example for client rest usage.
+# layer: example
+# status: experimental
+# feature_flags:
+# - full
+# provides:
+# - cmd: examples/client_rest.sh
+# uses:
+# - cmd: curl
+# - cmd: jq
+# invariants:
+# - Example code remains runnable against the current public API.
+# side_effects:
+# - Performs network or HTTP operations.
+# - Runs external commands or subprocesses.
+# - Writes output to stdout or stderr.
+# tests:
+# - cmd: bash ./examples/client_rest.sh
+# @end-amadeus-header
+
 
 # Amadeus REST API Client Example
 # Demonstrates how to use the Amadeus SDK via REST endpoints

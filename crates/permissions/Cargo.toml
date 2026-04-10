@@ -1,0 +1,15 @@
+[package]
+name = "permissions"
+version = "0.1.0"
+edition = "2021"
+description = "Transport-agnostic permission types for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_permissions"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
