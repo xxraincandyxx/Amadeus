@@ -8,6 +8,7 @@
 // - type: crate::scheduler::DispatchStrategy
 // - type: crate::scheduler::SupervisorConfig
 // - function: crate::scheduler::select_worker
+// - function: crate::scheduler::select_worker_with_exclusions
 // uses:
 // - module: crate::worker
 // - runtime: std time duration utilities
@@ -59,7 +60,20 @@ pub fn select_worker(
     strategy: DispatchStrategy,
     next_index: &mut usize,
 ) -> Option<AgentId> {
-    let candidates: Vec<&WorkerInfo> = workers.iter().filter(|info| info.is_available()).collect();
+    select_worker_with_exclusions(workers, task, strategy, next_index, &[])
+}
+
+pub fn select_worker_with_exclusions(
+    workers: &[WorkerInfo],
+    task: &Task,
+    strategy: DispatchStrategy,
+    next_index: &mut usize,
+    excluded_ids: &[AgentId],
+) -> Option<AgentId> {
+    let candidates: Vec<&WorkerInfo> = workers
+        .iter()
+        .filter(|info| info.is_available() && !excluded_ids.contains(&info.id))
+        .collect();
 
     match strategy {
         DispatchStrategy::RoundRobin => {
@@ -87,7 +101,7 @@ pub fn select_worker(
 mod tests {
     use amadeus_ids::AgentId;
 
-    use super::{select_worker, DispatchStrategy};
+    use super::{select_worker, select_worker_with_exclusions, DispatchStrategy};
     use crate::worker::{Task, WorkerInfo, WorkerStatus};
 
     fn worker(active_tasks: usize, max_concurrent: usize, capabilities: &[&str]) -> WorkerInfo {
@@ -161,5 +175,22 @@ mod tests {
         let selected = select_worker(&workers, &task, DispatchStrategy::RoundRobin, &mut 0);
 
         assert_eq!(selected, None);
+    }
+
+    #[test]
+    fn selection_respects_excluded_workers() {
+        let workers = vec![worker(0, 1, &["rust"]), worker(0, 1, &["rust"])];
+        let task = Task::new("task-1", "prompt");
+        let excluded = vec![workers[0].id];
+
+        let selected = select_worker_with_exclusions(
+            &workers,
+            &task,
+            DispatchStrategy::RoundRobin,
+            &mut 0,
+            &excluded,
+        );
+
+        assert_eq!(selected, Some(workers[1].id));
     }
 }

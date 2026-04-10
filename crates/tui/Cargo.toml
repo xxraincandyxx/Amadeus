@@ -20,7 +20,7 @@ amadeus_core = { package = "core", path = "../core", default-features = false, f
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"
-crossterm = { version = "0.27", features = ["event-stream"] }
+crossterm = { version = "0.27", features = ["bracketed-paste", "event-stream"] }
 dirs = "5.0"
 futures = "0.3"
 lazy_static = "1.4"
@@ -36,3 +36,6 @@ unicode-width = "0.2"
 urlencoding = "2.1"
 uuid = { version = "1.10", features = ["v4", "serde"] }
 walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3.10"

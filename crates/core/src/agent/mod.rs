@@ -55,16 +55,20 @@ pub use manager::AgentManager;
 pub use messages::{ContentBlock, Message};
 #[cfg(feature = "orchestra")]
 pub use orchestra::{
-    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, OrchestraConfig, OrchestraLeader,
-    OrchestraRegistry, OrchestraRuntime, OrchestraStatus, OrchestraStrategy, OrchestraTask,
-    OrchestraTaskStatus,
+    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, ArtifactRecord, MailboxEvent,
+    MailboxEventKind, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraRuntime,
+    OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
 };
 pub use profile::AgentProfile; // NEW
 #[cfg(feature = "orchestra")]
 #[deprecated(
     note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
 )]
-pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus};
+pub use team::{
+    AgentTeam, ArtifactRecord as LegacyArtifactRecord, MailboxEvent as LegacyMailboxEvent,
+    MailboxEventKind as LegacyMailboxEventKind, TeamLeader, TeamRegistry, TeamStatus, TeamTask,
+    TeamTaskStatus,
+};
 
 #[cfg(feature = "orchestra")]
 #[deprecated(

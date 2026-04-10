@@ -23,6 +23,11 @@ Do not make live provider/API checks part of the core acceptance path. The basel
    ```
 2. Run targeted unit or integration tests for the area you are changing before relying on TUI captures.
 3. Launch the TUI inside `tmux-cli` instead of attaching directly to your terminal.
+4. Prefer launching the prebuilt binary after a successful build to avoid compile noise in captures:
+   ```bash
+   tmux-cli send "cd /Users/raincandy_u/Dev/amadeus && target/debug/amadeus" --pane=<pane>
+   ```
+   Use `cargo run --features full` only when you specifically need to validate the launch path.
 4. Prefer an 80x24 or larger pane when comparing splash layout across runs.
 5. When sending single-key shortcuts like `?`, disable the default Enter suffix:
    ```bash
@@ -120,11 +125,15 @@ Steps:
 3. Press `Tab`.
 4. Capture the selected completion state.
 5. Press `Esc` to leave completion.
+6. Type a short prompt such as `abc`.
+7. Send `Ctrl+B`, `Ctrl+F`, `Ctrl+P`, and `Ctrl+N` in focused scenarios and capture after each.
 
 Expected anchors:
 - slash command suggestions are visible
 - `Tab` is consumed by completion when the popup is active
 - returning to the input field hides the popup cleanly
+- `Ctrl+B/F` move like `Left/Right`
+- `Ctrl+P/N` behave like `Up/Down` for the active composer state
 
 ### 4. Session Navigation
 
@@ -167,6 +176,36 @@ Populated-session regression:
 4. Switch back to `root`.
 5. Switch again into `session1`.
 6. Capture immediately after the second switch.
+
+### 4a. Citation And Paste Composer Regression
+
+Purpose: validate that `@` cite suggestions and paste handling do not hide the composer.
+
+Steps:
+1. Start from the empty splash in a fresh pane launched from `target/debug/amadeus`.
+2. Type `@`.
+3. Capture immediately.
+4. Type `rev` or another known workspace filename prefix.
+5. Capture the cite popup.
+6. Press `Tab`.
+7. Capture the accepted cite state.
+8. Repeat with a known folder prefix such as `@doc`.
+9. Capture the folder cite popup.
+10. Paste a single absolute file or folder path with bracketed paste or `tmux-cli send`.
+11. Capture again.
+
+Expected anchors:
+- the composer prompt `❯` remains visible after typing `@`
+- the raw in-progress query such as `@rev` remains visible before acceptance
+- cite suggestions appear without replacing the editor area
+- after `Tab`, the composer shows a rendered cite token such as `@reviewer.md`
+- folder suggestions appear for workspace directories such as `docs`
+- pasting a single file or folder path inserts a cite instead of hiding the input row
+
+Regression checkpoint — cite popup must not consume the composer row:
+- if typing `@` makes the input row disappear, the app/layout height contract is wrong
+- verify: cite completion height is counted in the app-level input area reservation
+- verify: `render_keeps_composer_visible_when_citation_completion_is_open` passes
 
 Expected anchors:
 - the active label is `root [session1]`

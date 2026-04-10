@@ -47,8 +47,11 @@ pub use assessment::{
     AssessmentRunner, ScriptedAssessmentClient,
 };
 pub use commands::{
-    build_context_report, ContextEntry, ContextReport, ContextSection, ContextSectionGroup,
-    SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS,
+    apply_citation_candidate, build_context_report, filter_citation_candidates,
+    find_active_citation_query, format_citation_markdown, normalize_pasted_path,
+    parse_render_spans, scan_workspace_citation_candidates, ActiveCitationQuery,
+    CitationApplyResult, CitationCandidate, CitationRenderSpan, ContextEntry, ContextReport,
+    ContextSection, ContextSectionGroup, SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS,
 };
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};
@@ -65,9 +68,10 @@ pub use concurrency::{
 
 #[cfg(feature = "orchestra")]
 pub use agent::{
-    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, OrchestraConfig, OrchestraLeader,
-    OrchestraRegistry, OrchestraRuntime, OrchestraStatus, OrchestraStrategy, OrchestraTask,
-    OrchestraTaskStatus, Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus,
+    AgentInfo, AgentOrchestra, AgentOrchestrator, AgentStatus, ArtifactRecord, MailboxEvent,
+    MailboxEventKind, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraRuntime,
+    OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus, Task, TaskResult,
+    WorkerConfig, WorkerInfo, WorkerStatus,
 };
 
 #[cfg(feature = "orchestra")]

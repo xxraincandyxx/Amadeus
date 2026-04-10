@@ -8,21 +8,30 @@
 // - module: crate::ui::components::input
 // - type: crate::ui::components::input::InputComponent
 // uses:
+// - type: crate::commands::ActiveCitationQuery
+// - type: crate::commands::CitationCandidate
 // - module: crate::ui::components::completion
 // - module: crate::ui::get_colors
 // - runtime: ratatui terminal rendering
 // invariants:
-// - Listed interfaces stay aligned with the implementation in this file.
+// - The visible composer can render cite chips while the underlying buffer stores markdown links.
 // side_effects: none
 // tests:
 // - tests/tui_snapshot_test.rs
 // @end-amadeus-header
 
+use std::path::{Path, PathBuf};
+
+use amadeus_core::{
+    apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
+    format_citation_markdown, normalize_pasted_path, parse_render_spans,
+    scan_workspace_citation_candidates, ActiveCitationQuery, CitationCandidate,
+};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 use tui_textarea::{CursorMove, TextArea};
@@ -30,6 +39,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::components::completion::{render_completion_lines, CompletionState};
 use crate::ui::get_colors;
+use crate::ui::semantic_colors::SemanticColors;
 
 /// Example text inside the `Try "…"` hint (configurable, English UI).
 const TRY_PROMPT_ENV: &str = "AMADEUS_TRY_PROMPT";
@@ -54,20 +64,44 @@ fn composer_placeholder() -> String {
     format!("Try \"{}\"", try_prompt_from_env())
 }
 
+fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
+    if s.chars().count() <= max_len {
+        s.to_string()
+    } else {
+        let end = s
+            .char_indices()
+            .nth(max_len.saturating_sub(1))
+            .map(|(i, _)| i)
+            .unwrap_or(s.len());
+        format!("{}…", &s[..end])
+    }
+}
+
 pub struct InputComponent {
+    workdir: PathBuf,
     textarea: TextArea<'static>,
     history: Vec<String>,
     history_index: Option<usize>,
     current_draft: String,
     status_hint: Option<String>,
     completion: CompletionState,
+    citation_candidates: Vec<CitationCandidate>,
+    citation_matches: Vec<CitationCandidate>,
+    active_citation_query: Option<ActiveCitationQuery>,
+    citation_selected_index: usize,
     shortcuts_visible: bool,
 }
 
 impl InputComponent {
     pub fn new() -> Self {
+        let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self::new_with_workdir(workdir)
+    }
+
+    pub fn new_with_workdir(workdir: PathBuf) -> Self {
         let mut textarea = TextArea::default();
         let colors = get_colors();
+        let citation_candidates = scan_workspace_citation_candidates(&workdir).unwrap_or_default();
 
         textarea.set_block(Self::textarea_block());
         textarea.set_style(Style::default().fg(colors.text.primary));
@@ -83,15 +117,22 @@ impl InputComponent {
         );
         textarea.set_placeholder_text(composer_placeholder());
 
-        Self {
+        let mut input = Self {
+            workdir,
             textarea,
             history: Vec::new(),
             history_index: None,
             current_draft: String::new(),
             status_hint: None,
             completion: CompletionState::new(),
+            citation_candidates,
+            citation_matches: Vec::new(),
+            active_citation_query: None,
+            citation_selected_index: 0,
             shortcuts_visible: false,
-        }
+        };
+        input.refresh_suggestions();
+        input
     }
 
     pub fn get_input(&self) -> String {
@@ -107,6 +148,7 @@ impl InputComponent {
         self.setup_textarea();
         self.history_index = None;
         self.current_draft.clear();
+        self.refresh_suggestions();
     }
 
     fn textarea_block() -> Block<'static> {
@@ -164,74 +206,124 @@ impl InputComponent {
     }
 
     fn set_text(&mut self, text: &str) {
+        self.set_text_and_cursor(text, None);
+    }
+
+    fn set_text_and_cursor(&mut self, text: &str, cursor: Option<(usize, usize)>) {
         let lines: Vec<String> = text.lines().map(String::from).collect();
         self.textarea = TextArea::new(lines);
         self.setup_textarea();
-        self.textarea.move_cursor(CursorMove::End);
+        if let Some((row, col)) = cursor {
+            self.textarea
+                .move_cursor(CursorMove::Jump(row as u16, col as u16));
+        } else {
+            self.textarea.move_cursor(CursorMove::End);
+        }
+        self.refresh_suggestions();
     }
 
     pub fn insert_newline(&mut self) {
         self.textarea.insert_newline();
+        self.refresh_suggestions();
     }
 
     pub fn handle_char(&mut self, c: char) {
         self.textarea.insert_char(c);
+        self.refresh_suggestions();
     }
 
     pub fn handle_backspace(&mut self) {
         self.textarea.delete_char();
+        self.refresh_suggestions();
     }
 
     pub fn handle_delete(&mut self) {
         self.textarea.delete_next_char();
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_left(&mut self) {
         self.textarea.move_cursor(CursorMove::Back);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_right(&mut self) {
         self.textarea.move_cursor(CursorMove::Forward);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_start(&mut self) {
         self.textarea.move_cursor(CursorMove::Head);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_end(&mut self) {
         self.textarea.move_cursor(CursorMove::End);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_forward(&mut self) {
         self.textarea.move_cursor(CursorMove::WordForward);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_back(&mut self) {
         self.textarea.move_cursor(CursorMove::WordBack);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_up(&mut self) {
         self.textarea.move_cursor(CursorMove::Up);
+        self.refresh_suggestions();
     }
 
     pub fn move_cursor_down(&mut self) {
         self.textarea.move_cursor(CursorMove::Down);
+        self.refresh_suggestions();
     }
 
     pub fn delete_line_by_end(&mut self) {
         self.textarea.delete_line_by_end();
+        self.refresh_suggestions();
     }
 
     pub fn delete_line_by_head(&mut self) {
         self.textarea.delete_line_by_head();
+        self.refresh_suggestions();
     }
 
     pub fn delete_word(&mut self) {
         self.textarea.delete_word();
+        self.refresh_suggestions();
     }
 
     pub fn delete_next_word(&mut self) {
         self.textarea.delete_next_word();
+        self.refresh_suggestions();
+    }
+
+    pub fn handle_paste(&mut self, pasted: &str) {
+        let normalized = if !pasted.contains('\n') && !pasted.contains('\r') {
+            normalize_pasted_path(pasted)
+        } else {
+            None
+        };
+
+        if let Some(path) = normalized {
+            if path.exists()
+                && (path.is_file() || path.is_dir())
+                && self.path_is_visible_to_citation(&path)
+            {
+                if let Some(markdown) = format_citation_markdown(&path) {
+                    self.textarea.insert_str(markdown);
+                    self.refresh_suggestions();
+                    return;
+                }
+            }
+        }
+
+        self.textarea.insert_str(pasted);
+        self.refresh_suggestions();
     }
 
     fn shortcuts_lines(width: u16) -> Vec<Line<'static>> {
@@ -297,10 +389,11 @@ impl InputComponent {
         let colors = get_colors();
         let rule_style = Style::default().fg(colors.ui.dark);
         let hint_height = u16::from(self.status_hint.is_some());
+        self.refresh_suggestions();
 
-        let input_text = self.textarea.lines().join("\n");
-        let comp_visible = self.completion.update(&input_text);
-        let comp_rows = if comp_visible {
+        let comp_rows = if self.citation_completion_is_visible() {
+            self.citation_visible_count() as u16
+        } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
         } else {
             0
@@ -381,7 +474,11 @@ impl InputComponent {
         }
 
         if let Some(ci) = comp_idx {
-            render_completion_lines(frame, chunks[ci], &self.completion);
+            if self.citation_completion_is_visible() {
+                self.render_citation_lines(frame, chunks[ci]);
+            } else {
+                render_completion_lines(frame, chunks[ci], &self.completion);
+            }
         }
 
         let inner = chunks[inner_idx];
@@ -407,7 +504,22 @@ impl InputComponent {
             height: 1.min(inner.height),
         };
 
-        frame.render_widget(&self.textarea, ta_rect);
+        let has_input = !self.get_input().is_empty();
+        if has_input {
+            self.textarea
+                .set_style(Style::default().fg(colors.background.primary));
+            frame.render_widget(&self.textarea, ta_rect);
+            self.textarea
+                .set_style(Style::default().fg(colors.text.primary));
+            frame.render_widget(
+                Paragraph::new(self.visible_input_lines())
+                    .wrap(Wrap { trim: false })
+                    .style(Style::default().bg(colors.background.primary)),
+                ta_rect,
+            );
+        } else {
+            frame.render_widget(&self.textarea, ta_rect);
+        }
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 PROMPT,
@@ -422,7 +534,7 @@ impl InputComponent {
             chunks[bottom_rule_idx],
         );
 
-        if !comp_visible {
+        if comp_rows == 0 {
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
                     "  ? for shortcuts",
@@ -435,35 +547,64 @@ impl InputComponent {
 
     /// Get the currently selected completion command, if any.
     pub fn get_completion(&self) -> Option<String> {
-        self.completion.selected().map(|c| c.name.clone())
+        if self.citation_completion_is_visible() {
+            self.citation_matches
+                .get(self.citation_selected_index)
+                .map(|candidate| candidate.label.clone())
+        } else {
+            self.completion.selected().map(|c| c.name.clone())
+        }
     }
 
     /// Check if completion popup is visible.
     pub fn completion_is_visible(&self) -> bool {
-        self.completion.is_visible()
+        self.citation_completion_is_visible() || self.completion.is_visible()
     }
 
     /// Move selection up in completion list.
     pub fn completion_select_up(&mut self) {
-        self.completion.select_up();
+        if self.citation_completion_is_visible() {
+            self.citation_selected_index = self.citation_selected_index.saturating_sub(1);
+        } else {
+            self.completion.select_up();
+        }
     }
 
     /// Move selection down in completion list.
     pub fn completion_select_down(&mut self) {
-        self.completion.select_down();
+        if self.citation_completion_is_visible() {
+            if !self.citation_matches.is_empty() {
+                self.citation_selected_index =
+                    (self.citation_selected_index + 1) % self.citation_matches.len();
+            }
+        } else {
+            self.completion.select_down();
+        }
     }
 
     pub fn force_show_completion(&mut self) {
         let input = self.get_input();
         self.completion.update(&input);
+        self.refresh_suggestions();
     }
 
     /// Apply the selected completion (replace input with command).
     pub fn apply_completion(&mut self) {
-        if let Some(cmd) = self.completion.selected() {
+        if self.citation_completion_is_visible() {
+            if let (Some(query), Some(candidate)) = (
+                self.active_citation_query.clone(),
+                self.citation_matches
+                    .get(self.citation_selected_index)
+                    .cloned(),
+            ) {
+                let applied = apply_citation_candidate(&self.get_input(), &query, &candidate);
+                self.set_text_and_cursor(&applied.text, Some(applied.cursor));
+            }
+        } else if let Some(cmd) = self.completion.selected() {
             let lines: Vec<String> = vec![cmd.name.clone()];
             self.textarea = TextArea::new(lines);
             self.setup_textarea();
+            self.refresh_suggestions();
         }
     }
 
@@ -498,7 +639,9 @@ impl InputComponent {
     }
 
     pub fn completion_height(&self) -> u16 {
-        if self.completion.is_visible() {
+        if self.citation_completion_is_visible() {
+            self.citation_visible_count() as u16
+        } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
         } else {
             0
@@ -524,6 +667,96 @@ impl InputComponent {
     pub fn is_shortcuts_visible(&self) -> bool {
         self.shortcuts_visible
     }
+
+    fn citation_completion_is_visible(&self) -> bool {
+        self.active_citation_query.is_some() && !self.citation_matches.is_empty()
+    }
+
+    fn citation_visible_count(&self) -> usize {
+        6.min(self.citation_matches.len())
+    }
+
+    fn refresh_suggestions(&mut self) {
+        let input = self.get_input();
+        self.completion.update(&input);
+
+        let cursor = self.textarea.cursor();
+        self.active_citation_query = find_active_citation_query(&input, cursor);
+        if let Some(query) = &self.active_citation_query {
+            self.citation_matches =
+                filter_citation_candidates(&self.citation_candidates, &query.query, 6);
+            if self.citation_selected_index >= self.citation_matches.len() {
+                self.citation_selected_index = 0;
+            }
+        } else {
+            self.citation_matches.clear();
+            self.citation_selected_index = 0;
+        }
+    }
+
+    fn render_citation_lines(&self, frame: &mut Frame, area: Rect) {
+        if !self.citation_completion_is_visible() || area.height == 0 {
+            return;
+        }
+
+        let colors = get_colors();
+        let width = area.width as usize;
+        let desc_width = width.saturating_sub(24).saturating_sub(4);
+        let lines: Vec<Line<'static>> = self
+            .citation_matches
+            .iter()
+            .take(self.citation_visible_count())
+            .enumerate()
+            .map(|(idx, candidate)| {
+                let token = format!("@{:<22}", candidate.label);
+                let desc = if desc_width > 0 {
+                    truncate_with_ellipsis(&candidate.relative_path, desc_width)
+                } else {
+                    String::new()
+                };
+                let is_selected = idx == self.citation_selected_index;
+                let style = if is_selected {
+                    Style::default()
+                        .fg(colors.text.primary)
+                        .bg(colors.background.message)
+                } else {
+                    Style::default().fg(colors.text.secondary)
+                };
+
+                Line::from(Span::styled(format!("  {token}{desc}"), style))
+            })
+            .collect();
+
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+
+    fn visible_input_lines(&self) -> Vec<Line<'static>> {
+        let colors = get_colors();
+        let input = self.get_input();
+        let spans = parse_render_spans(&input);
+        let lines = self.textarea.lines();
+
+        lines
+            .iter()
+            .enumerate()
+            .map(|(line_index, line)| {
+                let line_spans = spans
+                    .iter()
+                    .filter(|span| span.line_index == line_index)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                build_visible_line(line, &line_spans, colors)
+            })
+            .collect()
+    }
+
+    fn path_is_visible_to_citation(&self, path: &Path) -> bool {
+        if path.is_absolute() {
+            path.starts_with(&self.workdir) || path.exists()
+        } else {
+            self.workdir.join(path).exists()
+        }
+    }
 }
 
 impl Default for InputComponent {
@@ -532,9 +765,74 @@ impl Default for InputComponent {
     }
 }
 
+fn build_visible_line(
+    line: &str,
+    spans: &[amadeus_core::CitationRenderSpan],
+    colors: SemanticColors,
+) -> Line<'static> {
+    let mut rendered = Vec::new();
+    let mut cursor = 0usize;
+    let chars = line.chars().collect::<Vec<_>>();
+
+    for span in spans {
+        if span.start_col > cursor {
+            rendered.push(Span::styled(
+                chars[cursor..span.start_col].iter().collect::<String>(),
+                Style::default().fg(colors.text.primary),
+            ));
+        }
+
+        let raw_width = chars[span.start_col..span.end_col]
+            .iter()
+            .collect::<String>()
+            .width();
+        let visible = format!("@{}", span.label);
+        let visible_width = visible.width();
+        let padding = raw_width.saturating_sub(visible_width);
+
+        rendered.push(Span::styled(
+            visible,
+            Style::default()
+                .fg(colors.text.link)
+                .bg(colors.background.message),
+        ));
+        if padding > 0 {
+            rendered.push(Span::styled(
+                " ".repeat(padding),
+                Style::default()
+                    .fg(colors.background.primary)
+                    .bg(colors.background.primary),
+            ));
+        }
+        cursor = span.end_col;
+    }
+
+    if cursor < chars.len() {
+        rendered.push(Span::styled(
+            chars[cursor..].iter().collect::<String>(),
+            Style::default().fg(colors.text.primary),
+        ));
+    }
+
+    if rendered.is_empty() {
+        Line::from(String::new())
+    } else {
+        Line::from(rendered)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    fn temp_input() -> (tempfile::TempDir, InputComponent) {
+        let temp = tempdir().expect("tempdir");
+        let input = InputComponent::new_with_workdir(temp.path().to_path_buf());
+        (temp, input)
+    }
 
     #[test]
     fn test_input_new() {
@@ -728,5 +1026,112 @@ mod tests {
         input.handle_char(' ');
         input.clear(); // Clear whitespace-only
         assert!(input.history.is_empty());
+    }
+
+    #[test]
+    fn test_citation_completion_inserts_markdown_and_renders_token() {
+        let (temp, mut input) = temp_input();
+        fs::write(temp.path().join("reviewer.md"), "review").expect("write reviewer");
+        input.citation_candidates =
+            scan_workspace_citation_candidates(temp.path()).expect("scan citations");
+
+        input.handle_char('@');
+        input.handle_char('r');
+        input.handle_char('e');
+        input.handle_char('v');
+
+        assert!(input.citation_completion_is_visible());
+        assert_eq!(input.get_completion().as_deref(), Some("reviewer.md"));
+
+        input.apply_completion();
+        let expected_path = temp
+            .path()
+            .join("reviewer.md")
+            .canonicalize()
+            .expect("canonical reviewer");
+
+        assert_eq!(
+            input.get_input(),
+            format!("[reviewer.md]({})", expected_path.display())
+        );
+        let rendered = input
+            .visible_input_lines()
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("@reviewer.md"));
+    }
+
+    #[test]
+    fn test_citation_completion_reports_popup_height() {
+        let (temp, mut input) = temp_input();
+        fs::write(temp.path().join("reviewer.md"), "review").expect("write reviewer");
+        input.citation_candidates =
+            scan_workspace_citation_candidates(temp.path()).expect("scan citations");
+
+        input.handle_char('@');
+        input.handle_char('r');
+
+        assert!(input.citation_completion_is_visible());
+        assert!(input.completion_height() > 0);
+    }
+
+    #[test]
+    fn test_raw_at_query_remains_visible_before_citation_is_accepted() {
+        let (_temp, mut input) = temp_input();
+
+        input.handle_char('@');
+        input.handle_char('r');
+        input.handle_char('e');
+        input.handle_char('v');
+
+        let rendered = input
+            .visible_input_lines()
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("@rev"));
+    }
+
+    #[test]
+    fn test_path_paste_becomes_citation_markdown() {
+        let (temp, mut input) = temp_input();
+        let path = temp.path().join("reviewer.md");
+        fs::write(&path, "review").expect("write reviewer");
+        let expected_path = path.canonicalize().expect("canonical reviewer");
+
+        input.handle_paste(&path.display().to_string());
+
+        assert_eq!(
+            input.get_input(),
+            format!("[reviewer.md]({})", expected_path.display())
+        );
+    }
+
+    #[test]
+    fn test_directory_paste_becomes_citation_markdown() {
+        let (temp, mut input) = temp_input();
+        let path = temp.path().join("docs");
+        fs::create_dir_all(&path).expect("create docs dir");
+        let expected_path = path.canonicalize().expect("canonical docs dir");
+
+        input.handle_paste(&path.display().to_string());
+
+        assert_eq!(
+            input.get_input(),
+            format!("[docs]({})", expected_path.display())
+        );
+    }
+
+    #[test]
+    fn test_multiline_paste_is_inserted_as_text() {
+        let (_temp, mut input) = temp_input();
+
+        input.handle_paste("alpha\nbeta");
+
+        assert_eq!(input.get_input(), "alpha\nbeta");
     }
 }

@@ -32,7 +32,8 @@ use tokio::sync::Mutex;
 use amadeus::agent::config::Config;
 use amadeus::agent::messages::{ContentBlock, Message};
 use amadeus::agent::orchestra::{
-    OrchestraConfig, OrchestraRuntime, OrchestraStrategy, Task, TaskResult, WorkerConfig,
+    OrchestraConfig, OrchestraRuntime, OrchestraStrategy, OrchestraTaskStatus, Task, TaskResult,
+    WorkerConfig,
 };
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::core::AgentId;
@@ -117,6 +118,46 @@ impl LLMClient for SimpleMockClient {
             }
         }
         events.push(Ok(StreamEvent::StopReason("end_turn".to_string())));
+        Ok(Box::pin(futures::stream::iter(events)))
+    }
+}
+
+#[derive(Clone)]
+struct RetryMockClient {
+    attempts: Arc<Mutex<usize>>,
+}
+
+#[async_trait]
+impl LLMClient for RetryMockClient {
+    async fn create_message(
+        &self,
+        _system: &str,
+        _messages: &[Message],
+        _tools: &[serde_json::Value],
+        _max_tokens: u32,
+    ) -> Result<(String, Vec<ContentBlock>)> {
+        Ok(("end_turn".to_string(), vec![]))
+    }
+
+    async fn create_message_stream(
+        &self,
+        _system: &str,
+        _messages: &[Message],
+        _tools: &[serde_json::Value],
+        _max_tokens: u32,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>> {
+        let mut attempts = self.attempts.lock().await;
+        *attempts += 1;
+        if *attempts == 1 {
+            return Err(amadeus::error::AgentError::Api(
+                "transient failure".to_string(),
+            ));
+        }
+
+        let events = vec![
+            Ok(StreamEvent::TextDelta("recovered after retry".to_string())),
+            Ok(StreamEvent::StopReason("end_turn".to_string())),
+        ];
         Ok(Box::pin(futures::stream::iter(events)))
     }
 }
@@ -221,4 +262,66 @@ async fn test_p2p_delegation() {
     // Verify math worker was actually called
     let calculator_info = orchestra_arc.agent_info(*calculator_id).await.unwrap();
     assert_eq!(calculator_info.completed_tasks, 1);
+
+    let orchestras = orchestra_arc.list_orchestras().await;
+    let default_orchestra = &orchestras[0];
+    assert!(default_orchestra
+        .tasks
+        .iter()
+        .any(|task| task.id == "main-task" && task.status == OrchestraTaskStatus::Completed));
+    assert!(default_orchestra.tasks.iter().any(
+        |task| task.id.starts_with("subtask-") && task.status == OrchestraTaskStatus::Completed
+    ));
+    assert!(!default_orchestra.mailbox.is_empty());
+}
+
+#[tokio::test]
+async fn test_runtime_retries_transient_failure() {
+    let client = RetryMockClient {
+        attempts: Arc::new(Mutex::new(0)),
+    };
+
+    let config = OrchestraConfig {
+        strategy: OrchestraStrategy::CapabilityMatch,
+        retry_failed_tasks: true,
+        max_retries: 1,
+        ..Default::default()
+    };
+
+    let mut orchestra = OrchestraRuntime::new(client.clone(), config, create_test_config());
+    orchestra
+        .spawn_agents_with_client(
+            vec![WorkerConfig::new("RetryWorker").capability("logic")],
+            client.clone(),
+        )
+        .await
+        .expect("Failed to spawn retry worker");
+
+    let orchestra = Arc::new(orchestra);
+    let orchestra_clone = Arc::clone(&orchestra);
+    tokio::spawn(async move {
+        orchestra_clone.run().await.unwrap();
+    });
+
+    let result = orchestra
+        .execute(Task::new("retry-task", "recover please").requires(vec!["logic".to_string()]))
+        .await
+        .expect("Task should succeed after retry");
+
+    assert!(result.success);
+    assert_eq!(result.output.as_deref(), Some("recovered after retry"));
+
+    let orchestras = orchestra.list_orchestras().await;
+    let default_orchestra = &orchestras[0];
+    let retry_task = default_orchestra
+        .tasks
+        .iter()
+        .find(|task| task.id == "retry-task")
+        .expect("retry task missing");
+    assert_eq!(retry_task.status, OrchestraTaskStatus::Completed);
+    assert_eq!(retry_task.attempt_count, 2);
+    assert!(default_orchestra
+        .mailbox
+        .iter()
+        .any(|event| event.content.contains("Retrying task attempt 2/2")));
 }

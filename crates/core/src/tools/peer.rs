@@ -147,6 +147,9 @@ impl Tool for PeerTool {
             task,
             response_tx,
             requester_id: self.requester_id,
+            exclude_requester: true,
+            team_id: None,
+            parent_task_id: None,
         };
 
         if let Err(e) = self.help_tx.send(help_request).await {

@@ -27,6 +27,7 @@ use tokio::sync::mpsc;
 
 pub enum AppEvent {
     Key(KeyEvent),
+    Paste(String),
     Mouse(MouseEvent),
     Resize(u16, u16),
     Tick,
@@ -89,6 +90,7 @@ impl EventHandler {
                     None
                 }
             }
+            Event::Paste(text) => Some(AppEvent::Paste(text)),
             Event::Mouse(mouse) => Some(AppEvent::Mouse(mouse)),
             Event::Resize(cols, rows) => Some(AppEvent::Resize(cols, rows)),
             _ => None,

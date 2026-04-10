@@ -6,6 +6,9 @@
 // - team
 // provides:
 // - module: crate::agent::team
+// - type: crate::agent::team::ArtifactRecord
+// - type: crate::agent::team::MailboxEvent
+// - type: crate::agent::team::MailboxEventKind
 // - type: crate::agent::team::TeamLeader
 // - type: crate::agent::team::TeamStatus
 // - type: crate::agent::team::TeamTaskStatus
@@ -27,5 +30,6 @@
     note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
 )]
 pub use amadeus_runtime::{
-    AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
+    AgentTeam, ArtifactRecord, MailboxEvent, MailboxEventKind, TeamLeader, TeamRegistry,
+    TeamStatus, TeamTask, TeamTaskStatus,
 };

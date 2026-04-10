@@ -58,10 +58,11 @@ use crate::core::id::{AgentId, TeamId};
 use crate::error::{AgentError, Result};
 use crate::telemetry::{TelemetryEvent, TelemetryRecorder};
 use crate::tools::peer::PeerTool;
-use amadeus_runtime::select_worker;
+use amadeus_runtime::{select_worker, select_worker_with_exclusions};
 pub use amadeus_runtime::{
-    AgentInfo, AgentOrchestra, AgentStatus, OrchestraConfig, OrchestraLeader, OrchestraRegistry,
-    OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
+    AgentInfo, AgentOrchestra, AgentStatus, ArtifactRecord, MailboxEvent, MailboxEventKind,
+    OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraStrategy,
+    OrchestraTask, OrchestraTaskStatus,
 };
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tracing::{debug, info, warn};
@@ -336,6 +337,7 @@ struct WorkerEntry<C: LLMClient> {
 
 struct QueueEntry {
     task: Task,
+    team_id: TeamId,
     response_tx: mpsc::Sender<Result<TaskResult>>,
 }
 
@@ -570,30 +572,36 @@ pub struct OrchestraRuntime<C: LLMClient> {
     config: OrchestraConfig,
     sdk_config: Arc<Config>,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    orchestras: Arc<Mutex<OrchestraRegistry>>,
+    default_orchestra_id: TeamId,
     workers: Arc<RwLock<HashMap<AgentId, WorkerEntry<C>>>>,
     lock_manager: Arc<Mutex<LockManager>>,
     next_worker_idx: Arc<Mutex<usize>>,
     help_tx: mpsc::Sender<HelpRequest>,
     help_rx: Mutex<mpsc::Receiver<HelpRequest>>,
-    task_queue: Mutex<VecDeque<QueueEntry>>,
+    task_queue: Arc<Mutex<VecDeque<QueueEntry>>>,
 }
 
 impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     /// Create a new orchestra runtime.
     pub fn new(client: C, config: OrchestraConfig, sdk_config: Arc<Config>) -> Self {
         let (help_tx, help_rx) = mpsc::channel(100);
+        let mut orchestras = OrchestraRegistry::new();
+        let default_orchestra_id = orchestras.create_team("default", OrchestraLeader::User);
         Self {
             runtime_id: uuid::Uuid::new_v4().to_string(),
             client,
             config,
             sdk_config,
             telemetry: None,
+            orchestras: Arc::new(Mutex::new(orchestras)),
+            default_orchestra_id,
             workers: Arc::new(RwLock::new(HashMap::new())),
             lock_manager: Arc::new(Mutex::new(LockManager::new())),
             next_worker_idx: Arc::new(Mutex::new(0)),
             help_tx,
             help_rx: Mutex::new(help_rx),
-            task_queue: Mutex::new(VecDeque::new()),
+            task_queue: Arc::new(Mutex::new(VecDeque::new())),
         }
     }
 
@@ -624,6 +632,11 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     /// Get the base SDK configuration.
     pub fn config(&self) -> &Arc<Config> {
         &self.sdk_config
+    }
+
+    /// List orchestras tracked by the runtime.
+    pub async fn list_orchestras(&self) -> Vec<AgentOrchestra> {
+        self.orchestras.lock().await.list_teams()
     }
 
     /// Spawn agents into the orchestra runtime.
@@ -687,6 +700,11 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                 capabilities,
             });
 
+            self.orchestras
+                .lock()
+                .await
+                .add_member(self.default_orchestra_id, id)
+                .map_err(|error| AgentError::Command(error.to_string()))?;
             ids.push(id);
         }
 
@@ -718,29 +736,106 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                 } => {
                     if let Some(help_req) = help_req_opt {
                         let workers_map = Arc::clone(&self.workers);
+                        let orchestras = Arc::clone(&self.orchestras);
+                        let default_orchestra_id = self.default_orchestra_id;
                         let strategy = self.config.strategy;
                         let timeout_dur = self.config.task_timeout;
+                        let retry_failed_tasks = self.config.retry_failed_tasks;
+                        let max_retries = self.config.max_retries;
                         let next_idx_mutex = Arc::clone(&self.next_worker_idx);
+                        let task_queue = Arc::clone(&self.task_queue);
                         let runtime_id = self.runtime_id.clone();
                         let telemetry = self.telemetry.clone();
 
                         tokio::spawn(async move {
+                            let team_id = help_req.team_id.unwrap_or(default_orchestra_id);
+                            {
+                                let mut registry = orchestras.lock().await;
+                                let created_by = OrchestraLeader::Agent(help_req.requester_id);
+                                if let Err(error) =
+                                    registry.queue_task(team_id, help_req.task.clone(), created_by)
+                                {
+                                    let _ = help_req.response_tx.send(TaskResult {
+                                        task_id: help_req.task.id,
+                                        worker_id: AgentId::new(),
+                                        success: false,
+                                        output: None,
+                                        error: Some(error.to_string()),
+                                        duration_ms: 0,
+                                        tool_calls: Vec::new(),
+                                    });
+                                    return;
+                                }
+
+                                let _ = registry.record_mailbox_event(
+                                    team_id,
+                                    MailboxEvent::new(
+                                        format!("msg-{}", uuid::Uuid::new_v4()),
+                                        MailboxEventKind::DirectMessage,
+                                        Some(help_req.task.id.clone()),
+                                        Some(help_req.requester_id),
+                                        None,
+                                        help_req.task.prompt.clone(),
+                                    ),
+                                );
+                            }
+
+                            let excluded_ids = if help_req.exclude_requester {
+                                vec![help_req.requester_id]
+                            } else {
+                                Vec::new()
+                            };
                             let worker_selection = {
                                 let workers_guard = workers_map.read().await;
-                                Self::select_worker(&workers_guard, &help_req.task, strategy, next_idx_mutex).await
+                                Self::select_worker(
+                                    &workers_guard,
+                                    &help_req.task,
+                                    strategy,
+                                    next_idx_mutex,
+                                    &excluded_ids,
+                                )
+                                .await
                             };
 
                             match worker_selection {
                                 Ok(id) => {
+                                    if let Err(error) = orchestras
+                                        .lock()
+                                        .await
+                                        .claim_task(team_id, &help_req.task.id, id)
+                                    {
+                                        let _ = help_req.response_tx.send(TaskResult {
+                                            task_id: help_req.task.id,
+                                            worker_id: id,
+                                            success: false,
+                                            output: None,
+                                            error: Some(error.to_string()),
+                                            duration_ms: 0,
+                                            tool_calls: Vec::new(),
+                                        });
+                                        return;
+                                    }
+
                                     let workers_guard = workers_map.read().await;
                                     if let Some(entry) = workers_guard.get(&id) {
-                                        let result = Self::dispatch_internal(
+                                        Self::reserve_worker(
                                             runtime_id.clone(),
                                             telemetry.clone(),
                                             id,
                                             entry,
+                                        )
+                                        .await;
+                                        let result = Self::dispatch_internal(
+                                            runtime_id.clone(),
+                                            telemetry.clone(),
+                                            Arc::clone(&orchestras),
+                                            team_id,
+                                            id,
+                                            entry,
                                             help_req.task,
                                             timeout_dur,
+                                            retry_failed_tasks,
+                                            max_retries,
                                         ).await;
                                         let _ = help_req.response_tx.send(result.unwrap_or_else(|e| TaskResult {
                                             task_id: "error".to_string(),
@@ -755,6 +850,19 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                                 }
                                 Err(error) => {
                                     warn!("Failed to find worker for help request: {}", error);
+                                    let _ = orchestras.lock().await.record_mailbox_event(
+                                        team_id,
+                                        MailboxEvent::new(
+                                            format!("msg-{}", uuid::Uuid::new_v4()),
+                                            MailboxEventKind::StatusUpdate,
+                                            Some(help_req.task.id.clone()),
+                                            None,
+                                            Some(help_req.requester_id),
+                                            format!("Peer request failed to route: {}", error),
+                                        ),
+                                    );
+                                    let mut queue = task_queue.lock().await;
+                                    queue.retain(|entry| entry.task.id != help_req.task.id);
                                     let _ = help_req.response_tx.send(TaskResult {
                                         task_id: help_req.task.id,
                                         worker_id: AgentId::new(),
@@ -785,12 +893,22 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             if queue.len() >= self.config.max_pending_tasks {
                 return Err(AgentError::Config("Task queue is full".to_string()));
             }
+            self.orchestras
+                .lock()
+                .await
+                .queue_task(
+                    self.default_orchestra_id,
+                    task.clone(),
+                    OrchestraLeader::User,
+                )
+                .map_err(|error| AgentError::Command(error.to_string()))?;
             self.emit_telemetry(TelemetryEvent::TaskQueued {
                 runtime_id: self.runtime_id.clone(),
                 task_id: task.id.clone(),
             });
             queue.push_back(QueueEntry {
                 task,
+                team_id: self.default_orchestra_id,
                 response_tx: tx,
             });
         }
@@ -806,20 +924,42 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
             return;
         }
 
+        let mut queued = queue.drain(..).collect::<Vec<_>>();
+        queued.sort_by(|left, right| {
+            right
+                .task
+                .priority
+                .cmp(&left.task.priority)
+                .then_with(|| left.task.id.cmp(&right.task.id))
+        });
         let mut next_queue = VecDeque::new();
-        while let Some(entry) = queue.pop_front() {
+        for entry in queued {
             let workers_map = Arc::clone(&self.workers);
+            let orchestras = Arc::clone(&self.orchestras);
             let strategy = self.config.strategy;
+            let retry_failed_tasks = self.config.retry_failed_tasks;
+            let max_retries = self.config.max_retries;
             let next_idx_mutex = Arc::clone(&self.next_worker_idx);
             let runtime_id = self.runtime_id.clone();
             let telemetry = self.telemetry.clone();
 
             let worker_selection = {
                 let workers_guard = workers_map.read().await;
-                Self::select_worker(&workers_guard, &entry.task, strategy, next_idx_mutex).await
+                Self::select_worker(&workers_guard, &entry.task, strategy, next_idx_mutex, &[])
+                    .await
             };
 
             if let Ok(id) = worker_selection {
+                if let Err(error) =
+                    orchestras
+                        .lock()
+                        .await
+                        .claim_task(entry.team_id, &entry.task.id, id)
+                {
+                    warn!(task_id = %entry.task.id, error = %error, "Failed to claim task");
+                    next_queue.push_back(entry);
+                    continue;
+                }
                 let timeout_dur = self.config.task_timeout;
                 self.emit_telemetry(TelemetryEvent::TaskDispatched {
                     runtime_id: self.runtime_id.clone(),
@@ -829,13 +969,24 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                 tokio::spawn(async move {
                     let workers_guard = workers_map.read().await;
                     if let Some(worker_entry) = workers_guard.get(&id) {
+                        Self::reserve_worker(
+                            runtime_id.clone(),
+                            telemetry.clone(),
+                            id,
+                            worker_entry,
+                        )
+                        .await;
                         let result = Self::dispatch_internal(
                             runtime_id,
                             telemetry,
+                            orchestras,
+                            entry.team_id,
                             id,
                             worker_entry,
                             entry.task,
                             timeout_dur,
+                            retry_failed_tasks,
+                            max_retries,
                         )
                         .await;
                         let _ = entry.response_tx.send(result).await;
@@ -853,6 +1004,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         task: &Task,
         strategy: OrchestraStrategy,
         next_idx_mutex: Arc<Mutex<usize>>,
+        excluded_ids: &[AgentId],
     ) -> Result<AgentId> {
         let mut candidates = Vec::new();
         for entry in workers.values() {
@@ -862,7 +1014,17 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
 
         let worker_id = {
             let mut next_idx = next_idx_mutex.lock().await;
-            select_worker(&candidates, task, strategy, &mut next_idx)
+            if excluded_ids.is_empty() {
+                select_worker(&candidates, task, strategy, &mut next_idx)
+            } else {
+                select_worker_with_exclusions(
+                    &candidates,
+                    task,
+                    strategy,
+                    &mut next_idx,
+                    excluded_ids,
+                )
+            }
         };
 
         worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))
@@ -871,44 +1033,89 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
     async fn dispatch_internal(
         runtime_id: String,
         telemetry: Option<Arc<TelemetryRecorder>>,
+        orchestras: Arc<Mutex<OrchestraRegistry>>,
+        team_id: TeamId,
         worker_id: AgentId,
         entry: &WorkerEntry<C>,
         task: Task,
         task_timeout: Duration,
+        retry_failed_tasks: bool,
+        max_retries: u8,
     ) -> Result<TaskResult> {
         let task_id = task.id.clone();
         let prompt = task.prompt.clone();
 
-        {
-            let mut info = entry.info.write().await;
-            mark_worker_task_started(&mut info);
-            AgentOrchestrator::<C>::emit_telemetry(
-                &telemetry,
-                TelemetryEvent::WorkerStateChanged {
-                    runtime_id: runtime_id.clone(),
-                    worker_id,
-                    state: "running".to_string(),
-                    active_tasks: info.active_tasks,
-                },
-            );
-        }
-
         let agent = entry.agent.clone();
         debug!(worker_id = %worker_id, task_id = %task_id, "Dispatching task");
 
-        let result = tokio::time::timeout(task_timeout, agent.run(&prompt)).await;
-        let outcome = match result {
-            Ok(Ok(run_result)) => Ok(RunOutcome {
-                text: run_result.text,
-                duration_ms: 0,
-                tool_calls: run_result.tool_calls,
-            }),
-            Ok(Err(error)) => Err(error.to_string()),
-            Err(_) => Err("Task timed out".to_string()),
+        let total_attempts = if retry_failed_tasks {
+            task.max_attempts
+                .unwrap_or_else(|| max_retries.saturating_add(1))
+                .max(1)
+        } else {
+            1
         };
+        let mut total_duration_ms = 0_u64;
+        let mut outcome = Err("Task execution failed".to_string());
+
+        for attempt in 1..=total_attempts {
+            if attempt > 1 {
+                orchestras
+                    .lock()
+                    .await
+                    .record_attempt(team_id, &task_id)
+                    .map_err(|error| AgentError::Command(error.to_string()))?;
+                let _ = orchestras.lock().await.record_mailbox_event(
+                    team_id,
+                    MailboxEvent::new(
+                        format!("msg-{}", uuid::Uuid::new_v4()),
+                        MailboxEventKind::StatusUpdate,
+                        Some(task_id.clone()),
+                        Some(worker_id),
+                        None,
+                        format!("Retrying task attempt {}/{}", attempt, total_attempts),
+                    ),
+                );
+            }
+
+            let start = Instant::now();
+            let result = tokio::time::timeout(task_timeout, agent.run(&prompt)).await;
+            total_duration_ms += start.elapsed().as_millis() as u64;
+
+            match result {
+                Ok(Ok(run_result)) => {
+                    outcome = Ok(RunOutcome {
+                        text: run_result.text,
+                        duration_ms: total_duration_ms,
+                        tool_calls: run_result.tool_calls,
+                    });
+                    break;
+                }
+                Ok(Err(error)) => {
+                    outcome = Err(error.to_string());
+                }
+                Err(_) => {
+                    outcome = Err("Task timed out".to_string());
+                }
+            }
+
+            if attempt < total_attempts {
+                let _ = orchestras.lock().await.mark_retry_ready(
+                    team_id,
+                    &task_id,
+                    worker_id,
+                    outcome
+                        .as_ref()
+                        .err()
+                        .cloned()
+                        .unwrap_or_else(|| "Retry requested".to_string()),
+                );
+            }
+        }
 
         let mut info = entry.info.write().await;
-        let task_result = finalize_worker_task(&mut info, task_id, worker_id, outcome);
+        let mut task_result = finalize_worker_task(&mut info, task_id.clone(), worker_id, outcome);
+        task_result.duration_ms = total_duration_ms;
         let state = if task_result.success { "idle" } else { "error" }.to_string();
         AgentOrchestrator::<C>::emit_telemetry(
             &telemetry,
@@ -929,6 +1136,66 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
                 duration_ms: task_result.duration_ms,
             },
         );
+        drop(info);
+
+        {
+            let mut registry = orchestras.lock().await;
+            registry
+                .record_result(team_id, &task_id, worker_id, &task_result)
+                .map_err(|error| AgentError::Command(error.to_string()))?;
+            if task_result.success {
+                if let Some(output) = &task_result.output {
+                    let _ = registry.add_artifact(
+                        team_id,
+                        &task_id,
+                        ArtifactRecord {
+                            label: "output".to_string(),
+                            value: output.clone(),
+                        },
+                    );
+                }
+            }
+            let _ = registry.record_mailbox_event(
+                team_id,
+                MailboxEvent::new(
+                    format!("msg-{}", uuid::Uuid::new_v4()),
+                    MailboxEventKind::StatusUpdate,
+                    Some(task_id),
+                    Some(worker_id),
+                    None,
+                    if task_result.success {
+                        "Task completed".to_string()
+                    } else {
+                        format!(
+                            "Task failed: {}",
+                            task_result
+                                .error
+                                .clone()
+                                .unwrap_or_else(|| "unknown error".to_string())
+                        )
+                    },
+                ),
+            );
+        }
         Ok(task_result)
+    }
+
+    async fn reserve_worker(
+        runtime_id: String,
+        telemetry: Option<Arc<TelemetryRecorder>>,
+        worker_id: AgentId,
+        entry: &WorkerEntry<C>,
+    ) {
+        let mut info = entry.info.write().await;
+        mark_worker_task_started(&mut info);
+        AgentOrchestrator::<C>::emit_telemetry(
+            &telemetry,
+            TelemetryEvent::WorkerStateChanged {
+                runtime_id,
+                worker_id,
+                state: "running".to_string(),
+                active_tasks: info.active_tasks,
+            },
+        );
     }
 }

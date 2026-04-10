@@ -5,7 +5,19 @@
 // feature_flags: none
 // provides:
 // - module: crate::commands
+// - module: crate::commands::composer
 // - module: crate::commands::context
+// - fn: crate::commands::composer::apply_citation_candidate
+// - fn: crate::commands::composer::filter_citation_candidates
+// - fn: crate::commands::composer::find_active_citation_query
+// - fn: crate::commands::composer::format_citation_markdown
+// - fn: crate::commands::composer::normalize_pasted_path
+// - fn: crate::commands::composer::parse_render_spans
+// - fn: crate::commands::composer::scan_workspace_citation_candidates
+// - type: crate::commands::composer::ActiveCitationQuery
+// - type: crate::commands::composer::CitationApplyResult
+// - type: crate::commands::composer::CitationCandidate
+// - type: crate::commands::composer::CitationRenderSpan
 // - fn: crate::commands::context::build_context_report
 // - type: crate::commands::context::ContextEntry
 // - type: crate::commands::context::ContextReport
@@ -23,9 +35,16 @@
 // - cmd: cargo test -p core slash_command --features full
 // @end-amadeus-header
 
+pub mod composer;
 pub mod context;
 
 pub use amadeus_commands::{SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS};
+pub use composer::{
+    apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
+    format_citation_markdown, normalize_pasted_path, parse_render_spans,
+    scan_workspace_citation_candidates, ActiveCitationQuery, CitationApplyResult,
+    CitationCandidate, CitationRenderSpan,
+};
 pub use context::{
     build_context_report, ContextEntry, ContextReport, ContextSection, ContextSectionGroup,
 };

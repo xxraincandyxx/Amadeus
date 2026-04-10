@@ -835,7 +835,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             agent,
             mode: AppMode::Input,
             messages: MessagesComponent::new(),
-            input: InputComponent::new(),
+            input: InputComponent::new_with_workdir(workdir.clone()),
             footer,
             loading_indicator,
             status_bar,
@@ -1741,6 +1741,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     ) -> Result<()> {
         match event {
             AppEvent::Key(key) => self.handle_key(key, terminal).await?,
+            AppEvent::Paste(text) => self.handle_paste(text).await?,
             AppEvent::Mouse(mouse) => self.handle_mouse(mouse),
             AppEvent::Resize(_, _) => {}
             AppEvent::Tick => {
@@ -1755,6 +1756,16 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.poll_compaction_result();
             }
         }
+        Ok(())
+    }
+
+    async fn handle_paste(&mut self, text: String) -> Result<()> {
+        if self.stream_rx.is_some() {
+            return Ok(());
+        }
+
+        self.restore_input_focus();
+        self.input.handle_paste(&text);
         Ok(())
     }
 
@@ -2468,27 +2479,26 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('o')) => {
                 self.messages.toggle_tool_expansion();
             }
-            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
-                let mods = key.modifiers;
-                if mods.contains(KeyModifiers::ALT) {
-                    if self.stream_rx.is_some() {
-                        self.run_in_background();
-                    }
-                } else if self.stream_rx.is_none() {
+            (KeyModifiers::CONTROL, KeyCode::Char('b' | 'B'))
+            | (KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
+                if self.stream_rx.is_none() {
                     self.input.move_cursor_left();
                 }
             }
-            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('f' | 'F')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('f' | 'F'))
+            | (KeyModifiers::SUPER, KeyCode::Char('f' | 'F')) => {
                 if self.stream_rx.is_none() {
                     self.input.move_cursor_right();
                 }
             }
-            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('p' | 'P')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('p' | 'P'))
+            | (KeyModifiers::SUPER, KeyCode::Char('p' | 'P')) => {
                 if self.stream_rx.is_none() {
                     self.input.history_up();
                 }
             }
-            (KeyModifiers::CONTROL | KeyModifiers::SUPER, KeyCode::Char('n' | 'N')) => {
+            (KeyModifiers::CONTROL, KeyCode::Char('n' | 'N'))
+            | (KeyModifiers::SUPER, KeyCode::Char('n' | 'N')) => {
                 if self.stream_rx.is_none() {
                     self.input.history_down();
                 }
@@ -2662,17 +2672,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.input.set_status_hint(None);
         self.restore_input_focus();
         Ok(())
-    }
-
-    /// Move the current stream to background mode, allowing user to continue interacting
-    fn run_in_background(&mut self) {
-        if self.stream_rx.is_some() {
-            self.is_background = true;
-            self.mode = AppMode::Normal;
-            self.footer.set_background(true);
-            self.input
-                .set_status_hint(Some("background task running".to_string()));
-        }
     }
 
     fn toggle_sidebar(&mut self, kind: SidebarKind) {
@@ -4506,6 +4505,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ctrl_b_and_ctrl_f_match_left_and_right_arrow_behavior() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        for ch in "abc".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session
+            .handle_input_key(
+                KeyEvent::new(KeyCode::Char('b'), KeyModifiers::CONTROL),
+                &mut terminal,
+            )
+            .await
+            .expect("ctrl+b should move left");
+        session.input.handle_char('x');
+        assert_eq!(session.input.get_input(), "abxc");
+
+        session
+            .handle_input_key(
+                KeyEvent::new(KeyCode::Char('f'), KeyModifiers::CONTROL),
+                &mut terminal,
+            )
+            .await
+            .expect("ctrl+f should move right");
+        session.input.handle_char('y');
+        assert_eq!(session.input.get_input(), "abxcy");
+    }
+
+    #[tokio::test]
+    async fn ctrl_p_and_ctrl_n_match_up_and_down_history_behavior() {
+        let backend = CrosstermBackend::new(std::io::stdout());
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        for ch in "alpha".chars() {
+            session.input.handle_char(ch);
+        }
+        session.input.clear();
+        for ch in "beta".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session
+            .handle_input_key(
+                KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+                &mut terminal,
+            )
+            .await
+            .expect("ctrl+p should match up");
+        assert_eq!(session.input.get_input(), "alpha");
+
+        session
+            .handle_input_key(
+                KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+                &mut terminal,
+            )
+            .await
+            .expect("ctrl+n should match down");
+        assert_eq!(session.input.get_input(), "beta");
+    }
+
+    #[tokio::test]
     async fn slash_hooks_opens_dialog() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
@@ -4837,6 +4902,31 @@ mod tests {
 
         assert!(rendered.contains("bash"));
         assert!(rendered.contains("cargo test"));
+    }
+
+    #[test]
+    fn render_keeps_composer_visible_when_citation_completion_is_open() {
+        let backend = TestBackend::new(90, 12);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+
+        session.input.handle_char('@');
+        session.input.handle_char('r');
+        session.input.handle_char('e');
+        session.input.handle_char('v');
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("❯"));
+        assert!(rendered.contains("@rev"));
     }
 
     #[test]

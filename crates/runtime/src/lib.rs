@@ -50,8 +50,13 @@ pub use orchestra::{
     AgentOrchestra, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraStatus,
     OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
 };
-pub use scheduler::{select_worker, DispatchStrategy, SupervisorConfig};
-pub use team::{AgentTeam, TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus};
+pub use scheduler::{
+    select_worker, select_worker_with_exclusions, DispatchStrategy, SupervisorConfig,
+};
+pub use team::{
+    AgentTeam, ArtifactRecord, MailboxEvent, MailboxEventKind, TeamLeader, TeamRegistry,
+    TeamStatus, TeamTask, TeamTaskStatus,
+};
 pub use worker::{
     finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome, Task, TaskResult,
     WorkerConfig, WorkerInfo, WorkerStatus,

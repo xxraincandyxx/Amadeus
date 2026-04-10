@@ -16,10 +16,11 @@
 // uses:
 // - module: amadeus_events
 // - module: amadeus_ids
+// - module: crate::team
 // - runtime: tokio async channels
 // - protocol: serde serialization
 // invariants:
-// - Worker model semantics stay stable across transports.
+// - Worker model semantics stay stable across transports while tasks carry collaboration metadata.
 // side_effects:
 // - Sends or receives messages across async channels.
 // tests:
@@ -29,7 +30,7 @@
 use std::collections::HashMap;
 
 use amadeus_events::ToolCall;
-use amadeus_ids::AgentId;
+use amadeus_ids::{AgentId, TeamId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::oneshot;
 
@@ -80,6 +81,9 @@ pub struct Task {
     pub prompt: String,
     pub required_capabilities: Vec<String>,
     pub priority: u8,
+    pub dependencies: Vec<String>,
+    pub owned_files: Vec<String>,
+    pub max_attempts: Option<u8>,
     pub metadata: HashMap<String, serde_json::Value>,
 }
 
@@ -90,6 +94,9 @@ impl Task {
             prompt: prompt.into(),
             required_capabilities: Vec::new(),
             priority: 0,
+            dependencies: Vec::new(),
+            owned_files: Vec::new(),
+            max_attempts: None,
             metadata: HashMap::new(),
         }
     }
@@ -104,6 +111,21 @@ impl Task {
         self
     }
 
+    pub fn depends_on(mut self, dependencies: Vec<String>) -> Self {
+        self.dependencies.extend(dependencies);
+        self
+    }
+
+    pub fn own_files(mut self, owned_files: Vec<String>) -> Self {
+        self.owned_files.extend(owned_files);
+        self
+    }
+
+    pub fn max_attempts(mut self, max_attempts: u8) -> Self {
+        self.max_attempts = Some(max_attempts);
+        self
+    }
+
     pub fn meta(mut self, key: impl Into<String>, value: serde_json::Value) -> Self {
         self.metadata.insert(key.into(), value);
         self
@@ -115,6 +137,9 @@ pub struct HelpRequest {
     pub task: Task,
     pub response_tx: oneshot::Sender<TaskResult>,
     pub requester_id: AgentId,
+    pub exclude_requester: bool,
+    pub team_id: Option<TeamId>,
+    pub parent_task_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
