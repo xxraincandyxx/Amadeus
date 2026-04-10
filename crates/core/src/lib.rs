@@ -59,6 +59,10 @@ pub use telemetry::{
     JsonlSink, MemorySink, TelemetryEntry, TelemetryError, TelemetryEvent, TelemetryRecorder,
     TelemetrySink,
 };
+pub use tools::{
+    ComposedToolCatalog, ToolCatalogView, ToolExecutionResult, ToolExecutor, ToolLevel, ToolPack,
+    ToolPolicy, ToolProfile, ToolRegistration, ToolSource, ToolSpec,
+};
 
 #[cfg(feature = "concurrency")]
 pub use concurrency::{

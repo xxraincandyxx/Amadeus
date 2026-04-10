@@ -816,7 +816,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let telemetry = self.telemetry.clone();
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
-        let tool_schemas: Vec<serde_json::Value> = tools.schemas().into_iter().cloned().collect();
+        let tool_schemas: Vec<serde_json::Value> = tools.schemas();
 
         Box::pin(async_stream::stream! {
             let start = Instant::now();
@@ -960,7 +960,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 let permission_enforcer =
                                     PermissionEnforcer::from_config(config.as_ref());
                                 let permission_decision = if !blocked {
-                                    Some(permission_enforcer.check(&name, &input))
+                                    Some(match tools.get(&name) {
+                                        Some(spec) => {
+                                            permission_enforcer.check_with_spec(&spec, &input)
+                                        }
+                                        None => permission_enforcer.check(&name, &input),
+                                    })
                                 } else {
                                     None
                                 };
@@ -1499,12 +1504,13 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         input: serde_json::Value,
     ) -> ToolExecutionRecord {
         let tool_start = Instant::now();
-        let output = match tools.execute(&name, input.clone()).await {
-            Ok(out) => out,
-            Err(e) => format!("Error: {}", e),
+        let execution = tools.execute_structured(&name, input.clone()).await;
+        let (output, explicit_error) = match execution {
+            Ok(out) => (out.output, out.is_error),
+            Err(e) => (format!("Error: {}", e), true),
         };
         let duration_ms = tool_start.elapsed().as_millis() as u64;
-        let is_error = output.starts_with("Error:");
+        let is_error = explicit_error || output.starts_with("Error:");
 
         if let Err(e) = hooks
             .on_tool_complete(&name, &input, &output, is_error, duration_ms)

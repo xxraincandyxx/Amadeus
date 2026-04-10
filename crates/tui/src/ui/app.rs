@@ -1533,9 +1533,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let mut tools_tokens: usize = 0;
         for name in registry.names() {
             let schema_bytes = registry
-                .get(name)
+                .get(&name)
                 .map(|tool| {
-                    serde_json::to_string(tool.schema())
+                    serde_json::to_string(&tool.provider_definition())
                         .unwrap_or_default()
                         .len()
                 })
