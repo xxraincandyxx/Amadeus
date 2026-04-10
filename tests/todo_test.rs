@@ -52,7 +52,7 @@ async fn default_tools_include_todo() {
     let client = AnthropicClient::new("test-key".to_string(), None, "test-model".to_string());
     let agent = Agent::new(client, Arc::new(create_test_config()));
 
-    assert!(agent.registry().names().contains(&"todo"));
+    assert!(agent.registry().names().contains(&"todo".to_string()));
 }
 
 #[tokio::test]

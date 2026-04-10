@@ -7,6 +7,7 @@ This runbook defines the local-first `tmux-cli` acceptance flow that coding agen
 Use this flow to validate the TUI and the major subsystems it exposes:
 - startup dashboard and footer state
 - input, completion, and mode switching
+- profile-driven tool and context inventory rendering
 - slash commands and sidebars
 - session switching and sub-agent navigation
 - approval modals and policy-sensitive tool execution
@@ -44,7 +45,7 @@ Use the same loop for every debugging task:
    ```
 2. Start the TUI:
    ```bash
-   tmux-cli send "cd /Users/raincandy_u/Dev/amadeus && cargo run --features full" --pane=<pane>
+   tmux-cli send "cd /Users/raincandy_u/Dev/amadeus && target/debug/amadeus" --pane=<pane>
    ```
 3. Wait for a stable frame:
    ```bash
@@ -134,6 +135,29 @@ Expected anchors:
 - returning to the input field hides the popup cleanly
 - `Ctrl+B/F` move like `Left/Right`
 - `Ctrl+P/N` behave like `Up/Down` for the active composer state
+
+### 3a. Context And Tool Inventory
+
+Purpose: validate the composed tool platform as rendered through the shared context report.
+
+Steps:
+1. Start from the empty splash in a fresh pane launched from `target/debug/amadeus`.
+2. Type `/context` and press Enter.
+3. Wait for idle.
+4. Capture the context report.
+
+Expected anchors:
+- `Tools`
+- `Tool Packs`
+- `Source: builtin`
+- `Pack: filesystem`
+- `Pack: search`
+- at least one composed entry label such as `bash (primitive)` or `todo (control_plane)`
+
+Regression checkpoint — context report must reflect composed tool metadata:
+- the report must group tools by source and pack, not only by hardcoded built-in names
+- if MCP tools are enabled for the active profile, they should appear under `Source: mcp` and `Pack: mcp`
+- if a tighter profile disables aliases or control-plane packs, the report should omit those entries rather than showing stale defaults
 
 ### 4. Session Navigation
 
@@ -350,10 +374,11 @@ Before merging larger TUI changes:
 1. startup smoke
 2. help and mode switching
 3. input and completion
-4. session navigation
-5. approval modal flow
-6. tool monitor and nested tools
-7. error and truncation rendering
+4. context and tool inventory
+5. session navigation
+6. approval modal flow
+7. tool monitor and nested tools
+8. error and truncation rendering
 
 ## Debugging Heuristics
 
