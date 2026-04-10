@@ -24,6 +24,7 @@
 
 //! Structured configuration loading for Amadeus runtimes.
 
+use std::collections::HashMap;
 use std::env;
 use std::path::Component;
 use std::path::{Path, PathBuf};
@@ -116,6 +117,41 @@ impl Default for PermissionSettings {
     }
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolProfileConfig {
+    #[serde(default)]
+    pub enabled_packs: Vec<String>,
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
+    #[serde(default = "default_true")]
+    pub allow_aliases: bool,
+    #[serde(default = "default_true")]
+    pub include_mcp: bool,
+    #[serde(default = "default_true")]
+    pub include_control_plane: bool,
+    pub model_permission_mode: Option<PermissionMode>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolSettings {
+    pub default_profile: String,
+    pub subagent_profile: String,
+    #[serde(default)]
+    pub profiles: HashMap<String, ToolProfileConfig>,
+}
+
+impl Default for ToolSettings {
+    fn default() -> Self {
+        Self {
+            default_profile: "default".to_string(),
+            subagent_profile: "subagent".to_string(),
+            profiles: HashMap::new(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub provider: Provider,
@@ -140,6 +176,8 @@ pub struct Config {
     pub telemetry: TelemetrySettings,
     #[serde(default)]
     pub permissions: PermissionSettings,
+    #[serde(default)]
+    pub tools: ToolSettings,
 }
 
 impl Default for Config {
@@ -164,6 +202,7 @@ impl Default for Config {
             hooks: HookSettings::default(),
             telemetry: TelemetrySettings::default(),
             permissions: PermissionSettings::default(),
+            tools: ToolSettings::default(),
         }
     }
 }
@@ -441,6 +480,23 @@ impl Config {
                 }
             } else {
                 self.permissions
+            },
+            tools: if other.tools != ToolSettings::default() {
+                ToolSettings {
+                    default_profile: if other.tools.default_profile != "default" {
+                        other.tools.default_profile
+                    } else {
+                        self.tools.default_profile
+                    },
+                    subagent_profile: if other.tools.subagent_profile != "subagent" {
+                        other.tools.subagent_profile
+                    } else {
+                        self.tools.subagent_profile
+                    },
+                    profiles: merge_tool_profiles(self.tools.profiles, other.tools.profiles),
+                }
+            } else {
+                self.tools
             },
         }
     }
@@ -735,6 +791,65 @@ impl Config {
                 );
             }
         }
+
+        if let Some(tool_settings) = json.get("tools").and_then(|v| v.as_object()) {
+            if let Some(default_profile) = tool_settings
+                .get("default_profile")
+                .and_then(|v| v.as_str())
+            {
+                self.tools.default_profile = default_profile.to_string();
+            }
+            if let Some(subagent_profile) = tool_settings
+                .get("subagent_profile")
+                .and_then(|v| v.as_str())
+            {
+                self.tools.subagent_profile = subagent_profile.to_string();
+            }
+            if let Some(profiles) = tool_settings.get("profiles").and_then(|v| v.as_object()) {
+                for (name, raw_profile) in profiles {
+                    let mut profile = self.tools.profiles.get(name).cloned().unwrap_or_default();
+                    if let Some(enabled_packs) =
+                        raw_profile.get("enabled_packs").and_then(|v| v.as_array())
+                    {
+                        profile.enabled_packs = parse_string_list(enabled_packs);
+                    }
+                    if let Some(enabled_tools) =
+                        raw_profile.get("enabled_tools").and_then(|v| v.as_array())
+                    {
+                        profile.enabled_tools = parse_string_list(enabled_tools);
+                    }
+                    if let Some(disabled_tools) =
+                        raw_profile.get("disabled_tools").and_then(|v| v.as_array())
+                    {
+                        profile.disabled_tools = parse_string_list(disabled_tools);
+                    }
+                    if let Some(allow_aliases) =
+                        raw_profile.get("allow_aliases").and_then(|v| v.as_bool())
+                    {
+                        profile.allow_aliases = allow_aliases;
+                    }
+                    if let Some(include_mcp) =
+                        raw_profile.get("include_mcp").and_then(|v| v.as_bool())
+                    {
+                        profile.include_mcp = include_mcp;
+                    }
+                    if let Some(include_control_plane) = raw_profile
+                        .get("include_control_plane")
+                        .and_then(|v| v.as_bool())
+                    {
+                        profile.include_control_plane = include_control_plane;
+                    }
+                    if let Some(model_permission_mode) = raw_profile
+                        .get("model_permission_mode")
+                        .and_then(|v| v.as_str())
+                        .and_then(PermissionMode::parse)
+                    {
+                        profile.model_permission_mode = Some(model_permission_mode);
+                    }
+                    self.tools.profiles.insert(name.clone(), profile);
+                }
+            }
+        }
     }
 }
 
@@ -779,12 +894,27 @@ fn parse_string_list(values: &[Value]) -> Vec<String> {
         .collect()
 }
 
+fn default_true() -> bool {
+    true
+}
+
 fn append_unique_strings(existing: Vec<String>, incoming: Vec<String>) -> Vec<String> {
     let mut merged = existing;
     for value in incoming {
         if !merged.contains(&value) {
             merged.push(value);
         }
+    }
+    merged
+}
+
+fn merge_tool_profiles(
+    existing: HashMap<String, ToolProfileConfig>,
+    incoming: HashMap<String, ToolProfileConfig>,
+) -> HashMap<String, ToolProfileConfig> {
+    let mut merged = existing;
+    for (name, profile) in incoming {
+        merged.insert(name, profile);
     }
     merged
 }
@@ -916,6 +1046,52 @@ mod tests {
         let config = Config::load_from_file(&path).unwrap();
 
         assert_eq!(config.permission_mode, PermissionMode::ReadOnly);
+    }
+
+    #[test]
+    fn load_from_file_reads_tool_profiles() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "api_key":"x",
+                "tools":{
+                    "default_profile":"planner",
+                    "profiles":{
+                        "planner":{
+                            "enabled_packs":["filesystem","planning"],
+                            "disabled_tools":["write_file"],
+                            "allow_aliases":false,
+                            "include_mcp":false,
+                            "include_control_plane":true,
+                            "model_permission_mode":"read-only"
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.tools.default_profile, "planner");
+        let planner = config
+            .tools
+            .profiles
+            .get("planner")
+            .expect("planner profile should exist");
+        assert_eq!(
+            planner.enabled_packs,
+            vec!["filesystem".to_string(), "planning".to_string()]
+        );
+        assert_eq!(planner.disabled_tools, vec!["write_file".to_string()]);
+        assert!(!planner.allow_aliases);
+        assert!(!planner.include_mcp);
+        assert_eq!(
+            planner.model_permission_mode,
+            Some(PermissionMode::ReadOnly)
+        );
     }
 
     #[test]

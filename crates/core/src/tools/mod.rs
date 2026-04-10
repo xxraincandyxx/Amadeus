@@ -23,6 +23,7 @@ pub mod file;
 pub mod glob;
 pub mod grep;
 pub mod peer;
+pub mod platform;
 pub mod registry;
 pub mod schema;
 pub mod sub_agent;
@@ -36,6 +37,11 @@ pub use glob::GlobTool;
 pub use grep::GrepTool;
 #[cfg(feature = "orchestra")]
 pub use peer::PeerTool;
+pub use platform::{
+    legacy_registration, legacy_tool_spec, ComposedToolCatalog, ToolCatalogView,
+    ToolExecutionResult, ToolExecutor, ToolLevel, ToolPack, ToolPolicy, ToolProfile,
+    ToolRegistration, ToolSource, ToolSpec,
+};
 pub use registry::ToolRegistry;
 pub use sub_agent::SubAgentTool;
 pub use todo::{TodoItem, TodoManager, TodoStatus, TodoTool};
