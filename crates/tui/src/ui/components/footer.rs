@@ -305,13 +305,8 @@ impl Footer {
             ));
 
             if !self.hide_context_percent {
-                let (bar_color, percent_color) = if self.info.context_percent >= 90 {
-                    (colors.ui.gradient[2], colors.ui.gradient[2])
-                } else if self.info.context_percent >= 70 {
-                    (colors.ui.gradient[1], colors.ui.gradient[1])
-                } else {
-                    (colors.ui.gradient[0], colors.text.secondary)
-                };
+                let bar_color = colors.text.secondary;
+                let percent_color = colors.text.secondary;
 
                 let bar_width = 8;
                 let filled = ((self.info.context_percent as usize) * bar_width) / 100;

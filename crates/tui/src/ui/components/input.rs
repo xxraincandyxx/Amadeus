@@ -504,22 +504,7 @@ impl InputComponent {
             height: 1.min(inner.height),
         };
 
-        let has_input = !self.get_input().is_empty();
-        if has_input {
-            self.textarea
-                .set_style(Style::default().fg(colors.background.primary));
-            frame.render_widget(&self.textarea, ta_rect);
-            self.textarea
-                .set_style(Style::default().fg(colors.text.primary));
-            frame.render_widget(
-                Paragraph::new(self.visible_input_lines())
-                    .wrap(Wrap { trim: false })
-                    .style(Style::default().bg(colors.background.primary)),
-                ta_rect,
-            );
-        } else {
-            frame.render_widget(&self.textarea, ta_rect);
-        }
+        frame.render_widget(&self.textarea, ta_rect);
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
                 PROMPT,
