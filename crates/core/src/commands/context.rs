@@ -21,14 +21,14 @@
 // - artifact: filesystem paths and files
 // invariants:
 // - Reported token totals reflect the current live agent payload plus clearly separated on-disk inventory.
-// - Tool classification keeps built-in tools separate from additional registered tools.
+// - Tool inventory reflects composed tool sources, packs, and active profile state.
 // side_effects:
 // - Reads context, skill, and custom-agent files from disk.
 // tests:
 // - cmd: cargo test --features full build_context_report
 // @end-amadeus-header
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,18 +37,6 @@ use crate::client::LLMClient;
 use crate::context::ProjectContext;
 use crate::prompts;
 use crate::skills::registry::SkillRegistry;
-
-const BUILTIN_TOOL_NAMES: &[&str] = &[
-    "bash",
-    "read_file",
-    "write_file",
-    "edit_file",
-    "glob",
-    "grep",
-    "todo",
-    "web_fetch",
-    "sub_agent",
-];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContextEntry {
@@ -141,28 +129,50 @@ pub fn build_context_report<C: LLMClient + Clone + 'static>(agent: &Agent<C>) ->
     let memory_files_tokens = memory_entries.iter().map(|entry| entry.tokens).sum();
 
     let registry = agent.registry();
-    let builtin_tool_names: HashSet<&str> = BUILTIN_TOOL_NAMES.iter().copied().collect();
-    let mut builtin_tools = Vec::new();
-    let mut additional_tools = Vec::new();
-    for name in registry.names() {
-        let tokens = registry
-            .get(name)
-            .map(|tool| estimate_tokens(&serde_json::to_string(tool.schema()).unwrap_or_default()))
-            .unwrap_or(0);
+    let profile_name = registry.profile().name.clone();
+    let mut source_groups: BTreeMap<String, Vec<ContextEntry>> = BTreeMap::new();
+    let mut pack_groups: BTreeMap<String, Vec<ContextEntry>> = BTreeMap::new();
+    let mut system_tools_tokens = 0;
+    let mut additional_tools_tokens = 0;
+    for tool in registry.inventory() {
+        let tokens = estimate_tokens(&serde_json::to_string(&tool.schema).unwrap_or_default());
         let entry = ContextEntry {
-            label: name.to_string(),
+            label: format!("{} ({})", tool.name, tool.level.as_str()),
             tokens,
         };
-        if builtin_tool_names.contains(name) {
-            builtin_tools.push(entry);
+        if tool.source == crate::tools::ToolSource::Builtin {
+            system_tools_tokens += tokens;
         } else {
-            additional_tools.push(entry);
+            additional_tools_tokens += tokens;
         }
+        source_groups
+            .entry(tool.source.as_str().to_string())
+            .or_default()
+            .push(entry.clone());
+        pack_groups.entry(tool.pack).or_default().push(entry);
     }
-    builtin_tools.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.label.cmp(&b.label)));
-    additional_tools.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.label.cmp(&b.label)));
-    let system_tools_tokens = builtin_tools.iter().map(|entry| entry.tokens).sum();
-    let additional_tools_tokens = additional_tools.iter().map(|entry| entry.tokens).sum();
+    let mut source_tool_groups = source_groups
+        .into_iter()
+        .map(|(title, mut entries)| {
+            entries.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.label.cmp(&b.label)));
+            ContextSectionGroup {
+                title: Some(format!("Source: {title}")),
+                entries,
+            }
+        })
+        .collect::<Vec<_>>();
+    let mut pack_tool_groups = pack_groups
+        .into_iter()
+        .map(|(title, mut entries)| {
+            entries.sort_by(|a, b| b.tokens.cmp(&a.tokens).then_with(|| a.label.cmp(&b.label)));
+            ContextSectionGroup {
+                title: Some(format!("Pack: {title}")),
+                entries,
+            }
+        })
+        .collect::<Vec<_>>();
+    source_tool_groups.sort_by(|a, b| a.title.cmp(&b.title));
+    pack_tool_groups.sort_by(|a, b| a.title.cmp(&b.title));
 
     let history = agent.history();
     let message_entries = history
@@ -185,16 +195,12 @@ pub fn build_context_report<C: LLMClient + Clone + 'static>(agent: &Agent<C>) ->
     sections.push(ContextSection {
         title: "Tools".to_string(),
         command_hint: Some("/help".to_string()),
-        groups: vec![
-            ContextSectionGroup {
-                title: Some("Core".to_string()),
-                entries: builtin_tools,
-            },
-            ContextSectionGroup {
-                title: Some("Additional".to_string()),
-                entries: additional_tools,
-            },
-        ],
+        groups: source_tool_groups,
+    });
+    sections.push(ContextSection {
+        title: "Tool Packs".to_string(),
+        command_hint: Some(format!("/help ({profile_name})")),
+        groups: pack_tool_groups,
     });
     sections.push(ContextSection {
         title: "Memory Files".to_string(),
@@ -510,14 +516,28 @@ mod tests {
             .iter()
             .find(|section| section.title == "Tools")
             .expect("tools section");
-        assert!(group(&tools.groups, "Core")
+        assert!(group(&tools.groups, "Source: builtin")
             .entries
             .iter()
-            .any(|entry| entry.label == "bash"));
-        assert!(group(&tools.groups, "Additional")
+            .any(|entry| entry.label.starts_with("bash")));
+        assert!(group(&tools.groups, "Source: runtime")
             .entries
             .iter()
-            .any(|entry| entry.label == "search_docs"));
+            .any(|entry| entry.label.starts_with("search_docs")));
+
+        let tool_packs = report
+            .sections
+            .iter()
+            .find(|section| section.title == "Tool Packs")
+            .expect("tool packs section");
+        assert!(group(&tool_packs.groups, "Pack: filesystem")
+            .entries
+            .iter()
+            .any(|entry| entry.label.starts_with("read_file")));
+        assert!(group(&tool_packs.groups, "Pack: runtime")
+            .entries
+            .iter()
+            .any(|entry| entry.label.starts_with("search_docs")));
 
         let memory = report
             .sections
