@@ -8,6 +8,8 @@
 // - type: crate::agent::config::Provider
 // - type: crate::agent::config::Config
 // - type: crate::agent::config::ConfigError
+// - type: crate::agent::config::ToolProfileConfig
+// - type: crate::agent::config::ToolSettings
 // uses:
 // - module: amadeus_config
 // invariants:
@@ -19,4 +21,4 @@
 
 //! Compatibility re-exports for configuration types.
 
-pub use amadeus_config::{Config, ConfigError, Provider};
+pub use amadeus_config::{Config, ConfigError, Provider, ToolProfileConfig, ToolSettings};

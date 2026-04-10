@@ -26,6 +26,7 @@ use amadeus_permissions::{PermissionRule, PermissionRuleAction};
 
 use crate::agent::config::Config;
 use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind};
+use crate::tools::ToolSpec;
 
 #[derive(Debug, Clone)]
 pub struct PermissionEnforcer {
@@ -53,6 +54,20 @@ impl PermissionEnforcer {
 
     pub fn check(&self, tool_name: &str, input: &Value) -> PermissionDecision {
         let required = self.required_mode_for(tool_name, input);
+        self.evaluate(tool_name, input, required)
+    }
+
+    pub fn check_with_spec(&self, spec: &ToolSpec, input: &Value) -> PermissionDecision {
+        let required = self.required_mode_for_spec(spec, input);
+        self.evaluate(&spec.name, input, required)
+    }
+
+    fn evaluate(
+        &self,
+        tool_name: &str,
+        input: &Value,
+        required: PermissionMode,
+    ) -> PermissionDecision {
         if let Some(rule_decision) = self.rule_decision(tool_name, input, required) {
             return rule_decision;
         }
@@ -112,6 +127,31 @@ impl PermissionEnforcer {
                 },
             },
             _ => PermissionMode::DangerFullAccess,
+        }
+    }
+
+    fn required_mode_for_spec(&self, spec: &ToolSpec, input: &Value) -> PermissionMode {
+        match spec.name.as_str() {
+            "write_file" | "edit_file" => {
+                if self.path_within_workspace(input) {
+                    spec.required_permission
+                } else {
+                    PermissionMode::DangerFullAccess
+                }
+            }
+            "bash" => match input
+                .get("command")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default()
+            {
+                command if is_read_only_command(command) => PermissionMode::ReadOnly,
+                command => match classify_command(command) {
+                    BashCommandKind::ReadOnly => PermissionMode::ReadOnly,
+                    BashCommandKind::WorkspaceWrite => PermissionMode::WorkspaceWrite,
+                    BashCommandKind::Destructive => PermissionMode::DangerFullAccess,
+                },
+            },
+            _ => spec.required_permission,
         }
     }
 
@@ -224,6 +264,7 @@ fn build_rules(config: &Config) -> Vec<PermissionRule> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::{ToolLevel, ToolSource, ToolSpec};
 
     fn make_config(mode: PermissionMode) -> Config {
         Config {
@@ -361,6 +402,40 @@ mod tests {
         assert!(matches!(
             enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
             PermissionDecision::Deny { .. }
+        ));
+    }
+
+    #[test]
+    fn spec_permission_defaults_to_declared_mode_with_runtime_escalation() {
+        let enforcer =
+            PermissionEnforcer::from_config(&make_config(PermissionMode::WorkspaceWrite));
+        let spec = ToolSpec {
+            name: "write_file".to_string(),
+            description: "write".to_string(),
+            input_schema: Value::Null,
+            required_permission: PermissionMode::WorkspaceWrite,
+            source: ToolSource::Builtin,
+            level: ToolLevel::Primitive,
+            tags: Vec::new(),
+            aliases: Vec::new(),
+            pack: "filesystem".to_string(),
+            prompt_approval: false,
+            visible_in_modes: vec![
+                PermissionMode::WorkspaceWrite,
+                PermissionMode::DangerFullAccess,
+            ],
+        };
+
+        assert_eq!(
+            enforcer.check_with_spec(&spec, &serde_json::json!({"path": "src/lib.rs"})),
+            PermissionDecision::Allow
+        );
+        assert!(matches!(
+            enforcer.check_with_spec(&spec, &serde_json::json!({"path": "/tmp/outside.rs"})),
+            PermissionDecision::Ask {
+                required: PermissionMode::DangerFullAccess,
+                ..
+            }
         ));
     }
 }
