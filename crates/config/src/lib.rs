@@ -15,9 +15,9 @@
 // - module: amadeus_permissions
 // - artifact: filesystem paths and files
 // invariants:
-// - Workspace settings override global settings and process env overrides both.
+// - Workspace settings override global settings and workspace-local settings override both.
 // side_effects:
-// - Reads filesystem state and process environment variables.
+// - Reads filesystem state to resolve layered settings and relative paths.
 // tests:
 // - cmd: cargo test -p config
 // @end-amadeus-header
@@ -52,8 +52,8 @@ pub enum ConfigError {
     #[error("Configuration error: {0}")]
     Config(String),
 
-    #[error("Environment variable '{0}' not set")]
-    MissingEnvVar(String),
+    #[error("Required setting '{0}' not configured")]
+    MissingSetting(String),
 
     #[error("Serde error: {0}")]
     Serde(#[from] serde_json::Error),
@@ -501,97 +501,6 @@ impl Config {
         }
     }
 
-    pub fn merge_env(mut self) -> Self {
-        if let Ok(provider) = env::var("PROVIDER") {
-            self.provider = parse_provider(&provider);
-        }
-
-        match &self.provider {
-            Provider::Anthropic => {
-                if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
-                    self.api_key = key;
-                }
-                if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
-            Provider::OpenAI => {
-                if let Ok(key) = env::var("OPENAI_API_KEY") {
-                    self.api_key = key;
-                }
-                if let Ok(url) = env::var("OPENAI_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
-        }
-
-        if let Ok(model) = env::var("MODEL_ID") {
-            self.model = model;
-        }
-
-        if let Ok(max_bytes) = env::var("MAX_OUTPUT_BYTES") {
-            if let Ok(bytes) = max_bytes.parse::<usize>() {
-                self.max_output_bytes = bytes;
-            }
-        }
-
-        if let Ok(blocked) = env::var("BLOCKED_COMMANDS") {
-            self.blocked_commands = blocked
-                .split(',')
-                .map(|cmd| cmd.trim().to_string())
-                .filter(|cmd| !cmd.is_empty())
-                .collect();
-        }
-
-        if let Ok(log_dir) = env::var("SESSION_LOG_DIR") {
-            self.session_log_dir = Some(PathBuf::from(log_dir));
-        }
-
-        if let Ok(compress) = env::var("SESSION_LOG_COMPRESS") {
-            if let Ok(value) = compress.parse::<bool>() {
-                self.session_log_compress = value;
-            }
-        }
-
-        if let Ok(timeout) = env::var("TIMEOUT_SECONDS") {
-            if let Ok(seconds) = timeout.parse::<u64>() {
-                self.timeout_seconds = seconds;
-            }
-        }
-
-        if let Ok(auto_compact) = env::var("AUTO_COMPACT") {
-            if let Ok(value) = auto_compact.parse::<bool>() {
-                self.auto_compact = value;
-            }
-        }
-
-        if let Ok(threshold) = env::var("COMPACT_THRESHOLD_PERCENT") {
-            if let Ok(value) = threshold.parse::<u8>() {
-                self.compact_threshold_percent = value;
-            }
-        }
-
-        if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
-            if let Ok(value) = preserve.parse::<usize>() {
-                self.compact_preserve_recent = value;
-            }
-        }
-
-        if let Ok(max_depth) = env::var("MAX_SUBAGENT_DEPTH") {
-            if let Ok(value) = max_depth.parse::<usize>() {
-                self.max_subagent_depth = value;
-            }
-        }
-
-        if let Ok(permission_mode) = env::var("PERMISSION_MODE") {
-            if let Some(mode) = PermissionMode::parse(&permission_mode) {
-                self.permission_mode = mode;
-            }
-        }
-
-        self
-    }
-
     pub fn to_compaction_config(&self) -> CompactionConfig {
         CompactionConfig {
             threshold_percent: self.compact_threshold_percent,
@@ -630,7 +539,6 @@ impl Config {
             }
         }
 
-        config = config.merge_env();
         config.workdir = workdir.to_path_buf();
         if validate_credentials {
             config.validate_credentials()?;
@@ -641,10 +549,10 @@ impl Config {
     fn validate_credentials(&self) -> Result<()> {
         match self.provider {
             Provider::Anthropic if self.api_key.is_empty() => {
-                Err(ConfigError::MissingEnvVar("ANTHROPIC_API_KEY".into()))
+                Err(ConfigError::MissingSetting("api_key".into()))
             }
             Provider::OpenAI if self.api_key.is_empty() => {
-                Err(ConfigError::MissingEnvVar("OPENAI_API_KEY".into()))
+                Err(ConfigError::MissingSetting("api_key".into()))
             }
             _ => Ok(()),
         }
@@ -958,10 +866,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
 
         let fake_home = temp.path().join("home");
         let global_root = fake_home.join(".amadeus");
@@ -1007,7 +912,6 @@ mod tests {
             ]
         );
 
-        restore_env("PROVIDER", provider);
         restore_env("HOME", home);
     }
 
@@ -1019,22 +923,15 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
         std::fs::write(workspace_root.join("env"), "MODEL_ID=env-model\n").unwrap();
-
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
-        let model = env::var("MODEL_ID").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "env-test-key");
-        env::remove_var("MODEL_ID");
+        std::fs::write(
+            workspace_root.join("settings.json"),
+            r#"{"provider":"anthropic","api_key":"settings-key"}"#,
+        )
+        .unwrap();
 
         let config = Config::load_with_hierarchy(&workdir).unwrap();
 
         assert_eq!(config.model, DEFAULT_MODEL);
-
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
-        restore_env("MODEL_ID", model);
     }
 
     #[test]
@@ -1102,12 +999,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "layer-key");
 
         let fake_home = temp.path().join("home");
         std::fs::create_dir_all(fake_home.join(".amadeus")).unwrap();
@@ -1115,7 +1007,7 @@ mod tests {
 
         std::fs::write(
             workspace_root.join("settings.json"),
-            r#"{"model":"workspace-model","timeout_seconds":45}"#,
+            r#"{"api_key":"workspace-key","model":"workspace-model","timeout_seconds":45}"#,
         )
         .unwrap();
         std::fs::write(
@@ -1132,8 +1024,6 @@ mod tests {
             workspace_root.join("settings.local.json")
         );
 
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
         restore_env("HOME", home);
     }
 
@@ -1219,12 +1109,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "merge-key");
 
         let fake_home = temp.path().join("home");
         let global_root = fake_home.join(".amadeus");
@@ -1276,8 +1161,6 @@ mod tests {
             vec!["tool(write_file)".to_string()]
         );
 
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
         restore_env("HOME", home);
     }
 }

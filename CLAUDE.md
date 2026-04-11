@@ -254,33 +254,22 @@ Located in `tests/` directory:
 - **Async/await**: Use Tokio runtime throughout
 - **Documentation**: Document public APIs with rustdoc comments
 
-## Environment Configuration
+## Configuration
 
-Create `.env` file from `.env.example`:
+Create `.amadeus/settings.json` in the workspace, or `~/.amadeus/settings.json` for global defaults:
 
-```bash
-# Provider selection
-PROVIDER=anthropic  # or "openai"
-
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-xxx
-ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-
-# OpenAI
-OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.openai.com/v1  # optional
-OPENAI_MODEL=gpt-4
-
-# Agent settings
-TIMEOUT_SECONDS=120
-MAX_OUTPUT_BYTES=50000
-WORKDIR=/path/to/project
-SESSION_LOG_DIR=./logs
-SESSION_LOG_COMPRESS=true
-
-# Blocked commands (comma-separated)
-BLOCKED_COMMANDS=rm -rf /,sudo
+```json
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "base_url": "https://api.anthropic.com",
+  "model": "claude-sonnet-4-5-20250929",
+  "timeout_seconds": 120,
+  "max_output_bytes": 50000,
+  "session_log_dir": "./logs",
+  "session_log_compress": true,
+  "blocked_commands": ["rm -rf /", "sudo"]
+}
 ```
 
 ## Session Management
@@ -299,7 +288,7 @@ let session = Agent::load_session(&sessions[0].0)?;
 agent.restore_session(&session).await;
 ```
 
-Session files are stored in JSON or compressed JSON.gz format in `SESSION_LOG_DIR`.
+Session files are stored in JSON or compressed JSON.gz format in the configured `session_log_dir`.
 
 ### Multi-Session Types
 

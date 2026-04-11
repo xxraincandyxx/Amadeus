@@ -7,7 +7,7 @@
 - `tmux-cli` installed (via `uv tool install claude-code-tools`)
 - `tmux` installed
 - Amadeus built with `cargo build --features full`
-- API key configured in `.env`
+- API key configured in `.amadeus/settings.json`
 
 ## The Testing Workflow
 
@@ -16,7 +16,8 @@
 ```bash
 # 1. Create clean workspace
 mkdir -p /tmp/amadeus_dl_project
-cp .env /tmp/amadeus_dl_project/.env 2>/dev/null
+mkdir -p /tmp/amadeus_dl_project/.amadeus
+cp .amadeus/settings.json /tmp/amadeus_dl_project/.amadeus/settings.json 2>/dev/null
 
 # 2. Build amadeus
 cargo build --features full
@@ -169,7 +170,8 @@ rm -rf /tmp/amadeus_dl_project
 ```bash
 # Setup
 mkdir -p /tmp/amadeus_dl_project
-cp .env /tmp/amadeus_dl_project/.env
+mkdir -p /tmp/amadeus_dl_project/.amadeus
+cp .amadeus/settings.json /tmp/amadeus_dl_project/.amadeus/settings.json
 cargo build --features full
 tmux-cli launch "bash"
 

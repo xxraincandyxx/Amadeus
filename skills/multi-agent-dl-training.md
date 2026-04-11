@@ -24,7 +24,8 @@ allowed_tools:
 **Setup:**
 ```bash
 mkdir -p /tmp/amadeus_dl_project
-cp .env /tmp/amadeus_dl_project/.env 2>/dev/null
+mkdir -p /tmp/amadeus_dl_project/.amadeus
+cp .amadeus/settings.json /tmp/amadeus_dl_project/.amadeus/settings.json 2>/dev/null
 cargo build --features full
 tmux-cli launch "bash"
 tmux-cli send "/path/to/amadeus --record /tmp/amadeus_dl_project/logs" --pane=remote-cli-session:1

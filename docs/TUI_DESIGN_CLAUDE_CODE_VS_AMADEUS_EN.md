@@ -12,7 +12,7 @@ This document summarizes what we observed when comparing the terminal UIs of **C
 
 1. **Environment**: In *remote* mode, `tmux-cli` manages windows under the `remote-cli-session` session. Start with `tmux-cli launch "zsh"` (or `bash`), then `tmux-cli send "<command>" --pane=<pane>`, so a failed process does not drop the pane with no output.
 2. **Inspection**: `tmux capture-pane -t remote-cli-session:<window-index> -p` captures plain-text layout (ANSI may be simplified in some setups). Use `tmux-cli wait_idle` before captures when the UI is still updating.
-3. **Notes**: Amadeus **exits immediately** if no valid API environment variables are set; run from a directory with `.env` or exported keys to see the full TUI (including the dashboard). Claude Code depends on its own auth/billing setup and is independent of this repo.
+3. **Notes**: Amadeus **exits immediately** if no valid API settings are configured; run from a directory with `.amadeus/settings.json` or `~/.amadeus/settings.json` to see the full TUI (including the dashboard). Claude Code depends on its own auth/billing setup and is independent of this repo.
 
 ---
 

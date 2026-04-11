@@ -305,9 +305,9 @@ impl BenchmarkRunner {
         }
 
         if case.mode == BenchmarkMode::Live && config.api_key.is_empty() {
-            return Err(AgentError::MissingEnvVar(match config.provider {
-                Provider::Anthropic => "ANTHROPIC_API_KEY".to_string(),
-                Provider::OpenAI => "OPENAI_API_KEY".to_string(),
+            return Err(AgentError::MissingSetting(match config.provider {
+                Provider::Anthropic => "api_key".to_string(),
+                Provider::OpenAI => "api_key".to_string(),
             }));
         }
 

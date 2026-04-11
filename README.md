@@ -230,31 +230,20 @@ The policy system blocks:
 
 ## Configuration
 
-Structured settings (`.amadeus/settings.json` or `~/.amadeus/settings.json`):
+Structured settings live in `.amadeus/settings.json`, with optional global defaults in `~/.amadeus/settings.json` and workspace overrides in `.amadeus/settings.local.json`:
 
-```bash
-# Provider selection
-PROVIDER=anthropic  # or "openai"
-
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-xxx
-ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-
-# OpenAI
-OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.openai.com/v1  # optional
-OPENAI_MODEL=gpt-4
-
-# Agent settings
-TIMEOUT_SECONDS=120
-MAX_OUTPUT_BYTES=50000
-WORKDIR=/path/to/project
-SESSION_LOG_DIR=./logs
-SESSION_LOG_COMPRESS=true
-
-# Blocked commands (comma-separated)
-BLOCKED_COMMANDS=rm -rf /,sudo
+```json
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "base_url": "https://api.anthropic.com",
+  "model": "claude-sonnet-4-5-20250929",
+  "timeout_seconds": 120,
+  "max_output_bytes": 50000,
+  "session_log_dir": "./logs",
+  "session_log_compress": true,
+  "blocked_commands": ["rm -rf /", "sudo"]
+}
 ```
 
 ## Features
