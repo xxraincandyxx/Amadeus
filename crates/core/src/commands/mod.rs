@@ -55,12 +55,14 @@ mod tests {
 
     #[test]
     fn slash_command_specs_include_hooks_and_rewind() {
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
     }
 
     #[test]
     fn parse_known_commands_and_aliases() {
+        assert_eq!(SlashCommand::parse("/btw"), Some(SlashCommand::Btw));
         assert_eq!(SlashCommand::parse("/help"), Some(SlashCommand::Help));
         assert_eq!(SlashCommand::parse("/compact"), Some(SlashCommand::Compact));
         assert_eq!(
@@ -78,8 +80,8 @@ mod tests {
     #[test]
     fn parse_unknown_command() {
         assert_eq!(
-            SlashCommand::parse("/btw"),
-            Some(SlashCommand::Unknown("btw".to_string()))
+            SlashCommand::parse("/unknown-command"),
+            Some(SlashCommand::Unknown("unknown-command".to_string()))
         );
         assert_eq!(SlashCommand::parse("hello"), None);
     }
