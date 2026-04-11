@@ -47,6 +47,12 @@ impl SlashCommandSpec {
 }
 
 pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
+    SlashCommandSpec::new(
+        "btw",
+        &[],
+        "Ask a side question without adding to conversation history",
+        Some("<question>"),
+    ),
     SlashCommandSpec::new("help", &[], "Show available commands", None),
     SlashCommandSpec::new("compact", &["compress"], "Trigger context compaction", None),
     SlashCommandSpec::new("context", &[], "Show current context usage", None),
@@ -63,6 +69,7 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashCommand {
+    Btw { question: Option<String> },
     Help,
     Compact,
     Context,
@@ -80,11 +87,17 @@ impl SlashCommand {
             return None;
         }
 
-        let mut parts = trimmed.trim_start_matches('/').split_whitespace();
+        let mut parts = trimmed.trim_start_matches('/').splitn(2, char::is_whitespace);
         let command = parts.next()?.to_ascii_lowercase();
-        let remainder = parts.next();
+        let remainder = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
 
         Some(match command.as_str() {
+            "btw" => Self::Btw {
+                question: remainder.map(String::from),
+            },
             "help" => Self::Help,
             "compact" | "compress" => Self::Compact,
             "context" => Self::Context,
@@ -100,6 +113,7 @@ impl SlashCommand {
 
     pub fn primary_name(&self) -> &'static str {
         match self {
+            Self::Btw { .. } => "btw",
             Self::Help => "help",
             Self::Compact => "compact",
             Self::Context => "context",
@@ -118,12 +132,23 @@ mod tests {
 
     #[test]
     fn slash_command_specs_include_hooks_and_rewind() {
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
     }
 
     #[test]
     fn parse_known_commands_and_aliases() {
+        assert_eq!(
+            SlashCommand::parse("/btw"),
+            Some(SlashCommand::Btw { question: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/btw hello there"),
+            Some(SlashCommand::Btw {
+                question: Some("hello there".to_string())
+            })
+        );
         assert_eq!(SlashCommand::parse("/help"), Some(SlashCommand::Help));
         assert_eq!(SlashCommand::parse("/compact"), Some(SlashCommand::Compact));
         assert_eq!(
@@ -141,8 +166,8 @@ mod tests {
     #[test]
     fn parse_unknown_command() {
         assert_eq!(
-            SlashCommand::parse("/btw"),
-            Some(SlashCommand::Unknown("btw".to_string()))
+            SlashCommand::parse("/unknown-command"),
+            Some(SlashCommand::Unknown("unknown-command".to_string()))
         );
         assert_eq!(SlashCommand::parse("hello"), None);
     }
