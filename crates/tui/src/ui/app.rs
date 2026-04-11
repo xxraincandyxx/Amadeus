@@ -58,7 +58,7 @@ use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent, SessionCheckpoint};
 use crate::client::LLMClient;
-use crate::commands::{build_context_report, SlashCommand};
+use crate::commands::{answer_side_question, build_context_report, SideQuestionOptions, SlashCommand};
 use crate::error::Result;
 use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
@@ -684,6 +684,7 @@ struct Session<C: LLMClient> {
     parent_session_id: Option<usize>,
     parent_request_id: Option<String>,
     transient_slash_response: Option<TransientSlashResponse>,
+    btw_response_rx: Option<mpsc::UnboundedReceiver<Result<(String, String)>>>,
 }
 
 impl<C: LLMClient + Clone + 'static> Session<C> {
@@ -883,24 +884,62 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             parent_session_id: None,
             parent_request_id: None,
             transient_slash_response: None,
+            btw_response_rx: None,
         }
+    }
+
+    fn poll_btw_response(&mut self) {
+        let Some(mut rx) = self.btw_response_rx.take() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(Ok((command, response))) => {
+                self.input.set_btw_dropup(command, response, false);
+            }
+            Ok(Err(error)) => {
+                self.input
+                    .set_btw_dropup("/btw", format!("Error: {error}"), true);
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                self.btw_response_rx = Some(rx);
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                self.input
+                    .set_btw_dropup("/btw", "Error: /btw request ended unexpectedly.", true);
+            }
+        }
+    }
+
+    fn start_btw_request(&mut self, command: String, question: String) {
+        let agent = self.agent.clone();
+        let in_flight_assistant_text = if self.current_text.trim().is_empty() {
+            None
+        } else {
+            Some(self.current_text.clone())
+        };
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.btw_response_rx = Some(rx);
+        self.input
+            .set_btw_dropup(command.clone(), "Thinking…", false);
+
+        tokio::spawn(async move {
+            let result = answer_side_question(
+                &agent,
+                &question,
+                SideQuestionOptions {
+                    in_flight_assistant_text,
+                },
+            )
+            .await
+            .map(|response| (command, response));
+            let _ = tx.send(result);
+        });
     }
 
     fn clear_transient_slash_response(&mut self) {
         self.transient_slash_response = None;
         self.input.set_placeholder_visible(true);
-    }
-
-    fn set_transient_slash_response(
-        &mut self,
-        command: impl Into<String>,
-        response: impl Into<String>,
-    ) {
-        self.input.set_placeholder_visible(false);
-        self.transient_slash_response = Some(TransientSlashResponse {
-            command: command.into(),
-            response: response.into(),
-        });
     }
 
     fn transient_slash_response_height(&self) -> u16 {
@@ -1811,6 +1850,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.sync_context_percent();
                 // Poll for compaction result (non-blocking)
                 self.poll_compaction_result();
+                self.poll_btw_response();
             }
         }
         Ok(())
@@ -2477,6 +2517,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        if self.stream_rx.is_some() {
+            return self.handle_streaming_input_key(key, terminal).await;
+        }
+
         match (key.modifiers, key.code) {
             (KeyModifiers::NONE, KeyCode::Enter) => {
                 self.submit_input().await?;
@@ -2703,6 +2747,117 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Ok(())
     }
 
+    async fn handle_streaming_input_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                if self.input.get_input().trim().is_empty() {
+                    self.cancel_stream(terminal)?;
+                } else {
+                    self.input.clear();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                if self.input.get_input().trim().is_empty() {
+                    self.cancel_stream(terminal)?;
+                } else {
+                    self.input.clear();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Enter) => {
+                if matches!(SlashCommand::parse(self.input.get_input().trim()), Some(SlashCommand::Btw { .. })) {
+                    self.submit_input().await?;
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Tab) => {
+                if self.input.completion_is_visible() {
+                    self.input.apply_completion();
+                } else if self.input.get_input().starts_with('/') {
+                    self.input.force_show_completion();
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::Tab) => {
+                if self.input.completion_is_visible() {
+                    self.input.completion_select_up();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                if self.input.completion_is_visible() {
+                    self.input.completion_select_down();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => {
+                self.input.handle_backspace();
+            }
+            (KeyModifiers::NONE, KeyCode::Delete) => {
+                self.input.handle_delete();
+            }
+            (KeyModifiers::NONE, KeyCode::Left) => {
+                self.input.move_cursor_left();
+            }
+            (KeyModifiers::NONE, KeyCode::Right) => {
+                self.input.move_cursor_right();
+            }
+            (KeyModifiers::NONE, KeyCode::Home) => {
+                self.input.move_cursor_line_start();
+            }
+            (KeyModifiers::NONE, KeyCode::End) => {
+                self.input.move_cursor_line_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('b' | 'B'))
+            | (KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
+                self.input.move_cursor_left();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('f' | 'F'))
+            | (KeyModifiers::SUPER, KeyCode::Char('f' | 'F')) => {
+                self.input.move_cursor_right();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('a' | 'A')) => {
+                self.input.move_cursor_line_start();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('e' | 'E')) => {
+                self.input.move_cursor_line_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('k' | 'K')) => {
+                self.input.delete_line_by_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('u' | 'U')) => {
+                self.input.delete_line_by_head();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('b' | 'B')) => {
+                self.input.move_cursor_word_back();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('f' | 'F')) => {
+                self.input.move_cursor_word_forward();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('d' | 'D')) => {
+                self.input.delete_next_word();
+            }
+            (KeyModifiers::ALT, KeyCode::Backspace) => {
+                self.input.delete_word();
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) => {
+                self.input.handle_char('?');
+            }
+            (KeyModifiers::SHIFT, KeyCode::Char('/')) => {
+                self.input.handle_char('?');
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    apply_shift_modifier(c)
+                } else {
+                    c
+                };
+                self.input.handle_char(c);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn cancel_stream(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -2756,12 +2911,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     }
 
     async fn submit_input(&mut self) -> Result<()> {
-        if self.stream_rx.is_some() {
-            return Ok(());
-        }
-
         let input = self.input.get_input();
         let trimmed = input.trim();
+        let parsed_command = SlashCommand::parse(trimmed);
+
+        if self.stream_rx.is_some()
+            && !matches!(parsed_command, Some(SlashCommand::Btw { .. }))
+        {
+            return Ok(());
+        }
 
         if trimmed.is_empty() || trimmed == "q" || trimmed == "exit" {
             if trimmed == "q" || trimmed == "exit" {
@@ -2773,14 +2931,18 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         self.footer.clear_status_message();
         self.clear_transient_slash_response();
+        self.input.clear_btw_dropup();
 
-        if let Some(command) = SlashCommand::parse(trimmed) {
+        if let Some(command) = parsed_command {
             match command {
-                SlashCommand::Btw => {
-                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
-                        .await?;
+                SlashCommand::Btw { question } => {
                     self.input.clear();
-                    self.set_transient_slash_response("/btw", "Usage: /btw");
+                    if let Some(question) = question.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+                        self.start_btw_request(trimmed.to_string(), question);
+                    } else {
+                        self.input
+                            .set_btw_dropup("/btw", "Usage: /btw <question>", false);
+                    }
                     return Ok(());
                 }
                 SlashCommand::Compact => {
@@ -4683,7 +4845,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slash_btw_uses_transient_response_without_transcript_history() {
+    async fn slash_btw_uses_input_dropup_without_transcript_history() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
         for ch in "/btw".chars() {
@@ -4694,12 +4856,8 @@ mod tests {
 
         assert!(matches!(session.mode, super::AppMode::Input));
         assert!(session.stream_rx.is_none());
-        let response = session
-            .transient_slash_response
-            .as_ref()
-            .expect("transient slash response");
-        assert_eq!(response.command, "/btw");
-        assert_eq!(response.response, "Usage: /btw");
+        assert!(session.input.btw_dropup_is_visible());
+        assert_eq!(session.input.completion_height(), 1);
         let rendered = session
             .messages
             .take_unrendered_lines(80)
@@ -4711,26 +4869,28 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn submitting_prompt_clears_previous_transient_slash_response() {
+    async fn submitting_prompt_clears_previous_btw_dropup() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
-        session.set_transient_slash_response("/btw", "Usage: /btw");
+        session.input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
         for ch in "hi".chars() {
             session.input.handle_char(ch);
         }
 
         session.submit_input().await.expect("prompt command");
 
-        assert!(session.transient_slash_response.is_none());
+        assert!(!session.input.btw_dropup_is_visible());
     }
 
     #[test]
-    fn render_shows_transient_slash_response() {
+    fn render_shows_btw_dropup_inside_input_area() {
         let backend = TestBackend::new(90, 14);
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
-        session.set_transient_slash_response("/btw", "Usage: /btw");
+        session
+            .input
+            .set_btw_dropup("/btw", "Usage: /btw <question>", false);
 
         terminal
             .draw(|frame| session.render(frame))
@@ -4741,8 +4901,8 @@ mod tests {
             .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
             .collect::<String>();
 
-        assert!(rendered.contains("❯ /btw"));
-        assert!(rendered.contains("⎿  Usage: /btw"));
+        assert!(rendered.contains("/btw"));
+        assert!(rendered.contains("Usage: /btw <question>"));
     }
 
     #[tokio::test]

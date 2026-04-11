@@ -31,7 +31,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use tui_textarea::{CursorMove, TextArea};
@@ -89,8 +89,14 @@ pub struct InputComponent {
     citation_matches: Vec<CitationCandidate>,
     active_citation_query: Option<ActiveCitationQuery>,
     citation_selected_index: usize,
+    btw_dropup: Option<BtwDropupState>,
     shortcuts_visible: bool,
     placeholder_visible: bool,
+}
+
+struct BtwDropupState {
+    lines: Vec<String>,
+    is_error: bool,
 }
 
 impl InputComponent {
@@ -130,6 +136,7 @@ impl InputComponent {
             citation_matches: Vec::new(),
             active_citation_query: None,
             citation_selected_index: 0,
+            btw_dropup: None,
             shortcuts_visible: false,
             placeholder_visible: true,
         };
@@ -150,6 +157,7 @@ impl InputComponent {
         self.setup_textarea();
         self.history_index = None;
         self.current_draft.clear();
+        self.clear_btw_dropup();
         self.refresh_suggestions();
     }
 
@@ -235,51 +243,61 @@ impl InputComponent {
     }
 
     pub fn insert_newline(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.insert_newline();
         self.refresh_suggestions();
     }
 
     pub fn handle_char(&mut self, c: char) {
+        self.clear_btw_dropup();
         self.textarea.insert_char(c);
         self.refresh_suggestions();
     }
 
     pub fn handle_backspace(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_char();
         self.refresh_suggestions();
     }
 
     pub fn handle_delete(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_next_char();
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_left(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Back);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_right(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Forward);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_start(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Head);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_end(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::End);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_forward(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::WordForward);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_back(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::WordBack);
         self.refresh_suggestions();
     }
@@ -295,26 +313,31 @@ impl InputComponent {
     }
 
     pub fn delete_line_by_end(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_line_by_end();
         self.refresh_suggestions();
     }
 
     pub fn delete_line_by_head(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_line_by_head();
         self.refresh_suggestions();
     }
 
     pub fn delete_word(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_word();
         self.refresh_suggestions();
     }
 
     pub fn delete_next_word(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_next_word();
         self.refresh_suggestions();
     }
 
     pub fn handle_paste(&mut self, pasted: &str) {
+        self.clear_btw_dropup();
         let normalized = if !pasted.contains('\n') && !pasted.contains('\r') {
             normalize_pasted_path(pasted)
         } else {
@@ -405,6 +428,8 @@ impl InputComponent {
 
         let comp_rows = if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
+        } else if let Some(dropup) = self.btw_dropup.as_ref() {
+            dropup.lines.len() as u16
         } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
         } else {
@@ -486,7 +511,9 @@ impl InputComponent {
         }
 
         if let Some(ci) = comp_idx {
-            if self.citation_completion_is_visible() {
+            if self.btw_dropup_is_visible() {
+                self.render_btw_dropup(frame, chunks[ci]);
+            } else if self.citation_completion_is_visible() {
                 self.render_citation_lines(frame, chunks[ci]);
             } else {
                 render_completion_lines(frame, chunks[ci], &self.completion);
@@ -560,11 +587,14 @@ impl InputComponent {
 
     /// Check if completion popup is visible.
     pub fn completion_is_visible(&self) -> bool {
-        self.citation_completion_is_visible() || self.completion.is_visible()
+        self.btw_dropup_is_visible() || self.citation_completion_is_visible() || self.completion.is_visible()
     }
 
     /// Move selection up in completion list.
     pub fn completion_select_up(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             self.citation_selected_index = self.citation_selected_index.saturating_sub(1);
         } else {
@@ -574,6 +604,9 @@ impl InputComponent {
 
     /// Move selection down in completion list.
     pub fn completion_select_down(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             if !self.citation_matches.is_empty() {
                 self.citation_selected_index =
@@ -586,12 +619,16 @@ impl InputComponent {
 
     pub fn force_show_completion(&mut self) {
         let input = self.get_input();
+        self.clear_btw_dropup();
         self.completion.update(&input);
         self.refresh_suggestions();
     }
 
     /// Apply the selected completion (replace input with command).
     pub fn apply_completion(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             if let (Some(query), Some(candidate)) = (
                 self.active_citation_query.clone(),
@@ -641,7 +678,9 @@ impl InputComponent {
     }
 
     pub fn completion_height(&self) -> u16 {
-        if self.citation_completion_is_visible() {
+        if let Some(dropup) = self.btw_dropup.as_ref() {
+            dropup.lines.len() as u16
+        } else if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
         } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
@@ -668,6 +707,32 @@ impl InputComponent {
 
     pub fn is_shortcuts_visible(&self) -> bool {
         self.shortcuts_visible
+    }
+
+    pub fn set_btw_dropup(
+        &mut self,
+        _command: impl Into<String>,
+        content: impl Into<String>,
+        is_error: bool,
+    ) {
+        let lines = content
+            .into()
+            .lines()
+            .take(4)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        self.btw_dropup = Some(BtwDropupState {
+            lines: if lines.is_empty() { vec![String::new()] } else { lines },
+            is_error,
+        });
+    }
+
+    pub fn clear_btw_dropup(&mut self) {
+        self.btw_dropup = None;
+    }
+
+    pub fn btw_dropup_is_visible(&self) -> bool {
+        self.btw_dropup.is_some()
     }
 
     fn citation_completion_is_visible(&self) -> bool {
@@ -728,6 +793,34 @@ impl InputComponent {
                 Line::from(Span::styled(format!("  {token}{desc}"), style))
             })
             .collect();
+
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+
+    fn render_btw_dropup(&self, frame: &mut Frame, area: Rect) {
+        let Some(dropup) = self.btw_dropup.as_ref() else {
+            return;
+        };
+        if area.height == 0 {
+            return;
+        }
+
+        let colors = get_colors();
+        let body_style = if dropup.is_error {
+            Style::default().fg(colors.status.error)
+        } else {
+            Style::default().fg(colors.text.secondary)
+        };
+
+        let width = area.width.saturating_sub(2) as usize;
+        let lines = dropup
+            .lines
+            .iter()
+            .map(|line| {
+                let text = truncate_with_ellipsis(line, width.max(1));
+                Line::from(Span::styled(format!("  {text}"), body_style))
+            })
+            .collect::<Vec<_>>();
 
         frame.render_widget(Paragraph::new(lines), area);
     }
@@ -1077,6 +1170,24 @@ mod tests {
 
         assert!(input.citation_completion_is_visible());
         assert!(input.completion_height() > 0);
+    }
+
+    #[test]
+    fn test_btw_dropup_reports_popup_height() {
+        let (_temp, mut input) = temp_input();
+        input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
+
+        assert!(input.btw_dropup_is_visible());
+        assert_eq!(input.completion_height(), 1);
+    }
+
+    #[test]
+    fn test_editing_clears_btw_dropup() {
+        let (_temp, mut input) = temp_input();
+        input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
+        input.handle_char('a');
+
+        assert!(!input.btw_dropup_is_visible());
     }
 
     #[test]

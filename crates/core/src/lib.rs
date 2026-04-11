@@ -47,11 +47,13 @@ pub use assessment::{
     AssessmentRunner, ScriptedAssessmentClient,
 };
 pub use commands::{
+    answer_side_question,
     apply_citation_candidate, build_context_report, filter_citation_candidates,
     find_active_citation_query, format_citation_markdown, normalize_pasted_path,
     parse_render_spans, scan_workspace_citation_candidates, ActiveCitationQuery,
     CitationApplyResult, CitationCandidate, CitationRenderSpan, ContextEntry, ContextReport,
-    ContextSection, ContextSectionGroup, SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS,
+    ContextSection, ContextSectionGroup, SideQuestionOptions, SlashCommand, SlashCommandSpec,
+    SLASH_COMMAND_SPECS,
 };
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};

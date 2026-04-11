@@ -5,8 +5,10 @@
 // feature_flags: none
 // provides:
 // - module: crate::commands
+// - module: crate::commands::btw
 // - module: crate::commands::composer
 // - module: crate::commands::context
+// - fn: crate::commands::btw::answer_side_question
 // - fn: crate::commands::composer::apply_citation_candidate
 // - fn: crate::commands::composer::filter_citation_candidates
 // - fn: crate::commands::composer::find_active_citation_query
@@ -14,6 +16,7 @@
 // - fn: crate::commands::composer::normalize_pasted_path
 // - fn: crate::commands::composer::parse_render_spans
 // - fn: crate::commands::composer::scan_workspace_citation_candidates
+// - type: crate::commands::btw::SideQuestionOptions
 // - type: crate::commands::composer::ActiveCitationQuery
 // - type: crate::commands::composer::CitationApplyResult
 // - type: crate::commands::composer::CitationCandidate
@@ -35,10 +38,12 @@
 // - cmd: cargo test -p core slash_command --features full
 // @end-amadeus-header
 
+pub mod btw;
 pub mod composer;
 pub mod context;
 
 pub use amadeus_commands::{SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS};
+pub use btw::{answer_side_question, SideQuestionOptions};
 pub use composer::{
     apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
     format_citation_markdown, normalize_pasted_path, parse_render_spans,
@@ -62,7 +67,10 @@ mod tests {
 
     #[test]
     fn parse_known_commands_and_aliases() {
-        assert_eq!(SlashCommand::parse("/btw"), Some(SlashCommand::Btw));
+        assert_eq!(
+            SlashCommand::parse("/btw"),
+            Some(SlashCommand::Btw { question: None })
+        );
         assert_eq!(SlashCommand::parse("/help"), Some(SlashCommand::Help));
         assert_eq!(SlashCommand::parse("/compact"), Some(SlashCommand::Compact));
         assert_eq!(
