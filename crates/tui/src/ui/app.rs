@@ -616,6 +616,12 @@ enum SlashDialogState {
     Rewind(RewindDialogState),
 }
 
+#[derive(Debug, Clone)]
+struct TransientSlashResponse {
+    command: String,
+    response: String,
+}
+
 struct Session<C: LLMClient> {
     agent: Agent<C>,
     mode: AppMode,
@@ -677,6 +683,7 @@ struct Session<C: LLMClient> {
     last_error: Option<String>,
     parent_session_id: Option<usize>,
     parent_request_id: Option<String>,
+    transient_slash_response: Option<TransientSlashResponse>,
 }
 
 impl<C: LLMClient + Clone + 'static> Session<C> {
@@ -875,7 +882,57 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             last_error: None,
             parent_session_id: None,
             parent_request_id: None,
+            transient_slash_response: None,
         }
+    }
+
+    fn clear_transient_slash_response(&mut self) {
+        self.transient_slash_response = None;
+        self.input.set_placeholder_visible(true);
+    }
+
+    fn set_transient_slash_response(
+        &mut self,
+        command: impl Into<String>,
+        response: impl Into<String>,
+    ) {
+        self.input.set_placeholder_visible(false);
+        self.transient_slash_response = Some(TransientSlashResponse {
+            command: command.into(),
+            response: response.into(),
+        });
+    }
+
+    fn transient_slash_response_height(&self) -> u16 {
+        if self.transient_slash_response.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
+    fn render_transient_slash_response(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let Some(response) = self.transient_slash_response.as_ref() else {
+            return;
+        };
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+
+        let colors = crate::ui::get_colors();
+        let command = format!("❯ {}", response.command);
+        let result = format!("  ⎿  {}", response.response);
+        let lines = vec![
+            Line::from(Span::styled(
+                command,
+                Style::default().fg(colors.text.primary),
+            )),
+            Line::from(Span::styled(
+                result,
+                Style::default().fg(colors.text.secondary),
+            )),
+        ];
+        frame.render_widget(Paragraph::new(lines), area);
     }
 
     fn checkpoint_preview(input: &str) -> String {
@@ -2714,8 +2771,18 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        self.footer.clear_status_message();
+        self.clear_transient_slash_response();
+
         if let Some(command) = SlashCommand::parse(trimmed) {
             match command {
+                SlashCommand::Btw => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.set_transient_slash_response("/btw", "Usage: /btw");
+                    return Ok(());
+                }
                 SlashCommand::Compact => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
@@ -2745,6 +2812,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.clear();
                     let help_text = "\
 **Available Commands**
+- `/btw`: Show `/btw` usage
 - `/help`: Show this help message
 - `/compact` or `/compress`: Force context compaction
 - `/context`: Show current context usage
@@ -2868,6 +2936,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .saturating_add(self.input.completion_height());
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 2;
+        let transient_slash_response_height = self.transient_slash_response_height();
 
         // If a sidebar is open, reserve space on the right.
         // Clamp sidebar width so the main area never collapses below a usable minimum.
@@ -2882,34 +2951,57 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         };
 
         let main_width = size.width.saturating_sub(sidebar_width);
-        let live_height = self.live_viewport_height(
-            main_width,
-            size.height
-                .saturating_sub(input_height)
-                .saturating_sub(status_height)
-                .saturating_sub(footer_height),
-        );
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(live_height),
-                Constraint::Length(input_height),
-                Constraint::Length(status_height),
-                Constraint::Length(footer_height),
-            ])
-            .split(Rect {
-                width: main_width,
-                ..size
-            });
+        let live_available_height = size
+            .height
+            .saturating_sub(input_height)
+            .saturating_sub(transient_slash_response_height)
+            .saturating_sub(status_height)
+            .saturating_sub(footer_height);
+        let live_height = self.live_viewport_height(main_width, live_available_height);
+        let live_height = if transient_slash_response_height > 0 {
+            live_height.min(live_available_height)
+        } else {
+            live_height
+        };
+        let layout_area = Rect {
+            width: main_width,
+            ..size
+        };
+        let layout = if transient_slash_response_height > 0 {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(live_height),
+                    Constraint::Length(transient_slash_response_height),
+                    Constraint::Length(input_height),
+                    Constraint::Length(status_height),
+                    Constraint::Length(footer_height),
+                ])
+                .split(layout_area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(live_height),
+                    Constraint::Length(input_height),
+                    Constraint::Length(status_height),
+                    Constraint::Length(footer_height),
+                ])
+                .split(layout_area)
+        };
 
         let live_area = layout[0];
-        let input_area = layout[1];
-        let status_area = layout[2];
-        let footer_area = layout[3];
+        let (transient_slash_response_area, input_area, status_area, footer_area) =
+            if transient_slash_response_height > 0 {
+                (layout[1], layout[2], layout[3], layout[4])
+            } else {
+                (Rect::default(), layout[1], layout[2], layout[3])
+            };
 
         self.messages_area = Rect::default();
 
         self.render_live_viewport(frame, live_area);
+        self.render_transient_slash_response(frame, transient_slash_response_area);
         self.input.render(frame, input_area);
         self.status_bar.render(frame, status_area);
         self.footer.render(frame, footer_area);
@@ -4591,17 +4683,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slash_unknown_skill_stays_local() {
+    async fn slash_btw_uses_transient_response_without_transcript_history() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
         for ch in "/btw".chars() {
             session.input.handle_char(ch);
         }
 
-        session.submit_input().await.expect("unknown skill command");
+        session.submit_input().await.expect("btw command");
 
         assert!(matches!(session.mode, super::AppMode::Input));
         assert!(session.stream_rx.is_none());
+        let response = session
+            .transient_slash_response
+            .as_ref()
+            .expect("transient slash response");
+        assert_eq!(response.command, "/btw");
+        assert_eq!(response.response, "Usage: /btw");
         let rendered = session
             .messages
             .take_unrendered_lines(80)
@@ -4609,7 +4707,42 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Unknown skill: btw"));
+        assert!(!rendered.contains("Usage: /btw"));
+    }
+
+    #[tokio::test]
+    async fn submitting_prompt_clears_previous_transient_slash_response() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.set_transient_slash_response("/btw", "Usage: /btw");
+        for ch in "hi".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session.submit_input().await.expect("prompt command");
+
+        assert!(session.transient_slash_response.is_none());
+    }
+
+    #[test]
+    fn render_shows_transient_slash_response() {
+        let backend = TestBackend::new(90, 14);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.set_transient_slash_response("/btw", "Usage: /btw");
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("❯ /btw"));
+        assert!(rendered.contains("⎿  Usage: /btw"));
     }
 
     #[tokio::test]

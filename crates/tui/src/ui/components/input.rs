@@ -90,6 +90,7 @@ pub struct InputComponent {
     active_citation_query: Option<ActiveCitationQuery>,
     citation_selected_index: usize,
     shortcuts_visible: bool,
+    placeholder_visible: bool,
 }
 
 impl InputComponent {
@@ -130,6 +131,7 @@ impl InputComponent {
             active_citation_query: None,
             citation_selected_index: 0,
             shortcuts_visible: false,
+            placeholder_visible: true,
         };
         input.refresh_suggestions();
         input
@@ -171,7 +173,17 @@ impl InputComponent {
                 .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
-        self.textarea.set_placeholder_text(composer_placeholder());
+        let placeholder = if self.placeholder_visible {
+            composer_placeholder()
+        } else {
+            String::new()
+        };
+        self.textarea.set_placeholder_text(placeholder);
+    }
+
+    pub fn set_placeholder_visible(&mut self, visible: bool) {
+        self.placeholder_visible = visible;
+        self.setup_textarea();
     }
 
     pub fn history_up(&mut self) {
@@ -483,7 +495,12 @@ impl InputComponent {
 
         let inner = chunks[inner_idx];
         self.textarea.set_block(Self::textarea_block());
-        self.textarea.set_placeholder_text(composer_placeholder());
+        let placeholder = if self.placeholder_visible {
+            composer_placeholder()
+        } else {
+            String::new()
+        };
+        self.textarea.set_placeholder_text(placeholder);
 
         const PROMPT: &str = "❯ ";
         let gutter_w = (PROMPT.width() as u16).clamp(1, inner.width);
