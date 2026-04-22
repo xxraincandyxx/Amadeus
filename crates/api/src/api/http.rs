@@ -51,8 +51,8 @@
 //! │  ├── GET  /sessions       → sessions::list_sessions         │
 //! │  ├── GET  /sessions/:id   → sessions::get_session           │
 //! │  ├── POST /sessions/:id/restore → sessions::restore_session │
-//! │  ├── GET  /config          → config::get_config                │
-//! │  ├── PATCH /config         → config::update_config             │
+//! │  ├── GET  /config         → config::get_config              │
+//! │  ├── PATCH /config        → config::update_config           │
 //! │  ├── GET  /history        → history::get_history            │
 //! │  ├── GET  /skills         → skills::list_skills             │
 //! │  ├── GET  /approvals      → approvals::list_pending         │
@@ -112,6 +112,7 @@ use crate::api::handlers::{
     list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
     update_config,
 };
+use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
 use crate::error::Result;
 use tokio::sync::RwLock;
@@ -126,13 +127,15 @@ use tokio::sync::RwLock;
 ///
 /// This struct is passed to every request handler via Axum's `State` extractor.
 /// It provides access to the shared client, config, and orchestra-aware agent orchestrator.
-pub struct AppState<C: LLMClient> {
+pub struct AppState<C: LLMClient + Clone + 'static> {
     /// The shared base LLM client.
     pub client: C,
     /// The shared runtime configuration.
     pub config: Arc<Config>,
     /// The multi-agent orchestrator for standalone agent management.
     pub orchestrator: Arc<RwLock<AgentOrchestrator<C>>>,
+    /// Interactive session bridge shared by richer agent routes.
+    pub session_bridge: Arc<LocalSessionBridge<C>>,
     /// The default user-led orchestra used by stateless task endpoints.
     pub default_orchestra_id: crate::core::id::TeamId,
 }
@@ -194,11 +197,16 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
         .await?;
     orchestrator.add_agent_to_orchestra(default_orchestra_id, main_agent_id)?;
     let orchestrator = Arc::new(RwLock::new(orchestrator));
+    let session_bridge = Arc::new(LocalSessionBridge::new(client.clone(), Arc::clone(&config)));
+    let _ = session_bridge
+        .create_session(Some("Main Agent".to_string()), AgentProfile::Default)
+        .await?;
 
     let state = Arc::new(AppState {
         client,
         config,
         orchestrator,
+        session_bridge,
         default_orchestra_id,
     });
 
