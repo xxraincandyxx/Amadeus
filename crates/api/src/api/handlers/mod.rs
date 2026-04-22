@@ -108,6 +108,7 @@ pub mod approvals;
 
 /// Agents handler for multi-agent management.
 pub mod agents;
+pub mod summarize;
 
 /*
  * ============================================================================
@@ -134,4 +135,5 @@ pub use history::get_history;
 pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;
 pub use stream::stream;
+pub use summarize::summarize;
 pub use tasks::handle_task;

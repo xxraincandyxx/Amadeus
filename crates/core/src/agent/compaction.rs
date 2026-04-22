@@ -500,11 +500,36 @@ impl ContextCompactor {
         }
     }
 
+    /// Generate a one-shot summary for the provided messages.
+    pub async fn summarize_preview<C: LLMClient + Clone + 'static>(
+        &self,
+        messages: &[Message],
+        client: &C,
+        prompt_override: Option<&str>,
+    ) -> Result<String> {
+        self.summarize_messages_with_prompt(messages, client, prompt_override)
+            .await
+    }
+
+    /// Generate an extract-only summary for the provided messages.
+    pub fn extract_summary(&self, messages: &[Message]) -> String {
+        self.extract_key_points(messages)
+    }
+
     /// Generate a summary of messages using LLM.
     async fn summarize_messages<C: LLMClient + Clone + 'static>(
         &self,
         messages: &[Message],
         client: &C,
+    ) -> Result<String> {
+        self.summarize_messages_with_prompt(messages, client, None).await
+    }
+
+    async fn summarize_messages_with_prompt<C: LLMClient + Clone + 'static>(
+        &self,
+        messages: &[Message],
+        client: &C,
+        prompt_override: Option<&str>,
     ) -> Result<String> {
         let conversation = self.format_messages_for_summary(messages);
 
@@ -522,7 +547,12 @@ impl ContextCompactor {
 
         let tool_schemas: Vec<serde_json::Value> = vec![];
         let mut stream = client
-            .create_message_stream(COMPRESSION_PROMPT, &summary_request, &tool_schemas, 1000)
+            .create_message_stream(
+                prompt_override.unwrap_or(COMPRESSION_PROMPT),
+                &summary_request,
+                &tool_schemas,
+                1000,
+            )
             .await?;
 
         use futures::StreamExt;

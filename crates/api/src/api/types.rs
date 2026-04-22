@@ -822,3 +822,31 @@ pub struct KillAgentResponse {
     /// Whether the kill was successful.
     pub success: bool,
 }
+
+/// Request body for the `/summarize` endpoint.
+#[derive(Debug, Deserialize)]
+pub struct SummarizeRequest {
+    /// Source text to summarize.
+    pub text: String,
+    /// Optional custom summarization prompt/system instruction.
+    #[serde(default)]
+    pub prompt: Option<String>,
+    /// Summarization mechanism: `llm` or `extract`.
+    #[serde(default)]
+    pub mechanism: Option<String>,
+    /// Maximum summary length in characters.
+    #[serde(default)]
+    pub max_summary_chars: Option<usize>,
+}
+
+/// Response body for the `/summarize` endpoint.
+#[derive(Debug, Serialize)]
+pub struct SummarizeResponse {
+    /// Generated summary text.
+    pub summary: String,
+    /// Mechanism used to produce the summary.
+    pub mechanism: String,
+    /// Prompt used when the `llm` mechanism is selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub prompt_used: Option<String>,
+}

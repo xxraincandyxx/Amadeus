@@ -110,7 +110,7 @@ use crate::api::handlers::{
     agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
     get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
     list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
-    update_config,
+    summarize, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
@@ -312,6 +312,8 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/history", get(get_history))
         // List available skills
         .route("/skills", get(list_skills))
+        // Summarize arbitrary text for research workflows
+        .route("/summarize", post(summarize))
         // =====================================================================
         // MULTI-AGENT ENDPOINTS
         // =====================================================================
