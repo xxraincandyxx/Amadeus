@@ -24,6 +24,7 @@
 pub mod agent;
 pub mod assessment;
 pub mod benchmark;
+pub mod bridge;
 pub mod client;
 pub mod commands;
 #[cfg(feature = "concurrency")]
