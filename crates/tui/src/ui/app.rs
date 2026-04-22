@@ -2941,7 +2941,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         self.start_btw_request(trimmed.to_string(), question);
                     } else {
                         self.input
-                            .set_btw_dropup("/btw", "Usage: /btw <question>", false);
+                            .set_btw_dropup("/btw", "Usage: /btw", false);
                     }
                     return Ok(());
                 }
@@ -4857,7 +4857,7 @@ mod tests {
         assert!(matches!(session.mode, super::AppMode::Input));
         assert!(session.stream_rx.is_none());
         assert!(session.input.btw_dropup_is_visible());
-        assert_eq!(session.input.completion_height(), 1);
+        assert_eq!(session.input.completion_height(), 2);
         let rendered = session
             .messages
             .take_unrendered_lines(80)
@@ -4872,7 +4872,7 @@ mod tests {
     async fn submitting_prompt_clears_previous_btw_dropup() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
-        session.input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
+        session.input.set_btw_dropup("/btw", "Usage: /btw", false);
         for ch in "hi".chars() {
             session.input.handle_char(ch);
         }
@@ -4884,25 +4884,30 @@ mod tests {
 
     #[test]
     fn render_shows_btw_dropup_inside_input_area() {
-        let backend = TestBackend::new(90, 14);
+        let backend = TestBackend::new(90, 20);
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
         session
             .input
-            .set_btw_dropup("/btw", "Usage: /btw <question>", false);
+            .set_btw_dropup("/btw", "Usage: /btw", false);
 
         terminal
             .draw(|frame| session.render(frame))
             .expect("render should succeed");
 
         let buffer = terminal.backend().buffer();
-        let rendered = (0..buffer.area.height)
-            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
-            .collect::<String>();
+        let lines = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
 
-        assert!(rendered.contains("/btw"));
-        assert!(rendered.contains("Usage: /btw <question>"));
+        assert!(lines.iter().any(|line| line.contains("/btw")));
+        assert!(lines.iter().any(|line| line.contains("Usage:")));
+        assert!(lines.iter().any(|line| line.contains("└")));
     }
 
     #[tokio::test]

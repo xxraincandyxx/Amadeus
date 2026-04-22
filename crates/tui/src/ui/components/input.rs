@@ -95,6 +95,7 @@ pub struct InputComponent {
 }
 
 struct BtwDropupState {
+    command: String,
     lines: Vec<String>,
     is_error: bool,
 }
@@ -429,7 +430,7 @@ impl InputComponent {
         let comp_rows = if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
         } else if let Some(dropup) = self.btw_dropup.as_ref() {
-            dropup.lines.len() as u16
+            1u16.saturating_add(dropup.lines.len() as u16)
         } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
         } else {
@@ -679,7 +680,7 @@ impl InputComponent {
 
     pub fn completion_height(&self) -> u16 {
         if let Some(dropup) = self.btw_dropup.as_ref() {
-            dropup.lines.len() as u16
+            1u16.saturating_add(dropup.lines.len() as u16)
         } else if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
         } else if self.completion.is_visible() {
@@ -711,7 +712,7 @@ impl InputComponent {
 
     pub fn set_btw_dropup(
         &mut self,
-        _command: impl Into<String>,
+        command: impl Into<String>,
         content: impl Into<String>,
         is_error: bool,
     ) {
@@ -722,6 +723,7 @@ impl InputComponent {
             .map(str::to_string)
             .collect::<Vec<_>>();
         self.btw_dropup = Some(BtwDropupState {
+            command: command.into(),
             lines: if lines.is_empty() { vec![String::new()] } else { lines },
             is_error,
         });
@@ -806,21 +808,32 @@ impl InputComponent {
         }
 
         let colors = get_colors();
+        let command_style = Style::default()
+            .fg(colors.text.primary)
+            .bg(colors.background.message);
         let body_style = if dropup.is_error {
             Style::default().fg(colors.status.error)
         } else {
             Style::default().fg(colors.text.secondary)
         };
 
-        let width = area.width.saturating_sub(2) as usize;
-        let lines = dropup
+        let command_width = area.width.saturating_sub(2) as usize;
+        let body_width = area.width.saturating_sub(6) as usize;
+        let mut lines = Vec::with_capacity(dropup.lines.len().saturating_add(1));
+        lines.push(Line::from(Span::styled(
+            format!("  {}", truncate_with_ellipsis(&dropup.command, command_width.max(1))),
+            command_style,
+        )));
+        lines.extend(dropup
             .lines
             .iter()
             .map(|line| {
-                let text = truncate_with_ellipsis(line, width.max(1));
-                Line::from(Span::styled(format!("  {text}"), body_style))
-            })
-            .collect::<Vec<_>>();
+                let text = truncate_with_ellipsis(line, body_width.max(1));
+                Line::from(vec![
+                    Span::styled("  └ ", Style::default().fg(colors.text.secondary)),
+                    Span::styled(text, body_style),
+                ])
+            }));
 
         frame.render_widget(Paragraph::new(lines), area);
     }
@@ -1175,16 +1188,16 @@ mod tests {
     #[test]
     fn test_btw_dropup_reports_popup_height() {
         let (_temp, mut input) = temp_input();
-        input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
+        input.set_btw_dropup("/btw", "Usage: /btw", false);
 
         assert!(input.btw_dropup_is_visible());
-        assert_eq!(input.completion_height(), 1);
+        assert_eq!(input.completion_height(), 2);
     }
 
     #[test]
     fn test_editing_clears_btw_dropup() {
         let (_temp, mut input) = temp_input();
-        input.set_btw_dropup("/btw", "Usage: /btw <question>", false);
+        input.set_btw_dropup("/btw", "Usage: /btw", false);
         input.handle_char('a');
 
         assert!(!input.btw_dropup_is_visible());
