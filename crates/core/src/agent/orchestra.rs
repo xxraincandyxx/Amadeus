@@ -1030,6 +1030,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRuntime<C> {
         worker_id.ok_or_else(|| AgentError::Config("No available worker".to_string()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn dispatch_internal(
         runtime_id: String,
         telemetry: Option<Arc<TelemetryRecorder>>,
