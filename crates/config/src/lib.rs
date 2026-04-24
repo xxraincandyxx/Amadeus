@@ -74,19 +74,10 @@ pub struct HookSettings {
     pub files: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TelemetrySettings {
     pub enabled: bool,
     pub jsonl_path: Option<PathBuf>,
-}
-
-impl Default for TelemetrySettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            jsonl_path: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
