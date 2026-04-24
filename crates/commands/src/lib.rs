@@ -42,7 +42,7 @@ impl SlashCommandSpec {
     }
 
     pub fn matches(&self, candidate: &str) -> bool {
-        self.name == candidate || self.aliases.iter().any(|alias| *alias == candidate)
+        self.name == candidate || self.aliases.contains(&candidate)
     }
 }
 
