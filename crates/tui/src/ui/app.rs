@@ -58,7 +58,9 @@ use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent, SessionCheckpoint};
 use crate::client::LLMClient;
-use crate::commands::{answer_side_question, build_context_report, SideQuestionOptions, SlashCommand};
+use crate::commands::{
+    answer_side_question, build_context_report, SideQuestionOptions, SlashCommand,
+};
 use crate::error::Result;
 use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
@@ -2768,7 +2770,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 }
             }
             (KeyModifiers::NONE, KeyCode::Enter) => {
-                if matches!(SlashCommand::parse(self.input.get_input().trim()), Some(SlashCommand::Btw { .. })) {
+                if matches!(
+                    SlashCommand::parse(self.input.get_input().trim()),
+                    Some(SlashCommand::Btw { .. })
+                ) {
                     self.submit_input().await?;
                 }
             }
@@ -2915,9 +2920,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let trimmed = input.trim();
         let parsed_command = SlashCommand::parse(trimmed);
 
-        if self.stream_rx.is_some()
-            && !matches!(parsed_command, Some(SlashCommand::Btw { .. }))
-        {
+        if self.stream_rx.is_some() && !matches!(parsed_command, Some(SlashCommand::Btw { .. })) {
             return Ok(());
         }
 
@@ -2939,11 +2942,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
                     self.input.clear();
-                    if let Some(question) = question.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
+                    if let Some(question) = question
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty())
+                    {
                         self.start_btw_request(trimmed.to_string(), question);
                     } else {
-                        self.input
-                            .set_btw_dropup("/btw", "Usage: /btw", false);
+                        self.input.set_btw_dropup("/btw", "Usage: /btw", false);
                     }
                     return Ok(());
                 }
@@ -4890,9 +4895,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
-        session
-            .input
-            .set_btw_dropup("/btw", "Usage: /btw", false);
+        session.input.set_btw_dropup("/btw", "Usage: /btw", false);
 
         terminal
             .draw(|frame| session.render(frame))

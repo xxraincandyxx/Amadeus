@@ -192,7 +192,9 @@ mod tests {
             &agent,
             "repeat the current file name",
             SideQuestionOptions {
-                in_flight_assistant_text: Some("I am currently reading docs/TMUX_TEST_FLOW.md".to_string()),
+                in_flight_assistant_text: Some(
+                    "I am currently reading docs/TMUX_TEST_FLOW.md".to_string(),
+                ),
             },
         )
         .await

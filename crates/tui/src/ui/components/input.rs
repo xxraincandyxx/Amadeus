@@ -588,7 +588,9 @@ impl InputComponent {
 
     /// Check if completion popup is visible.
     pub fn completion_is_visible(&self) -> bool {
-        self.btw_dropup_is_visible() || self.citation_completion_is_visible() || self.completion.is_visible()
+        self.btw_dropup_is_visible()
+            || self.citation_completion_is_visible()
+            || self.completion.is_visible()
     }
 
     /// Move selection up in completion list.
@@ -724,7 +726,11 @@ impl InputComponent {
             .collect::<Vec<_>>();
         self.btw_dropup = Some(BtwDropupState {
             command: command.into(),
-            lines: if lines.is_empty() { vec![String::new()] } else { lines },
+            lines: if lines.is_empty() {
+                vec![String::new()]
+            } else {
+                lines
+            },
             is_error,
         });
     }
@@ -821,19 +827,19 @@ impl InputComponent {
         let body_width = area.width.saturating_sub(6) as usize;
         let mut lines = Vec::with_capacity(dropup.lines.len().saturating_add(1));
         lines.push(Line::from(Span::styled(
-            format!("  {}", truncate_with_ellipsis(&dropup.command, command_width.max(1))),
+            format!(
+                "  {}",
+                truncate_with_ellipsis(&dropup.command, command_width.max(1))
+            ),
             command_style,
         )));
-        lines.extend(dropup
-            .lines
-            .iter()
-            .map(|line| {
-                let text = truncate_with_ellipsis(line, body_width.max(1));
-                Line::from(vec![
-                    Span::styled("  └ ", Style::default().fg(colors.text.secondary)),
-                    Span::styled(text, body_style),
-                ])
-            }));
+        lines.extend(dropup.lines.iter().map(|line| {
+            let text = truncate_with_ellipsis(line, body_width.max(1));
+            Line::from(vec![
+                Span::styled("  └ ", Style::default().fg(colors.text.secondary)),
+                Span::styled(text, body_style),
+            ])
+        }));
 
         frame.render_widget(Paragraph::new(lines), area);
     }

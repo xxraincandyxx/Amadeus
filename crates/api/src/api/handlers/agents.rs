@@ -396,10 +396,7 @@ pub async fn agent_stream<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Path(agent_id): Path<String>,
     axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>,
-) -> Result<
-    Sse<BoxedSseStream>,
-    Json<ErrorResponse>,
-> {
+) -> Result<Sse<BoxedSseStream>, Json<ErrorResponse>> {
     let rx = state
         .session_bridge
         .subscribe(&agent_id)

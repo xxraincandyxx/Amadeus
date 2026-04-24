@@ -522,7 +522,8 @@ impl ContextCompactor {
         messages: &[Message],
         client: &C,
     ) -> Result<String> {
-        self.summarize_messages_with_prompt(messages, client, None).await
+        self.summarize_messages_with_prompt(messages, client, None)
+            .await
     }
 
     async fn summarize_messages_with_prompt<C: LLMClient + Clone + 'static>(

@@ -33,11 +33,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::agent::loop_agent::create_approval_channels;
 use crate::agent::{
     Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest, Config, RunResult,
     SessionCheckpoint,
 };
-use crate::agent::loop_agent::create_approval_channels;
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
 
@@ -235,24 +235,19 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
     }
 
     /// Subscribe to bridge events for a specific session.
-    pub async fn subscribe(
-        &self,
-        session_id: &str,
-    ) -> Result<broadcast::Receiver<BridgeEvent>> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+    pub async fn subscribe(&self, session_id: &str) -> Result<broadcast::Receiver<BridgeEvent>> {
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         let session = session.lock().await;
         Ok(session.events_tx.subscribe())
     }
 
     /// Submit a user input to an idle session and start streaming events.
     pub async fn submit_input(&self, session_id: &str, prompt: String) -> Result<()> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
 
         let (agent, mut stream, events_tx, parent_session_id, parent_request_id) = {
             let mut session = session.lock().await;
@@ -286,7 +281,8 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             )
         };
 
-        agent.history()
+        agent
+            .history()
             .write()
             .await
             .push(crate::agent::Message::user(&prompt));
@@ -330,10 +326,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             }
         });
 
-        let session = self
-            .session_handle(&session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(&session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         session.lock().await.task = Some(task);
         Ok(())
     }
@@ -345,10 +340,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         approval_id: &str,
         decision: ApprovalDecision,
     ) -> Result<()> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         let approval_tx = {
             let mut session = session.lock().await;
             if !session.pending_approvals.contains_key(approval_id) {
@@ -386,10 +380,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
 
     /// Capture a checkpoint for the current session state.
     pub async fn checkpoint(&self, session_id: &str) -> Result<SessionCheckpoint> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         let checkpoint = session.lock().await.agent.checkpoint().await?;
         Ok(checkpoint)
     }
@@ -400,10 +393,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         session_id: &str,
         checkpoint: &SessionCheckpoint,
     ) -> Result<()> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         session
             .lock()
             .await
@@ -415,10 +407,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
 
     /// Close a session and abort any in-flight work.
     pub async fn close_session(&self, session_id: &str) -> Result<()> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         {
             let mut session = session.lock().await;
             if let Some(task) = session.task.take() {
@@ -436,7 +427,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                 .list_sessions()
                 .await
                 .into_iter()
-                .find(|session| session.id != session_id && session.status != BridgeSessionStatus::Closed)
+                .find(|session| {
+                    session.id != session_id && session.status != BridgeSessionStatus::Closed
+                })
                 .map(|session| session.id);
             *self.active_session_id.write().await = next_active;
         }
@@ -449,10 +442,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
     }
 
     async fn emit_session_update(&self, session_id: &str) -> Result<()> {
-        let session = self
-            .session_handle(session_id)
-            .await
-            .ok_or_else(|| AgentError::InvalidResponse(format!("Session '{}' not found", session_id)))?;
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
         let session = session.lock().await;
         let _ = session.events_tx.send(BridgeEvent::SessionUpdated {
             session: session.info.clone(),

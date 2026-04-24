@@ -87,7 +87,9 @@ impl SlashCommand {
             return None;
         }
 
-        let mut parts = trimmed.trim_start_matches('/').splitn(2, char::is_whitespace);
+        let mut parts = trimmed
+            .trim_start_matches('/')
+            .splitn(2, char::is_whitespace);
         let command = parts.next()?.to_ascii_lowercase();
         let remainder = parts
             .next()
