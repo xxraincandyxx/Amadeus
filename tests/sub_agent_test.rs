@@ -95,20 +95,21 @@ async fn test_sub_agent_uses_fresh_context_and_limited_child_tools() {
     assert!(tool_names(&parent_request.tools).contains(&"sub_agent".to_string()));
 
     let child_tool_names = tool_names(&child_request.tools);
-    assert!(
-        child_tool_names.len() >= 8,
-        "expected focused child tool subset, got {:?}",
-        child_tool_names
+    assert_eq!(
+        child_tool_names,
+        vec![
+            "bash".to_string(),
+            "edit_file".to_string(),
+            "glob".to_string(),
+            "glob_search".to_string(),
+            "grep".to_string(),
+            "grep_search".to_string(),
+            "read_file".to_string(),
+            "web_fetch".to_string(),
+            "web_fetch_text".to_string(),
+            "write_file".to_string(),
+        ]
     );
-    assert!(child_tool_names.contains(&"bash".to_string()));
-    assert!(child_tool_names.contains(&"read_file".to_string()));
-    assert!(child_tool_names.contains(&"write_file".to_string()));
-    assert!(child_tool_names.contains(&"edit_file".to_string()));
-    assert!(child_tool_names.contains(&"glob".to_string()));
-    assert!(child_tool_names.contains(&"grep".to_string()));
-    assert!(child_tool_names.contains(&"web_fetch".to_string()));
-    assert!(!child_tool_names.contains(&"todo".to_string()));
-    assert!(!child_tool_names.contains(&"sub_agent".to_string()));
     assert_eq!(child_request.messages.len(), 1);
 
     match &child_request.messages[0].content[0] {
