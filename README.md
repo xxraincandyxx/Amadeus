@@ -1,6 +1,6 @@
 # Amadeus - AI Agent SDK
 
-A Rust SDK for building AI agents with LLM support, featuring multi-provider compatibility, streaming responses, and a powerful tool system.
+A Rust SDK for building AI agents with LLM support, featuring multi-provider compatibility, streaming responses, a powerful tool system, and both HTTP and terminal adapters over a shared core runtime.
 
 ## Overview
 
@@ -14,9 +14,9 @@ Amadeus is a production-ready AI agent framework that provides:
 - **HTTP API**: Optional REST API server for integration
 - **Session Management**: Automatic logging and session restoration
 - **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
-- **Multi-Agent Coordination**: Supervisor/worker pattern for complex tasks
+- **Multi-Agent Coordination**: Orchestra-based local routing and delegated task execution
 
-Parity progress against the `refs/claw-code-parity` reference is tracked in `docs/EVALUATION.md` and only advanced when covered by automated tests.
+Parity progress against the `refs/claw-code-parity` reference is treated as a testing problem and should only be advanced when covered by automated tests in this repository.
 
 ## Installation
 
@@ -28,7 +28,6 @@ Parity progress against the `refs/claw-code-parity` reference is tracked in `doc
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
 
@@ -38,8 +37,7 @@ cp .amadeus/settings.example.json .amadeus/settings.json
 
 # Add your provider and API key to .amadeus/settings.json
 
-# Build the project
-cargo build --release
+cargo build --release --features full
 ```
 
 ## Usage
@@ -157,28 +155,24 @@ let agent = Agent::builder(client, config)
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Amadeus SDK                             │
-│                                                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
-│  │ Agent   │  │ Tools   │  │ Client  │  │ Policy  │       │
-│  │ Loop    │  │ Registry│  │ Trait   │  │ System  │       │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘       │
-│                                                             │
-│  ┌──────────────────────────────────────────────────┐      │
-│  │         Streaming Event System                    │      │
-│  └──────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+Amadeus is a workspace-based system rather than a single large crate.
+
+- The root `amadeus` crate is a compatibility facade.
+- `crates/core` contains the agent loop, provider clients, tools, policy, and orchestration runtime.
+- `crates/runtime` contains reusable coordination models and dispatch logic.
+- `crates/api` is the Axum HTTP adapter.
+- `crates/tui` is the ratatui terminal adapter.
+
+Runtime ingress looks like this:
+
+```text
+CLI/library call
+  -> config + provider selection
+  -> core runtime
+  -> TUI adapter | HTTP adapter | assessment runner
 ```
 
-### Core Components
-
-- **Agent Loop**: Orchestrates LLM interactions and tool execution
-- **LLM Client**: Trait-based abstraction for provider swapping
-- **Tool Registry**: Dynamic tool registration and execution
-- **Policy System**: Approval-based safety controls
-- **Event Stream**: Real-time updates via async streams
+The main live execution path is the ReAct-style `Agent` loop in `crates/core/src/agent/loop_agent.rs`, while local multi-agent routing is handled by `AgentOrchestrator` in `crates/core/src/agent/orchestra.rs`.
 
 ## Built-in Tools
 
@@ -257,13 +251,15 @@ amadeus = { git = "https://github.com/xxraincandyxx/Amadeus", features = ["full"
 
 Available features:
 
-- `tui` - Terminal UI (ratatui-based)
-- `api` - HTTP API server (axum-based)
-- `concurrency` - Concurrency primitives
-- `supervisor` - Multi-agent supervisor
-- `mesh` - Distributed agent coordination
-- `context` - Context management
-- `full` - All features
+- `api` - HTTP adapter and API surface, implies `orchestra`
+- `tui` - Terminal UI adapter, implies `concurrency`
+- `concurrency` - Locking and shared coordination primitives
+- `orchestra` - Canonical multi-agent orchestration surface
+- `team` - Legacy alias for `orchestra`
+- `supervisor` - Legacy alias for `orchestra`
+- `context` - Context management support
+- `test-utils` - Test helpers and recording support
+- `full` - All of the above
 
 ## Session Management
 
@@ -316,13 +312,13 @@ while let Some(event) = stream.next().await {
 
 ```bash
 # Debug build
-cargo build
+cargo build --features full
 
 # Release build
-cargo build --release
+cargo build --release --features full
 
 # Run tests
-cargo test
+cargo test --features full
 
 # Run with specific features
 cargo run --features tui
@@ -330,22 +326,21 @@ cargo run --features tui
 
 ### Project Structure
 
-```
+```text
 amadeus/
-├── src/
-│   ├── agent/         # Agent loop, events, messages
-│   ├── client/        # LLM client implementations
-│   ├── tools/         # Tool registry and tools
-│   ├── policy/        # Approval system
-│   ├── ui/            # Terminal UI components
-│   ├── api/           # HTTP API handlers
-│   ├── hooks/         # Hook system
-│   ├── skills/        # Skill templates
-│   ├── mcp/           # Model Context Protocol
-│   └── error.rs       # Error types
-├── tests/             # Integration tests
-├── examples/          # Example programs
-└── docs/              # Documentation
+├── src/                # facade crate + CLI bootstrap
+├── crates/
+│   ├── core/           # agent loop, tools, policy, orchestration
+│   ├── runtime/        # shared orchestration/task models
+│   ├── api/            # Axum adapter
+│   ├── tui/            # ratatui adapter
+│   ├── config/         # layered settings loading
+│   ├── commands/       # slash commands and helpers
+│   ├── skills/         # skill loading
+│   └── ...             # supporting shared crates
+├── tests/              # integration suites and harnesses
+├── examples/           # example bootstraps
+└── docs/               # architecture and workflow docs
 ```
 
 ### Code Count
