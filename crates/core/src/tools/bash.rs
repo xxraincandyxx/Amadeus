@@ -177,6 +177,13 @@ pub struct BashTool {
     max_output_bytes: usize,
 }
 
+#[derive(Debug, Clone)]
+pub struct BashExecutionResult {
+    pub output: String,
+    pub exit_code: i32,
+    pub timed_out: bool,
+}
+
 impl BashTool {
     pub fn from_config(config: &Config) -> Self {
         Self {
@@ -225,28 +232,66 @@ impl BashTool {
         }
     }
 
-    async fn execute_with_timeout(&self, cmd: &str) -> Result<String> {
-        let duration = Duration::from_secs(self.timeout_secs);
+    async fn execute_with_timeout(&self, cmd: &str, timeout_secs: u64) -> Result<String> {
+        Ok(self.run_with_timeout_and_status(cmd, timeout_secs).await?.0)
+    }
 
+    async fn run_command(&self, cmd: &str) -> Result<(i32, String)> {
+        let result = Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .current_dir(&self.workdir)
+            .kill_on_drop(true)
+            .output()
+            .await?;
+
+        let stdout = String::from_utf8_lossy(&result.stdout).to_string();
+        let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+        let exit_code = result.status.code().unwrap_or(-1);
+
+        Ok((exit_code, format!("{}{}", stdout, stderr)))
+    }
+
+    pub async fn execute_with_metadata(
+        &self,
+        cmd: &str,
+        timeout_secs: u64,
+    ) -> Result<BashExecutionResult> {
+        if self.is_blocked(cmd) {
+            return Err(AgentError::CommandBlocked(cmd.to_string()));
+        }
+
+        match self.run_with_timeout_and_status(cmd, timeout_secs).await {
+            Ok((output, exit_code)) => Ok(BashExecutionResult {
+                output: self.truncate_output(output),
+                exit_code,
+                timed_out: false,
+            }),
+            Err(AgentError::Timeout(secs)) => Ok(BashExecutionResult {
+                output: format!("Command timed out after {} seconds", secs),
+                exit_code: -1,
+                timed_out: true,
+            }),
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn run_with_timeout_and_status(
+        &self,
+        cmd: &str,
+        timeout_secs: u64,
+    ) -> Result<(String, i32)> {
+        let duration = Duration::from_secs(timeout_secs);
         let output = async {
-            let result = Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .current_dir(&self.workdir)
-                .kill_on_drop(true)
-                .output()
-                .await?;
-
-            let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&result.stderr).to_string();
-
-            Ok(format!("{}{}", stdout, stderr))
+            let result = self.run_command(cmd).await?;
+            Ok::<(i32, String), AgentError>(result)
         };
 
         match timeout(duration, output).await {
             Ok(result) => result,
-            Err(_) => Err(AgentError::Timeout(self.timeout_secs)),
+            Err(_) => Err(AgentError::Timeout(timeout_secs)),
         }
+        .map(|(status_code, output)| (output, status_code))
     }
 }
 
@@ -271,7 +316,44 @@ impl Tool for BashTool {
             return Err(AgentError::CommandBlocked(parsed.command));
         }
 
-        let output = self.execute_with_timeout(&parsed.command).await?;
+        let output = self
+            .execute_with_timeout(&parsed.command, self.timeout_secs)
+            .await?;
         Ok(self.truncate_output(output))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn execute_with_metadata_respects_override_timeout() {
+        let tool = BashTool::new(30, ".".to_string(), Vec::new(), 1024);
+        let result = tool
+            .execute_with_metadata("sleep 1", 0)
+            .await
+            .expect("expected execution metadata");
+        assert!(result.timed_out);
+        assert_eq!(result.exit_code, -1);
+        assert!(result.output.contains("timed out after 0 seconds"));
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_records_exit_code() {
+        let tool = BashTool::new(30, ".".to_string(), Vec::new(), 1024);
+        let result = tool
+            .execute_with_metadata("exit 7", 30)
+            .await
+            .expect("expected execution metadata");
+        assert!(!result.timed_out);
+        assert_eq!(result.exit_code, 7);
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_blocks_forbidden_commands() {
+        let tool = BashTool::new(30, ".".to_string(), vec!["rm -rf /".to_string()], 1024);
+        let result = tool.execute_with_metadata("rm -rf /", 30).await;
+        assert!(matches!(result.unwrap_err(), AgentError::CommandBlocked(_)));
     }
 }
