@@ -21,4 +21,6 @@
 
 //! Compatibility re-exports for configuration types.
 
-pub use amadeus_config::{Config, ConfigError, Provider, ToolProfileConfig, ToolSettings};
+pub use amadeus_config::{
+    Config, ConfigError, HookSandboxMode, Provider, ToolProfileConfig, ToolSettings,
+};

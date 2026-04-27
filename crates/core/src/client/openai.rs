@@ -717,10 +717,7 @@ impl OpenAIClient {
                             if let Some(tool_calls) =
                                 delta.get("tool_calls").and_then(|v| v.as_array())
                             {
-                                if !tool_calls.is_empty() {
-                                    let call = &tool_calls[0];
-
-                                    // New tool call (has ID)
+                                for call in tool_calls {
                                     if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
                                         if let Some(func) =
                                             call.get("function").and_then(|v| v.as_object())
@@ -736,7 +733,6 @@ impl OpenAIClient {
                                         }
                                     }
 
-                                    // Tool call arguments delta
                                     if let Some(func) =
                                         call.get("function").and_then(|v| v.as_object())
                                     {

@@ -207,6 +207,10 @@ impl HookRegistry {
 
     /// Load hooks from the global and workspace `.amadeus` roots.
     pub fn load_for_config(config: &Config) -> Result<Self> {
+        if !config.hooks.enabled {
+            return Ok(Self::new());
+        }
+
         let mut registry = Self::new();
 
         for (path, source) in config.hook_paths() {

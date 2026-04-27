@@ -17,7 +17,7 @@
 // - cmd: cargo test -p core permissions --features full
 // @end-amadeus-header
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde_json::Value;
 
@@ -25,6 +25,7 @@ pub use amadeus_permissions::{PermissionDecision, PermissionMode};
 use amadeus_permissions::{PermissionRule, PermissionRuleAction};
 
 use crate::agent::config::Config;
+use crate::security::PathPolicy;
 use crate::tools::bash::{classify_command, is_read_only_command, BashCommandKind};
 use crate::tools::ToolSpec;
 
@@ -33,23 +34,33 @@ pub struct PermissionEnforcer {
     active_mode: PermissionMode,
     workspace_roots: Vec<PathBuf>,
     rules: Vec<PermissionRule>,
+    path_policy: PathPolicy,
 }
 
 impl PermissionEnforcer {
     pub fn from_config(config: &Config) -> Self {
+        let workspace_roots = {
+            let mut roots = vec![config.workdir.clone()];
+            roots.extend(config.permissions.additional_directories.iter().cloned());
+            roots
+        };
         Self {
             active_mode: config.permission_mode,
-            workspace_roots: {
-                let mut roots = vec![config.workdir.clone()];
-                roots.extend(config.permissions.additional_directories.iter().cloned());
-                roots
-            },
+            workspace_roots: workspace_roots.clone(),
             rules: build_rules(config),
+            path_policy: PathPolicy::new(
+                config.workdir.clone(),
+                config.permissions.additional_directories.clone(),
+            ),
         }
     }
 
     pub fn active_mode(&self) -> PermissionMode {
         self.active_mode
+    }
+
+    pub fn workspace_roots(&self) -> &[PathBuf] {
+        &self.workspace_roots
     }
 
     pub fn check(&self, tool_name: &str, input: &Value) -> PermissionDecision {
@@ -187,20 +198,7 @@ impl PermissionEnforcer {
             return true;
         };
 
-        let candidate = Path::new(path);
-        let absolute = if candidate.is_absolute() {
-            candidate.to_path_buf()
-        } else {
-            self.workspace_roots
-                .first()
-                .cloned()
-                .unwrap_or_default()
-                .join(candidate)
-        };
-
-        self.workspace_roots
-            .iter()
-            .any(|workspace_root| absolute.starts_with(workspace_root))
+        self.path_policy.resolve_write(path).is_ok()
     }
 
     fn reason(&self, tool_name: &str, required: PermissionMode, input: &Value) -> String {

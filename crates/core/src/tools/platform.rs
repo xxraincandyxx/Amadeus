@@ -441,6 +441,16 @@ impl ComposedToolCatalog {
         records
     }
 
+    pub fn specs(&self) -> Vec<&ToolSpec> {
+        let mut specs = self
+            .entries
+            .values()
+            .map(|entry| &entry.spec)
+            .collect::<Vec<_>>();
+        specs.sort_by(|a, b| a.name.cmp(&b.name));
+        specs
+    }
+
     pub fn filter_by_name(&self, allowed: &[String]) -> Self {
         let allowed = allowed
             .iter()

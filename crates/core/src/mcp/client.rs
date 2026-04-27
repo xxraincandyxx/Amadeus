@@ -29,10 +29,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::time::timeout;
 
 use crate::error::{AgentError, Result};
+use crate::permissions::PermissionMode;
 
 /// Configuration for an MCP server.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,6 +48,14 @@ pub struct McpServerConfig {
     /// Environment variables to set.
     #[serde(default)]
     pub env: HashMap<String, String>,
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
+    #[serde(default)]
+    pub permission_overrides: HashMap<String, PermissionMode>,
+    #[serde(default)]
+    pub timeout_ms: Option<u64>,
 }
 
 /// Schema for an MCP tool.
@@ -68,6 +79,7 @@ pub struct McpClient {
     stdout_reader: BufReader<ChildStdout>,
     /// Request ID counter.
     request_id: u64,
+    request_timeout: Duration,
 }
 
 impl McpClient {
@@ -104,6 +116,7 @@ impl McpClient {
             stdin,
             stdout_reader,
             request_id: 0,
+            request_timeout: Duration::from_millis(config.timeout_ms.unwrap_or(30_000)),
         };
 
         // Initialize the connection
@@ -137,10 +150,13 @@ impl McpClient {
 
         // Read response
         let mut response_line = String::new();
-        self.stdout_reader
-            .read_line(&mut response_line)
-            .await
-            .map_err(|e| AgentError::Command(format!("Failed to read from MCP server: {}", e)))?;
+        timeout(
+            self.request_timeout,
+            self.stdout_reader.read_line(&mut response_line),
+        )
+        .await
+        .map_err(|_| AgentError::Command(format!("MCP request timed out: {}", method)))?
+        .map_err(|e| AgentError::Command(format!("Failed to read from MCP server: {}", e)))?;
 
         let response: Value = serde_json::from_str(&response_line)
             .map_err(|e| AgentError::Command(format!("Invalid JSON response: {}", e)))?;

@@ -53,7 +53,7 @@
 //! - **write_file**: Create or overwrite files (creates parent dirs)
 //! - **edit_file**: Make surgical changes using exact string matching
 
-use std::path::{Component, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -68,6 +68,7 @@ use crate::agent::config::Config;
 use crate::concurrency::FileLockManager;
 use crate::core::id::AgentId;
 use crate::error::{AgentError, Result};
+use crate::security::PathPolicy;
 use crate::tools::schema::{edit_file_tool, read_file_tool, write_file_tool};
 use crate::tools::tool_trait::Tool;
 
@@ -104,7 +105,7 @@ fn compute_content_hash(content: &str) -> u64 {
 
 #[derive(Clone)]
 pub struct FileTools {
-    workdir: PathBuf,
+    path_policy: PathPolicy,
     max_output_bytes: usize,
     /// Optional file lock manager for concurrent access control.
     file_lock_manager: Option<Arc<FileLockManager>>,
@@ -115,7 +116,10 @@ pub struct FileTools {
 impl FileTools {
     pub fn from_config(config: &Config) -> Self {
         Self {
-            workdir: config.workdir.clone(),
+            path_policy: PathPolicy::new(
+                config.workdir.clone(),
+                config.permissions.additional_directories.clone(),
+            ),
             max_output_bytes: config.max_output_bytes,
             file_lock_manager: None,
             agent_id: None,
@@ -129,7 +133,10 @@ impl FileTools {
         agent_id: Option<AgentId>,
     ) -> Self {
         Self {
-            workdir: config.workdir.clone(),
+            path_policy: PathPolicy::new(
+                config.workdir.clone(),
+                config.permissions.additional_directories.clone(),
+            ),
             max_output_bytes: config.max_output_bytes,
             file_lock_manager,
             agent_id,
@@ -138,7 +145,7 @@ impl FileTools {
 
     pub fn new(workdir: PathBuf, max_output_bytes: usize) -> Self {
         Self {
-            workdir,
+            path_policy: PathPolicy::new(workdir.clone(), Vec::new()),
             max_output_bytes,
             file_lock_manager: None,
             agent_id: None,
@@ -153,50 +160,19 @@ impl FileTools {
         agent_id: AgentId,
     ) -> Self {
         Self {
-            workdir,
+            path_policy: PathPolicy::new(workdir.clone(), Vec::new()),
             max_output_bytes,
             file_lock_manager: Some(file_lock_manager),
             agent_id: Some(agent_id),
         }
     }
 
-    fn safe_path(&self, p: &str) -> Result<PathBuf> {
-        let path = self.workdir.join(p);
+    fn safe_read_path(&self, p: &str) -> Result<PathBuf> {
+        self.path_policy.resolve_read(p)
+    }
 
-        let mut cleaned = PathBuf::new();
-        let mut first = true;
-        for component in path.components() {
-            match component {
-                Component::ParentDir => {
-                    if !cleaned.pop() {
-                        return Err(AgentError::PathEscape(PathBuf::from(p)));
-                    }
-                }
-                Component::CurDir => {}
-                Component::Normal(c) => cleaned.push(c),
-                Component::RootDir => {
-                    if first {
-                        cleaned.push(component);
-                    } else {
-                        return Err(AgentError::PathEscape(PathBuf::from(p)));
-                    }
-                }
-                Component::Prefix(_) => {
-                    if first {
-                        cleaned.push(component);
-                    } else {
-                        return Err(AgentError::PathEscape(PathBuf::from(p)));
-                    }
-                }
-            }
-            first = false;
-        }
-
-        if !cleaned.starts_with(&self.workdir) {
-            return Err(AgentError::PathEscape(PathBuf::from(p)));
-        }
-
-        Ok(cleaned)
+    fn safe_write_path(&self, p: &str) -> Result<PathBuf> {
+        self.path_policy.resolve_write(p)
     }
 
     fn truncate_output(&self, output: String) -> String {
@@ -222,7 +198,7 @@ impl FileTools {
     }
 
     pub async fn read(&self, path: &str, limit: Option<usize>) -> Result<String> {
-        let fp = self.safe_path(path)?;
+        let fp = self.safe_read_path(path)?;
 
         #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
@@ -274,7 +250,7 @@ impl FileTools {
     }
 
     pub async fn write(&self, path: &str, content: &str) -> Result<String> {
-        let fp = self.safe_path(path)?;
+        let fp = self.safe_write_path(path)?;
 
         #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
@@ -336,7 +312,7 @@ impl FileTools {
         new_text: &str,
         replace_all: bool,
     ) -> Result<String> {
-        let fp = self.safe_path(path)?;
+        let fp = self.safe_write_path(path)?;
 
         #[cfg(feature = "concurrency")]
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {

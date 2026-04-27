@@ -68,10 +68,40 @@ pub enum Provider {
     OpenAI,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookSettings {
     #[serde(default)]
     pub files: Vec<PathBuf>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_hook_timeout_seconds")]
+    pub timeout_seconds: u64,
+    #[serde(default = "default_hook_max_output_bytes")]
+    pub max_output_bytes: usize,
+    #[serde(default)]
+    pub sandbox: HookSandboxMode,
+}
+
+impl Default for HookSettings {
+    fn default() -> Self {
+        Self {
+            files: Vec::new(),
+            enabled: true,
+            timeout_seconds: default_hook_timeout_seconds(),
+            max_output_bytes: default_hook_max_output_bytes(),
+            sandbox: HookSandboxMode::Inherit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HookSandboxMode {
+    #[default]
+    Inherit,
+    ReadOnly,
+    WorkspaceWrite,
+    DangerFullAccess,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -441,9 +471,13 @@ impl Config {
             } else {
                 self.permission_mode
             },
-            hooks: if !other.hooks.files.is_empty() {
+            hooks: if other.hooks != HookSettings::default() {
                 HookSettings {
                     files: append_unique_paths(self.hooks.files, other.hooks.files),
+                    enabled: other.hooks.enabled,
+                    timeout_seconds: other.hooks.timeout_seconds,
+                    max_output_bytes: other.hooks.max_output_bytes,
+                    sandbox: other.hooks.sandbox,
                 }
             } else {
                 self.hooks
@@ -627,6 +661,25 @@ impl Config {
         }
 
         if let Some(hooks) = json.get("hooks").and_then(|v| v.as_object()) {
+            if let Some(enabled) = hooks.get("enabled").and_then(|v| v.as_bool()) {
+                self.hooks.enabled = enabled;
+            }
+            if let Some(timeout_seconds) = hooks.get("timeout_seconds").and_then(|v| v.as_u64()) {
+                self.hooks.timeout_seconds = timeout_seconds;
+            }
+            if let Some(max_output_bytes) = hooks.get("max_output_bytes").and_then(|v| v.as_u64()) {
+                if let Ok(max_output_bytes) = usize::try_from(max_output_bytes) {
+                    self.hooks.max_output_bytes = max_output_bytes;
+                }
+            }
+            if let Some(sandbox) = hooks.get("sandbox").and_then(|v| v.as_str()) {
+                self.hooks.sandbox = match sandbox {
+                    "read-only" => HookSandboxMode::ReadOnly,
+                    "workspace-write" => HookSandboxMode::WorkspaceWrite,
+                    "danger-full-access" => HookSandboxMode::DangerFullAccess,
+                    _ => HookSandboxMode::Inherit,
+                };
+            }
             if let Some(files) = hooks.get("files").and_then(|v| v.as_array()) {
                 self.hooks.files = append_unique_paths(
                     self.hooks.files.clone(),
@@ -795,6 +848,14 @@ fn parse_string_list(values: &[Value]) -> Vec<String> {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_hook_timeout_seconds() -> u64 {
+    10
+}
+
+fn default_hook_max_output_bytes() -> usize {
+    65_536
 }
 
 fn append_unique_strings(existing: Vec<String>, incoming: Vec<String>) -> Vec<String> {

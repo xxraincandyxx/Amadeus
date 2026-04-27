@@ -486,6 +486,11 @@ impl AnthropicClient {
                         if let Some(thinking) = json["delta"]["thinking"].as_str() {
                             events.push(StreamEvent::ThinkingDelta(thinking.to_string()));
                         }
+                        if let Some(partial_json) = json["delta"]["partial_json"].as_str() {
+                            events.push(StreamEvent::ToolCallDelta {
+                                arguments: partial_json.to_string(),
+                            });
+                        }
                     }
 
                     // -----------------------------------------------------

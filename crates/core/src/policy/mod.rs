@@ -47,6 +47,8 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::agent::config::Config;
 use crate::tools::bash::{classify_command, BashCommandKind};
@@ -79,9 +81,18 @@ pub struct Policy {
     /// Dangerous patterns: (tool_name, pattern_regex).
     #[serde(default)]
     pub dangerous_patterns: Vec<(String, String)>,
+    /// Scoped invocation grants remembered from compatibility AlwaysApprove decisions.
+    #[serde(default)]
+    pub scoped_auto_approve: Vec<ScopedApprovalGrant>,
     /// Cache for compiled regex patterns.
     #[serde(skip)]
     dangerous_regex_cache: Vec<(String, Regex)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScopedApprovalGrant {
+    pub tool: String,
+    pub input_hash: u64,
 }
 
 impl Default for Policy {
@@ -105,6 +116,7 @@ impl Default for Policy {
                 ("write_file".to_string(), "\\.pem$".to_string()),
                 ("write_file".to_string(), "\\.key$".to_string()),
             ],
+            scoped_auto_approve: Vec::new(),
             dangerous_regex_cache: Vec::new(),
         };
         policy.compile_patterns();
@@ -175,8 +187,11 @@ impl Policy {
     }
 
     /// Check if the tool is auto-approved.
-    fn is_auto_approved(&self, tool: &str, _input: &Value) -> bool {
-        self.auto_approve.iter().any(|t| t == tool)
+    fn is_auto_approved(&self, tool: &str, input: &Value) -> bool {
+        self.scoped_auto_approve
+            .iter()
+            .any(|grant| grant.tool == tool && grant.input_hash == input_hash(input))
+            || self.auto_approve.iter().any(|t| t == tool)
     }
 
     /// Check if the tool is auto-denied.
@@ -279,6 +294,17 @@ impl Policy {
         }
     }
 
+    /// Remember one exact tool invocation as approved.
+    pub fn add_scoped_auto_approve(&mut self, tool: &str, input: &Value) {
+        let grant = ScopedApprovalGrant {
+            tool: tool.to_string(),
+            input_hash: input_hash(input),
+        };
+        if !self.scoped_auto_approve.contains(&grant) {
+            self.scoped_auto_approve.push(grant);
+        }
+    }
+
     /// Add a tool pattern to the auto-approve list.
     /// Format: "tool" or "tool:pattern"
     pub fn add_auto_approve_pattern(&mut self, pattern: &str) {
@@ -291,6 +317,12 @@ impl Policy {
     pub fn set_mode(&mut self, mode: ApprovalMode) {
         self.mode = mode;
     }
+}
+
+fn input_hash(input: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    input.to_string().hash(&mut hasher);
+    hasher.finish()
 }
 
 #[cfg(test)]

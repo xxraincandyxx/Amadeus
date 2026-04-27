@@ -889,7 +889,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                 let mut tool_uses: Vec<ContentBlock> = Vec::new();
                 let mut tool_results: Vec<ContentBlock> = Vec::new();
-                let mut current_tool: Option<(String, String, String)> = None;
+                let mut pending_tools: Vec<(String, String, String)> = Vec::new();
                 let mut turn_text = String::new();
                 let mut has_activity_in_turn = false;
                 let mut turn_stop_reason = String::new();
@@ -912,7 +912,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::ToolCallStart { id, name } => {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;
-                            current_tool = Some((id.clone(), name.clone(), String::new()));
+                            pending_tools.push((id.clone(), name.clone(), String::new()));
                             yield Ok(AgentEvent::ToolStart {
                                 id,
                                 name,
@@ -922,7 +922,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         }
 
                         StreamEvent::ToolCallDelta { arguments } => {
-                            if let Some((ref id, _, ref mut input_str)) = current_tool {
+                            if let Some((ref id, _, ref mut input_str)) = pending_tools.last_mut() {
                                 input_str.push_str(&arguments);
                                 yield Ok(AgentEvent::ToolInputDelta {
                                     id: id.clone(),
@@ -932,10 +932,42 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             }
                         }
 
-                        StreamEvent::ToolCallDone(_id) => {
-                            if let Some((id, name, input_str)) = current_tool.take() {
-                                let mut input: serde_json::Value =
-                                    serde_json::from_str(&input_str).unwrap_or_else(|_| serde_json::json!({}));
+                        StreamEvent::ToolCallDone(done_id) => {
+                            let completed_tools = if done_id.is_empty() {
+                                std::mem::take(&mut pending_tools)
+                            } else if let Some(position) =
+                                pending_tools.iter().position(|(id, _, _)| id == &done_id)
+                            {
+                                vec![pending_tools.remove(position)]
+                            } else {
+                                pending_tools.pop().into_iter().collect::<Vec<_>>()
+                            };
+
+                            for (id, name, input_str) in completed_tools {
+                                let mut input: serde_json::Value = match serde_json::from_str(&input_str) {
+                                    Ok(input) => input,
+                                    Err(error) => {
+                                        let record = ToolExecutionRecord::new(
+                                            id,
+                                            name,
+                                            serde_json::json!({
+                                                "raw": input_str,
+                                                "error": error.to_string(),
+                                            }),
+                                            format!("Invalid tool JSON: {}", error),
+                                            true,
+                                        );
+
+                                        yield Ok(record.completion_event());
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                        continue;
+                                    }
+                                };
 
                                 // Run on_tool_start hooks
                                 let hook_action = hooks.on_tool_start(&name, &input).await;
@@ -1076,10 +1108,10 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                         Some(ApprovalDecision::AlwaysApprove) => {
                                             debug!(tool = %name, "Tool approved with remember, executing");
-                                            // Add to auto-approve list
+                                            // Remember the exact invocation rather than approving the whole tool.
                                             {
                                                 let mut policy_guard = policy.write().await;
-                                                policy_guard.add_auto_approve(&name);
+                                                policy_guard.add_scoped_auto_approve(&name, &input);
                                             }
                                             // Fall through to execute
                                         }
