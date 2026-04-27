@@ -56,6 +56,8 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec::new("help", &[], "Show available commands", None),
     SlashCommandSpec::new("compact", &["compress"], "Trigger context compaction", None),
     SlashCommandSpec::new("context", &[], "Show current context usage", None),
+    SlashCommandSpec::new("tools", &[], "Inspect active tool catalog", None),
+    SlashCommandSpec::new("prompt", &[], "Inspect active prompt profile", None),
     SlashCommandSpec::new("hooks", &[], "Inspect configured hook phases", None),
     SlashCommandSpec::new("new-agent", &[], "Create a new agent session", None),
     SlashCommandSpec::new(
@@ -73,6 +75,8 @@ pub enum SlashCommand {
     Help,
     Compact,
     Context,
+    Tools,
+    Prompt,
     Hooks,
     NewAgent,
     Rewind { steps: Option<usize> },
@@ -103,6 +107,8 @@ impl SlashCommand {
             "help" => Self::Help,
             "compact" | "compress" => Self::Compact,
             "context" => Self::Context,
+            "tools" => Self::Tools,
+            "prompt" => Self::Prompt,
             "hooks" => Self::Hooks,
             "new-agent" => Self::NewAgent,
             "rewind" => Self::Rewind {
@@ -119,6 +125,8 @@ impl SlashCommand {
             Self::Help => "help",
             Self::Compact => "compact",
             Self::Context => "context",
+            Self::Tools => "tools",
+            Self::Prompt => "prompt",
             Self::Hooks => "hooks",
             Self::NewAgent => "new-agent",
             Self::Rewind { .. } => "rewind",
@@ -136,6 +144,8 @@ mod tests {
     fn slash_command_specs_include_hooks_and_rewind() {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
     }
 
@@ -157,6 +167,8 @@ mod tests {
             SlashCommand::parse("/compress"),
             Some(SlashCommand::Compact)
         );
+        assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
+        assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),

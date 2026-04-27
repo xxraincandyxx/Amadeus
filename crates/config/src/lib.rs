@@ -8,6 +8,8 @@
 // - type: crate::Provider
 // - type: crate::Config
 // - type: crate::ConfigError
+// - type: crate::PromptSettings
+// - type: crate::ToolOverrideConfig
 // uses:
 // - module: amadeus_prompts
 // - module: amadeus_context
@@ -155,12 +157,27 @@ pub struct ToolProfileConfig {
     pub model_permission_mode: Option<PermissionMode>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolOverrideConfig {
+    pub description: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub prompt_approval: Option<bool>,
+    #[serde(default)]
+    pub visible_in_modes: Vec<PermissionMode>,
+    pub required_permission: Option<PermissionMode>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolSettings {
     pub default_profile: String,
     pub subagent_profile: String,
     #[serde(default)]
     pub profiles: HashMap<String, ToolProfileConfig>,
+    #[serde(default)]
+    pub overrides: HashMap<String, ToolOverrideConfig>,
 }
 
 impl Default for ToolSettings {
@@ -168,6 +185,63 @@ impl Default for ToolSettings {
         Self {
             default_profile: "default".to_string(),
             subagent_profile: "subagent".to_string(),
+            profiles: HashMap::new(),
+            overrides: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PromptMergeMode {
+    #[default]
+    Append,
+    Prepend,
+    Replace,
+    Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptSectionConfig {
+    pub id: String,
+    pub title: Option<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptProfileConfig {
+    #[serde(default)]
+    pub mode: PromptMergeMode,
+    #[serde(default)]
+    pub sections: Vec<PromptSectionConfig>,
+    #[serde(default)]
+    pub files: Vec<PathBuf>,
+    #[serde(default = "default_true")]
+    pub include_project_context: bool,
+}
+
+impl Default for PromptProfileConfig {
+    fn default() -> Self {
+        Self {
+            mode: PromptMergeMode::Append,
+            sections: Vec::new(),
+            files: Vec::new(),
+            include_project_context: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptSettings {
+    pub active_profile: String,
+    #[serde(default)]
+    pub profiles: HashMap<String, PromptProfileConfig>,
+}
+
+impl Default for PromptSettings {
+    fn default() -> Self {
+        Self {
+            active_profile: "default".to_string(),
             profiles: HashMap::new(),
         }
     }
@@ -199,6 +273,8 @@ pub struct Config {
     pub permissions: PermissionSettings,
     #[serde(default)]
     pub tools: ToolSettings,
+    #[serde(default)]
+    pub prompts: PromptSettings,
 }
 
 impl Default for Config {
@@ -224,6 +300,7 @@ impl Default for Config {
             telemetry: TelemetrySettings::default(),
             permissions: PermissionSettings::default(),
             tools: ToolSettings::default(),
+            prompts: PromptSettings::default(),
         }
     }
 }
@@ -348,16 +425,71 @@ impl Config {
     }
 
     pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
-        let mut prompt = amadeus_prompts::render_system_prompt(
+        let base_prompt = amadeus_prompts::render_system_prompt(
             &self.workdir.display().to_string(),
             include_sub_agent_tool,
         );
+        let profile = self.prompt_profile();
+        let custom_sections = self.render_prompt_profile_sections(profile);
+        let mut prompt = match profile.map(|profile| profile.mode).unwrap_or_default() {
+            PromptMergeMode::Append => append_prompt_sections(base_prompt, custom_sections),
+            PromptMergeMode::Prepend => append_prompt_sections(custom_sections, base_prompt),
+            PromptMergeMode::Replace => custom_sections,
+            PromptMergeMode::Off => base_prompt,
+        };
 
-        if let Some(ctx) = ProjectContext::load(&self.workdir) {
-            prompt.push_str(&ctx.to_prompt_section());
+        let include_project_context = profile
+            .map(|profile| profile.include_project_context)
+            .unwrap_or(true);
+        if include_project_context {
+            if let Some(ctx) = ProjectContext::load(&self.workdir) {
+                prompt.push_str(&ctx.to_prompt_section());
+            }
         }
 
         prompt
+    }
+
+    pub fn prompt_profile(&self) -> Option<&PromptProfileConfig> {
+        self.prompts.profiles.get(&self.prompts.active_profile)
+    }
+
+    pub fn prompt_profile_name(&self) -> &str {
+        &self.prompts.active_profile
+    }
+
+    pub fn prompt_profile_section_count(&self) -> usize {
+        self.prompt_profile()
+            .map(|profile| profile.sections.len() + profile.files.len())
+            .unwrap_or(0)
+    }
+
+    fn render_prompt_profile_sections(&self, profile: Option<&PromptProfileConfig>) -> String {
+        let Some(profile) = profile else {
+            return String::new();
+        };
+
+        let mut rendered = String::new();
+        for section in &profile.sections {
+            append_prompt_section(
+                &mut rendered,
+                section.title.as_deref().unwrap_or(section.id.as_str()),
+                &section.content,
+            );
+        }
+        for file in &profile.files {
+            if let Ok(content) = std::fs::read_to_string(file) {
+                append_prompt_section(
+                    &mut rendered,
+                    &file
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or("Prompt File"),
+                    &content,
+                );
+            }
+        }
+        rendered
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
@@ -519,9 +651,22 @@ impl Config {
                         self.tools.subagent_profile
                     },
                     profiles: merge_tool_profiles(self.tools.profiles, other.tools.profiles),
+                    overrides: merge_tool_overrides(self.tools.overrides, other.tools.overrides),
                 }
             } else {
                 self.tools
+            },
+            prompts: if other.prompts != PromptSettings::default() {
+                PromptSettings {
+                    active_profile: if other.prompts.active_profile != "default" {
+                        other.prompts.active_profile
+                    } else {
+                        self.prompts.active_profile
+                    },
+                    profiles: merge_prompt_profiles(self.prompts.profiles, other.prompts.profiles),
+                }
+            } else {
+                self.prompts
             },
         }
     }
@@ -801,6 +946,90 @@ impl Config {
                     self.tools.profiles.insert(name.clone(), profile);
                 }
             }
+            if let Some(overrides) = tool_settings.get("overrides").and_then(|v| v.as_object()) {
+                for (name, raw_override) in overrides {
+                    let mut tool_override =
+                        self.tools.overrides.get(name).cloned().unwrap_or_default();
+                    if let Some(description) =
+                        raw_override.get("description").and_then(|v| v.as_str())
+                    {
+                        tool_override.description = Some(description.to_string());
+                    }
+                    if let Some(aliases) = raw_override.get("aliases").and_then(|v| v.as_array()) {
+                        tool_override.aliases = append_unique_strings(
+                            tool_override.aliases,
+                            parse_string_list(aliases),
+                        );
+                    }
+                    if let Some(tags) = raw_override.get("tags").and_then(|v| v.as_array()) {
+                        tool_override.tags =
+                            append_unique_strings(tool_override.tags, parse_string_list(tags));
+                    }
+                    if let Some(prompt_approval) = raw_override
+                        .get("prompt_approval")
+                        .and_then(|v| v.as_bool())
+                    {
+                        tool_override.prompt_approval = Some(prompt_approval);
+                    }
+                    if let Some(visible_in_modes) = raw_override
+                        .get("visible_in_modes")
+                        .and_then(|v| v.as_array())
+                    {
+                        tool_override.visible_in_modes = visible_in_modes
+                            .iter()
+                            .filter_map(|mode| mode.as_str().and_then(PermissionMode::parse))
+                            .collect();
+                    }
+                    if let Some(required_permission) = raw_override
+                        .get("required_permission")
+                        .and_then(|v| v.as_str())
+                        .and_then(PermissionMode::parse)
+                    {
+                        tool_override.required_permission = Some(required_permission);
+                    }
+                    self.tools.overrides.insert(name.clone(), tool_override);
+                }
+            }
+        }
+
+        if let Some(prompt_settings) = json.get("prompts").and_then(|v| v.as_object()) {
+            if let Some(active_profile) = prompt_settings
+                .get("active_profile")
+                .and_then(|v| v.as_str())
+            {
+                self.prompts.active_profile = active_profile.to_string();
+            }
+            if let Some(profiles) = prompt_settings.get("profiles").and_then(|v| v.as_object()) {
+                for (name, raw_profile) in profiles {
+                    let mut profile = self.prompts.profiles.get(name).cloned().unwrap_or_default();
+                    if let Some(mode) = raw_profile.get("mode").and_then(|v| v.as_str()) {
+                        profile.mode = parse_prompt_merge_mode(mode);
+                    }
+                    if let Some(include_project_context) = raw_profile
+                        .get("include_project_context")
+                        .and_then(|v| v.as_bool())
+                    {
+                        profile.include_project_context = include_project_context;
+                    }
+                    if let Some(files) = raw_profile.get("files").and_then(|v| v.as_array()) {
+                        profile.files = append_unique_paths(
+                            profile.files,
+                            files
+                                .iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|path| resolve_path(base_dir, path))
+                                .collect(),
+                        );
+                    }
+                    if let Some(sections) = raw_profile.get("sections").and_then(|v| v.as_array()) {
+                        profile.sections = merge_prompt_sections(
+                            profile.sections,
+                            parse_prompt_sections(sections),
+                        );
+                    }
+                    self.prompts.profiles.insert(name.clone(), profile);
+                }
+            }
         }
     }
 }
@@ -846,6 +1075,31 @@ fn parse_string_list(values: &[Value]) -> Vec<String> {
         .collect()
 }
 
+fn parse_prompt_merge_mode(input: &str) -> PromptMergeMode {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "prepend" => PromptMergeMode::Prepend,
+        "replace" => PromptMergeMode::Replace,
+        "off" => PromptMergeMode::Off,
+        _ => PromptMergeMode::Append,
+    }
+}
+
+fn parse_prompt_sections(values: &[Value]) -> Vec<PromptSectionConfig> {
+    values
+        .iter()
+        .filter_map(|value| {
+            let object = value.as_object()?;
+            let id = object.get("id")?.as_str()?.to_string();
+            let content = object.get("content")?.as_str()?.to_string();
+            let title = object
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string);
+            Some(PromptSectionConfig { id, title, content })
+        })
+        .collect()
+}
+
 fn default_true() -> bool {
     true
 }
@@ -877,6 +1131,91 @@ fn merge_tool_profiles(
         merged.insert(name, profile);
     }
     merged
+}
+
+fn merge_tool_overrides(
+    existing: HashMap<String, ToolOverrideConfig>,
+    incoming: HashMap<String, ToolOverrideConfig>,
+) -> HashMap<String, ToolOverrideConfig> {
+    let mut merged = existing;
+    for (name, incoming_override) in incoming {
+        let current = merged.remove(&name).unwrap_or_default();
+        merged.insert(
+            name,
+            ToolOverrideConfig {
+                description: incoming_override.description.or(current.description),
+                aliases: append_unique_strings(current.aliases, incoming_override.aliases),
+                tags: append_unique_strings(current.tags, incoming_override.tags),
+                prompt_approval: incoming_override
+                    .prompt_approval
+                    .or(current.prompt_approval),
+                visible_in_modes: if incoming_override.visible_in_modes.is_empty() {
+                    current.visible_in_modes
+                } else {
+                    incoming_override.visible_in_modes
+                },
+                required_permission: incoming_override
+                    .required_permission
+                    .or(current.required_permission),
+            },
+        );
+    }
+    merged
+}
+
+fn merge_prompt_profiles(
+    existing: HashMap<String, PromptProfileConfig>,
+    incoming: HashMap<String, PromptProfileConfig>,
+) -> HashMap<String, PromptProfileConfig> {
+    let mut merged = existing;
+    for (name, incoming_profile) in incoming {
+        let current = merged.remove(&name).unwrap_or_default();
+        merged.insert(
+            name,
+            PromptProfileConfig {
+                mode: incoming_profile.mode,
+                sections: merge_prompt_sections(current.sections, incoming_profile.sections),
+                files: append_unique_paths(current.files, incoming_profile.files),
+                include_project_context: incoming_profile.include_project_context,
+            },
+        );
+    }
+    merged
+}
+
+fn merge_prompt_sections(
+    existing: Vec<PromptSectionConfig>,
+    incoming: Vec<PromptSectionConfig>,
+) -> Vec<PromptSectionConfig> {
+    let mut merged = existing;
+    for section in incoming {
+        if let Some(existing) = merged.iter_mut().find(|item| item.id == section.id) {
+            *existing = section;
+        } else {
+            merged.push(section);
+        }
+    }
+    merged
+}
+
+fn append_prompt_sections(first: String, second: String) -> String {
+    if first.is_empty() {
+        second
+    } else if second.is_empty() {
+        first
+    } else {
+        format!("{first}\n\n{second}")
+    }
+}
+
+fn append_prompt_section(rendered: &mut String, title: &str, content: &str) {
+    if !rendered.is_empty() {
+        rendered.push_str("\n\n");
+    }
+    rendered.push_str("## ");
+    rendered.push_str(title);
+    rendered.push_str("\n\n");
+    rendered.push_str(content.trim());
 }
 
 fn append_unique_paths(existing: Vec<PathBuf>, incoming: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -1041,6 +1380,95 @@ mod tests {
             planner.model_permission_mode,
             Some(PermissionMode::ReadOnly)
         );
+    }
+
+    #[test]
+    fn load_from_file_reads_prompt_profiles_and_tool_overrides() {
+        let temp = tempdir().unwrap();
+        let config_dir = temp.path().join(".amadeus");
+        std::fs::create_dir_all(config_dir.join("prompts")).unwrap();
+        std::fs::write(config_dir.join("prompts/team.md"), "Prefer short replies.").unwrap();
+        let path = config_dir.join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "api_key":"x",
+                "prompts":{
+                    "active_profile":"team",
+                    "profiles":{
+                        "team":{
+                            "mode":"prepend",
+                            "include_project_context":false,
+                            "sections":[{"id":"style","title":"Style","content":"Be concise."}],
+                            "files":["prompts/team.md"]
+                        }
+                    }
+                },
+                "tools":{
+                    "overrides":{
+                        "bash":{
+                            "description":"Run approved workspace shell commands.",
+                            "aliases":["shell"],
+                            "tags":["custom"],
+                            "prompt_approval":true,
+                            "visible_in_modes":["workspace-write"],
+                            "required_permission":"workspace-write"
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.prompts.active_profile, "team");
+        let profile = config.prompts.profiles.get("team").unwrap();
+        assert_eq!(profile.mode, PromptMergeMode::Prepend);
+        assert!(!profile.include_project_context);
+        assert_eq!(profile.sections[0].id, "style");
+        assert_eq!(profile.files, vec![config_dir.join("prompts/team.md")]);
+
+        let bash = config.tools.overrides.get("bash").unwrap();
+        assert_eq!(
+            bash.description.as_deref(),
+            Some("Run approved workspace shell commands.")
+        );
+        assert_eq!(bash.aliases, vec!["shell".to_string()]);
+        assert_eq!(bash.tags, vec!["custom".to_string()]);
+        assert_eq!(bash.prompt_approval, Some(true));
+        assert_eq!(bash.visible_in_modes, vec![PermissionMode::WorkspaceWrite]);
+        assert_eq!(
+            bash.required_permission,
+            Some(PermissionMode::WorkspaceWrite)
+        );
+    }
+
+    #[test]
+    fn configured_system_prompt_preserves_default_and_supports_append() {
+        let temp = tempdir().unwrap();
+        let mut config = Config {
+            workdir: temp.path().to_path_buf(),
+            ..Config::default()
+        };
+        let default_prompt = config.system_prompt(false);
+
+        config.prompts.profiles.insert(
+            "default".to_string(),
+            PromptProfileConfig {
+                sections: vec![PromptSectionConfig {
+                    id: "style".to_string(),
+                    title: Some("Style".to_string()),
+                    content: "Prefer compact explanations.".to_string(),
+                }],
+                ..PromptProfileConfig::default()
+            },
+        );
+
+        let configured_prompt = config.system_prompt(false);
+        assert!(configured_prompt.starts_with(&default_prompt));
+        assert!(configured_prompt.contains("## Style"));
+        assert!(configured_prompt.contains("Prefer compact explanations."));
     }
 
     #[test]

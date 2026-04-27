@@ -10,8 +10,10 @@
 // - type: crate::tools::platform::ToolPolicy
 // - type: crate::tools::platform::ToolPack
 // - type: crate::tools::platform::ToolProfile
+// - type: crate::tools::platform::ToolOverrideStatus
 // - type: crate::tools::platform::ComposedToolCatalog
 // uses:
+// - module: amadeus_config
 // - module: crate::error
 // - module: crate::permissions
 // - module: crate::tools::tool_trait
@@ -27,6 +29,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use amadeus_config::ToolOverrideConfig;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -237,6 +240,7 @@ struct ToolCatalogEntry {
     spec: ToolSpec,
     policy: ToolPolicy,
     executor: Arc<dyn ToolExecutor>,
+    overridden: bool,
 }
 
 impl std::fmt::Debug for ToolCatalogEntry {
@@ -256,6 +260,12 @@ pub struct ToolCatalogView {
     pub source: ToolSource,
     pub level: ToolLevel,
     pub schema: Value,
+    pub aliases: Vec<String>,
+    pub required_permission: PermissionMode,
+    pub prompt_approval: bool,
+    pub enabled: bool,
+    pub visible_to_model: bool,
+    pub overridden: bool,
 }
 
 /// Fully composed tool catalog for one agent profile.
@@ -279,6 +289,15 @@ impl std::fmt::Debug for ComposedToolCatalog {
 impl ComposedToolCatalog {
     /// Compose a tool catalog from packs and a profile.
     pub fn compose(packs: &[ToolPack], profile: ToolProfile) -> Self {
+        Self::compose_with_overrides(packs, profile, &HashMap::new())
+    }
+
+    /// Compose a tool catalog with safe model-facing overrides.
+    pub fn compose_with_overrides(
+        packs: &[ToolPack],
+        profile: ToolProfile,
+        overrides: &HashMap<String, ToolOverrideConfig>,
+    ) -> Self {
         let enabled_packs = if profile.enabled_packs.is_empty() {
             None
         } else {
@@ -329,18 +348,18 @@ impl ComposedToolCatalog {
                     continue;
                 }
 
+                let mut spec = tool.spec.clone();
+                let overridden = apply_tool_override(&mut spec, overrides.get(&tool.spec.name));
                 let visible_modes = tool
                     .policy
                     .visible_in_modes
                     .clone()
-                    .unwrap_or_else(|| tool.spec.visible_in_modes.clone());
+                    .unwrap_or_else(|| spec.visible_in_modes.clone());
                 if tool.policy.visible_to_model
                     && !visible_modes.contains(&profile.model_permission_mode)
                 {
                     continue;
                 }
-
-                let mut spec = tool.spec.clone();
                 if let Some(permission) = tool.policy.permission_override {
                     spec.required_permission = permission;
                 }
@@ -353,12 +372,13 @@ impl ComposedToolCatalog {
                     spec: spec.clone(),
                     policy: tool.policy.clone(),
                     executor: Arc::clone(&tool.executor),
+                    overridden,
                 };
                 entries.insert(spec.name.clone(), entry);
 
                 if profile.allow_aliases {
-                    for alias in &tool.spec.aliases {
-                        aliases.insert(alias.clone(), tool.spec.name.clone());
+                    for alias in &spec.aliases {
+                        aliases.insert(alias.clone(), spec.name.clone());
                     }
                 }
             }
@@ -435,6 +455,12 @@ impl ComposedToolCatalog {
                 source: entry.spec.source,
                 level: entry.spec.level,
                 schema: entry.spec.provider_definition(),
+                aliases: entry.spec.aliases.clone(),
+                required_permission: entry.spec.required_permission,
+                prompt_approval: entry.spec.prompt_approval,
+                enabled: entry.policy.enabled,
+                visible_to_model: entry.policy.visible_to_model,
+                overridden: entry.overridden,
             })
             .collect::<Vec<_>>();
         records.sort_by(|a, b| a.pack.cmp(&b.pack).then_with(|| a.name.cmp(&b.name)));
@@ -487,6 +513,47 @@ impl ComposedToolCatalog {
             .get(&canonical)
             .ok_or_else(|| AgentError::ToolNotFound(canonical.clone()))?;
         entry.executor.execute(&canonical, input).await
+    }
+}
+
+fn apply_tool_override(spec: &mut ToolSpec, override_config: Option<&ToolOverrideConfig>) -> bool {
+    let Some(override_config) = override_config else {
+        return false;
+    };
+
+    let mut changed = false;
+    if let Some(description) = &override_config.description {
+        spec.description = description.clone();
+        changed = true;
+    }
+    if !override_config.aliases.is_empty() {
+        append_unique(&mut spec.aliases, &override_config.aliases);
+        changed = true;
+    }
+    if !override_config.tags.is_empty() {
+        append_unique(&mut spec.tags, &override_config.tags);
+        changed = true;
+    }
+    if let Some(prompt_approval) = override_config.prompt_approval {
+        spec.prompt_approval = prompt_approval;
+        changed = true;
+    }
+    if !override_config.visible_in_modes.is_empty() {
+        spec.visible_in_modes = override_config.visible_in_modes.clone();
+        changed = true;
+    }
+    if let Some(required_permission) = override_config.required_permission {
+        spec.required_permission = required_permission;
+        changed = true;
+    }
+    changed
+}
+
+fn append_unique(existing: &mut Vec<String>, incoming: &[String]) {
+    for value in incoming {
+        if !existing.contains(value) {
+            existing.push(value.clone());
+        }
     }
 }
 

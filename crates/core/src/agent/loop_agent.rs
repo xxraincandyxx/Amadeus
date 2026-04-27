@@ -179,6 +179,8 @@ pub struct AgentBuilder<C: LLMClient> {
     hooks: HookRegistry,
     policy: Policy,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    tool_profile_override: Option<String>,
+    prompt_profile_override: Option<String>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -196,6 +198,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             hooks,
             policy: Policy::default(),
             telemetry: None,
+            tool_profile_override: None,
+            prompt_profile_override: None,
         }
     }
 
@@ -203,6 +207,11 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_default_tools(mut self) -> Self {
         self.tools =
             ToolRegistry::with_defaults_and_todo(&self.config, Arc::clone(&self.todo_manager));
+        if let Some(profile_name) = &self.tool_profile_override {
+            let profile =
+                ToolRegistry::configured_profile(&self.config, false, Some(profile_name.as_str()));
+            self.tools = self.tools.with_profile(profile);
+        }
         self.include_sub_agent_tool = true;
         self
     }
@@ -217,6 +226,22 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_tools(mut self, tools: ToolRegistry) -> Self {
         self.tools = tools;
         self.include_sub_agent_tool = false;
+        self
+    }
+
+    /// Select a configured tool profile for this agent session.
+    pub fn with_tool_profile(mut self, profile: impl Into<String>) -> Self {
+        let profile = profile.into();
+        self.tool_profile_override = Some(profile.clone());
+        let resolved =
+            ToolRegistry::configured_profile(&self.config, false, Some(profile.as_str()));
+        self.tools = self.tools.with_profile(resolved);
+        self
+    }
+
+    /// Select a configured prompt profile for this agent session.
+    pub fn with_prompt_profile(mut self, profile: impl Into<String>) -> Self {
+        self.prompt_profile_override = Some(profile.into());
         self
     }
 
@@ -269,14 +294,21 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     }
 
     pub fn build(self) -> Agent<C> {
+        let config = if let Some(profile) = self.prompt_profile_override {
+            let mut config = (*self.config).clone();
+            config.prompts.active_profile = profile;
+            Arc::new(config)
+        } else {
+            Arc::clone(&self.config)
+        };
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
         let subagent_coordinator = Arc::new(SubAgentCoordinator::new());
         let tools = if self.include_sub_agent_tool {
-            if self.subagent_depth < self.config.max_subagent_depth {
+            if self.subagent_depth < config.max_subagent_depth {
                 self.tools.register(Box::new(SubAgentTool::new(
                     self.client.clone(),
-                    Arc::clone(&self.config),
+                    Arc::clone(&config),
                     self.hooks.clone(),
                     Arc::clone(&policy),
                     self.subagent_depth,
@@ -295,7 +327,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         Agent {
             client: self.client,
             tools,
-            config: self.config,
+            config,
             history,
             todo_manager: self.todo_manager,
             hooks: self.hooks,
