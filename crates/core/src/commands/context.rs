@@ -15,7 +15,6 @@
 // - module: crate::agent::loop_agent::Agent<C>
 // - module: crate::client::LLMClient
 // - module: crate::context::ProjectContext
-// - module: crate::prompts
 // - module: crate::skills::registry::SkillRegistry
 // - module: crate::tools::registry::ToolRegistry
 // - artifact: filesystem paths and files

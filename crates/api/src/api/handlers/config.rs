@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: HTTP handler implementation for config routes.
+// summary: HTTP handler implementation for config routes and read-only prompt/tool summaries.
 // layer: api
 // status: active
 // feature_flags:
@@ -12,6 +12,7 @@
 // - module: crate::api::http::AppState
 // - module: crate::api::types
 // - module: crate::client::LLMClient
+// - module: crate::tools::registry::ToolRegistry
 // - protocol: axum HTTP handlers
 // invariants:
 // - Handler request and response handling stays aligned with route contracts.

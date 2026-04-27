@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Main TUI application state, rendering, and event orchestration.
+// summary: Main TUI application state, rendering, slash-command inspection, and event orchestration.
 // layer: ui
 // status: active
 // feature_flags:

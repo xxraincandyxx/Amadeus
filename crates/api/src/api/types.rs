@@ -11,8 +11,11 @@
 // - type: crate::api::types::ToolCall
 // - type: crate::api::types::ExecuteRequest
 // - type: crate::api::types::ExecuteResponse
+// - type: crate::api::types::PromptConfigSummary
 // - type: crate::api::types::TaskRequest
 // - type: crate::api::types::TaskResponse
+// - type: crate::api::types::ToolConfigSummary
+// - type: crate::api::types::ToolInventorySummary
 // uses:
 // - protocol: serde serialization
 // invariants:
