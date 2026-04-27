@@ -46,6 +46,10 @@ pub mod test_utils;
 pub mod tools;
 pub mod transcript;
 
+pub use agent::config::{
+    Config, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider,
+    ToolOverrideConfig, ToolProfileConfig, ToolSettings,
+};
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
     AssessmentRunner, ScriptedAssessmentClient,
