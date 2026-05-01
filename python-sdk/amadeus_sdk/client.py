@@ -20,13 +20,18 @@ from .types import (
     ExecuteResponse,
     HealthResponse,
     MemoryEntriesResponse,
+    MemoryEntryInfo,
+    MemoryProviderInfo,
     MemoryProvidersResponse,
+    PromptSectionInfo,
     PromptSectionInput,
     PromptSectionsResponse,
     SessionDetail,
     SessionSummary,
     SkillSummary,
     SummarizeResponse,
+    ToolCall,
+    ToolCatalogEntry,
     ToolCatalogResponse,
 )
 
@@ -62,7 +67,7 @@ class AmadeusClient:
         return self._client
 
     async def __aenter__(self) -> "AmadeusClient":
-        self._client = httpx.AsyncClient(timeout=self.timeout, base_url=self.base_url)
+        self._client = httpx.AsyncClient(timeout=self.timeout, base_url=self.base_url, trust_env=False)
         return self
 
     async def __aexit__(self, *args: object) -> None:
@@ -210,7 +215,9 @@ class AmadeusClient:
 
     async def list_prompt_sections(self) -> PromptSectionsResponse:
         """List current system prompt sections."""
-        return PromptSectionsResponse(**await self._get("/prompts/sections"))
+        data = await self._get("/prompts/sections")
+        data["sections"] = [PromptSectionInfo(**s) for s in data.get("sections", [])]
+        return PromptSectionsResponse(**data)
 
     async def build_prompt(
         self,
@@ -235,11 +242,15 @@ class AmadeusClient:
 
     async def list_memory_providers(self) -> MemoryProvidersResponse:
         """List registered memory providers."""
-        return MemoryProvidersResponse(**await self._get("/memory/providers"))
+        data = await self._get("/memory/providers")
+        data["providers"] = [MemoryProviderInfo(**p) for p in data.get("providers", [])]
+        return MemoryProvidersResponse(**data)
 
     async def load_memory_entries(self) -> MemoryEntriesResponse:
         """Load all memory entries from all providers."""
-        return MemoryEntriesResponse(**await self._get("/memory/entries"))
+        data = await self._get("/memory/entries")
+        data["entries"] = [MemoryEntryInfo(**e) for e in data.get("entries", [])]
+        return MemoryEntriesResponse(**data)
 
     # ------------------------------------------------------------------
     # Tools
@@ -247,7 +258,9 @@ class AmadeusClient:
 
     async def get_tool_catalog(self) -> ToolCatalogResponse:
         """Get the full tool catalog."""
-        return ToolCatalogResponse(**await self._get("/tools/catalog"))
+        data = await self._get("/tools/catalog")
+        data["tools"] = [ToolCatalogEntry(**t) for t in data.get("tools", [])]
+        return ToolCatalogResponse(**data)
 
     # ------------------------------------------------------------------
     # Multi-agent
