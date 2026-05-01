@@ -1,12 +1,16 @@
 # Python Cache
 __pycache__/
 
+# Python tooling
+.python-version
+
 # /refs
 /target
 
 .DS_Store
 .env
 .amadeus/settings.json
+.amadeus/logs/
 
 # Logging files
 /logs
@@ -19,6 +23,10 @@ test_*.txt
 
 # Benchmark output directory
 /benchmark_runs
+
+# IDE / tooling
+.claude/
+.opencode/
 
 # User notes
 Song Lyric.txt
