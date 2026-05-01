@@ -12,10 +12,6 @@ Then run this example:
 
 import asyncio
 import sys
-from pathlib import Path
-
-# Allow running from the repo root or python-sdk/ directory
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from amadeus_sdk import Agent
 
