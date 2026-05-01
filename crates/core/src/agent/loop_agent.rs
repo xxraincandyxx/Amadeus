@@ -49,7 +49,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, instrument, warn};
 
-use crate::agent::compaction::ContextCompactor;
+use crate::agent::compaction::{CompactionTrigger, ContextCompactor};
 use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
@@ -179,6 +179,7 @@ pub struct AgentBuilder<C: LLMClient> {
     hooks: HookRegistry,
     policy: Policy,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    compaction_trigger: Option<Box<dyn CompactionTrigger>>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -196,6 +197,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             hooks,
             policy: Policy::default(),
             telemetry: None,
+            compaction_trigger: None,
         }
     }
 
@@ -268,6 +270,14 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Set a custom compaction trigger.
+    ///
+    /// If not set, the agent uses a [`ThresholdCompactionTrigger`] derived from config.
+    pub fn with_compaction_trigger(mut self, trigger: Box<dyn CompactionTrigger>) -> Self {
+        self.compaction_trigger = Some(trigger);
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
@@ -305,6 +315,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator,
             telemetry: self.telemetry,
+            compaction_trigger: self.compaction_trigger.map(Arc::from),
         }
     }
 }
@@ -324,6 +335,7 @@ pub struct Agent<C: LLMClient> {
     delegate_subagents: bool,
     subagent_coordinator: Arc<SubAgentCoordinator>,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    compaction_trigger: Option<Arc<dyn CompactionTrigger>>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -531,6 +543,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),
             telemetry: self.telemetry.clone(),
+            compaction_trigger: self.compaction_trigger.clone(),
         };
 
         // Run with the rendered prompt
@@ -813,6 +826,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let history = Arc::clone(&self.history);
         let hooks = self.hooks.clone();
         let policy = Arc::clone(&self.policy);
+        let compaction_trigger = self.compaction_trigger.clone();
         let telemetry = self.telemetry.clone();
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
@@ -824,9 +838,16 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             let mut should_continue = true;
             let mut turn_count = 0;
 
-            // Create compactor if auto_compact is enabled
+            // Create compactor if auto_compact is enabled.
+            // Uses the agent's custom trigger if provided, otherwise defaults to threshold.
             let compactor = if config.auto_compact {
-                Some(ContextCompactor::new(config.to_compaction_config()))
+                let compaction_config = config.to_compaction_config();
+                let c = if let Some(ref trigger) = compaction_trigger {
+                    ContextCompactor::new(compaction_config, Arc::clone(trigger))
+                } else {
+                    ContextCompactor::from_config(compaction_config)
+                };
+                Some(c)
             } else {
                 None
             };

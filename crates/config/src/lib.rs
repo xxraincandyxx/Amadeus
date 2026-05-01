@@ -42,7 +42,12 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 50_000;
 const DEFAULT_CONTEXT_WINDOW_SIZE: u32 = 200_000;
 const DEFAULT_COMPACT_THRESHOLD_PERCENT: u8 = 75;
+const DEFAULT_COMPACT_TARGET_PERCENT: u8 = 40;
 const DEFAULT_COMPACT_PRESERVE_RECENT: usize = 6;
+const DEFAULT_COMPACT_USE_LLM_SUMMARY: bool = true;
+const DEFAULT_COMPACT_MAX_SUMMARY_CHARS: usize = 2000;
+const DEFAULT_COMPACT_MIN_MESSAGES: usize = 10;
+const DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS: usize = 5000;
 const DEFAULT_MAX_SUBAGENT_DEPTH: usize = 2;
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
@@ -167,7 +172,12 @@ pub struct Config {
     pub context_window_size: u32,
     pub auto_compact: bool,
     pub compact_threshold_percent: u8,
+    pub compact_target_percent: u8,
     pub compact_preserve_recent: usize,
+    pub compact_use_llm_summary: bool,
+    pub compact_max_summary_chars: usize,
+    pub compact_min_messages: usize,
+    pub compact_max_tool_result_chars: usize,
     pub max_subagent_depth: usize,
     pub permission_mode: PermissionMode,
     #[serde(default)]
@@ -196,7 +206,12 @@ impl Default for Config {
             context_window_size: DEFAULT_CONTEXT_WINDOW_SIZE,
             auto_compact: true,
             compact_threshold_percent: DEFAULT_COMPACT_THRESHOLD_PERCENT,
+            compact_target_percent: DEFAULT_COMPACT_TARGET_PERCENT,
             compact_preserve_recent: DEFAULT_COMPACT_PRESERVE_RECENT,
+            compact_use_llm_summary: DEFAULT_COMPACT_USE_LLM_SUMMARY,
+            compact_max_summary_chars: DEFAULT_COMPACT_MAX_SUMMARY_CHARS,
+            compact_min_messages: DEFAULT_COMPACT_MIN_MESSAGES,
+            compact_max_tool_result_chars: DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS,
             max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
             permission_mode: PermissionMode::WorkspaceWrite,
             hooks: HookSettings::default(),
@@ -440,6 +455,37 @@ impl Config {
             } else {
                 self.compact_preserve_recent
             },
+            compact_target_percent: if other.compact_target_percent
+                != DEFAULT_COMPACT_TARGET_PERCENT
+            {
+                other.compact_target_percent
+            } else {
+                self.compact_target_percent
+            },
+            compact_use_llm_summary: if !other.compact_use_llm_summary {
+                other.compact_use_llm_summary
+            } else {
+                self.compact_use_llm_summary
+            },
+            compact_max_summary_chars: if other.compact_max_summary_chars
+                != DEFAULT_COMPACT_MAX_SUMMARY_CHARS
+            {
+                other.compact_max_summary_chars
+            } else {
+                self.compact_max_summary_chars
+            },
+            compact_min_messages: if other.compact_min_messages != DEFAULT_COMPACT_MIN_MESSAGES {
+                other.compact_min_messages
+            } else {
+                self.compact_min_messages
+            },
+            compact_max_tool_result_chars: if other.compact_max_tool_result_chars
+                != DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS
+            {
+                other.compact_max_tool_result_chars
+            } else {
+                self.compact_max_tool_result_chars
+            },
             max_subagent_depth: if other.max_subagent_depth != DEFAULT_MAX_SUBAGENT_DEPTH {
                 other.max_subagent_depth
             } else {
@@ -504,12 +550,12 @@ impl Config {
     pub fn to_compaction_config(&self) -> CompactionConfig {
         CompactionConfig {
             threshold_percent: self.compact_threshold_percent,
-            target_percent: 40,
+            target_percent: self.compact_target_percent,
             preserve_recent: self.compact_preserve_recent,
-            use_llm_summary: true,
-            max_summary_chars: 2000,
-            min_messages: 10,
-            max_tool_result_chars: 5000,
+            use_llm_summary: self.compact_use_llm_summary,
+            max_summary_chars: self.compact_max_summary_chars,
+            min_messages: self.compact_min_messages,
+            max_tool_result_chars: self.compact_max_tool_result_chars,
         }
     }
 
@@ -622,6 +668,41 @@ impl Config {
         if let Some(preserve_recent) = json.get("compact_preserve_recent").and_then(|v| v.as_u64())
         {
             self.compact_preserve_recent = preserve_recent as usize;
+        }
+
+        if let Some(target) = json
+            .get("compact_target_percent")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_target_percent = target as u8;
+        }
+
+        if let Some(use_llm) = json
+            .get("compact_use_llm_summary")
+            .and_then(|v| v.as_bool())
+        {
+            self.compact_use_llm_summary = use_llm;
+        }
+
+        if let Some(max_chars) = json
+            .get("compact_max_summary_chars")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_max_summary_chars = max_chars as usize;
+        }
+
+        if let Some(min_msgs) = json
+            .get("compact_min_messages")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_min_messages = min_msgs as usize;
+        }
+
+        if let Some(max_tr) = json
+            .get("compact_max_tool_result_chars")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_max_tool_result_chars = max_tr as usize;
         }
 
         if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {

@@ -28,7 +28,7 @@ use amadeus::agent::messages::{ContentBlock, Message};
 #[tokio::test]
 async fn test_estimate_tokens() {
     let config = CompactionConfig::default();
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create a simple message
     let messages = vec![
@@ -53,7 +53,7 @@ async fn test_needs_compaction_below_threshold() {
         min_messages: 10,
         ..Default::default()
     };
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create small history (below threshold)
     let messages: Vec<Message> = (0..5)
@@ -72,7 +72,7 @@ async fn test_needs_compaction_min_messages() {
         min_messages: 10,
         ..Default::default()
     };
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create large content but below min_messages threshold
     let large_text = "x".repeat(50_000);
@@ -90,7 +90,7 @@ async fn test_needs_compaction_above_threshold() {
         min_messages: 5,
         ..Default::default()
     };
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create large history (above threshold)
     // 30 messages × 20,000 chars = 600,000 chars = ~150,000 tokens = 75% of 200k context
@@ -105,7 +105,7 @@ async fn test_needs_compaction_above_threshold() {
 #[tokio::test]
 async fn test_context_usage_percent() {
     let config = CompactionConfig::default();
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create messages with known size
     let messages = vec![
@@ -127,7 +127,7 @@ async fn test_short_history_detection() {
         ..Default::default()
     };
     let preserve_recent = config.preserve_recent;
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     // Create history with fewer messages than preserve_recent
     let messages: Vec<Message> = (0..3).map(|_| Message::user("Test")).collect();
@@ -143,7 +143,7 @@ async fn test_short_history_detection() {
 #[tokio::test]
 async fn test_estimate_tokens_with_tools() {
     let config = CompactionConfig::default();
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
 
     let messages = vec![
         Message::user("Read the file"),

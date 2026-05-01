@@ -45,7 +45,7 @@ pub async fn summarize<C: LLMClient + Clone + 'static>(
         config.max_summary_chars = max_summary_chars;
     }
 
-    let compactor = ContextCompactor::new(config);
+    let compactor = ContextCompactor::from_config(config);
     let messages = vec![Message::user(&request.text)];
     let mechanism = request.mechanism.unwrap_or_else(|| "llm".to_string());
 

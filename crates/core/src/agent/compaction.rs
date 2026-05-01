@@ -42,7 +42,7 @@
 //! ```rust,ignore
 //! use amadeus::agent::compaction::{ContextCompactor, CompactionConfig};
 //!
-//! let compactor = ContextCompactor::new(CompactionConfig {
+//! let compactor = ContextCompactor::from_config(CompactionConfig {
 //!     threshold_percent: 80,
 //!     target_percent: 40,
 //!     preserve_recent: 6,
@@ -64,9 +64,14 @@
 //! 3. Tool results are truncated if they exceed size limits
 //! 4. Essential context (errors, decisions) is retained
 
+use std::sync::Arc;
+
 use tracing::{debug, info, warn};
 
-pub use amadeus_compaction::{CompactionConfig, CompactionResult, CompressionStatus};
+pub use amadeus_compaction::{
+    CompactionConfig, CompactionInput, CompactionResult, CompactionTrigger, CompressionStatus,
+    CompositeCompactionTrigger, CompositeMode, ThresholdCompactionTrigger,
+};
 
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::LLMClient;
@@ -119,17 +124,30 @@ First, think through the history in a private <scratchpad>. Then generate the <s
 /// Handles automatic context compaction for conversation history.
 pub struct ContextCompactor {
     config: CompactionConfig,
+    trigger: Arc<dyn CompactionTrigger>,
 }
 
 impl ContextCompactor {
-    /// Create a new compactor with the given configuration.
-    pub fn new(config: CompactionConfig) -> Self {
-        Self { config }
+    /// Create a new compactor with the given configuration and trigger.
+    pub fn new(config: CompactionConfig, trigger: Arc<dyn CompactionTrigger>) -> Self {
+        Self { config, trigger }
     }
 
-    /// Create a compactor with default configuration.
+    /// Create a compactor with default configuration and threshold trigger.
     pub fn with_defaults() -> Self {
-        Self::new(CompactionConfig::default())
+        Self::new(
+            CompactionConfig::default(),
+            Arc::new(ThresholdCompactionTrigger::default()),
+        )
+    }
+
+    /// Create a compactor from config, using a threshold trigger derived from it.
+    pub fn from_config(config: CompactionConfig) -> Self {
+        let trigger = Arc::new(ThresholdCompactionTrigger::new(
+            config.threshold_percent,
+            config.min_messages,
+        ));
+        Self::new(config, trigger)
     }
 
     /// Get the configuration.
@@ -137,20 +155,22 @@ impl ContextCompactor {
         &self.config
     }
 
+    /// Get a reference to the trigger.
+    pub fn trigger(&self) -> &dyn CompactionTrigger {
+        self.trigger.as_ref()
+    }
+
     /// Check if compaction is needed based on current history.
     ///
-    /// This uses a simple character-based estimation (~4 chars per token).
-    /// For more accurate token counting, use a proper tokenizer.
+    /// Delegates to the pluggable trigger.
     pub fn needs_compaction(&self, history: &[Message], context_window_size: u32) -> bool {
-        if history.len() < self.config.min_messages {
-            return false;
-        }
-
         let estimated_tokens = self.estimate_tokens(history);
-        let threshold =
-            (context_window_size as f64 * self.config.threshold_percent as f64 / 100.0) as u32;
-
-        estimated_tokens > threshold as usize
+        let input = CompactionInput {
+            message_count: history.len(),
+            estimated_tokens,
+            turn_count: 0,
+        };
+        self.trigger.should_compact(&input, context_window_size)
     }
 
     /// Estimate token count for a slice of messages.
@@ -183,11 +203,15 @@ impl ContextCompactor {
             .sum()
     }
 
-    /// Calculate context usage percentage.
+    /// Calculate context usage percentage (delegates to the trigger).
     pub fn context_usage_percent(&self, history: &[Message], context_window_size: u32) -> u8 {
-        let tokens = self.estimate_tokens(history);
-        let percent = (tokens as f64 / context_window_size as f64 * 100.0) as u8;
-        percent.min(100)
+        let estimated_tokens = self.estimate_tokens(history);
+        let input = CompactionInput {
+            message_count: history.len(),
+            estimated_tokens,
+            turn_count: 0,
+        };
+        self.trigger.context_usage_percent(&input, context_window_size)
     }
 
     /// Validate that an LLM-generated summary is reasonable.
@@ -797,7 +821,7 @@ mod tests {
             min_messages: 10,
             ..Default::default()
         };
-        let compactor = ContextCompactor::new(config);
+        let compactor = ContextCompactor::from_config(config);
 
         // Create 5 large messages (below min_messages but would exceed threshold)
         let large_text = "x".repeat(100_000);
@@ -847,7 +871,7 @@ mod tests {
             max_tool_result_chars: 100,
             ..Default::default()
         };
-        let compactor = ContextCompactor::new(config);
+        let compactor = ContextCompactor::from_config(config);
 
         let mut messages = vec![Message::tool_results(vec![ContentBlock::ToolResult {
             tool_use_id: "1".to_string(),
@@ -872,7 +896,7 @@ mod tests {
             use_llm_summary: false,
             ..Default::default()
         };
-        let compactor = ContextCompactor::new(config);
+        let compactor = ContextCompactor::from_config(config);
 
         let history: Vec<Message> = vec![
             Message::user("hi"),

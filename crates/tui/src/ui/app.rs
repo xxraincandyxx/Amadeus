@@ -2444,7 +2444,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.compaction_result_rx = Some(rx);
 
         // Spawn background task for compaction
-        let compactor = ContextCompactor::new(compaction_config);
+        let compactor = ContextCompactor::from_config(compaction_config);
         tokio::spawn(async move {
             let mut history_guard = history.write().await;
             let result = compactor
