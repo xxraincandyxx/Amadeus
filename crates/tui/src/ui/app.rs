@@ -2936,6 +2936,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         if let Some(command) = parsed_command {
             match command {
                 SlashCommand::Btw { question } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
                     self.input.clear();
                     if let Some(question) = question.map(|value| value.trim().to_string()).filter(|value| !value.is_empty()) {
                         self.start_btw_request(trimmed.to_string(), question);
