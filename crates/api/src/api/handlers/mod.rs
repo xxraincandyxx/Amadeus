@@ -110,6 +110,18 @@ pub mod approvals;
 pub mod agents;
 pub mod summarize;
 
+/// Compaction configuration handler.
+pub mod compaction;
+
+/// System prompt inspection and custom building.
+pub mod prompts;
+
+/// Memory provider and entry inspection.
+pub mod memory;
+
+/// Tool catalog handler.
+pub mod tools_catalog;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -117,23 +129,21 @@ pub mod summarize;
  */
 
 // Re-export handlers for convenient access
-//
-// Users can import handlers directly:
-//   use crate::api::handlers::{chat, execute, health, stream, tasks};
-//
-// Or access via the module:
-//   use crate::api::handlers::chat::chat;
 pub use agents::{
     agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent,
 };
 pub use approvals::{list_pending_approvals, register_approval_channel, submit_approval};
 pub use chat::chat;
+pub use compaction::{get_compaction_config, get_compaction_triggers, update_compaction_config};
 pub use config::{get_config, update_config};
 pub use execute::execute;
 pub use health::health;
 pub use history::get_history;
+pub use memory::{list_memory_providers, load_memory_entries};
+pub use prompts::{build_prompt, list_prompt_sections};
 pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;
 pub use stream::stream;
 pub use summarize::summarize;
 pub use tasks::handle_task;
+pub use tools_catalog::get_tool_catalog;

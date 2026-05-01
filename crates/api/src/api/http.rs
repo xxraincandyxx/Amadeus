@@ -107,10 +107,12 @@ use crate::agent::config::Config;
 use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
 use crate::api::handlers::{
-    agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
-    get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
-    list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
-    summarize, update_config,
+    agent_chat, agent_stream, build_prompt, chat, create_agent, execute, get_agent,
+    get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
+    get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
+    list_pending_approvals, list_prompt_sections, list_sessions, list_skills,
+    load_memory_entries, restore_session, stream, submit_approval, switch_agent, summarize,
+    update_compaction_config, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
@@ -314,6 +316,21 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/skills", get(list_skills))
         // Summarize arbitrary text for research workflows
         .route("/summarize", post(summarize))
+        // =====================================================================
+        // MODULAR PROMPT & MEMORY API
+        // =====================================================================
+        // Compaction config and triggers
+        .route("/compaction/config", get(get_compaction_config))
+        .route("/compaction/config", patch(update_compaction_config))
+        .route("/compaction/triggers", get(get_compaction_triggers))
+        // System prompt sections and custom building
+        .route("/prompts/sections", get(list_prompt_sections))
+        .route("/prompts/build", post(build_prompt))
+        // Memory providers and entries
+        .route("/memory/providers", get(list_memory_providers))
+        .route("/memory/entries", get(load_memory_entries))
+        // Tool catalog
+        .route("/tools/catalog", get(get_tool_catalog))
         // =====================================================================
         // MULTI-AGENT ENDPOINTS
         // =====================================================================

@@ -850,3 +850,135 @@ pub struct SummarizeResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_used: Option<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Compaction API types
+// ---------------------------------------------------------------------------
+
+/// Response for `GET /compaction/config`.
+#[derive(Debug, Serialize)]
+pub struct CompactionConfigResponse {
+    pub auto_compact: bool,
+    pub threshold_percent: u8,
+    pub target_percent: u8,
+    pub preserve_recent: usize,
+    pub use_llm_summary: bool,
+    pub max_summary_chars: usize,
+    pub min_messages: usize,
+    pub max_tool_result_chars: usize,
+    pub active_trigger: String,
+}
+
+/// Request for `PATCH /compaction/config`.
+#[derive(Debug, Deserialize)]
+pub struct CompactionConfigUpdateRequest {
+    pub auto_compact: Option<bool>,
+    pub threshold_percent: Option<u8>,
+    pub target_percent: Option<u8>,
+    pub preserve_recent: Option<usize>,
+    pub use_llm_summary: Option<bool>,
+    pub max_summary_chars: Option<usize>,
+    pub min_messages: Option<usize>,
+    pub max_tool_result_chars: Option<usize>,
+}
+
+/// Response for `GET /compaction/triggers`.
+#[derive(Debug, Serialize)]
+pub struct CompactionTriggersResponse {
+    pub available: Vec<String>,
+    pub active: String,
+}
+
+// ---------------------------------------------------------------------------
+// Prompt API types
+// ---------------------------------------------------------------------------
+
+/// Response for `GET /prompts/sections`.
+#[derive(Debug, Serialize)]
+pub struct PromptSectionsResponse {
+    pub sections: Vec<PromptSectionInfo>,
+}
+
+/// Summary info for a single prompt section.
+#[derive(Debug, Serialize)]
+pub struct PromptSectionInfo {
+    pub id: String,
+    pub title: String,
+    pub priority: i32,
+    pub dynamic: bool,
+    pub content_preview: String,
+}
+
+/// Request for `POST /prompts/build`.
+#[derive(Debug, Deserialize)]
+pub struct BuildPromptRequest {
+    pub workdir: Option<String>,
+    pub include_sub_agent_tool: Option<bool>,
+    pub extra_sections: Option<Vec<PromptSectionInput>>,
+}
+
+/// A custom section to inject into the prompt.
+#[derive(Debug, Deserialize)]
+pub struct PromptSectionInput {
+    pub id: String,
+    pub content: String,
+    pub priority: Option<i32>,
+}
+
+/// Response for `POST /prompts/build`.
+#[derive(Debug, Serialize)]
+pub struct BuildPromptResponse {
+    pub prompt: String,
+    pub section_count: usize,
+}
+
+// ---------------------------------------------------------------------------
+// Memory API types
+// ---------------------------------------------------------------------------
+
+/// Response for `GET /memory/providers`.
+#[derive(Debug, Serialize)]
+pub struct MemoryProvidersResponse {
+    pub providers: Vec<MemoryProviderInfo>,
+}
+
+/// Summary info for a single memory provider.
+#[derive(Debug, Serialize)]
+pub struct MemoryProviderInfo {
+    pub name: String,
+    pub writable: bool,
+    pub entry_count: usize,
+}
+
+/// Response for `GET /memory/entries`.
+#[derive(Debug, Serialize)]
+pub struct MemoryEntriesResponse {
+    pub entries: Vec<MemoryEntryInfo>,
+}
+
+/// A single memory entry.
+#[derive(Debug, Serialize)]
+pub struct MemoryEntryInfo {
+    pub key: String,
+    pub content: String,
+    pub source: String,
+}
+
+// ---------------------------------------------------------------------------
+// Tool catalog API types
+// ---------------------------------------------------------------------------
+
+/// Response for `GET /tools/catalog`.
+#[derive(Debug, Serialize)]
+pub struct ToolCatalogResponse {
+    pub tools: Vec<ToolCatalogEntry>,
+}
+
+/// A single tool entry in the catalog.
+#[derive(Debug, Serialize)]
+pub struct ToolCatalogEntry {
+    pub name: String,
+    pub description: String,
+    pub permission_mode: String,
+    pub level: String,
+}
