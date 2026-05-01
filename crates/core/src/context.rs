@@ -19,3 +19,14 @@
 //! Compatibility layer for shared project context loading.
 
 pub use amadeus_context::{load_context_prompt, ProjectContext};
+
+/// Memory providers and registry (re-exported from amadeus_context).
+pub mod memory {
+    pub use amadeus_context::memory::*;
+}
+pub mod memory_file {
+    pub use amadeus_context::memory_file::*;
+}
+pub mod memory_session {
+    pub use amadeus_context::memory_session::*;
+}

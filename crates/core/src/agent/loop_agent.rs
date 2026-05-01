@@ -180,6 +180,7 @@ pub struct AgentBuilder<C: LLMClient> {
     policy: Policy,
     telemetry: Option<Arc<TelemetryRecorder>>,
     compaction_trigger: Option<Box<dyn CompactionTrigger>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -198,6 +199,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             policy: Policy::default(),
             telemetry: None,
             compaction_trigger: None,
+            memory_registry: None,
         }
     }
 
@@ -278,6 +280,15 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Set a memory registry for dynamic context injection.
+    ///
+    /// Memory providers in the registry supply entries that are included
+    /// in the system prompt as dynamic sections.
+    pub fn with_memory_registry(mut self, registry: crate::context::memory::MemoryRegistry) -> Self {
+        self.memory_registry = Some(registry);
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
@@ -316,6 +327,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             subagent_coordinator,
             telemetry: self.telemetry,
             compaction_trigger: self.compaction_trigger.map(Arc::from),
+            memory_registry: self.memory_registry,
         }
     }
 }
@@ -336,6 +348,7 @@ pub struct Agent<C: LLMClient> {
     subagent_coordinator: Arc<SubAgentCoordinator>,
     telemetry: Option<Arc<TelemetryRecorder>>,
     compaction_trigger: Option<Arc<dyn CompactionTrigger>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -544,6 +557,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),
             telemetry: self.telemetry.clone(),
             compaction_trigger: self.compaction_trigger.clone(),
+            memory_registry: self.memory_registry.clone(),
         };
 
         // Run with the rendered prompt
