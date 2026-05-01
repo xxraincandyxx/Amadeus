@@ -22,7 +22,9 @@
 pub mod builder;
 pub mod sections;
 
-pub use builder::{PromptSection, PromptSectionSummary, SystemPromptBuilder, DYNAMIC_BOUNDARY_MARKER};
+pub use builder::{
+    PromptSection, PromptSectionSummary, SystemPromptBuilder, DYNAMIC_BOUNDARY_MARKER,
+};
 pub use sections::default_sections;
 
 const SUB_AGENT_AVAILABLE_TOOL: &str =
@@ -151,17 +153,32 @@ mod tests {
         let built = build_system_prompt("/tmp", true, &[]);
         // The builder doesn't use the same "## Section" headings, but
         // it should contain all the same key terms from the content.
-        for term in &["bash", "read_file", "write_file", "edit_file", "sub_agent", "Never commit secrets", "context waste"] {
+        for term in &[
+            "bash",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "sub_agent",
+            "Never commit secrets",
+            "context waste",
+        ] {
             assert!(built.contains(term), "missing: {}", term);
         }
         // Both should be roughly the same length.
         let diff = (legacy.len() as i64 - built.len() as i64).abs();
-        assert!(diff < 200, "legacy={} built={} diff={}", legacy.len(), built.len(), diff);
+        assert!(
+            diff < 200,
+            "legacy={} built={} diff={}",
+            legacy.len(),
+            built.len(),
+            diff
+        );
     }
 
     #[test]
     fn builder_with_extra_sections() {
-        let extra = PromptSection::new("custom", "Custom", "## Custom\n\nCustom content.").with_priority(200);
+        let extra = PromptSection::new("custom", "Custom", "## Custom\n\nCustom content.")
+            .with_priority(200);
         let built = build_system_prompt("/tmp", false, &[extra]);
         assert!(built.contains("Custom content."));
     }

@@ -38,7 +38,11 @@ pub struct MemoryEntry {
 }
 
 impl MemoryEntry {
-    pub fn new(key: impl Into<String>, content: impl Into<String>, source: impl Into<String>) -> Self {
+    pub fn new(
+        key: impl Into<String>,
+        content: impl Into<String>,
+        source: impl Into<String>,
+    ) -> Self {
         Self {
             key: key.into(),
             content: content.into(),

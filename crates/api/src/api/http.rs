@@ -110,9 +110,9 @@ use crate::api::handlers::{
     agent_chat, agent_stream, build_prompt, chat, create_agent, execute, get_agent,
     get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
     get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
-    list_pending_approvals, list_prompt_sections, list_sessions, list_skills,
-    load_memory_entries, restore_session, stream, submit_approval, switch_agent, summarize,
-    update_compaction_config, update_config,
+    list_pending_approvals, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
+    restore_session, stream, submit_approval, summarize, switch_agent, update_compaction_config,
+    update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;

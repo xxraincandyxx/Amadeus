@@ -24,9 +24,7 @@ pub async fn get_tool_catalog<C: LLMClient + Clone + 'static>(
             let spec = registry.catalog().spec(name);
             ToolCatalogEntry {
                 name: name.clone(),
-                description: spec
-                    .map(|s| s.description.clone())
-                    .unwrap_or_default(),
+                description: spec.map(|s| s.description.clone()).unwrap_or_default(),
                 permission_mode: spec
                     .map(|s| s.required_permission.as_str().to_string())
                     .unwrap_or_else(|| "unknown".into()),

@@ -69,8 +69,8 @@ use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 pub use amadeus_compaction::{
-    CompactionConfig, CompactionInput, CompactionResult, CompactionTrigger, CompressionStatus,
-    CompositeCompactionTrigger, CompositeMode, ThresholdCompactionTrigger,
+    CompactionConfig, CompactionInput, CompactionResult, CompactionTrigger,
+    CompositeCompactionTrigger, CompositeMode, CompressionStatus, ThresholdCompactionTrigger,
 };
 
 use crate::agent::messages::{ContentBlock, Message};
@@ -211,7 +211,8 @@ impl ContextCompactor {
             estimated_tokens,
             turn_count: 0,
         };
-        self.trigger.context_usage_percent(&input, context_window_size)
+        self.trigger
+            .context_usage_percent(&input, context_window_size)
     }
 
     /// Validate that an LLM-generated summary is reasonable.
@@ -546,7 +547,8 @@ impl ContextCompactor {
         messages: &[Message],
         client: &C,
     ) -> Result<String> {
-        self.summarize_messages_with_prompt(messages, client, None).await
+        self.summarize_messages_with_prompt(messages, client, None)
+            .await
     }
 
     async fn summarize_messages_with_prompt<C: LLMClient + Clone + 'static>(

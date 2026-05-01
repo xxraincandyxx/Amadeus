@@ -55,8 +55,7 @@ pub async fn build_prompt<C: LLMClient + Clone + 'static>(
         })
         .collect();
 
-    let prompt =
-        crate::prompts::build_system_prompt(&workdir, include_sub_agent, &extra_sections);
+    let prompt = crate::prompts::build_system_prompt(&workdir, include_sub_agent, &extra_sections);
 
     // Count sections (approximate)
     let section_count = 8 + extra_sections.len(); // 8 defaults + extras

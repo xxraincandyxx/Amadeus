@@ -40,7 +40,11 @@ pub struct PromptSection {
 }
 
 impl PromptSection {
-    pub fn new(id: impl Into<String>, title: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        title: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             title: title.into(),
@@ -222,9 +226,7 @@ mod tests {
     #[test]
     fn dynamic_boundary_marker_inserted() {
         let prompt = SystemPromptBuilder::new()
-            .add_section(
-                PromptSection::new("static", "S", "static content").with_priority(10),
-            )
+            .add_section(PromptSection::new("static", "S", "static content").with_priority(10))
             .add_section(
                 PromptSection::new("dynamic", "D", "dynamic content")
                     .with_priority(20)

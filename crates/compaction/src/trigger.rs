@@ -211,10 +211,7 @@ mod tests {
     fn composite_any_fires_when_one_does() {
         let always = ThresholdCompactionTrigger::new(0, 0); // fires at >0 tokens
         let never = ThresholdCompactionTrigger::new(100, 999); // never fires
-        let composite = CompositeCompactionTrigger::any(vec![
-            Box::new(never),
-            Box::new(always),
-        ]);
+        let composite = CompositeCompactionTrigger::any(vec![Box::new(never), Box::new(always)]);
         let input = CompactionInput {
             message_count: 10,
             estimated_tokens: 100,
@@ -227,10 +224,7 @@ mod tests {
     fn composite_all_requires_both() {
         let always = ThresholdCompactionTrigger::new(0, 0);
         let never = ThresholdCompactionTrigger::new(100, 999);
-        let composite = CompositeCompactionTrigger::all(vec![
-            Box::new(never),
-            Box::new(always),
-        ]);
+        let composite = CompositeCompactionTrigger::all(vec![Box::new(never), Box::new(always)]);
         let input = CompactionInput {
             message_count: 10,
             estimated_tokens: 100,

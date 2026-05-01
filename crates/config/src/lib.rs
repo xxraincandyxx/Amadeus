@@ -671,10 +671,7 @@ impl Config {
             self.compact_preserve_recent = preserve_recent as usize;
         }
 
-        if let Some(target) = json
-            .get("compact_target_percent")
-            .and_then(|v| v.as_u64())
-        {
+        if let Some(target) = json.get("compact_target_percent").and_then(|v| v.as_u64()) {
             self.compact_target_percent = target as u8;
         }
 
@@ -692,10 +689,7 @@ impl Config {
             self.compact_max_summary_chars = max_chars as usize;
         }
 
-        if let Some(min_msgs) = json
-            .get("compact_min_messages")
-            .and_then(|v| v.as_u64())
-        {
+        if let Some(min_msgs) = json.get("compact_min_messages").and_then(|v| v.as_u64()) {
             self.compact_min_messages = min_msgs as usize;
         }
 

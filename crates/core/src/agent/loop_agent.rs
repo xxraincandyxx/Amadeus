@@ -284,7 +284,10 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     ///
     /// Memory providers in the registry supply entries that are included
     /// in the system prompt as dynamic sections.
-    pub fn with_memory_registry(mut self, registry: crate::context::memory::MemoryRegistry) -> Self {
+    pub fn with_memory_registry(
+        mut self,
+        registry: crate::context::memory::MemoryRegistry,
+    ) -> Self {
         self.memory_registry = Some(registry);
         self
     }

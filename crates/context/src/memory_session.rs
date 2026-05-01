@@ -109,9 +109,7 @@ mod tests {
     fn test_writable() {
         let provider = SessionMemoryProvider::new();
         assert!(provider.writable());
-        assert!(provider
-            .store(MemoryEntry::new("k", "v", "test"))
-            .is_ok());
+        assert!(provider.store(MemoryEntry::new("k", "v", "test")).is_ok());
         assert_eq!(provider.load().len(), 1);
     }
 }

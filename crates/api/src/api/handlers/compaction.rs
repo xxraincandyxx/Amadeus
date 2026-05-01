@@ -53,9 +53,7 @@ pub async fn update_compaction_config<C: LLMClient + Clone + 'static>(
         max_summary_chars: update
             .max_summary_chars
             .unwrap_or(config.compact_max_summary_chars),
-        min_messages: update
-            .min_messages
-            .unwrap_or(config.compact_min_messages),
+        min_messages: update.min_messages.unwrap_or(config.compact_min_messages),
         max_tool_result_chars: update
             .max_tool_result_chars
             .unwrap_or(config.compact_max_tool_result_chars),
