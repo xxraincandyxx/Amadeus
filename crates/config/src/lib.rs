@@ -342,16 +342,17 @@ impl Config {
     }
 
     pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
-        let mut prompt = amadeus_prompts::render_system_prompt(
-            &self.workdir.display().to_string(),
-            include_sub_agent_tool,
-        );
+        let mut extra_sections = Vec::new();
 
         if let Some(ctx) = ProjectContext::load(&self.workdir) {
-            prompt.push_str(&ctx.to_prompt_section());
+            extra_sections.push(amadeus_prompts::sections::project_context(&ctx.content));
         }
 
-        prompt
+        amadeus_prompts::build_system_prompt(
+            &self.workdir.display().to_string(),
+            include_sub_agent_tool,
+            &extra_sections,
+        )
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {

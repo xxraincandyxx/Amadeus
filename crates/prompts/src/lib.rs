@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Shared prompt templates used across runtime surfaces.
+// summary: Shared prompt templates and composable system prompt builder.
 // layer: core
 // status: active
 // feature_flags: none
@@ -7,6 +7,8 @@
 // - module: crate
 // - const: crate::SYSTEM_PROMPT
 // - fn: crate::render_system_prompt
+// - type: crate::builder::SystemPromptBuilder
+// - type: crate::builder::PromptSection
 // uses: none
 // invariants:
 // - Prompt rendering stays deterministic and transport-agnostic.
@@ -15,13 +17,20 @@
 // - cmd: cargo test -p prompts
 // @end-amadeus-header
 
-//! Shared system prompt templates.
+//! Shared system prompt templates and composable builder.
+
+pub mod builder;
+pub mod sections;
+
+pub use builder::{PromptSection, PromptSectionSummary, SystemPromptBuilder, DYNAMIC_BOUNDARY_MARKER};
+pub use sections::default_sections;
 
 const SUB_AGENT_AVAILABLE_TOOL: &str =
     "- sub_agent: Delegate focused work to a fresh subagent with isolated context\n";
 const SUB_AGENT_USAGE: &str =
     "- sub_agent: When a focused subtask benefits from fresh context and isolated execution\n";
 
+/// Legacy monolithic system prompt — kept for backward compatibility.
 pub const SYSTEM_PROMPT: &str = "\
 You are a CLI agent at {{workdir}}.
 
@@ -72,6 +81,9 @@ When referencing code, use `file_path:line_number` format for navigation.
 Keep responses concise. Prefer one sentence explanations before tool calls.
 After completing a task, report what changed briefly.";
 
+/// Render the system prompt using the legacy monolithic template.
+///
+/// Prefer [`build_system_prompt`] for new code — it uses the composable builder.
 pub fn render_system_prompt(workdir: &str, include_sub_agent_tool: bool) -> String {
     let mut prompt = SYSTEM_PROMPT.replace("{{workdir}}", workdir);
 
@@ -84,6 +96,22 @@ pub fn render_system_prompt(workdir: &str, include_sub_agent_tool: bool) -> Stri
     }
 
     prompt
+}
+
+/// Build a system prompt using the composable builder from default sections.
+pub fn build_system_prompt(
+    workdir: &str,
+    include_sub_agent_tool: bool,
+    extra_sections: &[PromptSection],
+) -> String {
+    let mut builder = SystemPromptBuilder::new();
+    for section in default_sections(workdir, include_sub_agent_tool) {
+        builder = builder.add_section(section);
+    }
+    for section in extra_sections {
+        builder = builder.add_section(section.clone());
+    }
+    builder.build()
 }
 
 #[cfg(test)]
@@ -115,5 +143,26 @@ mod tests {
         assert!(prompt.contains("bash"));
         assert!(prompt.contains("todo"));
         assert!(!prompt.contains("sub_agent"));
+    }
+
+    #[test]
+    fn builder_matches_legacy_with_sub_agent() {
+        let legacy = render_system_prompt("/tmp", true);
+        let built = build_system_prompt("/tmp", true, &[]);
+        // The builder doesn't use the same "## Section" headings, but
+        // it should contain all the same key terms from the content.
+        for term in &["bash", "read_file", "write_file", "edit_file", "sub_agent", "Never commit secrets", "context waste"] {
+            assert!(built.contains(term), "missing: {}", term);
+        }
+        // Both should be roughly the same length.
+        let diff = (legacy.len() as i64 - built.len() as i64).abs();
+        assert!(diff < 200, "legacy={} built={} diff={}", legacy.len(), built.len(), diff);
+    }
+
+    #[test]
+    fn builder_with_extra_sections() {
+        let extra = PromptSection::new("custom", "Custom", "## Custom\n\nCustom content.").with_priority(200);
+        let built = build_system_prompt("/tmp", false, &[extra]);
+        assert!(built.contains("Custom content."));
     }
 }
