@@ -252,6 +252,42 @@ class SummarizeResponse:
 
 
 # ---------------------------------------------------------------------------
+# UA Debug
+# ---------------------------------------------------------------------------
+
+@dataclass
+class UADebugToolCall:
+    name: str
+    input: dict
+    output: str
+
+
+@dataclass
+class UADebugAssistant:
+    text: str
+    tool_calls: list[UADebugToolCall] = field(default_factory=list)
+    stop_reason: str = "end_turn"
+
+
+@dataclass
+class UADebugTurn:
+    index: int
+    user: str
+    assistant: UADebugAssistant
+
+
+@dataclass
+class UADebugLog:
+    version: str = "1"
+    timestamp: str = ""
+    model: str = ""
+    system_prompt: str = ""
+    memory_snapshot: list[dict] = field(default_factory=list)
+    turns: list[UADebugTurn] = field(default_factory=list)
+    stats: dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------
 
