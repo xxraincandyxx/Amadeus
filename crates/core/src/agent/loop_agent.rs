@@ -845,8 +845,15 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let policy = Arc::clone(&self.policy);
         let compaction_trigger = self.compaction_trigger.clone();
         let telemetry = self.telemetry.clone();
+        let memory_registry = self.memory_registry.clone();
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
+        let mut system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
+        if let Some(ref mem) = memory_registry {
+            if let Some(mem_content) = mem.build_memory_content() {
+                system.push_str("\n\n## Persistent Memory\n\n");
+                system.push_str(&mem_content);
+            }
+        }
         let tool_schemas: Vec<serde_json::Value> = tools.schemas();
 
         Box::pin(async_stream::stream! {

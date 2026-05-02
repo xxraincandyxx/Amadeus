@@ -195,20 +195,27 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     client: C,
     config: Arc<Config>,
 ) -> Result<()> {
-    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config));
+    // Build memory registry for persistent context injection.
+    let memory_path = config.workdir.join(".amadeus").join("memory.json");
+    let memory_provider = Arc::new(JsonFileMemoryProvider::new(memory_path.clone()));
+    let mut memory_registry = crate::context::memory::MemoryRegistry::new();
+    memory_registry.register(memory_provider.clone());
+
+    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
+        .with_memory_registry(memory_registry.clone());
     let default_orchestra_id = orchestrator.ensure_default_orchestra(OrchestraLeader::User);
     let main_agent_id = orchestrator
         .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
     orchestrator.add_agent_to_orchestra(default_orchestra_id, main_agent_id)?;
     let orchestrator = Arc::new(RwLock::new(orchestrator));
-    let session_bridge = Arc::new(LocalSessionBridge::new(client.clone(), Arc::clone(&config)));
+    let session_bridge = Arc::new(
+        LocalSessionBridge::new(client.clone(), Arc::clone(&config))
+            .with_memory_registry(memory_registry),
+    );
     let _ = session_bridge
         .create_session(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
-
-    let memory_path = config.workdir.join(".amadeus").join("memory.json");
-    let memory_provider = Arc::new(JsonFileMemoryProvider::new(memory_path));
 
     let state = Arc::new(AppState {
         client,

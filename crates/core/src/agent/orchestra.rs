@@ -83,6 +83,7 @@ pub(crate) struct OrchestraRoster<C: LLMClient> {
     client: C,
     config: Arc<Config>,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
     pub(crate) agents: Vec<OrchestratedAgent<C>>,
     pub(crate) active_index: usize,
     name_counter: usize,
@@ -98,10 +99,19 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
             client,
             config,
             telemetry,
+            memory_registry: None,
             agents: Vec::new(),
             active_index: 0,
             name_counter: 0,
         }
+    }
+
+    pub(crate) fn with_memory_registry(
+        mut self,
+        registry: crate::context::memory::MemoryRegistry,
+    ) -> Self {
+        self.memory_registry = Some(registry);
+        self
     }
 
     pub(crate) async fn create_agent(
@@ -297,10 +307,13 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
         } else {
             Arc::clone(&self.config)
         };
-        let agent = Agent::builder(self.client.clone(), agent_config)
+        let mut builder = Agent::builder(self.client.clone(), agent_config)
             .with_default_tools()
-            .with_optional_telemetry(self.telemetry.clone())
-            .build();
+            .with_optional_telemetry(self.telemetry.clone());
+        if let Some(ref mem) = self.memory_registry {
+            builder = builder.with_memory_registry(mem.clone());
+        }
+        let agent = builder.build();
 
         self.agents.push(OrchestratedAgent {
             id,
@@ -370,6 +383,15 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
     pub fn with_telemetry(mut self, telemetry: Arc<TelemetryRecorder>) -> Self {
         self.telemetry = Some(Arc::clone(&telemetry));
         self.roster.telemetry = Some(telemetry);
+        self
+    }
+
+    /// Attach a memory registry for injection into newly created agents.
+    pub fn with_memory_registry(
+        mut self,
+        registry: crate::context::memory::MemoryRegistry,
+    ) -> Self {
+        self.roster = self.roster.with_memory_registry(registry);
         self
     }
 

@@ -123,6 +123,7 @@ pub struct LocalSessionBridge<C: LLMClient + Clone + 'static> {
     config: Arc<Config>,
     sessions: Arc<RwLock<HashMap<String, Arc<Mutex<BridgeSession<C>>>>>>,
     active_session_id: Arc<RwLock<Option<String>>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
 
 impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
@@ -133,7 +134,17 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             active_session_id: Arc::new(RwLock::new(None)),
+            memory_registry: None,
         }
+    }
+
+    /// Attach a memory registry for injection into newly created sessions.
+    pub fn with_memory_registry(
+        mut self,
+        registry: crate::context::memory::MemoryRegistry,
+    ) -> Self {
+        self.memory_registry = Some(registry);
+        self
     }
 
     /// Create a new root session and return its metadata.
@@ -167,9 +178,14 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
 
         let agent = match agent {
             Some(agent) => agent,
-            None => Agent::builder(self.client.clone(), Arc::clone(&self.config))
-                .with_default_tools()
-                .build(),
+            None => {
+                let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
+                    .with_default_tools();
+                if let Some(ref mem) = self.memory_registry {
+                    builder = builder.with_memory_registry(mem.clone());
+                }
+                builder.build()
+            }
         };
 
         let (session, mut events_rx) = BridgeSession::new(info.clone(), agent, parent_request_id);
