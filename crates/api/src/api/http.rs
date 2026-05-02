@@ -107,15 +107,16 @@ use crate::agent::config::Config;
 use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
 use crate::api::handlers::{
-    agent_chat, agent_stream, build_prompt, chat, create_agent, execute, get_agent,
+    agent_chat, agent_stream, build_prompt, chat, create_agent, delete_entry, execute, get_agent,
     get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
     get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
     list_pending_approvals, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
-    restore_session, stream, submit_approval, summarize, switch_agent, update_compaction_config,
-    update_config,
+    restore_session, store_entry, stream, submit_approval, summarize, switch_agent,
+    update_compaction_config, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
+use crate::context::memory_json::JsonFileMemoryProvider;
 use crate::error::Result;
 use tokio::sync::RwLock;
 
@@ -140,6 +141,8 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
     pub session_bridge: Arc<LocalSessionBridge<C>>,
     /// The default user-led orchestra used by stateless task endpoints.
     pub default_orchestra_id: crate::core::id::TeamId,
+    /// Persistent memory provider backed by .amadeus/memory.json.
+    pub memory_provider: Arc<JsonFileMemoryProvider>,
 }
 
 /*
@@ -204,12 +207,16 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
         .create_session(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
 
+    let memory_path = config.workdir.join(".amadeus").join("memory.json");
+    let memory_provider = Arc::new(JsonFileMemoryProvider::new(memory_path));
+
     let state = Arc::new(AppState {
         client,
         config,
         orchestrator,
         session_bridge,
         default_orchestra_id,
+        memory_provider,
     });
 
     // -------------------------------------------------------------------------
@@ -329,6 +336,8 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         // Memory providers and entries
         .route("/memory/providers", get(list_memory_providers))
         .route("/memory/entries", get(load_memory_entries))
+        .route("/memory/entries", post(store_entry))
+        .route("/memory/entries/:key", delete(delete_entry))
         // Tool catalog
         .route("/tools/catalog", get(get_tool_catalog))
         // =====================================================================

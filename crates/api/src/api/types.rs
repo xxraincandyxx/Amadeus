@@ -964,6 +964,19 @@ pub struct MemoryEntryInfo {
     pub source: String,
 }
 
+/// Request for `POST /memory/entries`.
+#[derive(Debug, Deserialize)]
+pub struct StoreMemoryRequest {
+    pub key: String,
+    pub content: String,
+    #[serde(default = "default_source")]
+    pub source: String,
+}
+
+fn default_source() -> String {
+    "user".to_string()
+}
+
 // ---------------------------------------------------------------------------
 // Tool catalog API types
 // ---------------------------------------------------------------------------

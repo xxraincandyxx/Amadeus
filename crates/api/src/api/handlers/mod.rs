@@ -139,7 +139,7 @@ pub use config::{get_config, update_config};
 pub use execute::execute;
 pub use health::health;
 pub use history::get_history;
-pub use memory::{list_memory_providers, load_memory_entries};
+pub use memory::{delete_entry, list_memory_providers, load_memory_entries, store_entry};
 pub use prompts::{build_prompt, list_prompt_sections};
 pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;

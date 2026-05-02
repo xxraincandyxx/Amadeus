@@ -27,6 +27,9 @@ pub mod memory {
 pub mod memory_file {
     pub use amadeus_context::memory_file::*;
 }
+pub mod memory_json {
+    pub use amadeus_context::memory_json::*;
+}
 pub mod memory_session {
     pub use amadeus_context::memory_session::*;
 }
