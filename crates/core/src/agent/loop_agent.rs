@@ -312,6 +312,16 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             self.tools
         };
 
+        // Register the memory tool if a memory registry is available
+        let tools = if let Some(ref mem_reg) = self.memory_registry {
+            let shared = Arc::new(std::sync::RwLock::new(mem_reg.clone()));
+            tools.register(Box::new(
+                crate::tools::memory_tool::MemoryTool::new(shared),
+            ))
+        } else {
+            tools
+        };
+
         let history = self
             .history
             .unwrap_or_else(|| Arc::new(RwLock::new(Vec::new())));

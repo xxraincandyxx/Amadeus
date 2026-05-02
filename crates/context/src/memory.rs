@@ -88,6 +88,14 @@ pub trait MemoryProvider: Send + Sync + fmt::Debug {
         )))
     }
 
+    /// Delete a memory entry by key. Returns an error if the provider is read-only.
+    fn delete(&self, _key: &str) -> Result<(), MemoryError> {
+        Err(MemoryError::WriteFailed(format!(
+            "provider '{}' is read-only",
+            self.name()
+        )))
+    }
+
     /// Whether this provider supports writes.
     fn writable(&self) -> bool {
         false

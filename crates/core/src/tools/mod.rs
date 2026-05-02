@@ -22,6 +22,7 @@ pub mod bash;
 pub mod file;
 pub mod glob;
 pub mod grep;
+pub mod memory_tool;
 pub mod peer;
 pub mod platform;
 pub mod registry;
@@ -35,6 +36,7 @@ pub use bash::BashTool;
 pub use file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 pub use glob::GlobTool;
 pub use grep::GrepTool;
+pub use memory_tool::MemoryTool;
 #[cfg(feature = "orchestra")]
 pub use peer::PeerTool;
 pub use platform::{

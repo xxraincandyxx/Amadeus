@@ -128,7 +128,6 @@ impl MemoryProvider for JsonFileMemoryProvider {
                 .entries
                 .lock()
                 .map_err(|e| MemoryError::WriteFailed(format!("lock poisoned: {}", e)))?;
-            // Replace existing entry with same key, or append
             if let Some(existing) = entries.iter_mut().find(|e| e.key == entry.key) {
                 *existing = entry;
             } else {
@@ -136,6 +135,11 @@ impl MemoryProvider for JsonFileMemoryProvider {
             }
         }
         self.flush_to_disk()
+    }
+
+    fn delete(&self, key: &str) -> Result<(), MemoryError> {
+        // Delegate to the inherent method
+        JsonFileMemoryProvider::delete(self, key)
     }
 
     fn writable(&self) -> bool {
