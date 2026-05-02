@@ -143,6 +143,13 @@ class MemoryEntriesResponse:
     entries: list[MemoryEntryInfo] = field(default_factory=list)
 
 
+@dataclass
+class StoreMemoryRequest:
+    key: str
+    content: str
+    source: str = "user"
+
+
 # ---------------------------------------------------------------------------
 # Tools
 # ---------------------------------------------------------------------------

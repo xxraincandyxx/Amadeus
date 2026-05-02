@@ -34,6 +34,14 @@ class MemoryManager:
         entries = await self.load_entries()
         return [e for e in entries if e.source == source]
 
+    async def store_entry(self, key: str, content: str, source: str = "user") -> dict:
+        """Store a memory entry."""
+        return await self._client.store_memory_entry(key, content, source)
+
+    async def delete_entry(self, key: str) -> dict:
+        """Delete a memory entry by key."""
+        return await self._client.delete_memory_entry(key)
+
     async def build_context_block(self) -> str:
         """Build a context block from all memory entries for inclusion in prompts."""
         entries = await self.load_entries()

@@ -252,6 +252,14 @@ class AmadeusClient:
         data["entries"] = [MemoryEntryInfo(**e) for e in data.get("entries", [])]
         return MemoryEntriesResponse(**data)
 
+    async def store_memory_entry(self, key: str, content: str, source: str = "user") -> dict:
+        """Store a memory entry. Returns the API response."""
+        return await self._post("/memory/entries", {"key": key, "content": content, "source": source})
+
+    async def delete_memory_entry(self, key: str) -> dict:
+        """Delete a memory entry by key."""
+        return await self._delete(f"/memory/entries/{key}")
+
     # ------------------------------------------------------------------
     # Tools
     # ------------------------------------------------------------------
