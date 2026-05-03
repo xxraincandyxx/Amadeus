@@ -1,0 +1,7 @@
+# LoCoMo experiment artifacts
+locomo/results/*.json
+locomo/debug_logs/*.json
+
+# Keep directory structure
+!locomo/results/.gitkeep
+!locomo/debug_logs/.gitkeep
