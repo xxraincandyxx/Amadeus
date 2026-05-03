@@ -364,7 +364,7 @@ fn default_builtin_packs(
 
 fn compat_registration(tool: Arc<dyn Tool>) -> ToolRegistration {
     let permission = match tool.name() {
-        "read_file" | "glob" | "grep" | "web_fetch" | "todo" | "sub_agent" | "call_peer" => {
+        "read_file" | "glob" | "grep" | "web_fetch" | "memory" | "todo" | "sub_agent" | "call_peer" => {
             PermissionMode::ReadOnly
         }
         "write_file" | "edit_file" | "bash" => PermissionMode::WorkspaceWrite,

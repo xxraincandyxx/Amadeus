@@ -40,6 +40,7 @@ use thiserror::Error;
 const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250929";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 50_000;
+const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 8000;
 const DEFAULT_CONTEXT_WINDOW_SIZE: u32 = 200_000;
 const DEFAULT_COMPACT_THRESHOLD_PERCENT: u8 = 75;
 const DEFAULT_COMPACT_TARGET_PERCENT: u8 = 40;
@@ -166,6 +167,7 @@ pub struct Config {
     pub workdir: PathBuf,
     pub timeout_seconds: u64,
     pub max_output_bytes: usize,
+    pub max_output_tokens: u32,
     pub blocked_commands: Vec<String>,
     pub session_log_dir: Option<PathBuf>,
     pub session_log_compress: bool,
@@ -200,6 +202,7 @@ impl Default for Config {
             workdir: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             timeout_seconds: DEFAULT_TIMEOUT_SECONDS,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
             blocked_commands: vec!["rm -rf /".to_string()],
             session_log_dir: None,
             session_log_compress: false,
@@ -423,6 +426,11 @@ impl Config {
             } else {
                 self.max_output_bytes
             },
+            max_output_tokens: if other.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS {
+                other.max_output_tokens
+            } else {
+                self.max_output_tokens
+            },
             blocked_commands: if !other.blocked_commands.is_empty()
                 && other.blocked_commands != vec!["rm -rf /".to_string()]
             {
@@ -632,6 +640,9 @@ impl Config {
 
         if let Some(max_bytes) = json.get("max_output_bytes").and_then(|v| v.as_u64()) {
             self.max_output_bytes = max_bytes as usize;
+        }
+        if let Some(max_tokens) = json.get("max_output_tokens").and_then(|v| v.as_u64()) {
+            self.max_output_tokens = max_tokens as u32;
         }
 
         if let Some(blocked) = json.get("blocked_commands").and_then(|v| v.as_array()) {

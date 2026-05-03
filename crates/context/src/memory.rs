@@ -144,22 +144,29 @@ impl MemoryRegistry {
 
     /// Build the memory section content as a string.
     ///
-    /// Returns `None` if no entries are loaded. The caller can wrap this in
-    /// a [`PromptSection`] (from `amadeus_prompts`) for injection into the
-    /// system prompt.
+    /// Caps output at ~8000 chars (~2K tokens) to avoid consuming the
+    /// context window. Returns `None` if no entries are loaded.
     pub fn build_memory_content(&self) -> Option<String> {
         let entries = self.load_all();
         if entries.is_empty() {
             return None;
         }
 
-        Some(
-            entries
-                .iter()
-                .map(|e| format!("## {}\n\n{}", e.key, e.content))
-                .collect::<Vec<_>>()
-                .join("\n\n"),
-        )
+        const MAX_CHARS: usize = 8000;
+        let mut parts: Vec<String> = Vec::new();
+        let mut total = 0;
+        // Most recent entries first (they're typically more relevant)
+        for e in entries.iter().rev() {
+            let line = format!("## {}\n\n{}", e.key, e.content);
+            if total + line.len() > MAX_CHARS && !parts.is_empty() {
+                break;
+            }
+            total += line.len();
+            parts.push(line);
+        }
+        parts.reverse();
+
+        Some(parts.join("\n\n"))
     }
 
     /// Number of registered providers.

@@ -43,7 +43,7 @@ pub async fn get_config<C: LLMClient + Clone + 'static>(
     Json(ConfigResponse {
         working_dir: config.workdir.display().to_string(),
         model: config.model.clone(),
-        max_tokens: 4096, // Default, not stored in config currently
+        max_tokens: config.max_output_tokens,
         context_window_size: config.context_window_size,
         tool_timeout_secs: config.timeout_seconds,
         require_approval: false, // Not stored in config currently
@@ -74,7 +74,7 @@ pub async fn update_config<C: LLMClient + Clone + 'static>(
     let updated_config = ConfigResponse {
         working_dir: config.workdir.display().to_string(),
         model: request.model.unwrap_or_else(|| config.model.clone()),
-        max_tokens: request.max_tokens.unwrap_or(4096),
+        max_tokens: request.max_tokens.unwrap_or(config.max_output_tokens),
         context_window_size: request
             .context_window_size
             .unwrap_or(config.context_window_size),

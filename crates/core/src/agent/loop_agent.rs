@@ -938,7 +938,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut stream = {
                     let history_guard = history.read().await;
                     client
-                        .create_message_stream(&system, &history_guard, &tool_schemas, 8000)
+                        .create_message_stream(&system, &history_guard, &tool_schemas, config.max_output_tokens)
                         .await?
                 };
 

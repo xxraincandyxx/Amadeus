@@ -78,6 +78,43 @@ def multi_answer_f1(predicted: str, answer: str) -> float:
 CATEGORY_MAP = {1: "Multi-Hop", 2: "Temporal", 3: "Open Domain", 4: "Single-Hop", 5: "Adversarial"}
 
 
+def extract_final_answer(response: str) -> str:
+    """Extract the actual answer from a verbose model response.
+
+    Strips common apology/meta preambles and extracts the core answer.
+    """
+    text = response.strip()
+    # Remove common "I'm sorry..." preambles
+    prefixes = [
+        "I'm sorry, but I don't have access to the memory store",
+        "I am sorry, but I don't have access",
+        "I am sorry, but I cannot find",
+        "I'm sorry, I cannot find",
+        "I'm sorry, I can't",
+        "I am sorry, I can't",
+        "I cannot find",
+        "I don't have access",
+        "I do not have access",
+        "Based on the conversation",
+        "Based on the context",
+    ]
+    for prefix in prefixes:
+        if text.lower().startswith(prefix.lower()):
+            # Try to find the actual answer after the prefix
+            # Look for key answer patterns
+            for marker in ["However, ", "But ", "The answer is ", "Answer:"]:
+                idx = text.find(marker)
+                if idx != -1:
+                    return text[idx + len(marker):].strip(" .\n")
+            # If no marker found, return everything after "to recall that specific detail"
+            detail_markers = ["recall that specific detail.", "recall that specific fact.", "retrieved."]
+            for dm in detail_markers:
+                idx = text.find(dm)
+                if idx != -1:
+                    return text[idx + len(dm):].strip(" .\n")
+    return text
+
+
 def check_answer(predicted: str, item: dict) -> bool:
     category = int(item.get("category", 4))
     answer = str(item.get("answer", ""))
@@ -125,8 +162,14 @@ async def evaluate_item(
     item: dict,
     item_index: int,
     total: int,
+    batch_size_chars: int = 15000,
 ) -> dict:
-    """Feed conversation incrementally via MemoryAgent, then ask the question."""
+    """Feed conversation in batches to MemoryAgent, then answer questions.
+
+    Sessions are batched to stay within the model's context window while
+    minimizing LLM calls. History is cleared between batches so only memory
+    entries accumulate — not raw conversation text.
+    """
     conversation = item.get("conversation", {})
     session_ids = get_session_ids(conversation)
     question = item["question"]
@@ -137,21 +180,52 @@ async def evaluate_item(
 
     print(f"  [{item_index + 1}/{total}] {item_id} ({category_name})", end="", flush=True)
 
-    # Step 1: Feed each session to the agent, asking it to remember key facts
+    # Step 1: Build batches of sessions
+    batches: list[list[int]] = []
+    current_batch: list[int] = []
+    current_chars = 0
     for sid in session_ids:
         session_text = format_session(conversation, sid)
+        session_len = len(session_text)
+        if current_batch and current_chars + session_len > batch_size_chars:
+            batches.append(current_batch)
+            current_batch = []
+            current_chars = 0
+        current_batch.append(sid)
+        current_chars += session_len
+    if current_batch:
+        batches.append(current_batch)
+
+    total_batches = len(batches)
+    print(f" [{total_batches} batches]", end="", flush=True)
+
+    # Step 2: Feed each batch, clearing history between batches
+    for bi, batch_sids in enumerate(batches):
+        # Build text for all sessions in this batch
+        batch_text_parts = []
+        for sid in batch_sids:
+            batch_text_parts.append(format_session(conversation, sid))
+        batch_text = "\n\n".join(batch_text_parts)
+
         prompt = (
-            f"Read this conversation session and use the memory tool to store any "
-            f"important facts, events, dates, names, and details that might be asked "
-            f"about later. Focus on specific information.\n\n{session_text}"
+            f"Read these conversation sessions ({bi + 1} of {total_batches}) "
+            f"and use the memory store tool to record important facts, events, "
+            f"dates, names, relationships, preferences, and details. Store each "
+            f"distinct fact separately. Be thorough.\n\n{batch_text}"
         )
         try:
-            await agent.ask(prompt, timeout_secs=120)
+            await agent.ask(prompt, timeout_secs=180)
         except Exception as e:
-            print(f" [session {sid} error: {e}]", end="", flush=True)
-            continue
+            err_msg = str(e)[:120]
+            print(f" [batch{bi} err: {err_msg}]", end="", flush=True)
+        finally:
+            if bi < total_batches - 1:
+                try:
+                    await agent.clear_history()
+                except Exception:
+                    pass
 
-    # Step 2: Ask the actual question
+    # Step 3: Ask the question
     category_hints = {
         1: "This may require combining multiple facts. List all relevant items.",
         2: "Use calendar dates from the conversation to answer with an approximate date.",
@@ -161,29 +235,30 @@ async def evaluate_item(
     }
     hint = category_hints.get(category, "")
     answer_prompt = (
-        f"Based on the conversations you've read and the memories you've stored, "
-        f"answer this question. Use the memory recall tool if needed. "
-        f"{hint}\n\nQuestion: {question}\n\nAnswer:"
+        f"Use the memory search tool with relevant keywords to find facts about "
+        f"this question. Then answer concisely in a single short phrase. "
+        f"{hint}\n\nQuestion: {question}\n\nAnswer concisely:"
     )
 
     try:
-        turn = await agent.ask(answer_prompt, timeout_secs=120)
+        turn = await agent.ask(answer_prompt, timeout_secs=180)
         response = turn.text.strip()
     except Exception as e:
         response = f"ERROR: {e}"
 
-    # Step 3: Score the answer
-    is_correct = check_answer(response, item)
+    # Step 4: Extract answer and score
+    extracted = extract_final_answer(response)
+    is_correct = check_answer(extracted, item)
     score = 1.0 if is_correct else 0.0
-
     status = "correct" if is_correct else "incorrect"
-    print(f" -> {status} (expected: {expected[:60]})")
+    print(f" -> {status} (exp: {expected[:40]})")
 
     return {
         "item_id": item_id,
         "question": question,
         "expected": expected,
         "predicted": response,
+        "extracted": extracted,
         "category": category,
         "category_name": category_name,
         "score": score,
@@ -223,10 +298,20 @@ async def run_evaluation(
     async with MemoryAgent(server_url, timeout=180.0, debug_log_dir="./debug_logs") as agent:
         # Optional: pre-seed with instruction that this is a memory test
         for i, item in enumerate(items):
+            # Clear memories from previous conversation
+            existing = await agent.list_memories()
+            if existing:
+                print(f"  (clearing {len(existing)} memories) ", end="", flush=True)
+            for entry in existing:
+                try:
+                    await agent.forget(entry.key)
+                except Exception as e:
+                    print(f"[forget_err:{entry.key}:{e}] ", end="", flush=True)
+            # Also reset conversation history between items
+            await agent.clear_history()
+
             result = await evaluate_item(agent, item, i, total)
             item_results.append(result)
-            # Clear history between items (each conversation is independent)
-            await agent.clear_history()
 
     elapsed = time.monotonic() - t0
 

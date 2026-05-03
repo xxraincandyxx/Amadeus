@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Optional, Union
 from urllib.parse import urljoin
 
@@ -92,12 +93,20 @@ class AmadeusClient:
         return self._handle(resp)
 
     async def _delete(self, path: str, body: Optional[dict] = None) -> dict:
-        resp = await self.client.delete(path, json=body)
+        if body is not None:
+            resp = await self.client.request("DELETE", path, content=json.dumps(body), headers={"Content-Type": "application/json"})
+        else:
+            resp = await self.client.delete(path)
         return self._handle(resp)
 
     def _handle(self, resp: httpx.Response) -> dict:
         if resp.is_success:
-            return resp.json()
+            data = resp.json()
+            # Some endpoints return 200 with error payloads on agent failures
+            if isinstance(data, dict) and "error" in data:
+                err = ErrorResponse(**data)
+                raise AmadeusError(resp.status_code, err)
+            return data
         try:
             err = ErrorResponse(**resp.json())
         except Exception:
@@ -293,7 +302,7 @@ class AmadeusClient:
 
     async def kill_agent(self, agent_id: str) -> dict:
         """Kill (remove) an agent."""
-        return await self._delete(f"/agents/{agent_id}")
+        return await self._delete(f"/agents/{agent_id}", body={})
 
     async def switch_agent(self, agent_id: str) -> dict:
         """Switch to a different agent as the active one."""
