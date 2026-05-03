@@ -60,8 +60,21 @@ pub struct EmbeddingClient {
 
 impl EmbeddingClient {
     pub fn new(base_url: impl Into<String>, model: impl Into<String>, api_key: impl Into<String>) -> Self {
+        let mut builder = Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(10));
+
+        if std::env::var("AMADEUS_NO_PROXY")
+            .map(|v| v == "true" || v == "1")
+            .unwrap_or(true)
+        {
+            builder = builder.no_proxy();
+        }
+
+        let client = builder.build().expect("Failed to create HTTP client");
+
         Self {
-            client: Client::new(),
+            client,
             base_url: base_url.into(),
             model: model.into(),
             api_key: api_key.into(),
