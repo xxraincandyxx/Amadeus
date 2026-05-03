@@ -21,3 +21,6 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["python-sdk/amadeus_sdk"]
+
+[tool.pyright]
+extraPaths = ["python-sdk"]

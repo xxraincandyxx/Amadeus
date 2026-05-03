@@ -273,7 +273,7 @@ async def run_evaluation(
 ) -> dict:
     """Run the LoCoMo evaluation with MemoryAgent."""
     # Load dataset
-    from openbench.benchmarks.mini_locomo import MiniLoCoMoBenchmark
+    from openbench.benchmarks.mini_locomo import MiniLoCoMoBenchmark  # pyright: ignore[reportMissingImports]
 
     bm = MiniLoCoMoBenchmark()
     all_items = bm.load_dataset()
@@ -287,10 +287,10 @@ async def run_evaluation(
         items = all_items
 
     total = len(items)
-    print(f"\n=== LoCoMo MemoryAgent Evaluation ===")
+    print("\n=== LoCoMo MemoryAgent Evaluation ===")
     print(f"  Server: {server_url}")
     print(f"  Items:  {total}")
-    print(f"")
+    print("")
 
     t0 = time.monotonic()
     item_results: list[dict] = []
@@ -384,12 +384,12 @@ def main():
     print(f"\nResults saved to {output_path}")
 
     # Summary
-    print(f"\n=== Summary ===")
+    print("\n=== Summary ===")
     print(f"  Accuracy:        {result['accuracy']:.3f}")
     print(f"  LoCoMo Core:     {result['locomo_core_accuracy']:.3f}")
     print(f"  Correct/Total:   {result['correct']}/{result['attempted']}")
     print(f"  Time:            {result['elapsed_seconds']:.1f}s")
-    print(f"  Categories:")
+    print("  Categories:")
     for cat, stats in sorted(result["category_breakdown"].items()):
         print(f"    {cat}: {stats['accuracy']:.3f} ({stats['correct']}/{stats['count']})")
 
