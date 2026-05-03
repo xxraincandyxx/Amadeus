@@ -122,6 +122,9 @@ pub mod memory;
 /// Tool catalog handler.
 pub mod tools_catalog;
 
+/// RAG document ingest, query, list, and delete.
+pub mod rag;
+
 /*
  * ============================================================================
  * RE-EXPORTS
@@ -147,3 +150,4 @@ pub use stream::stream;
 pub use summarize::summarize;
 pub use tasks::handle_task;
 pub use tools_catalog::get_tool_catalog;
+pub use rag::{rag_delete_document, rag_ingest, rag_list_documents, rag_query};

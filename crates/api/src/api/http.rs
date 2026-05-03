@@ -111,13 +111,15 @@ use crate::api::handlers::{
     get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
     get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
     list_pending_approvals, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
-    restore_session, store_entry, stream, submit_approval, summarize, switch_agent,
-    update_compaction_config, update_config,
+    rag_delete_document, rag_ingest, rag_list_documents, rag_query, restore_session, store_entry,
+    stream, submit_approval, summarize, switch_agent, update_compaction_config, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
 use crate::context::memory_json::JsonFileMemoryProvider;
 use crate::error::Result;
+use amadeus_rag::embedding::EmbeddingClient;
+use amadeus_rag::vector_store::VectorMemoryProvider;
 use tokio::sync::RwLock;
 
 /*
@@ -143,6 +145,10 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
     pub default_orchestra_id: crate::core::id::TeamId,
     /// Persistent memory provider backed by .amadeus/memory.json.
     pub memory_provider: Arc<JsonFileMemoryProvider>,
+    /// Vector store for RAG document ingestion and semantic search.
+    pub rag_provider: Arc<VectorMemoryProvider>,
+    /// Embedding client for vectorizing text.
+    pub embedding_client: Arc<EmbeddingClient>,
 }
 
 /*
@@ -201,6 +207,23 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     let mut memory_registry = crate::context::memory::MemoryRegistry::new();
     memory_registry.register(memory_provider.clone());
 
+    // Build RAG vector store and embedding client.
+    let rag_path = config.workdir.join(".amadeus").join("rag_index.json");
+    let rag_provider = Arc::new(VectorMemoryProvider::new(rag_path));
+    let embedding_base_url = config
+        .embedding_base_url
+        .clone()
+        .unwrap_or_else(|| config.base_url.clone().unwrap_or_default());
+    let embedding_model = config
+        .embedding_model
+        .clone()
+        .unwrap_or_else(|| config.model.clone());
+    let embedding_client = Arc::new(EmbeddingClient::new(
+        embedding_base_url,
+        embedding_model,
+        config.api_key.clone(),
+    ));
+
     let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
         .with_memory_registry(memory_registry.clone());
     let default_orchestra_id = orchestrator.ensure_default_orchestra(OrchestraLeader::User);
@@ -224,6 +247,8 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
         session_bridge,
         default_orchestra_id,
         memory_provider,
+        rag_provider,
+        embedding_client,
     });
 
     // -------------------------------------------------------------------------
@@ -347,6 +372,11 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/memory/entries/:key", delete(delete_entry))
         // Tool catalog
         .route("/tools/catalog", get(get_tool_catalog))
+        // RAG semantic search
+        .route("/rag/ingest", post(rag_ingest))
+        .route("/rag/query", post(rag_query))
+        .route("/rag/documents", get(rag_list_documents))
+        .route("/rag/documents/:id", delete(rag_delete_document))
         // =====================================================================
         // MULTI-AGENT ENDPOINTS
         // =====================================================================
