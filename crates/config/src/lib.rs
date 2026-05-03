@@ -50,6 +50,10 @@ const DEFAULT_COMPACT_MAX_SUMMARY_CHARS: usize = 2000;
 const DEFAULT_COMPACT_MIN_MESSAGES: usize = 10;
 const DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS: usize = 5000;
 const DEFAULT_MAX_SUBAGENT_DEPTH: usize = 2;
+const DEFAULT_RAG_ENABLED: bool = false;
+const DEFAULT_RAG_CHUNK_SIZE: usize = 1200;
+const DEFAULT_RAG_CHUNK_OVERLAP: usize = 200;
+const DEFAULT_RAG_TOP_K: usize = 5;
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -181,6 +185,12 @@ pub struct Config {
     pub compact_min_messages: usize,
     pub compact_max_tool_result_chars: usize,
     pub max_subagent_depth: usize,
+    pub rag_enabled: bool,
+    pub embedding_model: Option<String>,
+    pub embedding_base_url: Option<String>,
+    pub rag_chunk_size: usize,
+    pub rag_chunk_overlap: usize,
+    pub rag_top_k: usize,
     pub permission_mode: PermissionMode,
     #[serde(default)]
     pub hooks: HookSettings,
@@ -216,6 +226,12 @@ impl Default for Config {
             compact_min_messages: DEFAULT_COMPACT_MIN_MESSAGES,
             compact_max_tool_result_chars: DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS,
             max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
+            rag_enabled: DEFAULT_RAG_ENABLED,
+            embedding_model: None,
+            embedding_base_url: None,
+            rag_chunk_size: DEFAULT_RAG_CHUNK_SIZE,
+            rag_chunk_overlap: DEFAULT_RAG_CHUNK_OVERLAP,
+            rag_top_k: DEFAULT_RAG_TOP_K,
             permission_mode: PermissionMode::WorkspaceWrite,
             hooks: HookSettings::default(),
             telemetry: TelemetrySettings::default(),
@@ -500,6 +516,24 @@ impl Config {
             } else {
                 self.max_subagent_depth
             },
+            rag_enabled: other.rag_enabled || self.rag_enabled,
+            embedding_model: other.embedding_model.or(self.embedding_model),
+            embedding_base_url: other.embedding_base_url.or(self.embedding_base_url),
+            rag_chunk_size: if other.rag_chunk_size != DEFAULT_RAG_CHUNK_SIZE {
+                other.rag_chunk_size
+            } else {
+                self.rag_chunk_size
+            },
+            rag_chunk_overlap: if other.rag_chunk_overlap != DEFAULT_RAG_CHUNK_OVERLAP {
+                other.rag_chunk_overlap
+            } else {
+                self.rag_chunk_overlap
+            },
+            rag_top_k: if other.rag_top_k != DEFAULT_RAG_TOP_K {
+                other.rag_top_k
+            } else {
+                self.rag_top_k
+            },
             permission_mode: if other.permission_mode != PermissionMode::WorkspaceWrite {
                 other.permission_mode
             } else {
@@ -713,6 +747,36 @@ impl Config {
 
         if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {
             self.max_subagent_depth = max_subagent_depth as usize;
+        }
+
+        if let Some(rag_enabled) = json.get("rag_enabled").and_then(|v| v.as_bool()) {
+            self.rag_enabled = rag_enabled;
+        }
+
+        if let Some(embedding_model) = json.get("embedding_model").and_then(|v| v.as_str()) {
+            self.embedding_model = Some(embedding_model.to_string());
+        }
+        if matches!(json.get("embedding_model"), Some(Value::Null)) {
+            self.embedding_model = None;
+        }
+
+        if let Some(embedding_base_url) = json.get("embedding_base_url").and_then(|v| v.as_str()) {
+            self.embedding_base_url = Some(embedding_base_url.to_string());
+        }
+        if matches!(json.get("embedding_base_url"), Some(Value::Null)) {
+            self.embedding_base_url = None;
+        }
+
+        if let Some(chunk_size) = json.get("rag_chunk_size").and_then(|v| v.as_u64()) {
+            self.rag_chunk_size = chunk_size as usize;
+        }
+
+        if let Some(chunk_overlap) = json.get("rag_chunk_overlap").and_then(|v| v.as_u64()) {
+            self.rag_chunk_overlap = chunk_overlap as usize;
+        }
+
+        if let Some(top_k) = json.get("rag_top_k").and_then(|v| v.as_u64()) {
+            self.rag_top_k = top_k as usize;
         }
 
         if let Some(permission_mode) = json.get("permission_mode").and_then(|v| v.as_str()) {
