@@ -181,6 +181,7 @@ pub struct AgentBuilder<C: LLMClient> {
     telemetry: Option<Arc<TelemetryRecorder>>,
     compaction_trigger: Option<Box<dyn CompactionTrigger>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
+    rag_tool: Option<Box<dyn crate::tools::tool_trait::Tool>>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -200,6 +201,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             telemetry: None,
             compaction_trigger: None,
             memory_registry: None,
+            rag_tool: None,
         }
     }
 
@@ -292,6 +294,15 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Register a RAG tool for semantic document search.
+    ///
+    /// The tool is created externally (in the `rag` crate) and passed in
+    /// to avoid a circular dependency between `core` and `rag`.
+    pub fn with_rag(mut self, rag_tool: Box<dyn crate::tools::tool_trait::Tool>) -> Self {
+        self.rag_tool = Some(rag_tool);
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
@@ -318,6 +329,13 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             tools.register(Box::new(
                 crate::tools::memory_tool::MemoryTool::new(shared),
             ))
+        } else {
+            tools
+        };
+
+        // Register the RAG tool if provided
+        let tools = if let Some(rag_tool) = self.rag_tool {
+            tools.register(rag_tool)
         } else {
             tools
         };

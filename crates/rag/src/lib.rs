@@ -30,4 +30,5 @@
 
 pub mod chunker;
 pub mod embedding;
+pub mod tool;
 pub mod vector_store;
