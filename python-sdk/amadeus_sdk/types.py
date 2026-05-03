@@ -288,6 +288,43 @@ class UADebugLog:
 
 
 # ---------------------------------------------------------------------------
+# RAG
+# ---------------------------------------------------------------------------
+
+@dataclass
+class RagSearchResult:
+    rank: int
+    key: str
+    content: str
+    source: str
+    score: float
+
+
+@dataclass
+class RagDocumentInfo:
+    id: str
+    chunk_count: int
+    ingested_at: str
+
+
+@dataclass
+class RagIngestResponse:
+    document_id: str
+    chunk_count: int
+
+
+@dataclass
+class RagQueryResponse:
+    query: str
+    results: list[RagSearchResult] = field(default_factory=list)
+
+
+@dataclass
+class RagDocumentsResponse:
+    documents: list[RagDocumentInfo] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------
 

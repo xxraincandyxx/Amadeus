@@ -27,6 +27,11 @@ from .types import (
     PromptSectionInfo,
     PromptSectionInput,
     PromptSectionsResponse,
+    RagDocumentInfo,
+    RagDocumentsResponse,
+    RagIngestResponse,
+    RagQueryResponse,
+    RagSearchResult,
     SessionDetail,
     SessionSummary,
     SkillSummary,
@@ -278,6 +283,51 @@ class AmadeusClient:
         data = await self._get("/tools/catalog")
         data["tools"] = [ToolCatalogEntry(**t) for t in data.get("tools", [])]
         return ToolCatalogResponse(**data)
+
+    # ------------------------------------------------------------------
+    # RAG
+    # ------------------------------------------------------------------
+
+    async def rag_ingest(
+        self,
+        text: Optional[str] = None,
+        path: Optional[str] = None,
+        document_id: Optional[str] = None,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+    ) -> RagIngestResponse:
+        """Ingest text or a file into the RAG vector store."""
+        body: dict = {}
+        if text is not None:
+            body["text"] = text
+        if path is not None:
+            body["path"] = path
+        if document_id is not None:
+            body["document_id"] = document_id
+        if chunk_size is not None:
+            body["chunk_size"] = chunk_size
+        if chunk_overlap is not None:
+            body["chunk_overlap"] = chunk_overlap
+        return RagIngestResponse(**await self._post("/rag/ingest", body))
+
+    async def rag_query(self, query: str, top_k: Optional[int] = None) -> RagQueryResponse:
+        """Semantic search over ingested documents."""
+        body: dict = {"query": query}
+        if top_k is not None:
+            body["top_k"] = top_k
+        data = await self._post("/rag/query", body)
+        data["results"] = [RagSearchResult(**r) for r in data.get("results", [])]
+        return RagQueryResponse(**data)
+
+    async def rag_list_documents(self) -> RagDocumentsResponse:
+        """List all ingested RAG documents."""
+        data = await self._get("/rag/documents")
+        data["documents"] = [RagDocumentInfo(**d) for d in data.get("documents", [])]
+        return RagDocumentsResponse(**data)
+
+    async def rag_delete_document(self, document_id: str) -> dict:
+        """Delete a RAG document and all its chunks."""
+        return await self._delete(f"/rag/documents/{document_id}")
 
     # ------------------------------------------------------------------
     # Multi-agent

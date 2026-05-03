@@ -123,6 +123,13 @@ class MemoryAgent:
         return self._compaction
 
     @property
+    def rag(self) -> "RAGManager":
+        if not hasattr(self, "_rag"):
+            from .rag import RAGManager
+            self._rag = RAGManager(self._client)
+        return self._rag
+
+    @property
     def debug(self) -> UADebugRecorder:
         return self._debug
 
