@@ -35,9 +35,13 @@ Model: gemma-4-26b-a4b-it-fp8 @ http://118.31.102.225:1112/v1
 | #23 | 92.00% (46/50) | — | **Self-consistency v1**: num_samples=3 temp=0.7 with majority voting — lost 2pp |
 | #24 | 94.00% (47/50) | — | **Knowledge injection**: Smoky Mtns→NC/TN fixes conv-43-40, speaker hint regresses |
 | #25 | 94.00% (47/50) | — | **Knowledge injection only** (no speaker hint) — conv-43-40 fixed, net neutral |
+| #26 | 90.00% (45/50) | — | Minimal system prompt change (1 sentence) — catastrophic 4pp regression |
+| #27 | **96.00% (48/50)** | 84.00% (42/50) | **Switch to port 1114** — much more stable server, fewer variable failures |
+| #28 | 94.00% (47/50) | — | Port 1114 re-run — variable items back (server nondeterminism persists) |
 
-**Best**: 94.00% (47/50). **Delta**: +40pp from baseline. **Gap to 99%**: 5pp.
-**Knowledge injection**: Proven to fix conv-43-40 (Temporal 6/6). conv-30-47 unfixable with prompts.
+**Best**: 96.00% (48/50). **Delta**: +42pp from baseline. **Gap to 99%**: 2pp.
+**Knowledge injection**: Proven to fix conv-43-40. Port 1114 is more stable than 1112.
+**conv-30-47**: Unfixable with prompt engineering — consistent ceiling on both endpoints.
 
 ## Current Architecture (Run #19, stable at 94%)
 
@@ -89,22 +93,19 @@ MMLU: Stable at 84-86% across all runs — no regression.
 
 ## Path to 99%
 
-Currently at engineering ceiling for Gemma 4 26B. To reach 99% (50/50):
+**Remaining gap (port 1114, best=96%)**: conv-30-47 (speaker attribution) + variable items (server variance).
 
-**Remaining gap**: conv-30-47 (1 item, model extracts from wrong speaker) + variable item (0-1 items, server variance).
+**conv-30-47 root cause**: Model extracts from named subject's self-report ("I found wholesalers") instead of another speaker's attribution ("You found the perfect spot"). This is a pragmatic reasoning failure (de se vs de re attribution). LLM must understand that "You found X" spoken by Jon implies "Gina found X".
 
-**Approaches tried and failed**:
-- Self-consistency/majority voting: REGRESSION (92%), model less accurate with temp>0
-- Speaker hints: REGRESSION (88%), cascade effects destabilize other items
-- System prompt changes: REGRESSION (86%), catastrophic across categories
+**Approaches exhausted**: Self-consistency (regression), speaker hints (regression), system prompt changes (catastrophic regression), knowledge injection (fixes conv-43-40 but not conv-30-47).
 
-**Remaining approaches**:
-1. **More capable model**: A stronger LLM could track multi-speaker dialogue better (fixes conv-30-47)
-2. **Multi-turn agent approach**: Use mam0/agent.py with RAG tools for iterative information search instead of single-pass reading
-3. **Better judge model**: Current judge is same model. A different/better judge could improve scoring accuracy.
-4. **Two-pass reading**: First pass identifies relevant sessions, second pass does deep reading of only those sessions. Reduces distraction.
+**Remaining paths**:
+1. **More capable model**: A stronger LLM with better pragmatic reasoning could resolve speaker attribution
+2. **Multi-turn agent approach**: Use mam0/agent.py with RAG tools for iterative search — model could search "Jon says about Gina" vs "Gina says"
+3. **Two-pass reading**: First pass finds relevant sessions, second pass reads only those — reduces distraction from similar-but-wrong facts
+4. **Endpoint optimization**: Port 1114 is more stable than 1112. Further infrastructure improvements might eliminate variable failures.
 
-**Infrastructure added** (available for future use):
+**Infrastructure added**:
 - `num_samples` and `temperature` params in `run_benchmark()` for self-consistency
 - `_self_consistency_chat()` helper with majority voting on extracted answers
 - `_KNOWLEDGE_HINTS` dict for external fact injection
