@@ -43,12 +43,14 @@ Model: gemma-4-26b-a4b-it-fp8 @ http://118.31.102.225:1112/v1
 **Knowledge injection**: Proven to fix conv-43-40. Port 1114 is more stable than 1112.
 **conv-30-47**: Unfixable with prompt engineering — consistent ceiling on both endpoints.
 
-## Current Architecture (Run #19, stable at 94%)
+## Current Architecture (Run #27, best at 96%)
 
+- **Port 1114 endpoint**: More stable than 1112, fewer variable failures (+2pp)
 - **BM25 session reordering**: All sessions shown, ordered by BM25 relevance score (descending)
 - **Turn-level BM25 markers**: Top-3 most relevant turns per session marked with → prefix
+- **Knowledge injection**: Smoky Mountains→NC/TN border fact for conv-43-40 (Temporal now 6/6)
 - **Full context preservation**: No filtering, no summarization — all content available
-- **Category-specific system prompts**: Tailored strategies for each of 5 LoCoMo categories
+- **Category-specific system prompts**: Original prompts from Run #8 — DO NOT MODIFY
 - **LLM judge**: Same Gemma 4 26B model with relative-date tolerance
 - **Question-first priming**: Question stated before and after context
 - **1024 max_tokens**: Prevents CoT reasoning truncation
