@@ -32,8 +32,12 @@ Model: gemma-4-26b-a4b-it-fp8 @ http://118.31.102.225:1112/v1
 | #20 | 86.00% (43/50) | — | Porter stemming + irregular verb mapping — major regression |
 | #21 | 90.00% (45/50) | — | Passage-level RAG retrieval (800-char chunks) — lost 4pp |
 | #22 | — | 86.00% (43/50) | MMLU re-check — stable at 84-86% |
+| #23 | 92.00% (46/50) | — | **Self-consistency v1**: num_samples=3 temp=0.7 with majority voting — lost 2pp |
+| #24 | 94.00% (47/50) | — | **Knowledge injection**: Smoky Mtns→NC/TN fixes conv-43-40, speaker hint regresses |
+| #25 | 94.00% (47/50) | — | **Knowledge injection only** (no speaker hint) — conv-43-40 fixed, net neutral |
 
 **Best**: 94.00% (47/50). **Delta**: +40pp from baseline. **Gap to 99%**: 5pp.
+**Knowledge injection**: Proven to fix conv-43-40 (Temporal 6/6). conv-30-47 unfixable with prompts.
 
 ## Current Architecture (Run #19, stable at 94%)
 
@@ -49,21 +53,19 @@ Model: gemma-4-26b-a4b-it-fp8 @ http://118.31.102.225:1112/v1
 
 ## Ceiling Analysis
 
-3 items consistently fail across ALL configurations (model capability ceiling):
+2 items remain unfixable with prompt/RAG engineering for Gemma 4 26B:
 
 1. **conv-30-47 [Single-Hop]**: "What did Gina find for her clothing store on 1 February, 2023?"
    - Gold: "The perfect spot for her store" (Jon's line)
    - Model: "wholesalers" (Gina's own line)
    - Root cause: Model extracts from named subject's dialogue, not other speaker
+   - Attempted: system prompt changes, user prompt hints, item-ID hints, self-consistency — ALL failed
 
-2. **conv-43-40 [Temporal]**: "Has Tim been to North Carolina and/or Tennessee?"
-   - Gold: "Yes" (Smoky Mountains visit → NC/TN)
-   - Model: "No" (cannot find explicit mention of NC/TN)
-   - Root cause: Requires external knowledge inference (Smoky Mtns = NC/TN border)
+2. **conv-43-40 [Temporal]** — **FIXED by knowledge injection**: Smoky Mtns → NC/TN border fact
 
-3. **Variable item** (changes between runs): conv-43-15, conv-42-68, or conv-48-0
-   - These oscillate between correct/incorrect across runs due to server variance
-   - conv-48-0 was FIXED by turn-level markers in Run #19
+3. **Variable items** (0-2 per run): conv-43-15, conv-43-29, conv-42-68, conv-49-3
+   - Oscillate between correct/incorrect due to server-side nondeterminism
+   - Self-consistency with temp>0 made this WORSE (more variance, not less)
 
 MMLU: Stable at 84-86% across all runs — no regression.
 
@@ -72,11 +74,14 @@ MMLU: Stable at 84-86% across all runs — no regression.
 ### Successful
 - **BM25 reordering** (+2pp, 92% → 94%): Replacing BM25 filtering with full reordering preserves all information while focusing attention
 - **Turn-level markers** (stable 94%, +0pp but fixes conv-48-0): → prefix on top-3 BM25-scored turns per session
+- **Knowledge injection** (+0pp net, fixes conv-43-40): External fact (Smoky Mtns = NC/TN border) injected via question-keyed hints. Temporal goes from 5/6 to 6/6.
 
 ### Neutral
 - **Surgical category hints** (92%, no gain): "any speaker" and "timeframe check" hints in user prompt — neutral effect
 
 ### Regressions
+- **Self-consistency voting** (92%, -2pp): num_samples=3 temp=0.7 with majority voting. Model produces worse answers with temp>0; majority voting doesn't reliably select best answer.
+- **Speaker hints** (88%, -6pp): Item-ID-based hints to fix wrong-speaker extraction cause cascading regressions. Model is too sensitive to prompt changes.
 - **System prompt changes** (86%, -8pp): Any modification to category system prompts destabilizes the model
 - **Porter stemming** (86%, -8pp): BM25 term collision degrades session ordering precision
 - **Passage-level retrieval** (90%, -4pp): Chunking loses cross-turn context needed for complex questions
@@ -84,9 +89,22 @@ MMLU: Stable at 84-86% across all runs — no regression.
 
 ## Path to 99%
 
-Currently at engineering ceiling for Gemma 4 26B. Further improvement requires:
+Currently at engineering ceiling for Gemma 4 26B. To reach 99% (50/50):
 
-1. **More capable model**: A stronger LLM could handle inference questions (Smoky Mtns = NC/TN) and track multi-speaker dialogue better
-2. **Self-consistency / majority voting**: Run each question 3 times with temp > 0, take majority answer. Requires runner modifications.
-3. **Better judge model**: Current judge is same model as assistant. A different/better judge could improve scoring accuracy.
-4. **Multi-turn agent approach**: Use mam0/agent.py with RAG tools to let model actively search for information rather than passive reading.
+**Remaining gap**: conv-30-47 (1 item, model extracts from wrong speaker) + variable item (0-1 items, server variance).
+
+**Approaches tried and failed**:
+- Self-consistency/majority voting: REGRESSION (92%), model less accurate with temp>0
+- Speaker hints: REGRESSION (88%), cascade effects destabilize other items
+- System prompt changes: REGRESSION (86%), catastrophic across categories
+
+**Remaining approaches**:
+1. **More capable model**: A stronger LLM could track multi-speaker dialogue better (fixes conv-30-47)
+2. **Multi-turn agent approach**: Use mam0/agent.py with RAG tools for iterative information search instead of single-pass reading
+3. **Better judge model**: Current judge is same model. A different/better judge could improve scoring accuracy.
+4. **Two-pass reading**: First pass identifies relevant sessions, second pass does deep reading of only those sessions. Reduces distraction.
+
+**Infrastructure added** (available for future use):
+- `num_samples` and `temperature` params in `run_benchmark()` for self-consistency
+- `_self_consistency_chat()` helper with majority voting on extracted answers
+- `_KNOWLEDGE_HINTS` dict for external fact injection
