@@ -175,8 +175,7 @@ impl InputComponent {
     pub fn shell_command(&self) -> Option<String> {
         if self.shell_mode {
             let input = self.get_input();
-            let cmd = input.strip_prefix('!').unwrap_or(&input);
-            let cmd = cmd.trim();
+            let cmd = input.trim();
             if !cmd.is_empty() {
                 Some(cmd.to_string())
             } else {
@@ -279,7 +278,6 @@ impl InputComponent {
         let was_empty = self.get_input().is_empty();
         if was_empty && c == '!' {
             self.shell_mode = true;
-            self.textarea.insert_char(c);
             self.status_hint = Some("shell mode".to_string());
             self.refresh_suggestions();
             return;
@@ -290,9 +288,11 @@ impl InputComponent {
 
     pub fn handle_backspace(&mut self) {
         self.clear_btw_dropup();
-        if self.shell_mode && self.get_input().len() <= 1 {
+        if self.shell_mode && self.get_input().is_empty() {
             self.shell_mode = false;
             self.status_hint = None;
+            self.refresh_suggestions();
+            return;
         }
         self.textarea.delete_char();
         self.refresh_suggestions();
