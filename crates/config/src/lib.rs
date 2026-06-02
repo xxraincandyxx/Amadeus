@@ -805,14 +805,31 @@ impl Config {
     }
 
     fn validate_credentials(&self) -> Result<()> {
-        match self.provider {
-            Provider::Anthropic if self.api_key.is_empty() => {
-                Err(ConfigError::MissingSetting("api_key".into()))
+        if self.api_key.is_empty() {
+            // Skip validation for self-hosted / local providers with a custom base URL
+            let has_custom_endpoint = self
+                .base_url
+                .as_ref()
+                .map(|url| {
+                    let lower = url.to_lowercase();
+                    !lower.contains("api.anthropic.com")
+                        && !lower.contains("api.openai.com")
+                        && !lower.is_empty()
+                })
+                .unwrap_or(false);
+
+            if has_custom_endpoint {
+                return Ok(());
             }
-            Provider::OpenAI if self.api_key.is_empty() => {
-                Err(ConfigError::MissingSetting("api_key".into()))
+
+            match self.provider {
+                Provider::Anthropic | Provider::OpenAI => {
+                    Err(ConfigError::MissingSetting("api_key".into()))
+                }
+                _ => Ok(()),
             }
-            _ => Ok(()),
+        } else {
+            Ok(())
         }
     }
 
