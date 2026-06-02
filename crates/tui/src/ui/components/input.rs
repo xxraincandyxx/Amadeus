@@ -95,6 +95,7 @@ pub struct InputComponent {
     btw_dropup: Option<BtwDropupState>,
     shortcuts_visible: bool,
     placeholder_visible: bool,
+    shell_mode: bool,
 }
 
 struct BtwDropupState {
@@ -143,6 +144,7 @@ impl InputComponent {
             btw_dropup: None,
             shortcuts_visible: false,
             placeholder_visible: true,
+            shell_mode: false,
         };
         input.refresh_suggestions();
         input
@@ -162,7 +164,27 @@ impl InputComponent {
         self.history_index = None;
         self.current_draft.clear();
         self.clear_btw_dropup();
+        self.shell_mode = false;
         self.refresh_suggestions();
+    }
+
+    pub fn is_shell_mode(&self) -> bool {
+        self.shell_mode
+    }
+
+    pub fn shell_command(&self) -> Option<String> {
+        if self.shell_mode {
+            let input = self.get_input();
+            let cmd = input.strip_prefix('!').unwrap_or(&input);
+            let cmd = cmd.trim();
+            if !cmd.is_empty() {
+                Some(cmd.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     fn textarea_block() -> Block<'static> {
@@ -254,12 +276,24 @@ impl InputComponent {
 
     pub fn handle_char(&mut self, c: char) {
         self.clear_btw_dropup();
+        let was_empty = self.get_input().is_empty();
+        if was_empty && c == '!' {
+            self.shell_mode = true;
+            self.textarea.insert_char(c);
+            self.status_hint = Some("shell mode".to_string());
+            self.refresh_suggestions();
+            return;
+        }
         self.textarea.insert_char(c);
         self.refresh_suggestions();
     }
 
     pub fn handle_backspace(&mut self) {
         self.clear_btw_dropup();
+        if self.shell_mode && self.get_input().len() <= 1 {
+            self.shell_mode = false;
+            self.status_hint = None;
+        }
         self.textarea.delete_char();
         self.refresh_suggestions();
     }
@@ -534,7 +568,13 @@ impl InputComponent {
         self.textarea.set_placeholder_text(placeholder);
 
         const PROMPT: &str = "❯ ";
-        let gutter_w = (PROMPT.width() as u16).clamp(1, inner.width);
+        const SHELL_PROMPT: &str = "$ ";
+        let active_prompt = if self.shell_mode {
+            SHELL_PROMPT
+        } else {
+            PROMPT
+        };
+        let gutter_w = (active_prompt.width() as u16).clamp(1, inner.width);
         let ta_w = inner.width.saturating_sub(gutter_w);
         if ta_w == 0 || inner.height == 0 {
             return;
@@ -553,10 +593,16 @@ impl InputComponent {
         };
 
         frame.render_widget(&self.textarea, ta_rect);
+
+        let prompt_color = if self.shell_mode {
+            colors.status.warning
+        } else {
+            colors.text.accent
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                PROMPT,
-                Style::default().fg(colors.text.accent),
+                active_prompt,
+                Style::default().fg(prompt_color),
             )))
             .alignment(Alignment::Left),
             prompt_rect,
@@ -568,9 +614,14 @@ impl InputComponent {
         );
 
         if comp_rows == 0 {
+            let hint_text = if self.shell_mode {
+                "  ! for shell mode · backspace to exit"
+            } else {
+                "  ? for shortcuts"
+            };
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
-                    "  ? for shortcuts",
+                    hint_text,
                     Style::default().fg(colors.ui.comment),
                 ))),
                 chunks[shortcuts_idx],
