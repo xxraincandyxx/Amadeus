@@ -76,6 +76,15 @@ fn parse_args(args: &[String]) -> CliArgs {
                     i += 1;
                 }
             }
+            "--export" => {
+                if i + 1 < args.len() {
+                    cli.export_path = Some(PathBuf::from(&args[i + 1]));
+                    i += 1;
+                } else {
+                    eprintln!("--export requires a path argument");
+                    std::process::exit(2);
+                }
+            }
             "--help" | "-h" => {
                 println!("Amadeus - AI Agent SDK");
                 println!();
@@ -86,6 +95,9 @@ fn parse_args(args: &[String]) -> CliArgs {
                 println!("  --permission-mode MODE   Override permission mode (read-only|workspace-write|danger-full-access|prompt)");
                 println!("  --server [PORT]  Run HTTP API server (default: 3000)");
                 println!("  --record [DIR]   Record session to JSON log (default: logs/testflow/sessions)");
+                println!(
+                    "  --export PATH    Export the TUI conversation to PATH on exit (.md or .json)"
+                );
                 println!("  --help, -h       Show this help message");
                 std::process::exit(0);
             }
@@ -118,6 +130,7 @@ struct CliArgs {
     assess_features: bool,
     assessment_dir: Option<PathBuf>,
     permission_mode: Option<PermissionMode>,
+    export_path: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -245,6 +258,9 @@ async fn main() -> Result<()> {
                 if let Some(rec) = recorder {
                     app.set_recorder(rec);
                 }
+                if let Some(ref export_path) = cli.export_path {
+                    app.set_export_on_exit(Some(export_path.clone()));
+                }
                 app.run().await?;
             }
             ClientKind::OpenAI(c) => {
@@ -253,6 +269,9 @@ async fn main() -> Result<()> {
                 #[cfg(feature = "test-utils")]
                 if let Some(rec) = recorder {
                     app.set_recorder(rec);
+                }
+                if let Some(ref export_path) = cli.export_path {
+                    app.set_export_on_exit(Some(export_path.clone()));
                 }
                 app.run().await?;
             }
