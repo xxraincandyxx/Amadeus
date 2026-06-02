@@ -1881,6 +1881,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return;
         }
 
+        if self.input.is_shell_mode() {
+            return;
+        }
+
         self.input
             .set_status_hint(self.loading_indicator.input_chrome_hint());
     }
@@ -3351,55 +3355,32 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         if let Some(cmd) = shell_command {
-            let prompt = format!("Execute this shell command and show me the output:\n```\n{}\n```", cmd);
-            self.messages.add_user(trimmed.to_string());
-
+            self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                .await?;
             self.input.clear();
-            self.current_text.clear();
-            self.last_error = None;
-            self.last_result_text = None;
-            self.streaming_buffer.clear();
-            self.clear_tool_monitor();
-            self.messages.clear_streaming_text();
-            self.loading_indicator
-                .set_streaming_state(StreamingState::Responding);
-            self.sync_activity_chrome();
 
+            let input_json = serde_json::json!({"command": cmd.clone()});
+            let result = self.agent.registry().execute("bash", input_json).await;
+            let output = match result {
+                Ok(output) => output,
+                Err(e) => format!("error: {e}"),
+            };
+
+            let display = format!("$ {cmd}\n{output}");
+            self.messages.add_local_command_result(display);
+
+            let prompt_text = format!("$ {cmd}");
+            let result_text = output.clone();
             let agent = self.agent.clone();
-            let (channels, approval_handle) = create_approval_channels();
-            self.approval_dec_tx = Some(approval_handle.decision_tx);
-            self.approval_req_rx = Some(approval_handle.request_rx);
-
-            let (tx, rx) = mpsc::channel(64);
-            let handle = tokio::spawn(async move {
-                {
-                    let history_arc = agent.history();
-                    let mut history = history_arc.write().await;
-                    history.push(crate::agent::messages::Message::user(&prompt));
-                }
-                let mut stream = agent.run_stream_with_approval(Some(channels));
-                while let Some(event) = stream.next().await {
-                    match event {
-                        Ok(e) => {
-                            let is_done = matches!(e, AgentEvent::Done { .. });
-                            if tx.send(e).await.is_err() {
-                                break;
-                            }
-                            if is_done {
-                                break;
-                            }
-                        }
-                        Err(e) => {
-                            let error_msg = e.to_string();
-                            let _ = tx.send(AgentEvent::Error { message: error_msg }).await;
-                            break;
-                        }
-                    }
-                }
+            tokio::spawn(async move {
+                let history = agent.history();
+                let mut history = history.write().await;
+                history.push(crate::agent::messages::Message::user(&prompt_text));
+                history.push(crate::agent::messages::Message::assistant(vec![
+                    crate::agent::messages::ContentBlock::Text { text: result_text },
+                ]));
             });
 
-            self.stream_rx = Some(rx);
-            self.stream_abort = Some(handle);
             return Ok(());
         }
 

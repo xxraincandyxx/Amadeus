@@ -278,7 +278,6 @@ impl InputComponent {
         let was_empty = self.get_input().is_empty();
         if was_empty && c == '!' {
             self.shell_mode = true;
-            self.status_hint = Some("shell mode".to_string());
             self.refresh_suggestions();
             return;
         }
@@ -290,7 +289,6 @@ impl InputComponent {
         self.clear_btw_dropup();
         if self.shell_mode && self.get_input().is_empty() {
             self.shell_mode = false;
-            self.status_hint = None;
             self.refresh_suggestions();
             return;
         }
@@ -560,7 +558,9 @@ impl InputComponent {
 
         let inner = chunks[inner_idx];
         self.textarea.set_block(Self::textarea_block());
-        let placeholder = if self.placeholder_visible {
+        let placeholder = if self.shell_mode {
+            String::new()
+        } else if self.placeholder_visible {
             composer_placeholder()
         } else {
             String::new()
