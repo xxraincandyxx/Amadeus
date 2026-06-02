@@ -66,6 +66,12 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         "Restore the session to an earlier checkpoint",
         Some("[steps]"),
     ),
+    SlashCommandSpec::new(
+        "export",
+        &[],
+        "Export the current conversation to a .md or .json file",
+        Some("[path|json]"),
+    ),
     SlashCommandSpec::new("exit", &[], "Exit the current TUI session", None),
 ];
 
@@ -80,6 +86,7 @@ pub enum SlashCommand {
     Hooks,
     NewAgent,
     Rewind { steps: Option<usize> },
+    Export { path: Option<String> },
     Exit,
     Unknown(String),
 }
@@ -114,6 +121,9 @@ impl SlashCommand {
             "rewind" => Self::Rewind {
                 steps: remainder.and_then(|value| value.parse::<usize>().ok()),
             },
+            "export" => Self::Export {
+                path: remainder.map(String::from),
+            },
             "exit" => Self::Exit,
             other => Self::Unknown(other.to_string()),
         })
@@ -130,6 +140,7 @@ impl SlashCommand {
             Self::Hooks => "hooks",
             Self::NewAgent => "new-agent",
             Self::Rewind { .. } => "rewind",
+            Self::Export { .. } => "export",
             Self::Exit => "exit",
             Self::Unknown(_) => "unknown",
         }
@@ -147,6 +158,7 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
     }
 
     #[test]
@@ -175,6 +187,30 @@ mod tests {
             Some(SlashCommand::Rewind { steps: Some(2) })
         );
         assert_eq!(SlashCommand::parse("/exit"), Some(SlashCommand::Exit));
+    }
+
+    #[test]
+    fn parse_export_command() {
+        assert_eq!(
+            SlashCommand::parse("/export"),
+            Some(SlashCommand::Export { path: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export notes.md"),
+            Some(SlashCommand::Export {
+                path: Some("notes.md".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export path/to/conv.json"),
+            Some(SlashCommand::Export {
+                path: Some("path/to/conv.json".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/EXPORT").map(|c| c.primary_name()),
+            Some("export")
+        );
     }
 
     #[test]
