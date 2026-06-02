@@ -10,7 +10,15 @@ __pycache__/
 .DS_Store
 .env
 .amadeus/settings.json
+.amadeus/settings.local.json
 .amadeus/logs/
+.amadeus/memory.json
+.amadeus/rag_index.json
+
+# Runtime generated output
+runtime/locomo/debug_logs/
+runtime/locomo/__pycache__/
+runtime/rag_eval/results/
 
 # Logging files
 /logs

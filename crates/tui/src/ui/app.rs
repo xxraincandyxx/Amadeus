@@ -17,19 +17,24 @@
 // - module: crate::error::Result
 // - module: crate::ui::event
 // - module: crate::ui
+// - cmd: git apply
+// - cmd: git diff
 // - runtime: tokio async runtime
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects:
+// - Runs external commands or subprocesses.
 // - Spawns asynchronous tasks.
 // - Sends or receives messages across async channels.
 // tests:
+// - cmd: cargo test -p tui rewind --features test-utils
 // - tests/tool_approval_test.rs
 // @end-amadeus-header
 
 use std::collections::{HashMap, VecDeque};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -597,6 +602,20 @@ struct RewindCheckpointRecord {
     label: String,
     detail: String,
     checkpoint: SessionCheckpoint,
+    code: Option<CodeSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct CodeSnapshot {
+    diff: String,
+    summary: CodeSnapshotSummary,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CodeSnapshotSummary {
+    files: Vec<String>,
+    additions: usize,
+    deletions: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -613,9 +632,16 @@ struct RewindDialogState {
 }
 
 #[derive(Debug, Clone)]
+struct RewindConfirmState {
+    dialog: SlashDialog,
+    entry: RewindCheckpointRecord,
+}
+
+#[derive(Debug, Clone)]
 enum SlashDialogState {
     Hooks(HooksDialogState),
     Rewind(RewindDialogState),
+    RewindConfirm(RewindConfirmState),
 }
 
 #[derive(Debug, Clone)]
@@ -994,13 +1020,81 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         )
     }
 
+    fn summarize_code_snapshot(diff: &str) -> CodeSnapshotSummary {
+        let mut summary = CodeSnapshotSummary::default();
+
+        for line in diff.lines() {
+            if let Some(path) = line.strip_prefix("+++ b/") {
+                if path != "/dev/null" {
+                    summary.files.push(path.to_string());
+                }
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                summary.additions += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                summary.deletions += 1;
+            }
+        }
+
+        summary.files.sort();
+        summary.files.dedup();
+        summary
+    }
+
+    fn code_snapshot_detail(snapshot: &Option<CodeSnapshot>) -> Option<String> {
+        let snapshot = snapshot.as_ref()?;
+        if snapshot.diff.trim().is_empty() {
+            return Some("code clean".to_string());
+        }
+
+        let file_label = match snapshot.summary.files.as_slice() {
+            [] => "workspace".to_string(),
+            [file] => file.clone(),
+            files => format!("{} files", files.len()),
+        };
+
+        Some(format!(
+            "code +{} -{} in {}",
+            snapshot.summary.additions, snapshot.summary.deletions, file_label
+        ))
+    }
+
+    fn checkpoint_detail_with_code(
+        checkpoint: &SessionCheckpoint,
+        code: &Option<CodeSnapshot>,
+    ) -> String {
+        match Self::code_snapshot_detail(code) {
+            Some(code_detail) => {
+                format!("{} · {}", Self::checkpoint_detail(checkpoint), code_detail)
+            }
+            None => Self::checkpoint_detail(checkpoint),
+        }
+    }
+
+    fn capture_code_snapshot(&self) -> Option<CodeSnapshot> {
+        let output = Command::new("git")
+            .args(["diff", "--binary", "--no-ext-diff", "--"])
+            .current_dir(&self.workdir)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let diff = String::from_utf8(output.stdout).ok()?;
+        let summary = Self::summarize_code_snapshot(&diff);
+        Some(CodeSnapshot { diff, summary })
+    }
+
     async fn capture_rewind_checkpoint(&mut self, label: String) -> Result<()> {
         let checkpoint = self.agent.checkpoint().await?;
-        let detail = Self::checkpoint_detail(&checkpoint);
+        let code = self.capture_code_snapshot();
+        let detail = Self::checkpoint_detail_with_code(&checkpoint, &code);
         self.rewind_checkpoints.push(RewindCheckpointRecord {
             label,
             detail,
             checkpoint,
+            code,
         });
         Ok(())
     }
@@ -1049,6 +1143,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
     async fn show_rewind_dialog(&mut self) -> Result<()> {
         let current_checkpoint = self.agent.checkpoint().await?;
+        let current_code = self.capture_code_snapshot();
         let mut entries = self
             .rewind_checkpoints
             .iter()
@@ -1063,7 +1158,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .map(|entry| SlashDialogItem::new(entry.label.clone(), Some(entry.detail.clone())))
             .chain(std::iter::once(SlashDialogItem::new(
                 "(current)",
-                Some(Self::checkpoint_detail(&current_checkpoint)),
+                Some(Self::checkpoint_detail_with_code(
+                    &current_checkpoint,
+                    &current_code,
+                )),
             )))
             .collect::<Vec<_>>();
 
@@ -1082,6 +1180,44 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }));
         self.mode = AppMode::SlashDialog;
         Ok(())
+    }
+
+    fn show_rewind_confirm_dialog(&mut self, entry: RewindCheckpointRecord) {
+        let code_detail = Self::code_snapshot_detail(&entry.code)
+            .unwrap_or_else(|| "code snapshot unavailable".to_string());
+        let items = vec![
+            SlashDialogItem::new("Restore code and conversation", Some(code_detail.clone())),
+            SlashDialogItem::new(
+                "Restore conversation",
+                Some(Self::checkpoint_detail(&entry.checkpoint)),
+            ),
+            SlashDialogItem::new("Restore code", Some(code_detail)),
+            SlashDialogItem::new(
+                "Summarize from here",
+                Some("not implemented yet".to_string()),
+            ),
+            SlashDialogItem::new("Never mind", None),
+        ];
+
+        self.slash_dialog = Some(SlashDialogState::RewindConfirm(RewindConfirmState {
+            dialog: SlashDialog::new(
+                "Rewind",
+                Some(
+                    "Confirm you want to restore to the point before you sent this message:"
+                        .to_string(),
+                ),
+                vec![
+                    format!("| {}", entry.label),
+                    "The conversation will be forked.".to_string(),
+                    "Code restore uses the unstaged git diff snapshot for tracked files."
+                        .to_string(),
+                ],
+                "Enter to confirm · Esc to exit",
+                items,
+            ),
+            entry,
+        }));
+        self.mode = AppMode::SlashDialog;
     }
 
     fn render_hook_details(&mut self, event: HookEvent, descriptors: &[HookDescriptor]) {
@@ -1119,7 +1255,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.messages.add_local_command_result(content);
     }
 
-    async fn restore_rewind_checkpoint(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
+    async fn restore_rewind_conversation(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
         self.agent.restore_checkpoint(&entry.checkpoint).await?;
         self.messages
             .replace_history_from_messages(&entry.checkpoint.history);
@@ -1133,6 +1269,55 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.pending_transcript_reset = true;
         self.footer
             .set_status_message(format!("Rewound to {}", entry.label));
+        Ok(())
+    }
+
+    fn run_git_apply(&self, args: &[&str], patch: &str) -> Result<()> {
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(&self.workdir)
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(patch.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(crate::error::AgentError::Command(if stderr.is_empty() {
+                "git apply failed".to_string()
+            } else {
+                stderr
+            }))
+        }
+    }
+
+    fn restore_rewind_code(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
+        let Some(target) = entry.code.as_ref() else {
+            self.footer
+                .set_status_message("No code snapshot available for that checkpoint");
+            return Ok(());
+        };
+
+        let current = self.capture_code_snapshot();
+        if let Some(current) = current {
+            if !current.diff.trim().is_empty() {
+                self.run_git_apply(&["apply", "-R", "--whitespace=nowarn"], &current.diff)?;
+            }
+        }
+
+        if !target.diff.trim().is_empty() {
+            self.run_git_apply(&["apply", "--whitespace=nowarn"], &target.diff)?;
+        }
+
+        self.footer
+            .set_status_message(format!("Restored code to {}", entry.label));
         Ok(())
     }
 
@@ -1165,7 +1350,31 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             Some(SlashDialogState::Rewind(state)) => {
                 if let Some(selected) = state.dialog.selected() {
                     if let Some(Some(entry)) = state.entries.get(selected) {
-                        self.restore_rewind_checkpoint(entry).await?;
+                        self.show_rewind_confirm_dialog(entry.clone());
+                        return Ok(());
+                    }
+                }
+                self.dismiss_slash_dialog();
+            }
+            Some(SlashDialogState::RewindConfirm(state)) => {
+                if let Some(selected) = state.dialog.selected() {
+                    match selected {
+                        0 => {
+                            self.restore_rewind_code(&state.entry)?;
+                            self.restore_rewind_conversation(&state.entry).await?;
+                        }
+                        1 => {
+                            self.restore_rewind_conversation(&state.entry).await?;
+                        }
+                        2 => {
+                            self.restore_rewind_code(&state.entry)?;
+                        }
+                        3 => {
+                            self.messages.add_local_command_result(
+                                "Summarize-from-here is not implemented yet.".to_string(),
+                            );
+                        }
+                        _ => {}
                     }
                 }
                 self.dismiss_slash_dialog();
@@ -2230,6 +2439,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     match dialog {
                         SlashDialogState::Hooks(state) => state.dialog.select_previous(),
                         SlashDialogState::Rewind(state) => state.dialog.select_previous(),
+                        SlashDialogState::RewindConfirm(state) => state.dialog.select_previous(),
                     }
                 }
             }
@@ -2238,6 +2448,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     match dialog {
                         SlashDialogState::Hooks(state) => state.dialog.select_next(),
                         SlashDialogState::Rewind(state) => state.dialog.select_next(),
+                        SlashDialogState::RewindConfirm(state) => state.dialog.select_next(),
                     }
                 }
             }
@@ -3010,7 +3221,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         if steps > 0 && steps <= self.rewind_checkpoints.len() {
                             let index = self.rewind_checkpoints.len() - steps;
                             let entry = self.rewind_checkpoints[index].clone();
-                            self.restore_rewind_checkpoint(&entry).await?;
+                            self.restore_rewind_code(&entry)?;
+                            self.restore_rewind_conversation(&entry).await?;
                         } else {
                             self.messages.add_local_command_result(format!(
                                 "No rewind checkpoint available for {steps} step(s)."
@@ -3183,6 +3395,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             match dialog {
                 SlashDialogState::Hooks(state) => state.dialog.render(frame, size),
                 SlashDialogState::Rewind(state) => state.dialog.render(frame, size),
+                SlashDialogState::RewindConfirm(state) => state.dialog.render(frame, size),
             }
         }
 
@@ -4232,14 +4445,16 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, MonitorStatus, Session, ToolMonitorState};
+    use super::{App, MonitorStatus, Session, SlashDialogState, ToolMonitorState};
     use crate::agent::messages::{ContentBlock, Message};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{
         backend::{CrosstermBackend, TestBackend},
         Terminal,
     };
+    use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::Arc;
 
     use crate::agent::config::Config;
@@ -4957,6 +5172,89 @@ mod tests {
     }
 
     #[test]
+    fn code_snapshot_summary_counts_changed_lines_and_files() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,2 +1,3 @@
+ fn main() {
+-    old();
++    new();
++    extra();
+ }
+";
+
+        let summary = Session::<BenchmarkMockClient>::summarize_code_snapshot(diff);
+
+        assert_eq!(summary.files, vec!["src/main.rs"]);
+        assert_eq!(summary.additions, 2);
+        assert_eq!(summary.deletions, 1);
+    }
+
+    #[tokio::test]
+    async fn rewind_dialog_confirm_step_is_shown_for_selected_checkpoint() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session
+            .capture_rewind_checkpoint("before".to_string())
+            .await
+            .expect("checkpoint");
+
+        session.show_rewind_dialog().await.expect("rewind dialog");
+        session
+            .submit_slash_dialog()
+            .await
+            .expect("select checkpoint");
+
+        assert!(matches!(
+            session.slash_dialog,
+            Some(SlashDialogState::RewindConfirm(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn restore_rewind_code_restores_tracked_git_diff() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        run_git(root, &["init"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test User"]);
+        fs::write(root.join("tracked.txt"), "one\n").expect("write tracked");
+        run_git(root, &["add", "tracked.txt"]);
+        run_git(root, &["commit", "-m", "initial"]);
+
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let mut config = Config::default();
+        config.workdir = root.to_path_buf();
+        let agent = Agent::builder(client, Arc::new(config)).build();
+        let mut session = Session::new(
+            agent,
+            root.to_path_buf(),
+            "test-model".to_string(),
+            0,
+            "root".to_string(),
+            0,
+        );
+
+        session
+            .capture_rewind_checkpoint("before edit".to_string())
+            .await
+            .expect("checkpoint");
+        fs::write(root.join("tracked.txt"), "one\ntwo\n").expect("modify tracked");
+
+        let entry = session.rewind_checkpoints[0].clone();
+        session
+            .restore_rewind_code(&entry)
+            .expect("restore code snapshot");
+
+        assert_eq!(
+            fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
+            "one\n"
+        );
+    }
+
+    #[test]
     fn rewind_transcript_reset_inserts_spacer_lines_and_clears_pending_flag() {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend).expect("test terminal");
@@ -4969,6 +5267,20 @@ mod tests {
             .expect("rewind reset should succeed");
 
         assert!(!session.pending_transcript_reset);
+    }
+
+    fn run_git(root: &std::path::Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]
