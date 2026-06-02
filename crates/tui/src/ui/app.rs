@@ -74,6 +74,10 @@ use crate::ui::components::{
     SlashDialogItem, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
+use crate::ui::export::{
+    build_export as build_export_artifact, default_export_path, write_export, ExportFormat,
+    SessionHeader,
+};
 use crate::ui::{get_theme, next_theme, SidebarKind};
 
 const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
@@ -3130,6 +3134,48 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         build_context_report(&self.agent)
     }
 
+    /// Build an export artifact for the current session and write it to `path`.
+    /// When `path` is `None`, the conversation is written to
+    /// `<workdir>/.amadeus/exports/conversation-<label>-<id>-<stamp>.md`.
+    pub fn export_to_path(
+        &self,
+        path: Option<&std::path::Path>,
+    ) -> std::io::Result<std::path::PathBuf> {
+        let header = SessionHeader {
+            session_id: self.session_id.to_string(),
+            label: self.session_label.clone(),
+            parent_session_id: self.parent_session_id.map(|id| id.to_string()),
+            workdir: self.workdir.display().to_string(),
+            model: self.agent.config().model.clone(),
+            subagent_depth: self.subagent_depth,
+        };
+        let artifact = build_export_artifact(&self.messages, &self.agent, &header);
+        let target: std::path::PathBuf = match path {
+            Some(p) => p.to_path_buf(),
+            None => default_export_path(&self.workdir, &self.session_label, self.session_id),
+        };
+        write_export(&artifact, &target)
+    }
+
+    /// Same as `export_to_path` but with an explicit format override.
+    pub fn export_to_path_with_format(
+        &self,
+        path: &std::path::Path,
+        format: ExportFormat,
+    ) -> std::io::Result<std::path::PathBuf> {
+        use crate::ui::export::write_export_with_format;
+        let header = SessionHeader {
+            session_id: self.session_id.to_string(),
+            label: self.session_label.clone(),
+            parent_session_id: self.parent_session_id.map(|id| id.to_string()),
+            workdir: self.workdir.display().to_string(),
+            model: self.agent.config().model.clone(),
+            subagent_depth: self.subagent_depth,
+        };
+        let artifact = build_export_artifact(&self.messages, &self.agent, &header);
+        write_export_with_format(&artifact, path, format)
+    }
+
     fn build_tools_info(&self) -> String {
         let registry = self.agent.registry();
         let mut lines = vec![format!(
@@ -3303,6 +3349,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 - `/hooks`: Inspect configured hook phases
 - `/new-agent`: Spawn new agent session
 - `/rewind`: Restore an earlier local checkpoint
+- `/export [path|json]`: Export the conversation (markdown by default, `.json` → JSON)
 - `/exit`: Quit
 - `!`: Shell mode — execute shell commands directly
 - `Ctrl+C` / `Esc`: Cancel active stream
@@ -3335,6 +3382,22 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         }
                     } else {
                         self.show_rewind_dialog().await?;
+                    }
+                    return Ok(());
+                }
+                SlashCommand::Export { path } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let target = path.as_deref().map(std::path::Path::new);
+                    match self.export_to_path(target) {
+                        Ok(written) => self.messages.add_local_command_result(format!(
+                            "Exported conversation → {}",
+                            written.display()
+                        )),
+                        Err(e) => self
+                            .messages
+                            .add_local_command_result(format!("Export failed: {e}")),
                     }
                     return Ok(());
                 }
@@ -3567,6 +3630,8 @@ pub struct App<C: LLMClient> {
     pending_terminal_reset: bool,
     pending_reset_from_history: bool,
     pending_close: Option<(usize, Instant)>,
+    /// When set, the active session is exported to this path on graceful exit.
+    pending_export: Option<PathBuf>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
     #[cfg(feature = "test-utils")]
@@ -3596,11 +3661,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             pending_terminal_reset: false,
             pending_reset_from_history: false,
             pending_close: None,
+            pending_export: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
             #[cfg(feature = "test-utils")]
             next_frame_id: 0,
         }
+    }
+
+    /// Schedule an export of the active session to `path` on graceful exit.
+    /// When `path` is `None`, the session is written to the default export
+    /// directory (`<workdir>/.amadeus/exports/`).
+    pub fn set_export_on_exit(&mut self, path: Option<PathBuf>) {
+        self.pending_export = path;
+    }
+
+    /// Take the configured export path, clearing the pending flag.
+    pub fn take_pending_export(&mut self) -> Option<PathBuf> {
+        self.pending_export.take()
     }
 
     #[cfg(feature = "test-utils")]
@@ -3757,6 +3835,23 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend)?;
         terminal.show_cursor()?;
+
+        if let Some(path) = self.take_pending_export() {
+            if res.is_ok() {
+                let active_idx = self.active_idx.min(self.sessions.len().saturating_sub(1));
+                match self.sessions[active_idx].export_to_path(Some(&path)) {
+                    Ok(written) => tracing::info!(
+                        path = %written.display(),
+                        "Exported conversation on exit"
+                    ),
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        path = %path.display(),
+                        "Failed to export conversation on exit"
+                    ),
+                }
+            }
+        }
 
         #[cfg(feature = "test-utils")]
         if let Some(ref recorder) = self.recorder {
@@ -5298,6 +5393,125 @@ mod tests {
             .join("\n");
         assert!(!rendered.contains("hello"));
         assert!(!rendered.contains("world"));
+    }
+
+    #[tokio::test]
+    async fn slash_export_writes_file_to_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("conversation.md");
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("hello there".to_string());
+        session.messages.add_assistant("general kenobi".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("export command");
+
+        assert!(target.exists());
+        let body = fs::read_to_string(&target).expect("read export");
+        assert!(body.contains("# Amadeus Conversation Export"));
+        assert!(body.contains("hello there"));
+        assert!(body.contains("general kenobi"));
+    }
+
+    #[tokio::test]
+    async fn slash_export_default_path_lands_under_amadeus_exports() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workdir = dir.path().to_path_buf();
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.workdir = workdir.clone();
+        session.messages.add_user("hi".to_string());
+        for ch in "/export".chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("export command");
+
+        let exports_dir = workdir.join(".amadeus").join("exports");
+        assert!(
+            exports_dir.exists(),
+            "default export directory should exist"
+        );
+        let written: Vec<_> = fs::read_dir(&exports_dir)
+            .expect("read exports")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "md")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(written.len(), 1, "exactly one markdown export should land");
+    }
+
+    #[tokio::test]
+    async fn slash_export_appends_timestamp_on_collision() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("export.md");
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("first".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("first export");
+        assert!(target.exists());
+
+        let mut app2 = test_app();
+        let session2 = active_session_mut(&mut app2);
+        session2.messages.add_user("second".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session2.input.handle_char(ch);
+        }
+        session2.submit_input().await.expect("second export");
+
+        let siblings: Vec<_> = fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        let with_prefix = siblings
+            .iter()
+            .filter(|name| name.starts_with("export-") && name.ends_with(".md"))
+            .count();
+        assert!(
+            with_prefix >= 1,
+            "collision should produce a timestamped sibling, got {siblings:?}"
+        );
+    }
+
+    #[test]
+    fn app_exposes_export_on_exit_setter() {
+        let mut app = test_app();
+        assert!(app.take_pending_export().is_none());
+        app.set_export_on_exit(Some(PathBuf::from("/tmp/out.md")));
+        let taken = app.take_pending_export();
+        assert_eq!(taken, Some(PathBuf::from("/tmp/out.md")));
+        assert!(app.take_pending_export().is_none());
+    }
+
+    #[tokio::test]
+    async fn session_export_to_path_with_format_writes_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("export.json");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("format me".to_string());
+        let written = session
+            .export_to_path_with_format(&target, crate::ui::export::ExportFormat::Json)
+            .expect("export json");
+        assert_eq!(written, target);
+        let body = fs::read_to_string(&target).expect("read json");
+        let value: serde_json::Value = serde_json::from_str(&body).expect("parse json");
+        assert!(value.get("turns").is_some());
+        assert!(value.get("schema_version").is_some());
     }
 
     #[test]
