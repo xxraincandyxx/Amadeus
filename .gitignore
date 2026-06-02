@@ -9,6 +9,10 @@ __pycache__/
 
 .DS_Store
 .env
+
+# Embedded repos
+refs/codex/
+
 .amadeus/settings.json
 .amadeus/settings.local.json
 .amadeus/logs/
