@@ -31,31 +31,33 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use serde::{Deserialize, Serialize};
+
 use crate::agent::{Agent, Message};
 use crate::client::LLMClient;
 use crate::context::ProjectContext;
 use crate::skills::registry::SkillRegistry;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextEntry {
     pub label: String,
     pub tokens: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextSectionGroup {
     pub title: Option<String>,
     pub entries: Vec<ContextEntry>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextSection {
     pub title: String,
     pub command_hint: Option<String>,
     pub groups: Vec<ContextSectionGroup>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContextReport {
     pub model_name: String,
     pub context_window_size: u32,
