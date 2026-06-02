@@ -486,6 +486,11 @@ impl AnthropicClient {
                         if let Some(thinking) = json["delta"]["thinking"].as_str() {
                             events.push(StreamEvent::ThinkingDelta(thinking.to_string()));
                         }
+                        if let Some(partial_json) = json["delta"]["partial_json"].as_str() {
+                            events.push(StreamEvent::ToolCallDelta {
+                                arguments: partial_json.to_string(),
+                            });
+                        }
                     }
 
                     // -----------------------------------------------------
@@ -495,13 +500,26 @@ impl AnthropicClient {
                         // Check if it's a tool_use block
                         if let Some(block) = json["content_block"].as_object() {
                             if block.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                                // Extract tool ID and name
-                                events.push(StreamEvent::ToolCallStart {
-                                    // .unwrap() is safe here because Anthropic
-                                    // guarantees these fields exist for tool_use
-                                    id: block["id"].as_str().unwrap().to_string(),
-                                    name: block["name"].as_str().unwrap().to_string(),
-                                });
+                                if let Some(tool_id) = block.get("id").and_then(|v| v.as_str()) {
+                                    if let Some(tool_name) =
+                                        block.get("name").and_then(|v| v.as_str())
+                                    {
+                                        events.push(StreamEvent::ToolCallStart {
+                                            id: tool_id.to_string(),
+                                            name: tool_name.to_string(),
+                                        });
+                                    } else {
+                                        warn!(
+                                            "Malformed content_block_start: missing tool name for {}",
+                                            tool_id
+                                        );
+                                    }
+                                } else {
+                                    warn!(
+                                        "Malformed content_block_start: missing tool call id: {}",
+                                        json_str
+                                    );
+                                }
                             }
                         }
                     }
@@ -575,5 +593,46 @@ impl AnthropicClient {
 
         // Return all collected events
         events
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::client::StreamEvent;
+
+    #[test]
+    fn parse_content_block_start_requires_id() {
+        let line = r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","name":"bash"}}"#;
+
+        let events = crate::client::anthropic::AnthropicClient::parse_sse_line(line);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn parse_content_block_start_requires_name() {
+        let line = r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1"}}"#;
+
+        let events = crate::client::anthropic::AnthropicClient::parse_sse_line(line);
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn parse_content_block_start_with_valid_fields() {
+        let line = r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"bash"}}"#;
+
+        let events = crate::client::anthropic::AnthropicClient::parse_sse_line(line);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(
+            &events[0],
+            StreamEvent::ToolCallStart { id, name } if id == "call_1" && name == "bash"
+        ));
+    }
+
+    #[test]
+    fn parse_content_block_start_ignores_non_tool_use() {
+        let line = r#"data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"hi"}}"#;
+
+        let events = crate::client::anthropic::AnthropicClient::parse_sse_line(line);
+        assert!(events.is_empty());
     }
 }

@@ -62,6 +62,8 @@ mod tests {
     fn slash_command_specs_include_hooks_and_rewind() {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
     }
 
@@ -77,6 +79,8 @@ mod tests {
             SlashCommand::parse("/compress"),
             Some(SlashCommand::Compact)
         );
+        assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
+        assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),

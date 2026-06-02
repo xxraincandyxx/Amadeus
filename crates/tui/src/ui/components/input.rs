@@ -22,10 +22,12 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use amadeus_core::parse_render_spans;
 use amadeus_core::{
     apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
-    format_citation_markdown, normalize_pasted_path, parse_render_spans,
-    scan_workspace_citation_candidates, ActiveCitationQuery, CitationCandidate,
+    format_citation_markdown, normalize_pasted_path, scan_workspace_citation_candidates,
+    ActiveCitationQuery, CitationCandidate,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -39,6 +41,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::components::completion::{render_completion_lines, CompletionState};
 use crate::ui::get_colors;
+#[cfg(test)]
 use crate::ui::semantic_colors::SemanticColors;
 
 /// Example text inside the `Try "…"` hint (configurable, English UI).
@@ -844,6 +847,7 @@ impl InputComponent {
         frame.render_widget(Paragraph::new(lines), area);
     }
 
+    #[cfg(test)]
     fn visible_input_lines(&self) -> Vec<Line<'static>> {
         let colors = get_colors();
         let input = self.get_input();
@@ -879,6 +883,7 @@ impl Default for InputComponent {
     }
 }
 
+#[cfg(test)]
 fn build_visible_line(
     line: &str,
     spans: &[amadeus_core::CitationRenderSpan],

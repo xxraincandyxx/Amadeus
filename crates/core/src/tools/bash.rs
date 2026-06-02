@@ -42,11 +42,14 @@
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::process::Command;
-use tokio::time::{timeout, Duration};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use tokio::time::Duration;
 
 use crate::agent::config::Config;
 use crate::error::{AgentError, Result};
+use crate::permissions::PermissionMode;
+use crate::security::{CommandRequest, CommandRunner, SandboxProfile};
 use crate::tools::schema::bash_tool;
 use crate::tools::tool_trait::Tool;
 
@@ -80,8 +83,28 @@ pub fn classify_command(command: &str) -> BashCommandKind {
         BashCommandKind::Destructive
     } else if normalized.contains(">")
         || normalized.contains(">>")
+        || normalized.contains("|")
+        || normalized.contains(";")
+        || normalized.contains("&&")
+        || normalized.contains("||")
+        || normalized.contains("$(")
+        || normalized.contains('`')
         || normalized.contains("sed -i")
         || normalized.contains("chmod ")
+        || normalized.contains(" tee ")
+        || normalized.starts_with("tee ")
+        || normalized.contains(" xargs ")
+        || normalized.starts_with("xargs ")
+        || normalized.starts_with("python -c")
+        || normalized.starts_with("python3 -c")
+        || normalized.starts_with("node -e")
+        || normalized.starts_with("ruby -e")
+        || normalized.starts_with("perl -e")
+        || normalized.starts_with("cargo fix")
+        || normalized.starts_with("npm install")
+        || normalized.starts_with("git clean")
+        || normalized.starts_with("git reset")
+        || normalized.starts_with("git checkout")
     {
         BashCommandKind::WorkspaceWrite
     } else {
@@ -175,6 +198,16 @@ pub struct BashTool {
     workdir: String,
     blocked_commands: Vec<String>,
     max_output_bytes: usize,
+    permission_mode: PermissionMode,
+    workspace_roots: Vec<PathBuf>,
+    command_runner: CommandRunner,
+}
+
+#[derive(Debug, Clone)]
+pub struct BashExecutionResult {
+    pub output: String,
+    pub exit_code: i32,
+    pub timed_out: bool,
 }
 
 impl BashTool {
@@ -184,6 +217,13 @@ impl BashTool {
             workdir: config.workdir.to_string_lossy().to_string(),
             blocked_commands: config.blocked_commands.clone(),
             max_output_bytes: config.max_output_bytes,
+            permission_mode: config.permission_mode,
+            workspace_roots: {
+                let mut roots = vec![config.workdir.clone()];
+                roots.extend(config.permissions.additional_directories.clone());
+                roots
+            },
+            command_runner: CommandRunner::new(),
         }
     }
 
@@ -198,6 +238,9 @@ impl BashTool {
             workdir,
             blocked_commands,
             max_output_bytes,
+            permission_mode: PermissionMode::DangerFullAccess,
+            workspace_roots: Vec::new(),
+            command_runner: CommandRunner::new(),
         }
     }
 
@@ -225,27 +268,74 @@ impl BashTool {
         }
     }
 
-    async fn execute_with_timeout(&self, cmd: &str) -> Result<String> {
-        let duration = Duration::from_secs(self.timeout_secs);
+    async fn execute_with_timeout(&self, cmd: &str, timeout_secs: u64) -> Result<String> {
+        Ok(self.run_with_timeout_and_status(cmd, timeout_secs).await?.0)
+    }
 
-        let output = async {
-            let result = Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .current_dir(&self.workdir)
-                .kill_on_drop(true)
-                .output()
-                .await?;
+    fn sandbox_profile(&self) -> SandboxProfile {
+        match self.permission_mode {
+            PermissionMode::ReadOnly => SandboxProfile::ReadOnly {
+                readable_roots: self.workspace_roots.clone(),
+            },
+            PermissionMode::WorkspaceWrite | PermissionMode::Prompt => {
+                SandboxProfile::WorkspaceWrite {
+                    readable_roots: self.workspace_roots.clone(),
+                    writable_roots: self.workspace_roots.clone(),
+                }
+            }
+            PermissionMode::DangerFullAccess | PermissionMode::Allow => {
+                SandboxProfile::DangerFullAccess
+            }
+        }
+    }
 
-            let stdout = String::from_utf8_lossy(&result.stdout).to_string();
-            let stderr = String::from_utf8_lossy(&result.stderr).to_string();
+    pub async fn execute_with_metadata(
+        &self,
+        cmd: &str,
+        timeout_secs: u64,
+    ) -> Result<BashExecutionResult> {
+        if self.is_blocked(cmd) {
+            return Err(AgentError::CommandBlocked(cmd.to_string()));
+        }
 
-            Ok(format!("{}{}", stdout, stderr))
-        };
+        match self.run_with_timeout_and_status(cmd, timeout_secs).await {
+            Ok((output, exit_code)) => Ok(BashExecutionResult {
+                output: self.truncate_output(output),
+                exit_code,
+                timed_out: false,
+            }),
+            Err(AgentError::Timeout(secs)) => Ok(BashExecutionResult {
+                output: format!("Command timed out after {} seconds", secs),
+                exit_code: -1,
+                timed_out: true,
+            }),
+            Err(error) => Err(error),
+        }
+    }
 
-        match timeout(duration, output).await {
-            Ok(result) => result,
-            Err(_) => Err(AgentError::Timeout(self.timeout_secs)),
+    async fn run_with_timeout_and_status(
+        &self,
+        cmd: &str,
+        timeout_secs: u64,
+    ) -> Result<(String, i32)> {
+        let result = self
+            .command_runner
+            .run(CommandRequest {
+                command: cmd.to_string(),
+                cwd: PathBuf::from(&self.workdir),
+                permission_mode: self.permission_mode,
+                sandbox: self.sandbox_profile(),
+                timeout: Duration::from_secs(timeout_secs),
+                max_output_bytes: self.max_output_bytes,
+                env: HashMap::new(),
+                stdin: None,
+            })
+            .await?;
+
+        if result.timed_out {
+            Err(AgentError::Timeout(timeout_secs))
+        } else {
+            Ok((result.output, result.exit_code))
         }
     }
 }
@@ -271,7 +361,44 @@ impl Tool for BashTool {
             return Err(AgentError::CommandBlocked(parsed.command));
         }
 
-        let output = self.execute_with_timeout(&parsed.command).await?;
+        let output = self
+            .execute_with_timeout(&parsed.command, self.timeout_secs)
+            .await?;
         Ok(self.truncate_output(output))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn execute_with_metadata_respects_override_timeout() {
+        let tool = BashTool::new(30, ".".to_string(), Vec::new(), 1024);
+        let result = tool
+            .execute_with_metadata("sleep 1", 0)
+            .await
+            .expect("expected execution metadata");
+        assert!(result.timed_out);
+        assert_eq!(result.exit_code, -1);
+        assert!(result.output.contains("timed out after 0 seconds"));
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_records_exit_code() {
+        let tool = BashTool::new(30, ".".to_string(), Vec::new(), 1024);
+        let result = tool
+            .execute_with_metadata("exit 7", 30)
+            .await
+            .expect("expected execution metadata");
+        assert!(!result.timed_out);
+        assert_eq!(result.exit_code, 7);
+    }
+
+    #[tokio::test]
+    async fn execute_with_metadata_blocks_forbidden_commands() {
+        let tool = BashTool::new(30, ".".to_string(), vec!["rm -rf /".to_string()], 1024);
+        let result = tool.execute_with_metadata("rm -rf /", 30).await;
+        assert!(matches!(result.unwrap_err(), AgentError::CommandBlocked(_)));
     }
 }

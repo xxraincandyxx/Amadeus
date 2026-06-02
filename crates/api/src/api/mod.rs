@@ -6,6 +6,10 @@
 // - api
 // provides:
 // - module: crate::api
+// - fn: crate::api::http::create_router
+// - fn: crate::api::http::run_server
+// - type: crate::api::http::AppState
+// - module: crate::api::types
 // uses: none
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
@@ -178,6 +182,14 @@ pub use crate::agent::loop_agent::Agent;
 /// Re-exported from `crate::agent::config`.
 pub use crate::agent::config::Config;
 
+/// Structured prompt and tool configuration types.
+///
+/// Re-exported from `crate::agent::config`.
+pub use crate::agent::config::{
+    PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, ToolOverrideConfig,
+    ToolProfileConfig, ToolSettings,
+};
+
 /// LLM provider enum (Anthropic or OpenAI).
 ///
 /// Re-exported from `crate::agent::config`.
@@ -238,3 +250,19 @@ pub use crate::tools::bash::BashTool;
 /// Returns a reference to the lazily-initialized schema.
 /// Re-exported from `crate::tools::schema`.
 pub use crate::tools::schema::bash_tool;
+
+// -------------------------------------------------------------------------
+// HTTP API TYPES AND SERVER HELPERS
+// -------------------------------------------------------------------------
+
+/// Shared HTTP server state.
+pub use http::AppState;
+
+/// Create an Axum router for embedding the HTTP API.
+pub use http::create_router;
+
+/// Run the bundled HTTP API server.
+pub use http::run_server;
+
+/// Re-export all public HTTP request and response types.
+pub use types::*;

@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Main TUI application state, rendering, and event orchestration.
+// summary: Main TUI application state, rendering, slash-command inspection, and event orchestration.
 // layer: ui
 // status: active
 // feature_flags:
@@ -3126,6 +3126,87 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         build_context_report(&self.agent)
     }
 
+    fn build_tools_info(&self) -> String {
+        let registry = self.agent.registry();
+        let mut lines = vec![format!(
+            "**Active Tool Profile:** `{}`",
+            registry.profile().name
+        )];
+        lines.push(String::new());
+        lines.push("| Tool | Pack | Source | Permission | Aliases | Override |".to_string());
+        lines.push("| --- | --- | --- | --- | --- | --- |".to_string());
+        for tool in registry.inventory() {
+            lines.push(format!(
+                "| `{}` | `{}` | `{}` | `{}` | {} | {} |",
+                tool.name,
+                tool.pack,
+                tool.source.as_str(),
+                tool.required_permission.as_str(),
+                if tool.aliases.is_empty() {
+                    "-".to_string()
+                } else {
+                    tool.aliases
+                        .iter()
+                        .map(|alias| format!("`{alias}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+                if tool.overridden { "yes" } else { "no" }
+            ));
+        }
+        lines.join("\n")
+    }
+
+    fn build_prompt_info(&self) -> String {
+        let config = self.agent.config();
+        let mut lines = vec![format!(
+            "**Active Prompt Profile:** `{}`",
+            config.prompt_profile_name()
+        )];
+        if let Some(profile) = config.prompt_profile() {
+            lines.push(format!("**Mode:** `{:?}`", profile.mode));
+            lines.push(format!(
+                "**Project context:** {}",
+                if profile.include_project_context {
+                    "included"
+                } else {
+                    "disabled"
+                }
+            ));
+            lines.push(String::new());
+            lines.push("**Sections**".to_string());
+            if profile.sections.is_empty() {
+                lines.push("- none".to_string());
+            } else {
+                for section in &profile.sections {
+                    lines.push(format!(
+                        "- `{}`{}",
+                        section.id,
+                        section
+                            .title
+                            .as_ref()
+                            .map(|title| format!(": {title}"))
+                            .unwrap_or_default()
+                    ));
+                }
+            }
+            lines.push(String::new());
+            lines.push("**Files**".to_string());
+            if profile.files.is_empty() {
+                lines.push("- none".to_string());
+            } else {
+                for file in &profile.files {
+                    lines.push(format!("- `{}`", file.display()));
+                }
+            }
+        } else {
+            lines.push(
+                "No custom prompt profile is configured; using the built-in prompt.".to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
     async fn submit_input(&mut self) -> Result<()> {
         let input = self.input.get_input();
         let trimmed = input.trim();
@@ -3179,6 +3260,22 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.add_context_report(info, turn);
                     return Ok(());
                 }
+                SlashCommand::Tools => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.messages
+                        .add_local_command_result(self.build_tools_info());
+                    return Ok(());
+                }
+                SlashCommand::Prompt => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.messages
+                        .add_local_command_result(self.build_prompt_info());
+                    return Ok(());
+                }
                 SlashCommand::NewAgent => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
@@ -3196,6 +3293,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 - `/help`: Show this help message
 - `/compact` or `/compress`: Force context compaction
 - `/context`: Show current context usage
+- `/tools`: Inspect active tool catalog
+- `/prompt`: Inspect active prompt profile
 - `/hooks`: Inspect configured hook phases
 - `/new-agent`: Spawn new agent session
 - `/rewind`: Restore an earlier local checkpoint

@@ -23,6 +23,7 @@
 
 pub mod agent;
 pub mod assessment;
+pub mod audit;
 pub mod benchmark;
 pub mod bridge;
 pub mod client;
@@ -37,12 +38,18 @@ pub mod mcp;
 pub mod permissions;
 pub mod policy;
 pub mod prompts;
+pub mod security;
 pub mod skills;
 pub mod telemetry;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub mod tools;
+pub mod transcript;
 
+pub use agent::config::{
+    Config, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider,
+    ToolOverrideConfig, ToolProfileConfig, ToolSettings,
+};
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
     AssessmentRunner, ScriptedAssessmentClient,

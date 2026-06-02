@@ -117,11 +117,14 @@ impl<C: LLMClient> BridgeSession<C> {
     }
 }
 
+type BridgeSessionHandle<C> = Arc<Mutex<BridgeSession<C>>>;
+type BridgeSessionMap<C> = HashMap<String, BridgeSessionHandle<C>>;
+
 #[derive(Clone)]
 pub struct LocalSessionBridge<C: LLMClient + Clone + 'static> {
     client: C,
     config: Arc<Config>,
-    sessions: Arc<RwLock<HashMap<String, Arc<Mutex<BridgeSession<C>>>>>>,
+    sessions: Arc<RwLock<BridgeSessionMap<C>>>,
     active_session_id: Arc<RwLock<Option<String>>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
@@ -453,7 +456,7 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         Ok(())
     }
 
-    async fn session_handle(&self, session_id: &str) -> Option<Arc<Mutex<BridgeSession<C>>>> {
+    async fn session_handle(&self, session_id: &str) -> Option<BridgeSessionHandle<C>> {
         self.sessions.read().await.get(session_id).cloned()
     }
 

@@ -11,8 +11,11 @@
 // - type: crate::api::types::ToolCall
 // - type: crate::api::types::ExecuteRequest
 // - type: crate::api::types::ExecuteResponse
+// - type: crate::api::types::PromptConfigSummary
 // - type: crate::api::types::TaskRequest
 // - type: crate::api::types::TaskResponse
+// - type: crate::api::types::ToolConfigSummary
+// - type: crate::api::types::ToolInventorySummary
 // uses:
 // - protocol: serde serialization
 // invariants:
@@ -574,6 +577,45 @@ pub struct ConfigResponse {
     pub shell_profile: Option<String>,
     /// Session log directory.
     pub session_log_dir: Option<String>,
+    /// Active prompt profile summary.
+    pub prompt: PromptConfigSummary,
+    /// Active tool profile summary.
+    pub tools: ToolConfigSummary,
+}
+
+/// Active prompt configuration summary.
+#[derive(Debug, Serialize)]
+pub struct PromptConfigSummary {
+    /// Active prompt profile name.
+    pub active_profile: String,
+    /// Number of configured inline sections and files.
+    pub section_count: usize,
+    /// Whether a custom prompt profile is active.
+    pub configured: bool,
+}
+
+/// Active tool configuration summary.
+#[derive(Debug, Serialize)]
+pub struct ToolConfigSummary {
+    /// Active tool profile name.
+    pub active_profile: String,
+    /// Composed tool inventory.
+    pub inventory: Vec<ToolInventorySummary>,
+}
+
+/// Single model-visible tool inventory record.
+#[derive(Debug, Serialize)]
+pub struct ToolInventorySummary {
+    /// Canonical tool name.
+    pub name: String,
+    /// Source pack.
+    pub pack: String,
+    /// Tool source.
+    pub source: String,
+    /// Required permission mode.
+    pub required_permission: String,
+    /// Whether user config changed model-facing metadata.
+    pub overridden: bool,
 }
 
 /// Request to update configuration.

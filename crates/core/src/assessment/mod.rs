@@ -258,10 +258,7 @@ impl ScriptedAssessmentClient {
     }
 }
 
-fn newest_tool_result<'a>(
-    messages: &'a [Message],
-    processed_count: usize,
-) -> (Option<&'a str>, usize) {
+fn newest_tool_result(messages: &[Message], processed_count: usize) -> (Option<&str>, usize) {
     let mut seen = 0;
     let mut newest = None;
 
@@ -539,22 +536,16 @@ impl LLMClient for ScriptedAssessmentClient {
                     }),
                 })
             }
-            8 => {
-                if let Some(pane) = &state.pane_id {
-                    Some(ContentBlock::ToolUse {
-                        id: "assessment_step_9".to_string(),
-                        name: "bash".to_string(),
-                        input: json!({
-                            "command": format!(
-                                "tmux-cli interrupt --pane={} && tmux-cli kill --pane={}",
-                                pane, pane
-                            )
-                        }),
-                    })
-                } else {
-                    None
-                }
-            }
+            8 => state.pane_id.as_ref().map(|pane| ContentBlock::ToolUse {
+                id: "assessment_step_9".to_string(),
+                name: "bash".to_string(),
+                input: json!({
+                    "command": format!(
+                        "tmux-cli interrupt --pane={} && tmux-cli kill --pane={}",
+                        pane, pane
+                    )
+                }),
+            }),
             _ => None,
         };
 

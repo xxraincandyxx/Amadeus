@@ -26,7 +26,7 @@ use serde_json::Value;
 use tokio::sync::Mutex;
 
 use crate::error::Result;
-use crate::mcp::client::{McpClient, McpToolSchema};
+use crate::mcp::client::{McpClient, McpServerConfig, McpToolSchema};
 use crate::permissions::PermissionMode;
 use crate::tools::platform::{
     ToolExecutionResult, ToolExecutor, ToolLevel, ToolPack, ToolPolicy, ToolRegistration,
@@ -119,7 +119,12 @@ pub async fn create_mcp_adapters(
 /// Create a unified MCP tool pack for the composed catalog.
 pub async fn create_mcp_tool_pack(config: &crate::mcp::McpServerConfig) -> Result<ToolPack> {
     let mut client = McpClient::connect(config).await?;
-    let tools = client.list_tools().await?;
+    let tools = client
+        .list_tools()
+        .await?
+        .into_iter()
+        .filter(|tool| mcp_tool_enabled(config, &tool.name))
+        .collect::<Vec<_>>();
     let client = Arc::new(Mutex::new(client));
 
     Ok(ToolPack {
@@ -127,7 +132,7 @@ pub async fn create_mcp_tool_pack(config: &crate::mcp::McpServerConfig) -> Resul
         tools: tools
             .into_iter()
             .map(|schema| ToolRegistration {
-                spec: mcp_tool_spec(schema),
+                spec: mcp_tool_spec(schema, config),
                 policy: ToolPolicy::default(),
                 executor: Arc::new(McpToolExecutor {
                     client: Arc::clone(&client),
@@ -137,12 +142,23 @@ pub async fn create_mcp_tool_pack(config: &crate::mcp::McpServerConfig) -> Resul
     })
 }
 
-fn mcp_tool_spec(schema: McpToolSchema) -> ToolSpec {
+fn mcp_tool_enabled(config: &McpServerConfig, name: &str) -> bool {
+    let explicitly_enabled =
+        config.enabled_tools.is_empty() || config.enabled_tools.iter().any(|tool| tool == name);
+    explicitly_enabled && !config.disabled_tools.iter().any(|tool| tool == name)
+}
+
+fn mcp_tool_spec(schema: McpToolSchema, config: &McpServerConfig) -> ToolSpec {
+    let required_permission = config
+        .permission_overrides
+        .get(&schema.name)
+        .copied()
+        .unwrap_or(PermissionMode::Prompt);
     ToolSpec {
         name: schema.name,
         description: schema.description.unwrap_or_default(),
         input_schema: schema.input_schema,
-        required_permission: PermissionMode::DangerFullAccess,
+        required_permission,
         source: ToolSource::Mcp,
         level: ToolLevel::Primitive,
         tags: vec!["mcp".to_string()],
@@ -163,18 +179,30 @@ mod tests {
 
     #[test]
     fn mcp_tool_pack_entries_use_native_tool_specs() {
-        let spec = mcp_tool_spec(McpToolSchema {
-            name: "remote_search".to_string(),
-            description: Some("Search remotely".to_string()),
-            input_schema: serde_json::json!({
-                "type": "object",
-                "properties": {"query": {"type": "string"}}
-            }),
-        });
+        let config = McpServerConfig {
+            command: "mock".to_string(),
+            args: Vec::new(),
+            env: Default::default(),
+            enabled_tools: Vec::new(),
+            disabled_tools: Vec::new(),
+            permission_overrides: Default::default(),
+            timeout_ms: None,
+        };
+        let spec = mcp_tool_spec(
+            McpToolSchema {
+                name: "remote_search".to_string(),
+                description: Some("Search remotely".to_string()),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {"query": {"type": "string"}}
+                }),
+            },
+            &config,
+        );
 
         assert_eq!(spec.source, ToolSource::Mcp);
         assert_eq!(spec.pack, "mcp");
-        assert_eq!(spec.required_permission, PermissionMode::DangerFullAccess);
+        assert_eq!(spec.required_permission, PermissionMode::Prompt);
         assert_eq!(spec.description, "Search remotely");
     }
 }

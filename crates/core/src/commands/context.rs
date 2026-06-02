@@ -15,7 +15,6 @@
 // - module: crate::agent::loop_agent::Agent<C>
 // - module: crate::client::LLMClient
 // - module: crate::context::ProjectContext
-// - module: crate::prompts
 // - module: crate::skills::registry::SkillRegistry
 // - module: crate::tools::registry::ToolRegistry
 // - artifact: filesystem paths and files
@@ -35,7 +34,6 @@ use std::path::{Path, PathBuf};
 use crate::agent::{Agent, Message};
 use crate::client::LLMClient;
 use crate::context::ProjectContext;
-use crate::prompts;
 use crate::skills::registry::SkillRegistry;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -112,10 +110,7 @@ impl ContextReport {
 pub fn build_context_report<C: LLMClient + Clone + 'static>(agent: &Agent<C>) -> ContextReport {
     let config = agent.config();
     let include_sub_agent_tool = agent.subagent_depth() < config.max_subagent_depth;
-    let system_prompt = prompts::render_system_prompt(
-        &config.workdir.display().to_string(),
-        include_sub_agent_tool,
-    );
+    let system_prompt = config.system_prompt(include_sub_agent_tool);
     let system_prompt_tokens = estimate_tokens(&system_prompt);
 
     let project_context = ProjectContext::load(&config.workdir);
@@ -137,7 +132,17 @@ pub fn build_context_report<C: LLMClient + Clone + 'static>(agent: &Agent<C>) ->
     for tool in registry.inventory() {
         let tokens = estimate_tokens(&serde_json::to_string(&tool.schema).unwrap_or_default());
         let entry = ContextEntry {
-            label: format!("{} ({})", tool.name, tool.level.as_str()),
+            label: format!(
+                "{} ({}, {}, {})",
+                tool.name,
+                tool.level.as_str(),
+                tool.required_permission.as_str(),
+                if tool.overridden {
+                    "overridden"
+                } else {
+                    "default"
+                }
+            ),
             tokens,
         };
         if tool.source == crate::tools::ToolSource::Builtin {
@@ -196,6 +201,20 @@ pub fn build_context_report<C: LLMClient + Clone + 'static>(agent: &Agent<C>) ->
         title: "Tools".to_string(),
         command_hint: Some("/help".to_string()),
         groups: source_tool_groups,
+    });
+    sections.push(ContextSection {
+        title: "Prompt Profile".to_string(),
+        command_hint: Some("/prompt".to_string()),
+        groups: vec![ContextSectionGroup {
+            title: Some(config.prompt_profile_name().to_string()),
+            entries: vec![ContextEntry {
+                label: format!(
+                    "{} configured section(s)",
+                    config.prompt_profile_section_count()
+                ),
+                tokens: system_prompt_tokens,
+            }],
+        }],
     });
     sections.push(ContextSection {
         title: "Tool Packs".to_string(),
