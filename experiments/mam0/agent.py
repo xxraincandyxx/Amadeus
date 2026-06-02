@@ -573,9 +573,9 @@ def handle_plan_review(request_id: str, approve: bool, feedback: str = "") -> st
 # === SECTION: tool_dispatch (s02) ===
 TOOL_HANDLERS = {
     "bash":             lambda **kw: run_bash(kw["command"]),
-    "read_file":        lambda **kw: run_read(kw["path"], kw.get("limit")),
-    "write_file":       lambda **kw: run_write(kw["path"], kw["content"]),
-    "edit_file":        lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
+    "read_file":         lambda **kw: run_read(kw["path"], kw.get("limit")),
+    "write_file":        lambda **kw: run_write(kw["path"], kw["content"]),
+    "edit_file":         lambda **kw: run_edit(kw["path"], kw["old_text"], kw["new_text"]),
     "TodoWrite":        lambda **kw: TODO.update(kw["items"]),
     "task":             lambda **kw: run_subagent(kw["prompt"], kw.get("agent_type", "Explore")),
     "load_skill":       lambda **kw: SKILLS.load(kw["name"]),
