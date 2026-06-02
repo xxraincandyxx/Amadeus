@@ -138,7 +138,8 @@ Expected anchors:
 - `/btw` shows a visible local response such as `❯ /btw` and `⎿  Usage: /btw`
 - that `/btw` response is transient and does not become a later conversation turn
 - `Ctrl+B/F` move like `Left/Right`
-- `Ctrl+P/N` behave like `Up/Down` for the active composer state
+- `Ctrl+P/N` move the cursor up/down (like arrow keys in the composer)
+- `Up/Down` arrows navigate command history (previous/next)
 
 ### 3a. Context And Tool Inventory
 

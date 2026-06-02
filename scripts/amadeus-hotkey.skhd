@@ -1,0 +1,11 @@
+# Amadeus Global Hotkey (skhd)
+#
+# Install skhd: brew install skhd
+# Add this to ~/.config/skhd/skhdrc
+# Then reload: skhd --restart-service
+
+# Toggle Amadeus TUI in a floating terminal (requires yabai)
+# cmd + shift - a : yabai -m rule --add app="^Alacritty$" sticky=on && open -a Alacritty -- -e amadeus; yabai -m rule --remove app="^Alacritty$"
+
+# Simple launch via skhd (opens in current terminal space)
+cmd + shift - a : amadeus

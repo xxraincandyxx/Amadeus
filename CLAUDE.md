@@ -38,6 +38,10 @@ cargo run --features full -- --server 8080
 # Run example programs
 cargo run --example tui --features tui
 cargo run --example server --features api
+
+# Run via installed launcher (if ~/bin/amadeus symlink is set up)
+amadeus
+amadeus --server
 ```
 
 ### Testing

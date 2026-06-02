@@ -62,6 +62,24 @@ cargo run --features full -- --server
 cargo run --features full -- --server 8080
 ```
 
+### As a System Shortcut
+
+Install the launcher to your PATH and bind a global hotkey:
+
+```bash
+# Install launcher (adds ~/bin/amadeus)
+ln -sf scripts/amadeus-launch.sh ~/bin/amadeus
+export PATH="$HOME/bin:$PATH"  # add to ~/.zshrc permanently
+```
+
+Then pick a global hotkey method:
+
+| Method | Hotkey | Install |
+|--------|--------|---------|
+| [skhd](https://github.com/koekeishiya/skhd) | `Cmd+Shift+A` | `brew install skhd` — copy `scripts/amadeus-hotkey.skhd` to `~/.config/skhd/skhdrc` |
+| macOS Shortcuts.app | Custom | New Shortcut → "Run Shell Script" → `amadeus` → assign key in details |
+| [HammerSpoon](https://www.hammerspoon.org/) | Custom | `hs.hotkey.bind({"cmd","shift"}, "a", function() hs.osascript.applescript('tell app "Terminal" to do script "amadeus"') end)` |
+
 ### As a Library
 
 Add to your `Cargo.toml`:

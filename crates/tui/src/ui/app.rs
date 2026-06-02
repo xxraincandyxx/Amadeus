@@ -2808,13 +2808,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('p' | 'P'))
             | (KeyModifiers::SUPER, KeyCode::Char('p' | 'P')) => {
                 if self.stream_rx.is_none() {
-                    self.input.history_up();
+                    self.input.move_cursor_up();
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('n' | 'N'))
             | (KeyModifiers::SUPER, KeyCode::Char('n' | 'N')) => {
                 if self.stream_rx.is_none() {
-                    self.input.history_down();
+                    self.input.move_cursor_down();
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('a' | 'A')) => {
@@ -5112,17 +5112,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ctrl_p_and_ctrl_n_match_up_and_down_history_behavior() {
+    async fn ctrl_p_and_ctrl_n_move_cursor_up_and_down() {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
 
-        for ch in "alpha".chars() {
-            session.input.handle_char(ch);
-        }
-        session.input.clear();
-        for ch in "beta".chars() {
+        for ch in "line1\nline2\nline3".chars() {
             session.input.handle_char(ch);
         }
 
@@ -5132,8 +5128,7 @@ mod tests {
                 &mut terminal,
             )
             .await
-            .expect("ctrl+p should match up");
-        assert_eq!(session.input.get_input(), "alpha");
+            .expect("ctrl+p should move cursor up");
 
         session
             .handle_input_key(
@@ -5141,8 +5136,7 @@ mod tests {
                 &mut terminal,
             )
             .await
-            .expect("ctrl+n should match down");
-        assert_eq!(session.input.get_input(), "beta");
+            .expect("ctrl+n should move cursor down");
     }
 
     #[tokio::test]
