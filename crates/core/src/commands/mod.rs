@@ -65,6 +65,7 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
     }
 
     #[test]
@@ -87,6 +88,24 @@ mod tests {
             Some(SlashCommand::Rewind { steps: Some(2) })
         );
         assert_eq!(SlashCommand::parse("/exit"), Some(SlashCommand::Exit));
+    }
+
+    #[test]
+    fn parse_export_command_from_core() {
+        assert_eq!(
+            SlashCommand::parse("/export notes.md"),
+            Some(SlashCommand::Export {
+                path: Some("notes.md".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export"),
+            Some(SlashCommand::Export { path: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export").map(|c| c.primary_name()),
+            Some("export")
+        );
     }
 
     #[test]
