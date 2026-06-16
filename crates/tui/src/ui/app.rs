@@ -4739,6 +4739,11 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     /// Amadeus renders committed conversation messages via terminal scrollback
     /// (`insert_before`), not the live frame buffer, so headless tests assert on
     /// this message store rather than on a captured frame.
+    ///
+    /// **Draining semantics:** this consumes the queue. Each call returns only
+    /// the lines committed since the previous call (or since session start).
+    /// To assert on the full transcript across multiple turns, accumulate the
+    /// returned strings rather than expecting earlier turns to remain.
     pub(crate) fn test_drain_unrendered_text(&mut self, width: u16) -> String {
         self.messages
             .take_unrendered_lines(width)
