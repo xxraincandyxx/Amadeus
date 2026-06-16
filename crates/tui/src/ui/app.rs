@@ -654,7 +654,7 @@ struct TransientSlashResponse {
     response: String,
 }
 
-struct Session<C: LLMClient> {
+pub(crate) struct Session<C: LLMClient> {
     agent: Agent<C>,
     mode: AppMode,
     messages: MessagesComponent,
