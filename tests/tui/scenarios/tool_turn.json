@@ -1,0 +1,25 @@
+{
+  "name": "tool_turn",
+  "description": "Assistant calls bash, then answers. (Driving this requires the agent to register the bash tool; the file is seeded as a fixture for future tool-aware scenarios.)",
+  "steps": [
+    {
+      "delay_ms": null,
+      "error": null,
+      "events": [
+        { "type": "text_delta", "text": "Let me check." },
+        { "type": "tool_call_start", "id": "call_1", "name": "bash" },
+        { "type": "tool_call_delta", "arguments": "{\"command\":\"echo hi\"}" },
+        { "type": "tool_call_done", "id": "call_1" },
+        { "type": "stop_reason", "reason": "tool_use" }
+      ]
+    },
+    {
+      "delay_ms": null,
+      "error": null,
+      "events": [
+        { "type": "text_delta", "text": "It printed hi." },
+        { "type": "stop_reason", "reason": "end_turn" }
+      ]
+    }
+  ]
+}
