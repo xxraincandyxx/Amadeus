@@ -56,23 +56,21 @@ impl<C: LLMClient + Clone + 'static> HeadlessApp<C> {
         }
     }
 
-    /// Submit current input and await the turn to settle.
+    /// Submit current input and pump the agent event stream to completion.
     pub async fn submit(&mut self) {
-        {
-            let session = self.app.test_session_mut();
-            let _ = session.test_submit().await;
-        }
-        self.settle().await;
+        let session = self.app.test_session_mut();
+        let _ = session.test_submit().await;
+        // Drain the turn headlessly; this commits the assistant message so the
+        // next `capture()` renders it.
+        let _ = session.test_pump_turn().await;
     }
 
-    /// Pump until the streaming turn finishes (or we give up after many yields).
-    async fn settle(&mut self) {
-        for _ in 0..10_000 {
-            if !self.app.test_session_mut().test_is_streaming() {
-                return;
-            }
-            tokio::task::yield_now().await;
-        }
+    /// Drain and return the session's committed (unrendered) message lines as
+    /// joined text. Amadeus scrolls committed conversation via terminal
+    /// scrollback rather than the frame buffer, so assert on this for turn
+    /// verification. (Frame-buffer assertions cover chrome/dashboard/streaming.)
+    pub fn messages_text(&mut self, width: u16) -> String {
+        self.app.test_session_mut().test_drain_unrendered_text(width)
     }
 
     /// Render the current state and return a populated snapshot + its text form.

@@ -53,25 +53,20 @@ async fn scenario_drives_app_and_renders_assistant_text() {
   app.type_text("hi");
   app.submit().await;
 
-  // The agent turn may resolve asynchronously; poll-render until the assistant
-  // text shows up or we exhaust a bounded number of attempts. `submit()` awaits
-  // `settle()` (which yields while the session is still streaming), but the
-  // assistant message may be committed to the message component slightly after
-  // the stream closes, so re-rendering until the text appears is the robust
-  // check.
-  let mut seen = false;
-  let mut last_text = String::new();
-  for _ in 0..200 {
-    let (_snap, text) = app.capture();
-    if text.contains("Hello from the mock") {
-      seen = true;
-      break;
-    }
-    last_text = text;
-    tokio::task::yield_now().await;
-  }
-  if !seen {
-    eprintln!("captured text on final iteration:\n{last_text}");
-  }
-  assert!(seen, "assistant text should render after the mock turn completes");
+  // Amadeus renders committed conversation via terminal scrollback
+  // (insert_before), not the live frame buffer, so verify the turn's assistant
+  // message was committed to the message store.
+  let messages = app.messages_text(80);
+  assert!(
+    messages.contains("Hello from the mock"),
+    "assistant message should be committed after the mock turn:\n{messages}"
+  );
+
+  // The frame buffer still renders chrome (footer carries the model name); this
+  // confirms the frame path works even though transcript text uses scrollback.
+  let (_snap, frame) = app.capture();
+  assert!(
+    frame.contains("test-model"),
+    "frame should still render footer chrome after the turn:\n{frame}"
+  );
 }

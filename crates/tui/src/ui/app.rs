@@ -4707,6 +4707,51 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     pub(crate) fn test_render(&mut self, frame: &mut ratatui::Frame) {
         self.render(frame);
     }
+
+    /// Drain the in-flight agent event stream to completion, headlessly (no
+    /// terminal output). Commits the assistant message and tool groups via the
+    /// `render_to_terminal = false` path that background sub-agent sessions use.
+    /// Mirrors the run-loop drain in `run_loop` (see lines ~1503-1566) but with
+    /// `render_to_terminal = false`, so the throwaway stdout terminal is never
+    /// drawn to.
+    pub(crate) async fn test_pump_turn(&mut self) -> Result<()> {
+        let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
+        loop {
+            let event = match &mut self.stream_rx {
+                Some(rx) => rx.recv().await,
+                None => return Ok(()),
+            };
+            match event {
+                None => {
+                    self.stream_rx = None;
+                    self.stream_abort = None;
+                    return Ok(());
+                }
+                Some(ev) => {
+                    let action = self.handle_agent_event(ev, &mut terminal, false)?;
+                    if matches!(action, SessionAction::Done) {
+                        self.stream_rx = None;
+                        self.stream_abort = None;
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    /// Drain and return the session's unrendered message lines as joined text.
+    ///
+    /// Amadeus renders committed conversation messages via terminal scrollback
+    /// (`insert_before`), not the live frame buffer, so headless tests assert on
+    /// this message store rather than on a captured frame.
+    pub(crate) fn test_drain_unrendered_text(&mut self, width: u16) -> String {
+        self.messages
+            .take_unrendered_lines(width)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 #[cfg(test)]
