@@ -22,6 +22,7 @@ pub mod assertions;
 pub mod file_system;
 pub mod fixtures;
 pub mod frame_text;
+pub mod replay;
 pub mod scenario;
 pub mod testflow;
 
