@@ -14,6 +14,13 @@ Amadeus provides a REST API server built with Axum that allows you to interact w
 - Configuration management
 - Approval workflow
 
+Current routing behavior is worth calling out explicitly:
+
+- `POST /chat` and `POST /tasks` dispatch through the shared `AgentOrchestrator`.
+- `GET /stream` creates a fresh `Agent` and streams events directly.
+- `POST /execute` runs `BashTool` directly and does not enter the normal agent loop.
+- Some `/agents/*` routes exist today but are still partially provisional.
+
 ## Quick Start
 
 ### Starting the Server
@@ -24,9 +31,6 @@ cargo run --features full -- --server
 
 # Run with custom port
 cargo run --features full -- --server 8080
-
-# Run with TUI and server
-cargo run --features full -- --server --tui
 ```
 
 ### Basic Health Check
@@ -76,19 +80,18 @@ Send a message to the agent and receive a response.
 curl -X POST http://localhost:3000/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "List all Rust files in the current directory",
-    "timeout_secs": 60
+    "message": "List all Rust files in the current directory"
   }'
 ```
 
 **Request Body:**
 ```json
 {
-  "message": "string (required)",
-  "timeout_secs": 60,        // optional, default: 300
-  "stream": false            // optional, default: false
+  "message": "string (required)"
 }
 ```
+
+Note: the shared request type still contains `timeout_secs` and `stream`, but the current `/chat` handler only uses `message`. Use `/stream` for SSE responses.
 
 **Response:**
 ```json
@@ -642,6 +645,8 @@ curl -X POST http://localhost:3000/agents \
 
 Get information about a specific agent.
 
+Note: the current handler validates the id format but still returns placeholder agent details rather than a fully wired lookup.
+
 ```bash
 curl http://localhost:3000/agents/agent-abc123
 ```
@@ -696,20 +701,20 @@ curl -X POST http://localhost:3000/agents/agent-def456/switch \
 
 Send a message to a specific agent.
 
+Note: this route is currently a placeholder response and is not yet wired to the full agent runtime.
+
 ```bash
 curl -X POST http://localhost:3000/agents/agent-abc123/chat \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "Review this code for security issues",
-    "timeout_secs": 120
+    "message": "Review this code for security issues"
   }'
 ```
 
 **Request Body:**
 ```json
 {
-  "message": "string (required)",
-  "timeout_secs": 120        // optional
+  "message": "string (required)"
 }
 ```
 
@@ -729,6 +734,8 @@ curl -X POST http://localhost:3000/agents/agent-abc123/chat \
 **GET `/agents/:id/stream`**
 
 Stream events from a specific agent.
+
+Note: this route exists in the router, but the handler is still provisional and should be treated as incomplete.
 
 ```bash
 curl -N http://localhost:3000/agents/agent-abc123/stream \

@@ -8,6 +8,8 @@
 // - type: crate::agent::config::Provider
 // - type: crate::agent::config::Config
 // - type: crate::agent::config::ConfigError
+// - type: crate::agent::config::PromptSettings
+// - type: crate::agent::config::ToolOverrideConfig
 // - type: crate::agent::config::ToolProfileConfig
 // - type: crate::agent::config::ToolSettings
 // uses:
@@ -21,4 +23,8 @@
 
 //! Compatibility re-exports for configuration types.
 
-pub use amadeus_config::{Config, ConfigError, Provider, ToolProfileConfig, ToolSettings};
+pub use amadeus_config::{
+    Config, ConfigError, HookSandboxMode, PromptMergeMode, PromptProfileConfig,
+    PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig, ToolProfileConfig,
+    ToolSettings,
+};

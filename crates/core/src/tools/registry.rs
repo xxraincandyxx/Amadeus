@@ -23,6 +23,7 @@
 use std::sync::Arc;
 use std::sync::RwLock;
 
+use amadeus_config::ToolOverrideConfig;
 use serde_json::Value;
 
 use crate::agent::config::Config;
@@ -52,6 +53,7 @@ pub struct ToolRegistry {
     packs: Arc<Vec<ToolPack>>,
     catalog: Arc<ComposedToolCatalog>,
     profile: ToolProfile,
+    overrides: Arc<std::collections::HashMap<String, ToolOverrideConfig>>,
     file_lock_manager: Option<Arc<FileLockManager>>,
     agent_id: Option<AgentId>,
 }
@@ -63,6 +65,7 @@ impl ToolRegistry {
             packs: Arc::new(Vec::new()),
             catalog: Arc::new(ComposedToolCatalog::empty(profile.clone())),
             profile,
+            overrides: Arc::new(std::collections::HashMap::new()),
             file_lock_manager: None,
             agent_id: None,
         }
@@ -93,12 +96,13 @@ impl ToolRegistry {
     ) -> Self {
         let file_tools =
             FileTools::from_config_with_locks(config, file_lock_manager.clone(), agent_id);
-        let profile = tool_profile_from_config(config, false);
+        let profile = tool_profile_from_config(config, false, None);
 
         Self {
             packs: Arc::new(default_builtin_packs(config, file_tools, todo_manager)),
             catalog: Arc::new(ComposedToolCatalog::empty(profile.clone())),
             profile,
+            overrides: Arc::new(config.tools.overrides.clone()),
             file_lock_manager,
             agent_id,
         }
@@ -132,9 +136,10 @@ impl ToolRegistry {
         let mut registry = Self {
             packs: Arc::new(default_builtin_packs(config, file_tools, todo_manager)),
             catalog: Arc::new(ComposedToolCatalog::empty(tool_profile_from_config(
-                config, true,
+                config, true, None,
             ))),
-            profile: tool_profile_from_config(config, true),
+            profile: tool_profile_from_config(config, true, None),
+            overrides: Arc::new(config.tools.overrides.clone()),
             file_lock_manager: None,
             agent_id: None,
         };
@@ -149,6 +154,14 @@ impl ToolRegistry {
     pub fn with_profile(mut self, profile: ToolProfile) -> Self {
         self.profile = profile;
         self.recompose()
+    }
+
+    pub fn configured_profile(
+        config: &Config,
+        subagent: bool,
+        profile_name: Option<&str>,
+    ) -> ToolProfile {
+        tool_profile_from_config(config, subagent, profile_name)
     }
 
     pub fn profile(&self) -> &ToolProfile {
@@ -226,9 +239,10 @@ impl ToolRegistry {
     }
 
     fn recompose(mut self) -> Self {
-        self.catalog = Arc::new(ComposedToolCatalog::compose(
+        self.catalog = Arc::new(ComposedToolCatalog::compose_with_overrides(
             self.packs.as_ref(),
             self.profile.clone(),
+            self.overrides.as_ref(),
         ));
         self
     }
@@ -364,7 +378,7 @@ fn default_builtin_packs(
 
 fn compat_registration(tool: Arc<dyn Tool>) -> ToolRegistration {
     let permission = match tool.name() {
-        "read_file" | "glob" | "grep" | "web_fetch" | "todo" | "sub_agent" | "call_peer" => {
+        "read_file" | "glob" | "grep" | "web_fetch" | "memory" | "rag" | "todo" | "sub_agent" | "call_peer" => {
             PermissionMode::ReadOnly
         }
         "write_file" | "edit_file" | "bash" => PermissionMode::WorkspaceWrite,
@@ -386,8 +400,14 @@ fn compat_registration(tool: Arc<dyn Tool>) -> ToolRegistration {
     )
 }
 
-fn tool_profile_from_config(config: &Config, subagent: bool) -> ToolProfile {
-    let profile_name = if subagent {
+fn tool_profile_from_config(
+    config: &Config,
+    subagent: bool,
+    profile_name: Option<&str>,
+) -> ToolProfile {
+    let profile_name = if let Some(profile_name) = profile_name {
+        profile_name.to_string()
+    } else if subagent {
         config.tools.subagent_profile.clone()
     } else {
         config.tools.default_profile.clone()
@@ -446,6 +466,7 @@ mod tests {
                 default_profile: "tight".to_string(),
                 subagent_profile: "subagent".to_string(),
                 profiles,
+                overrides: HashMap::new(),
             },
             ..Config::default()
         }
@@ -458,5 +479,41 @@ mod tests {
         assert!(names.contains(&"read_file".to_string()));
         assert!(!names.contains(&"write_file".to_string()));
         assert!(!names.contains(&"todo".to_string()));
+    }
+
+    #[test]
+    fn registry_applies_safe_tool_overrides() {
+        let mut config = Config::default();
+        config.tools.overrides.insert(
+            "bash".to_string(),
+            amadeus_config::ToolOverrideConfig {
+                description: Some("Run approved shell commands.".to_string()),
+                aliases: vec!["shell".to_string()],
+                tags: vec!["custom".to_string()],
+                prompt_approval: Some(true),
+                visible_in_modes: vec![
+                    PermissionMode::WorkspaceWrite,
+                    PermissionMode::DangerFullAccess,
+                ],
+                required_permission: Some(PermissionMode::WorkspaceWrite),
+            },
+        );
+
+        let registry = ToolRegistry::with_defaults(&config);
+        let bash = registry.get("bash").expect("bash tool should exist");
+
+        assert_eq!(bash.description, "Run approved shell commands.");
+        assert!(bash.aliases.contains(&"shell".to_string()));
+        assert!(bash.tags.contains(&"custom".to_string()));
+        assert!(bash.prompt_approval);
+        assert_eq!(
+            bash.visible_in_modes,
+            vec![
+                PermissionMode::WorkspaceWrite,
+                PermissionMode::DangerFullAccess
+            ]
+        );
+        assert!(registry.get("shell").is_some());
+        assert!(registry.inventory().iter().any(|tool| tool.overridden));
     }
 }

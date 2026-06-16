@@ -51,8 +51,8 @@
 //! │  ├── GET  /sessions       → sessions::list_sessions         │
 //! │  ├── GET  /sessions/:id   → sessions::get_session           │
 //! │  ├── POST /sessions/:id/restore → sessions::restore_session │
-//! │  ├── GET  /config          → config::get_config                │
-//! │  ├── PATCH /config         → config::update_config             │
+//! │  ├── GET  /config         → config::get_config              │
+//! │  ├── PATCH /config        → config::update_config           │
 //! │  ├── GET  /history        → history::get_history            │
 //! │  ├── GET  /skills         → skills::list_skills             │
 //! │  ├── GET  /approvals      → approvals::list_pending         │
@@ -107,13 +107,19 @@ use crate::agent::config::Config;
 use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
 use crate::api::handlers::{
-    agent_chat, agent_stream, chat, create_agent, execute, get_agent, get_config, get_history,
-    get_session, handle_task, health, kill_agent, list_agents, list_pending_approvals,
-    list_sessions, list_skills, restore_session, stream, submit_approval, switch_agent,
-    update_config,
+    agent_chat, agent_stream, build_prompt, chat, create_agent, delete_entry, execute, get_agent,
+    get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
+    get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
+    list_pending_approvals, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
+    rag_delete_document, rag_ingest, rag_list_documents, rag_query, restore_session, store_entry,
+    stream, submit_approval, summarize, switch_agent, update_compaction_config, update_config,
 };
+use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
+use crate::context::memory_json::JsonFileMemoryProvider;
 use crate::error::Result;
+use amadeus_rag::embedding::EmbeddingClient;
+use amadeus_rag::vector_store::VectorMemoryProvider;
 use tokio::sync::RwLock;
 
 /*
@@ -126,15 +132,23 @@ use tokio::sync::RwLock;
 ///
 /// This struct is passed to every request handler via Axum's `State` extractor.
 /// It provides access to the shared client, config, and orchestra-aware agent orchestrator.
-pub struct AppState<C: LLMClient> {
+pub struct AppState<C: LLMClient + Clone + 'static> {
     /// The shared base LLM client.
     pub client: C,
     /// The shared runtime configuration.
     pub config: Arc<Config>,
     /// The multi-agent orchestrator for standalone agent management.
     pub orchestrator: Arc<RwLock<AgentOrchestrator<C>>>,
+    /// Interactive session bridge shared by richer agent routes.
+    pub session_bridge: Arc<LocalSessionBridge<C>>,
     /// The default user-led orchestra used by stateless task endpoints.
     pub default_orchestra_id: crate::core::id::TeamId,
+    /// Persistent memory provider backed by .amadeus/memory.json.
+    pub memory_provider: Arc<JsonFileMemoryProvider>,
+    /// Vector store for RAG document ingestion and semantic search.
+    pub rag_provider: Arc<VectorMemoryProvider>,
+    /// Embedding client for vectorizing text.
+    pub embedding_client: Arc<EmbeddingClient>,
 }
 
 /*
@@ -187,19 +201,54 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     client: C,
     config: Arc<Config>,
 ) -> Result<()> {
-    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config));
+    // Build memory registry for persistent context injection.
+    let memory_path = config.workdir.join(".amadeus").join("memory.json");
+    let memory_provider = Arc::new(JsonFileMemoryProvider::new(memory_path.clone()));
+    let mut memory_registry = crate::context::memory::MemoryRegistry::new();
+    memory_registry.register(memory_provider.clone());
+
+    // Build RAG vector store and embedding client.
+    let rag_path = config.workdir.join(".amadeus").join("rag_index.json");
+    let rag_provider = Arc::new(VectorMemoryProvider::new(rag_path));
+    let embedding_base_url = config
+        .embedding_base_url
+        .clone()
+        .unwrap_or_else(|| config.base_url.clone().unwrap_or_default());
+    let embedding_model = config
+        .embedding_model
+        .clone()
+        .unwrap_or_else(|| config.model.clone());
+    let embedding_client = Arc::new(EmbeddingClient::new(
+        embedding_base_url,
+        embedding_model,
+        config.api_key.clone(),
+    ));
+
+    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
+        .with_memory_registry(memory_registry.clone());
     let default_orchestra_id = orchestrator.ensure_default_orchestra(OrchestraLeader::User);
     let main_agent_id = orchestrator
         .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
     orchestrator.add_agent_to_orchestra(default_orchestra_id, main_agent_id)?;
     let orchestrator = Arc::new(RwLock::new(orchestrator));
+    let session_bridge = Arc::new(
+        LocalSessionBridge::new(client.clone(), Arc::clone(&config))
+            .with_memory_registry(memory_registry),
+    );
+    let _ = session_bridge
+        .create_session(Some("Main Agent".to_string()), AgentProfile::Default)
+        .await?;
 
     let state = Arc::new(AppState {
         client,
         config,
         orchestrator,
+        session_bridge,
         default_orchestra_id,
+        memory_provider,
+        rag_provider,
+        embedding_client,
     });
 
     // -------------------------------------------------------------------------
@@ -304,6 +353,30 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/history", get(get_history))
         // List available skills
         .route("/skills", get(list_skills))
+        // Summarize arbitrary text for research workflows
+        .route("/summarize", post(summarize))
+        // =====================================================================
+        // MODULAR PROMPT & MEMORY API
+        // =====================================================================
+        // Compaction config and triggers
+        .route("/compaction/config", get(get_compaction_config))
+        .route("/compaction/config", patch(update_compaction_config))
+        .route("/compaction/triggers", get(get_compaction_triggers))
+        // System prompt sections and custom building
+        .route("/prompts/sections", get(list_prompt_sections))
+        .route("/prompts/build", post(build_prompt))
+        // Memory providers and entries
+        .route("/memory/providers", get(list_memory_providers))
+        .route("/memory/entries", get(load_memory_entries))
+        .route("/memory/entries", post(store_entry))
+        .route("/memory/entries/:key", delete(delete_entry))
+        // Tool catalog
+        .route("/tools/catalog", get(get_tool_catalog))
+        // RAG semantic search
+        .route("/rag/ingest", post(rag_ingest))
+        .route("/rag/query", post(rag_query))
+        .route("/rag/documents", get(rag_list_documents))
+        .route("/rag/documents/:id", delete(rag_delete_document))
         // =====================================================================
         // MULTI-AGENT ENDPOINTS
         // =====================================================================

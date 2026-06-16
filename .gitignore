@@ -1,9 +1,28 @@
+# Python Cache
+__pycache__/
+
+# Python tooling
+.python-version
+
 # /refs
 /target
 
 .DS_Store
 .env
+
+# Embedded repos
+refs/codex/
+
 .amadeus/settings.json
+.amadeus/settings.local.json
+.amadeus/logs/
+.amadeus/memory.json
+.amadeus/rag_index.json
+
+# Runtime generated output
+runtime/locomo/debug_logs/
+runtime/locomo/__pycache__/
+runtime/rag_eval/results/
 
 # Logging files
 /logs
@@ -16,6 +35,10 @@ test_*.txt
 
 # Benchmark output directory
 /benchmark_runs
+
+# IDE / tooling
+.claude/
+.opencode/
 
 # User notes
 Song Lyric.txt

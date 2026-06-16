@@ -55,20 +55,32 @@ fn test_provider_debug_formatting() {
 #[test]
 fn test_config_timeout_value() {
     let _guard = env_lock();
-    std::env::set_var("ANTHROPIC_API_KEY", "test-key");
-    std::env::set_var("PROVIDER", "anthropic");
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    std::fs::write(
+        settings_dir.join("settings.json"),
+        r#"{"provider":"anthropic","api_key":"test-key"}"#,
+    )
+    .unwrap();
 
-    let config = Config::load().unwrap();
+    let config = Config::load_with_hierarchy(temp.path()).unwrap();
     assert_eq!(config.timeout_seconds, 300);
 }
 
 #[test]
 fn test_config_workdir_type() {
     let _guard = env_lock();
-    std::env::set_var("ANTHROPIC_API_KEY", "test-key");
-    std::env::set_var("PROVIDER", "anthropic");
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    std::fs::write(
+        settings_dir.join("settings.json"),
+        r#"{"provider":"anthropic","api_key":"test-key"}"#,
+    )
+    .unwrap();
 
-    let config = Config::load().unwrap();
+    let config = Config::load_with_hierarchy(temp.path()).unwrap();
     assert!(!config.workdir.as_os_str().is_empty());
 }
 
@@ -142,4 +154,42 @@ fn load_with_hierarchy_ignores_legacy_dotenv_files() {
     assert_eq!(config.provider, Provider::Anthropic);
     assert!(config.api_key.is_empty());
     assert_eq!(config.model, "claude-sonnet-4-5-20250929");
+}
+
+#[test]
+fn load_with_hierarchy_ignores_process_env_overrides() {
+    let _guard = env_lock();
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    std::fs::write(
+        settings_dir.join("settings.json"),
+        r#"{"provider":"openai","api_key":"json-key","model":"json-model","timeout_seconds":42}"#,
+    )
+    .unwrap();
+
+    let provider = std::env::var("PROVIDER").ok();
+    let anthropic = std::env::var("ANTHROPIC_API_KEY").ok();
+    let openai = std::env::var("OPENAI_API_KEY").ok();
+    let model = std::env::var("MODEL_ID").ok();
+    let timeout = std::env::var("TIMEOUT_SECONDS").ok();
+
+    std::env::set_var("PROVIDER", "anthropic");
+    std::env::set_var("ANTHROPIC_API_KEY", "env-key");
+    std::env::set_var("OPENAI_API_KEY", "env-openai-key");
+    std::env::set_var("MODEL_ID", "env-model");
+    std::env::set_var("TIMEOUT_SECONDS", "99");
+
+    let config = Config::load_with_hierarchy(temp.path()).unwrap();
+
+    restore_env("PROVIDER", provider);
+    restore_env("ANTHROPIC_API_KEY", anthropic);
+    restore_env("OPENAI_API_KEY", openai);
+    restore_env("MODEL_ID", model);
+    restore_env("TIMEOUT_SECONDS", timeout);
+
+    assert_eq!(config.provider, Provider::OpenAI);
+    assert_eq!(config.api_key, "json-key");
+    assert_eq!(config.model, "json-model");
+    assert_eq!(config.timeout_seconds, 42);
 }

@@ -47,6 +47,8 @@
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use crate::agent::config::Config;
 use crate::tools::bash::{classify_command, BashCommandKind};
@@ -79,15 +81,24 @@ pub struct Policy {
     /// Dangerous patterns: (tool_name, pattern_regex).
     #[serde(default)]
     pub dangerous_patterns: Vec<(String, String)>,
+    /// Scoped invocation grants remembered from compatibility AlwaysApprove decisions.
+    #[serde(default)]
+    pub scoped_auto_approve: Vec<ScopedApprovalGrant>,
     /// Cache for compiled regex patterns.
     #[serde(skip)]
     dangerous_regex_cache: Vec<(String, Regex)>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScopedApprovalGrant {
+    pub tool: String,
+    pub input_hash: u64,
+}
+
 impl Default for Policy {
     fn default() -> Self {
         let mut policy = Self {
-            mode: ApprovalMode::Ask,
+            mode: ApprovalMode::Auto,
             auto_approve: vec![
                 "read_file".to_string(),
                 "glob".to_string(),
@@ -105,6 +116,7 @@ impl Default for Policy {
                 ("write_file".to_string(), "\\.pem$".to_string()),
                 ("write_file".to_string(), "\\.key$".to_string()),
             ],
+            scoped_auto_approve: Vec::new(),
             dangerous_regex_cache: Vec::new(),
         };
         policy.compile_patterns();
@@ -175,8 +187,11 @@ impl Policy {
     }
 
     /// Check if the tool is auto-approved.
-    fn is_auto_approved(&self, tool: &str, _input: &Value) -> bool {
-        self.auto_approve.iter().any(|t| t == tool)
+    fn is_auto_approved(&self, tool: &str, input: &Value) -> bool {
+        self.scoped_auto_approve
+            .iter()
+            .any(|grant| grant.tool == tool && grant.input_hash == input_hash(input))
+            || self.auto_approve.iter().any(|t| t == tool)
     }
 
     /// Check if the tool is auto-denied.
@@ -279,6 +294,17 @@ impl Policy {
         }
     }
 
+    /// Remember one exact tool invocation as approved.
+    pub fn add_scoped_auto_approve(&mut self, tool: &str, input: &Value) {
+        let grant = ScopedApprovalGrant {
+            tool: tool.to_string(),
+            input_hash: input_hash(input),
+        };
+        if !self.scoped_auto_approve.contains(&grant) {
+            self.scoped_auto_approve.push(grant);
+        }
+    }
+
     /// Add a tool pattern to the auto-approve list.
     /// Format: "tool" or "tool:pattern"
     pub fn add_auto_approve_pattern(&mut self, pattern: &str) {
@@ -293,6 +319,12 @@ impl Policy {
     }
 }
 
+fn input_hash(input: &Value) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    input.to_string().hash(&mut hasher);
+    hasher.finish()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -300,7 +332,7 @@ mod tests {
     #[test]
     fn test_policy_default() {
         let policy = Policy::new();
-        assert_eq!(policy.mode, ApprovalMode::Ask);
+        assert_eq!(policy.mode, ApprovalMode::Auto);
         assert!(policy.auto_approve.contains(&"read_file".to_string()));
         assert!(policy.auto_approve.contains(&"todo".to_string()));
     }
@@ -325,27 +357,24 @@ mod tests {
     }
 
     #[test]
-    fn test_dangerous_pattern() {
+    fn test_default_policy_does_not_require_approval_for_dangerous_patterns() {
         let policy = Policy::new();
 
-        // Sudo commands are dangerous
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
+        assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
 
-        // Writing to .env is dangerous
-        assert!(policy.needs_approval(
+        assert!(!policy.needs_approval(
             "write_file",
             &serde_json::json!({"path": ".env", "content": ""})
         ));
 
-        // Normal commands are fine
         assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "ls -la"})));
     }
 
     #[test]
-    fn test_default_policy_blocks_rm_rf_root() {
+    fn test_default_policy_allows_rm_rf_root() {
         let policy = Policy::new();
 
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
+        assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
     }
 
     #[test]
@@ -360,11 +389,13 @@ mod tests {
     }
 
     #[test]
-    fn test_bash_workspace_write_requires_approval() {
+    fn test_default_policy_allows_bash_workspace_write() {
         let policy = Policy::new();
 
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "echo hi > out.txt"})));
-        assert!(policy.needs_approval(
+        assert!(
+            !policy.needs_approval("bash", &serde_json::json!({"command": "echo hi > out.txt"}))
+        );
+        assert!(!policy.needs_approval(
             "bash",
             &serde_json::json!({"command": "sed -i 's/old/new/' file.txt"})
         ));

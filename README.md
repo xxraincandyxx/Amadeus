@@ -1,6 +1,6 @@
 # Amadeus - AI Agent SDK
 
-A Rust SDK for building AI agents with LLM support, featuring multi-provider compatibility, streaming responses, and a powerful tool system.
+A Rust SDK for building AI agents with LLM support, featuring multi-provider compatibility, streaming responses, a powerful tool system, and both HTTP and terminal adapters over a shared core runtime.
 
 ## Overview
 
@@ -14,9 +14,9 @@ Amadeus is a production-ready AI agent framework that provides:
 - **HTTP API**: Optional REST API server for integration
 - **Session Management**: Automatic logging and session restoration
 - **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
-- **Multi-Agent Coordination**: Supervisor/worker pattern for complex tasks
+- **Multi-Agent Coordination**: Orchestra-based local routing and delegated task execution
 
-Parity progress against the `refs/claw-code-parity` reference is tracked in `docs/EVALUATION.md` and only advanced when covered by automated tests.
+Parity progress against the `refs/claw-code-parity` reference is treated as a testing problem and should only be advanced when covered by automated tests in this repository.
 
 ## Installation
 
@@ -28,7 +28,6 @@ Parity progress against the `refs/claw-code-parity` reference is tracked in `doc
 ### Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
 
@@ -38,8 +37,7 @@ cp .amadeus/settings.example.json .amadeus/settings.json
 
 # Add your provider and API key to .amadeus/settings.json
 
-# Build the project
-cargo build --release
+cargo build --release --features full
 ```
 
 ## Usage
@@ -63,6 +61,24 @@ cargo run --features full -- --server
 # Custom port
 cargo run --features full -- --server 8080
 ```
+
+### As a System Shortcut
+
+Install the launcher to your PATH and bind a global hotkey:
+
+```bash
+# Install launcher (adds ~/bin/amadeus)
+ln -sf scripts/amadeus-launch.sh ~/bin/amadeus
+export PATH="$HOME/bin:$PATH"  # add to ~/.zshrc permanently
+```
+
+Then pick a global hotkey method:
+
+| Method | Hotkey | Install |
+|--------|--------|---------|
+| [skhd](https://github.com/koekeishiya/skhd) | `Cmd+Shift+A` | `brew install skhd` — copy `scripts/amadeus-hotkey.skhd` to `~/.config/skhd/skhdrc` |
+| macOS Shortcuts.app | Custom | New Shortcut → "Run Shell Script" → `amadeus` → assign key in details |
+| [HammerSpoon](https://www.hammerspoon.org/) | Custom | `hs.hotkey.bind({"cmd","shift"}, "a", function() hs.osascript.applescript('tell app "Terminal" to do script "amadeus"') end)` |
 
 ### As a Library
 
@@ -157,28 +173,24 @@ let agent = Agent::builder(client, config)
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Amadeus SDK                             │
-│                                                             │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐       │
-│  │ Agent   │  │ Tools   │  │ Client  │  │ Policy  │       │
-│  │ Loop    │  │ Registry│  │ Trait   │  │ System  │       │
-│  └─────────┘  └─────────┘  └─────────┘  └─────────┘       │
-│                                                             │
-│  ┌──────────────────────────────────────────────────┐      │
-│  │         Streaming Event System                    │      │
-│  └──────────────────────────────────────────────────┘      │
-└─────────────────────────────────────────────────────────────┘
+Amadeus is a workspace-based system rather than a single large crate.
+
+- The root `amadeus` crate is a compatibility facade.
+- `crates/core` contains the agent loop, provider clients, tools, policy, and orchestration runtime.
+- `crates/runtime` contains reusable coordination models and dispatch logic.
+- `crates/api` is the Axum HTTP adapter.
+- `crates/tui` is the ratatui terminal adapter.
+
+Runtime ingress looks like this:
+
+```text
+CLI/library call
+  -> config + provider selection
+  -> core runtime
+  -> TUI adapter | HTTP adapter | assessment runner
 ```
 
-### Core Components
-
-- **Agent Loop**: Orchestrates LLM interactions and tool execution
-- **LLM Client**: Trait-based abstraction for provider swapping
-- **Tool Registry**: Dynamic tool registration and execution
-- **Policy System**: Approval-based safety controls
-- **Event Stream**: Real-time updates via async streams
+The main live execution path is the ReAct-style `Agent` loop in `crates/core/src/agent/loop_agent.rs`, while local multi-agent routing is handled by `AgentOrchestrator` in `crates/core/src/agent/orchestra.rs`.
 
 ## Built-in Tools
 
@@ -230,31 +242,20 @@ The policy system blocks:
 
 ## Configuration
 
-Structured settings (`.amadeus/settings.json` or `~/.amadeus/settings.json`):
+Structured settings live in `.amadeus/settings.json`, with optional global defaults in `~/.amadeus/settings.json` and workspace overrides in `.amadeus/settings.local.json`:
 
-```bash
-# Provider selection
-PROVIDER=anthropic  # or "openai"
-
-# Anthropic
-ANTHROPIC_API_KEY=sk-ant-xxx
-ANTHROPIC_BASE_URL=https://api.anthropic.com  # optional
-ANTHROPIC_MODEL=claude-sonnet-4-5-20250929
-
-# OpenAI
-OPENAI_API_KEY=sk-xxx
-OPENAI_BASE_URL=https://api.openai.com/v1  # optional
-OPENAI_MODEL=gpt-4
-
-# Agent settings
-TIMEOUT_SECONDS=120
-MAX_OUTPUT_BYTES=50000
-WORKDIR=/path/to/project
-SESSION_LOG_DIR=./logs
-SESSION_LOG_COMPRESS=true
-
-# Blocked commands (comma-separated)
-BLOCKED_COMMANDS=rm -rf /,sudo
+```json
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "base_url": "https://api.anthropic.com",
+  "model": "claude-sonnet-4-5-20250929",
+  "timeout_seconds": 120,
+  "max_output_bytes": 50000,
+  "session_log_dir": "./logs",
+  "session_log_compress": true,
+  "blocked_commands": ["rm -rf /", "sudo"]
+}
 ```
 
 ## Features
@@ -268,13 +269,15 @@ amadeus = { git = "https://github.com/xxraincandyxx/Amadeus", features = ["full"
 
 Available features:
 
-- `tui` - Terminal UI (ratatui-based)
-- `api` - HTTP API server (axum-based)
-- `concurrency` - Concurrency primitives
-- `supervisor` - Multi-agent supervisor
-- `mesh` - Distributed agent coordination
-- `context` - Context management
-- `full` - All features
+- `api` - HTTP adapter and API surface, implies `orchestra`
+- `tui` - Terminal UI adapter, implies `concurrency`
+- `concurrency` - Locking and shared coordination primitives
+- `orchestra` - Canonical multi-agent orchestration surface
+- `team` - Legacy alias for `orchestra`
+- `supervisor` - Legacy alias for `orchestra`
+- `context` - Context management support
+- `test-utils` - Test helpers and recording support
+- `full` - All of the above
 
 ## Session Management
 
@@ -327,13 +330,13 @@ while let Some(event) = stream.next().await {
 
 ```bash
 # Debug build
-cargo build
+cargo build --features full
 
 # Release build
-cargo build --release
+cargo build --release --features full
 
 # Run tests
-cargo test
+cargo test --features full
 
 # Run with specific features
 cargo run --features tui
@@ -341,22 +344,21 @@ cargo run --features tui
 
 ### Project Structure
 
-```
+```text
 amadeus/
-├── src/
-│   ├── agent/         # Agent loop, events, messages
-│   ├── client/        # LLM client implementations
-│   ├── tools/         # Tool registry and tools
-│   ├── policy/        # Approval system
-│   ├── ui/            # Terminal UI components
-│   ├── api/           # HTTP API handlers
-│   ├── hooks/         # Hook system
-│   ├── skills/        # Skill templates
-│   ├── mcp/           # Model Context Protocol
-│   └── error.rs       # Error types
-├── tests/             # Integration tests
-├── examples/          # Example programs
-└── docs/              # Documentation
+├── src/                # facade crate + CLI bootstrap
+├── crates/
+│   ├── core/           # agent loop, tools, policy, orchestration
+│   ├── runtime/        # shared orchestration/task models
+│   ├── api/            # Axum adapter
+│   ├── tui/            # ratatui adapter
+│   ├── config/         # layered settings loading
+│   ├── commands/       # slash commands and helpers
+│   ├── skills/         # skill loading
+│   └── ...             # supporting shared crates
+├── tests/              # integration suites and harnesses
+├── examples/           # example bootstraps
+└── docs/               # architecture and workflow docs
 ```
 
 ### Code Count

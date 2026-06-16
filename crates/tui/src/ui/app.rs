@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Main TUI application state, rendering, and event orchestration.
+// summary: Main TUI application state, rendering, slash-command inspection, and event orchestration.
 // layer: ui
 // status: active
 // feature_flags:
@@ -17,19 +17,24 @@
 // - module: crate::error::Result
 // - module: crate::ui::event
 // - module: crate::ui
+// - cmd: git apply
+// - cmd: git diff
 // - runtime: tokio async runtime
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects:
+// - Runs external commands or subprocesses.
 // - Spawns asynchronous tasks.
 // - Sends or receives messages across async channels.
 // tests:
+// - cmd: cargo test -p tui rewind --features test-utils
 // - tests/tool_approval_test.rs
 // @end-amadeus-header
 
 use std::collections::{HashMap, VecDeque};
 use std::io::IsTerminal;
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -58,7 +63,9 @@ use crate::test_utils::testflow::types::{TuiCellSnapshot, TuiFrameSnapshot};
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest};
 use crate::agent::loop_agent::{create_approval_channels, Agent, SessionCheckpoint};
 use crate::client::LLMClient;
-use crate::commands::{build_context_report, SlashCommand};
+use crate::commands::{
+    answer_side_question, build_context_report, SideQuestionOptions, SlashCommand,
+};
 use crate::error::Result;
 use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
@@ -67,6 +74,10 @@ use crate::ui::components::{
     SlashDialogItem, StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
+use crate::ui::export::{
+    build_export as build_export_artifact, default_export_path, write_export, ExportFormat,
+    SessionHeader,
+};
 use crate::ui::{get_theme, next_theme, SidebarKind};
 
 const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
@@ -595,6 +606,20 @@ struct RewindCheckpointRecord {
     label: String,
     detail: String,
     checkpoint: SessionCheckpoint,
+    code: Option<CodeSnapshot>,
+}
+
+#[derive(Debug, Clone)]
+struct CodeSnapshot {
+    diff: String,
+    summary: CodeSnapshotSummary,
+}
+
+#[derive(Debug, Clone, Default)]
+struct CodeSnapshotSummary {
+    files: Vec<String>,
+    additions: usize,
+    deletions: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -611,9 +636,22 @@ struct RewindDialogState {
 }
 
 #[derive(Debug, Clone)]
+struct RewindConfirmState {
+    dialog: SlashDialog,
+    entry: RewindCheckpointRecord,
+}
+
+#[derive(Debug, Clone)]
 enum SlashDialogState {
     Hooks(HooksDialogState),
     Rewind(RewindDialogState),
+    RewindConfirm(RewindConfirmState),
+}
+
+#[derive(Debug, Clone)]
+struct TransientSlashResponse {
+    command: String,
+    response: String,
 }
 
 struct Session<C: LLMClient> {
@@ -677,6 +715,8 @@ struct Session<C: LLMClient> {
     last_error: Option<String>,
     parent_session_id: Option<usize>,
     parent_request_id: Option<String>,
+    transient_slash_response: Option<TransientSlashResponse>,
+    btw_response_rx: Option<mpsc::UnboundedReceiver<Result<(String, String)>>>,
 }
 
 impl<C: LLMClient + Clone + 'static> Session<C> {
@@ -875,7 +915,95 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             last_error: None,
             parent_session_id: None,
             parent_request_id: None,
+            transient_slash_response: None,
+            btw_response_rx: None,
         }
+    }
+
+    fn poll_btw_response(&mut self) {
+        let Some(mut rx) = self.btw_response_rx.take() else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(Ok((command, response))) => {
+                self.input.set_btw_dropup(command, response, false);
+            }
+            Ok(Err(error)) => {
+                self.input
+                    .set_btw_dropup("/btw", format!("Error: {error}"), true);
+            }
+            Err(mpsc::error::TryRecvError::Empty) => {
+                self.btw_response_rx = Some(rx);
+            }
+            Err(mpsc::error::TryRecvError::Disconnected) => {
+                self.input
+                    .set_btw_dropup("/btw", "Error: /btw request ended unexpectedly.", true);
+            }
+        }
+    }
+
+    fn start_btw_request(&mut self, command: String, question: String) {
+        let agent = self.agent.clone();
+        let in_flight_assistant_text = if self.current_text.trim().is_empty() {
+            None
+        } else {
+            Some(self.current_text.clone())
+        };
+        let (tx, rx) = mpsc::unbounded_channel();
+        self.btw_response_rx = Some(rx);
+        self.input
+            .set_btw_dropup(command.clone(), "Thinking…", false);
+
+        tokio::spawn(async move {
+            let result = answer_side_question(
+                &agent,
+                &question,
+                SideQuestionOptions {
+                    in_flight_assistant_text,
+                },
+            )
+            .await
+            .map(|response| (command, response));
+            let _ = tx.send(result);
+        });
+    }
+
+    fn clear_transient_slash_response(&mut self) {
+        self.transient_slash_response = None;
+        self.input.set_placeholder_visible(true);
+    }
+
+    fn transient_slash_response_height(&self) -> u16 {
+        if self.transient_slash_response.is_some() {
+            2
+        } else {
+            0
+        }
+    }
+
+    fn render_transient_slash_response(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let Some(response) = self.transient_slash_response.as_ref() else {
+            return;
+        };
+        if area.width == 0 || area.height == 0 {
+            return;
+        }
+
+        let colors = crate::ui::get_colors();
+        let command = format!("❯ {}", response.command);
+        let result = format!("  ⎿  {}", response.response);
+        let lines = vec![
+            Line::from(Span::styled(
+                command,
+                Style::default().fg(colors.text.primary),
+            )),
+            Line::from(Span::styled(
+                result,
+                Style::default().fg(colors.text.secondary),
+            )),
+        ];
+        frame.render_widget(Paragraph::new(lines), area);
     }
 
     fn checkpoint_preview(input: &str) -> String {
@@ -896,13 +1024,81 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         )
     }
 
+    fn summarize_code_snapshot(diff: &str) -> CodeSnapshotSummary {
+        let mut summary = CodeSnapshotSummary::default();
+
+        for line in diff.lines() {
+            if let Some(path) = line.strip_prefix("+++ b/") {
+                if path != "/dev/null" {
+                    summary.files.push(path.to_string());
+                }
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                summary.additions += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                summary.deletions += 1;
+            }
+        }
+
+        summary.files.sort();
+        summary.files.dedup();
+        summary
+    }
+
+    fn code_snapshot_detail(snapshot: &Option<CodeSnapshot>) -> Option<String> {
+        let snapshot = snapshot.as_ref()?;
+        if snapshot.diff.trim().is_empty() {
+            return Some("code clean".to_string());
+        }
+
+        let file_label = match snapshot.summary.files.as_slice() {
+            [] => "workspace".to_string(),
+            [file] => file.clone(),
+            files => format!("{} files", files.len()),
+        };
+
+        Some(format!(
+            "code +{} -{} in {}",
+            snapshot.summary.additions, snapshot.summary.deletions, file_label
+        ))
+    }
+
+    fn checkpoint_detail_with_code(
+        checkpoint: &SessionCheckpoint,
+        code: &Option<CodeSnapshot>,
+    ) -> String {
+        match Self::code_snapshot_detail(code) {
+            Some(code_detail) => {
+                format!("{} · {}", Self::checkpoint_detail(checkpoint), code_detail)
+            }
+            None => Self::checkpoint_detail(checkpoint),
+        }
+    }
+
+    fn capture_code_snapshot(&self) -> Option<CodeSnapshot> {
+        let output = Command::new("git")
+            .args(["diff", "--binary", "--no-ext-diff", "--"])
+            .current_dir(&self.workdir)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let diff = String::from_utf8(output.stdout).ok()?;
+        let summary = Self::summarize_code_snapshot(&diff);
+        Some(CodeSnapshot { diff, summary })
+    }
+
     async fn capture_rewind_checkpoint(&mut self, label: String) -> Result<()> {
         let checkpoint = self.agent.checkpoint().await?;
-        let detail = Self::checkpoint_detail(&checkpoint);
+        let code = self.capture_code_snapshot();
+        let detail = Self::checkpoint_detail_with_code(&checkpoint, &code);
         self.rewind_checkpoints.push(RewindCheckpointRecord {
             label,
             detail,
             checkpoint,
+            code,
         });
         Ok(())
     }
@@ -951,6 +1147,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
     async fn show_rewind_dialog(&mut self) -> Result<()> {
         let current_checkpoint = self.agent.checkpoint().await?;
+        let current_code = self.capture_code_snapshot();
         let mut entries = self
             .rewind_checkpoints
             .iter()
@@ -965,7 +1162,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .map(|entry| SlashDialogItem::new(entry.label.clone(), Some(entry.detail.clone())))
             .chain(std::iter::once(SlashDialogItem::new(
                 "(current)",
-                Some(Self::checkpoint_detail(&current_checkpoint)),
+                Some(Self::checkpoint_detail_with_code(
+                    &current_checkpoint,
+                    &current_code,
+                )),
             )))
             .collect::<Vec<_>>();
 
@@ -984,6 +1184,44 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }));
         self.mode = AppMode::SlashDialog;
         Ok(())
+    }
+
+    fn show_rewind_confirm_dialog(&mut self, entry: RewindCheckpointRecord) {
+        let code_detail = Self::code_snapshot_detail(&entry.code)
+            .unwrap_or_else(|| "code snapshot unavailable".to_string());
+        let items = vec![
+            SlashDialogItem::new("Restore code and conversation", Some(code_detail.clone())),
+            SlashDialogItem::new(
+                "Restore conversation",
+                Some(Self::checkpoint_detail(&entry.checkpoint)),
+            ),
+            SlashDialogItem::new("Restore code", Some(code_detail)),
+            SlashDialogItem::new(
+                "Summarize from here",
+                Some("not implemented yet".to_string()),
+            ),
+            SlashDialogItem::new("Never mind", None),
+        ];
+
+        self.slash_dialog = Some(SlashDialogState::RewindConfirm(RewindConfirmState {
+            dialog: SlashDialog::new(
+                "Rewind",
+                Some(
+                    "Confirm you want to restore to the point before you sent this message:"
+                        .to_string(),
+                ),
+                vec![
+                    format!("| {}", entry.label),
+                    "The conversation will be forked.".to_string(),
+                    "Code restore uses the unstaged git diff snapshot for tracked files."
+                        .to_string(),
+                ],
+                "Enter to confirm · Esc to exit",
+                items,
+            ),
+            entry,
+        }));
+        self.mode = AppMode::SlashDialog;
     }
 
     fn render_hook_details(&mut self, event: HookEvent, descriptors: &[HookDescriptor]) {
@@ -1021,7 +1259,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.messages.add_local_command_result(content);
     }
 
-    async fn restore_rewind_checkpoint(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
+    async fn restore_rewind_conversation(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
         self.agent.restore_checkpoint(&entry.checkpoint).await?;
         self.messages
             .replace_history_from_messages(&entry.checkpoint.history);
@@ -1035,6 +1273,55 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.pending_transcript_reset = true;
         self.footer
             .set_status_message(format!("Rewound to {}", entry.label));
+        Ok(())
+    }
+
+    fn run_git_apply(&self, args: &[&str], patch: &str) -> Result<()> {
+        let mut child = Command::new("git")
+            .args(args)
+            .current_dir(&self.workdir)
+            .stdin(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+
+        if let Some(stdin) = child.stdin.as_mut() {
+            use std::io::Write;
+            stdin.write_all(patch.as_bytes())?;
+        }
+
+        let output = child.wait_with_output()?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            Err(crate::error::AgentError::Command(if stderr.is_empty() {
+                "git apply failed".to_string()
+            } else {
+                stderr
+            }))
+        }
+    }
+
+    fn restore_rewind_code(&mut self, entry: &RewindCheckpointRecord) -> Result<()> {
+        let Some(target) = entry.code.as_ref() else {
+            self.footer
+                .set_status_message("No code snapshot available for that checkpoint");
+            return Ok(());
+        };
+
+        let current = self.capture_code_snapshot();
+        if let Some(current) = current {
+            if !current.diff.trim().is_empty() {
+                self.run_git_apply(&["apply", "-R", "--whitespace=nowarn"], &current.diff)?;
+            }
+        }
+
+        if !target.diff.trim().is_empty() {
+            self.run_git_apply(&["apply", "--whitespace=nowarn"], &target.diff)?;
+        }
+
+        self.footer
+            .set_status_message(format!("Restored code to {}", entry.label));
         Ok(())
     }
 
@@ -1067,7 +1354,31 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             Some(SlashDialogState::Rewind(state)) => {
                 if let Some(selected) = state.dialog.selected() {
                     if let Some(Some(entry)) = state.entries.get(selected) {
-                        self.restore_rewind_checkpoint(entry).await?;
+                        self.show_rewind_confirm_dialog(entry.clone());
+                        return Ok(());
+                    }
+                }
+                self.dismiss_slash_dialog();
+            }
+            Some(SlashDialogState::RewindConfirm(state)) => {
+                if let Some(selected) = state.dialog.selected() {
+                    match selected {
+                        0 => {
+                            self.restore_rewind_code(&state.entry)?;
+                            self.restore_rewind_conversation(&state.entry).await?;
+                        }
+                        1 => {
+                            self.restore_rewind_conversation(&state.entry).await?;
+                        }
+                        2 => {
+                            self.restore_rewind_code(&state.entry)?;
+                        }
+                        3 => {
+                            self.messages.add_local_command_result(
+                                "Summarize-from-here is not implemented yet.".to_string(),
+                            );
+                        }
+                        _ => {}
                     }
                 }
                 self.dismiss_slash_dialog();
@@ -1574,6 +1885,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return;
         }
 
+        if self.input.is_shell_mode() {
+            return;
+        }
+
         self.input
             .set_status_hint(self.loading_indicator.input_chrome_hint());
     }
@@ -1754,6 +2069,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 self.sync_context_percent();
                 // Poll for compaction result (non-blocking)
                 self.poll_compaction_result();
+                self.poll_btw_response();
             }
         }
         Ok(())
@@ -2131,6 +2447,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     match dialog {
                         SlashDialogState::Hooks(state) => state.dialog.select_previous(),
                         SlashDialogState::Rewind(state) => state.dialog.select_previous(),
+                        SlashDialogState::RewindConfirm(state) => state.dialog.select_previous(),
                     }
                 }
             }
@@ -2139,6 +2456,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     match dialog {
                         SlashDialogState::Hooks(state) => state.dialog.select_next(),
                         SlashDialogState::Rewind(state) => state.dialog.select_next(),
+                        SlashDialogState::RewindConfirm(state) => state.dialog.select_next(),
                     }
                 }
             }
@@ -2347,7 +2665,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.compaction_result_rx = Some(rx);
 
         // Spawn background task for compaction
-        let compactor = ContextCompactor::new(compaction_config);
+        let compactor = ContextCompactor::from_config(compaction_config);
         tokio::spawn(async move {
             let mut history_guard = history.write().await;
             let result = compactor
@@ -2418,6 +2736,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         if self.input.is_shortcuts_visible() {
             self.input.show_shortcuts(false);
             return Ok(());
+        }
+
+        if self.stream_rx.is_some() {
+            return self.handle_streaming_input_key(key, terminal).await;
         }
 
         match (key.modifiers, key.code) {
@@ -2494,13 +2816,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('p' | 'P'))
             | (KeyModifiers::SUPER, KeyCode::Char('p' | 'P')) => {
                 if self.stream_rx.is_none() {
-                    self.input.history_up();
+                    self.input.move_cursor_up();
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('n' | 'N'))
             | (KeyModifiers::SUPER, KeyCode::Char('n' | 'N')) => {
                 if self.stream_rx.is_none() {
-                    self.input.history_down();
+                    self.input.move_cursor_down();
                 }
             }
             (KeyModifiers::CONTROL, KeyCode::Char('a' | 'A')) => {
@@ -2646,6 +2968,120 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Ok(())
     }
 
+    async fn handle_streaming_input_key(
+        &mut self,
+        key: crossterm::event::KeyEvent,
+        terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
+    ) -> Result<()> {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('c' | 'C')) => {
+                if self.input.get_input().trim().is_empty() {
+                    self.cancel_stream(terminal)?;
+                } else {
+                    self.input.clear();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                if self.input.get_input().trim().is_empty() {
+                    self.cancel_stream(terminal)?;
+                } else {
+                    self.input.clear();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Enter) => {
+                if matches!(
+                    SlashCommand::parse(self.input.get_input().trim()),
+                    Some(SlashCommand::Btw { .. })
+                ) {
+                    self.submit_input().await?;
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Tab) => {
+                if self.input.completion_is_visible() {
+                    self.input.apply_completion();
+                } else if self.input.get_input().starts_with('/') {
+                    self.input.force_show_completion();
+                }
+            }
+            (KeyModifiers::SHIFT, KeyCode::Tab) => {
+                if self.input.completion_is_visible() {
+                    self.input.completion_select_up();
+                }
+            }
+            (KeyModifiers::CONTROL, KeyCode::Down) => {
+                if self.input.completion_is_visible() {
+                    self.input.completion_select_down();
+                }
+            }
+            (KeyModifiers::NONE, KeyCode::Backspace) => {
+                self.input.handle_backspace();
+            }
+            (KeyModifiers::NONE, KeyCode::Delete) => {
+                self.input.handle_delete();
+            }
+            (KeyModifiers::NONE, KeyCode::Left) => {
+                self.input.move_cursor_left();
+            }
+            (KeyModifiers::NONE, KeyCode::Right) => {
+                self.input.move_cursor_right();
+            }
+            (KeyModifiers::NONE, KeyCode::Home) => {
+                self.input.move_cursor_line_start();
+            }
+            (KeyModifiers::NONE, KeyCode::End) => {
+                self.input.move_cursor_line_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('b' | 'B'))
+            | (KeyModifiers::SUPER, KeyCode::Char('b' | 'B')) => {
+                self.input.move_cursor_left();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('f' | 'F'))
+            | (KeyModifiers::SUPER, KeyCode::Char('f' | 'F')) => {
+                self.input.move_cursor_right();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('a' | 'A')) => {
+                self.input.move_cursor_line_start();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('e' | 'E')) => {
+                self.input.move_cursor_line_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('k' | 'K')) => {
+                self.input.delete_line_by_end();
+            }
+            (KeyModifiers::CONTROL, KeyCode::Char('u' | 'U')) => {
+                self.input.delete_line_by_head();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('b' | 'B')) => {
+                self.input.move_cursor_word_back();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('f' | 'F')) => {
+                self.input.move_cursor_word_forward();
+            }
+            (KeyModifiers::ALT, KeyCode::Char('d' | 'D')) => {
+                self.input.delete_next_word();
+            }
+            (KeyModifiers::ALT, KeyCode::Backspace) => {
+                self.input.delete_word();
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char('?')) => {
+                self.input.handle_char('?');
+            }
+            (KeyModifiers::SHIFT, KeyCode::Char('/')) => {
+                self.input.handle_char('?');
+            }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
+                let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    apply_shift_modifier(c)
+                } else {
+                    c
+                };
+                self.input.handle_char(c);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn cancel_stream(
         &mut self,
         terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
@@ -2698,13 +3134,138 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         build_context_report(&self.agent)
     }
 
-    async fn submit_input(&mut self) -> Result<()> {
-        if self.stream_rx.is_some() {
-            return Ok(());
-        }
+    /// Build an export artifact for the current session and write it to `path`.
+    /// When `path` is `None`, the conversation is written to
+    /// `<workdir>/.amadeus/exports/conversation-<label>-<id>-<stamp>.md`.
+    pub fn export_to_path(
+        &self,
+        path: Option<&std::path::Path>,
+    ) -> std::io::Result<std::path::PathBuf> {
+        let header = SessionHeader {
+            session_id: self.session_id.to_string(),
+            label: self.session_label.clone(),
+            parent_session_id: self.parent_session_id.map(|id| id.to_string()),
+            workdir: self.workdir.display().to_string(),
+            model: self.agent.config().model.clone(),
+            subagent_depth: self.subagent_depth,
+        };
+        let artifact = build_export_artifact(&self.messages, &self.agent, &header);
+        let target: std::path::PathBuf = match path {
+            Some(p) => p.to_path_buf(),
+            None => default_export_path(&self.workdir, &self.session_label, self.session_id),
+        };
+        write_export(&artifact, &target)
+    }
 
+    /// Same as `export_to_path` but with an explicit format override.
+    pub fn export_to_path_with_format(
+        &self,
+        path: &std::path::Path,
+        format: ExportFormat,
+    ) -> std::io::Result<std::path::PathBuf> {
+        use crate::ui::export::write_export_with_format;
+        let header = SessionHeader {
+            session_id: self.session_id.to_string(),
+            label: self.session_label.clone(),
+            parent_session_id: self.parent_session_id.map(|id| id.to_string()),
+            workdir: self.workdir.display().to_string(),
+            model: self.agent.config().model.clone(),
+            subagent_depth: self.subagent_depth,
+        };
+        let artifact = build_export_artifact(&self.messages, &self.agent, &header);
+        write_export_with_format(&artifact, path, format)
+    }
+
+    fn build_tools_info(&self) -> String {
+        let registry = self.agent.registry();
+        let mut lines = vec![format!(
+            "**Active Tool Profile:** `{}`",
+            registry.profile().name
+        )];
+        lines.push(String::new());
+        lines.push("| Tool | Pack | Source | Permission | Aliases | Override |".to_string());
+        lines.push("| --- | --- | --- | --- | --- | --- |".to_string());
+        for tool in registry.inventory() {
+            lines.push(format!(
+                "| `{}` | `{}` | `{}` | `{}` | {} | {} |",
+                tool.name,
+                tool.pack,
+                tool.source.as_str(),
+                tool.required_permission.as_str(),
+                if tool.aliases.is_empty() {
+                    "-".to_string()
+                } else {
+                    tool.aliases
+                        .iter()
+                        .map(|alias| format!("`{alias}`"))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+                if tool.overridden { "yes" } else { "no" }
+            ));
+        }
+        lines.join("\n")
+    }
+
+    fn build_prompt_info(&self) -> String {
+        let config = self.agent.config();
+        let mut lines = vec![format!(
+            "**Active Prompt Profile:** `{}`",
+            config.prompt_profile_name()
+        )];
+        if let Some(profile) = config.prompt_profile() {
+            lines.push(format!("**Mode:** `{:?}`", profile.mode));
+            lines.push(format!(
+                "**Project context:** {}",
+                if profile.include_project_context {
+                    "included"
+                } else {
+                    "disabled"
+                }
+            ));
+            lines.push(String::new());
+            lines.push("**Sections**".to_string());
+            if profile.sections.is_empty() {
+                lines.push("- none".to_string());
+            } else {
+                for section in &profile.sections {
+                    lines.push(format!(
+                        "- `{}`{}",
+                        section.id,
+                        section
+                            .title
+                            .as_ref()
+                            .map(|title| format!(": {title}"))
+                            .unwrap_or_default()
+                    ));
+                }
+            }
+            lines.push(String::new());
+            lines.push("**Files**".to_string());
+            if profile.files.is_empty() {
+                lines.push("- none".to_string());
+            } else {
+                for file in &profile.files {
+                    lines.push(format!("- `{}`", file.display()));
+                }
+            }
+        } else {
+            lines.push(
+                "No custom prompt profile is configured; using the built-in prompt.".to_string(),
+            );
+        }
+        lines.join("\n")
+    }
+
+    async fn submit_input(&mut self) -> Result<()> {
         let input = self.input.get_input();
         let trimmed = input.trim();
+        let shell_command = self.input.shell_command();
+        let parsed_command = SlashCommand::parse(trimmed);
+
+        if self.stream_rx.is_some() && !matches!(parsed_command, Some(SlashCommand::Btw { .. })) {
+            return Ok(());
+        }
 
         if trimmed.is_empty() || trimmed == "q" || trimmed == "exit" {
             if trimmed == "q" || trimmed == "exit" {
@@ -2714,8 +3275,26 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
-        if let Some(command) = SlashCommand::parse(trimmed) {
+        self.footer.clear_status_message();
+        self.clear_transient_slash_response();
+        self.input.clear_btw_dropup();
+
+        if let Some(command) = parsed_command {
             match command {
+                SlashCommand::Btw { question } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    if let Some(question) = question
+                        .map(|value| value.trim().to_string())
+                        .filter(|value| !value.is_empty())
+                    {
+                        self.start_btw_request(trimmed.to_string(), question);
+                    } else {
+                        self.input.set_btw_dropup("/btw", "Usage: /btw", false);
+                    }
+                    return Ok(());
+                }
                 SlashCommand::Compact => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
@@ -2732,6 +3311,22 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.add_context_report(info, turn);
                     return Ok(());
                 }
+                SlashCommand::Tools => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.messages
+                        .add_local_command_result(self.build_tools_info());
+                    return Ok(());
+                }
+                SlashCommand::Prompt => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.messages
+                        .add_local_command_result(self.build_prompt_info());
+                    return Ok(());
+                }
                 SlashCommand::NewAgent => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
@@ -2745,13 +3340,18 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.clear();
                     let help_text = "\
 **Available Commands**
+- `/btw`: Show `/btw` usage
 - `/help`: Show this help message
 - `/compact` or `/compress`: Force context compaction
 - `/context`: Show current context usage
+- `/tools`: Inspect active tool catalog
+- `/prompt`: Inspect active prompt profile
 - `/hooks`: Inspect configured hook phases
 - `/new-agent`: Spawn new agent session
 - `/rewind`: Restore an earlier local checkpoint
+- `/export [path|json]`: Export the conversation (markdown by default, `.json` → JSON)
 - `/exit`: Quit
+- `!`: Shell mode — execute shell commands directly
 - `Ctrl+C` / `Esc`: Cancel active stream
 - `Tab` / `Shift+Tab`: Switch sessions
 - `Ctrl+]` / `Ctrl+[`: Switch to child / parent session
@@ -2773,7 +3373,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         if steps > 0 && steps <= self.rewind_checkpoints.len() {
                             let index = self.rewind_checkpoints.len() - steps;
                             let entry = self.rewind_checkpoints[index].clone();
-                            self.restore_rewind_checkpoint(&entry).await?;
+                            self.restore_rewind_code(&entry)?;
+                            self.restore_rewind_conversation(&entry).await?;
                         } else {
                             self.messages.add_local_command_result(format!(
                                 "No rewind checkpoint available for {steps} step(s)."
@@ -2781,6 +3382,22 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         }
                     } else {
                         self.show_rewind_dialog().await?;
+                    }
+                    return Ok(());
+                }
+                SlashCommand::Export { path } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let target = path.as_deref().map(std::path::Path::new);
+                    match self.export_to_path(target) {
+                        Ok(written) => self.messages.add_local_command_result(format!(
+                            "Exported conversation → {}",
+                            written.display()
+                        )),
+                        Err(e) => self
+                            .messages
+                            .add_local_command_result(format!("Export failed: {e}")),
                     }
                     return Ok(());
                 }
@@ -2798,6 +3415,36 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     return Ok(());
                 }
             }
+        }
+
+        if let Some(cmd) = shell_command {
+            self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                .await?;
+            self.input.clear();
+
+            let input_json = serde_json::json!({"command": cmd.clone()});
+            let result = self.agent.registry().execute("bash", input_json).await;
+            let output = match result {
+                Ok(output) => output,
+                Err(e) => format!("error: {e}"),
+            };
+
+            let display = format!("$ {cmd}\n{output}");
+            self.messages.add_local_command_result(display);
+
+            let prompt_text = format!("$ {cmd}");
+            let result_text = output.clone();
+            let agent = self.agent.clone();
+            tokio::spawn(async move {
+                let history = agent.history();
+                let mut history = history.write().await;
+                history.push(crate::agent::messages::Message::user(&prompt_text));
+                history.push(crate::agent::messages::Message::assistant(vec![
+                    crate::agent::messages::ContentBlock::Text { text: result_text },
+                ]));
+            });
+
+            return Ok(());
         }
 
         self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
@@ -2868,6 +3515,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             .saturating_add(self.input.completion_height());
         let status_height = u16::from(self.status_bar.is_active());
         let footer_height = 2;
+        let transient_slash_response_height = self.transient_slash_response_height();
 
         // If a sidebar is open, reserve space on the right.
         // Clamp sidebar width so the main area never collapses below a usable minimum.
@@ -2882,34 +3530,57 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         };
 
         let main_width = size.width.saturating_sub(sidebar_width);
-        let live_height = self.live_viewport_height(
-            main_width,
-            size.height
-                .saturating_sub(input_height)
-                .saturating_sub(status_height)
-                .saturating_sub(footer_height),
-        );
-        let layout = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(live_height),
-                Constraint::Length(input_height),
-                Constraint::Length(status_height),
-                Constraint::Length(footer_height),
-            ])
-            .split(Rect {
-                width: main_width,
-                ..size
-            });
+        let live_available_height = size
+            .height
+            .saturating_sub(input_height)
+            .saturating_sub(transient_slash_response_height)
+            .saturating_sub(status_height)
+            .saturating_sub(footer_height);
+        let live_height = self.live_viewport_height(main_width, live_available_height);
+        let live_height = if transient_slash_response_height > 0 {
+            live_height.min(live_available_height)
+        } else {
+            live_height
+        };
+        let layout_area = Rect {
+            width: main_width,
+            ..size
+        };
+        let layout = if transient_slash_response_height > 0 {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(live_height),
+                    Constraint::Length(transient_slash_response_height),
+                    Constraint::Length(input_height),
+                    Constraint::Length(status_height),
+                    Constraint::Length(footer_height),
+                ])
+                .split(layout_area)
+        } else {
+            Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(live_height),
+                    Constraint::Length(input_height),
+                    Constraint::Length(status_height),
+                    Constraint::Length(footer_height),
+                ])
+                .split(layout_area)
+        };
 
         let live_area = layout[0];
-        let input_area = layout[1];
-        let status_area = layout[2];
-        let footer_area = layout[3];
+        let (transient_slash_response_area, input_area, status_area, footer_area) =
+            if transient_slash_response_height > 0 {
+                (layout[1], layout[2], layout[3], layout[4])
+            } else {
+                (Rect::default(), layout[1], layout[2], layout[3])
+            };
 
         self.messages_area = Rect::default();
 
         self.render_live_viewport(frame, live_area);
+        self.render_transient_slash_response(frame, transient_slash_response_area);
         self.input.render(frame, input_area);
         self.status_bar.render(frame, status_area);
         self.footer.render(frame, footer_area);
@@ -2922,6 +3593,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             match dialog {
                 SlashDialogState::Hooks(state) => state.dialog.render(frame, size),
                 SlashDialogState::Rewind(state) => state.dialog.render(frame, size),
+                SlashDialogState::RewindConfirm(state) => state.dialog.render(frame, size),
             }
         }
 
@@ -2958,6 +3630,8 @@ pub struct App<C: LLMClient> {
     pending_terminal_reset: bool,
     pending_reset_from_history: bool,
     pending_close: Option<(usize, Instant)>,
+    /// When set, the active session is exported to this path on graceful exit.
+    pending_export: Option<PathBuf>,
     #[cfg(feature = "test-utils")]
     recorder: Option<crate::test_utils::SessionRecorder>,
     #[cfg(feature = "test-utils")]
@@ -2987,11 +3661,24 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             pending_terminal_reset: false,
             pending_reset_from_history: false,
             pending_close: None,
+            pending_export: None,
             #[cfg(feature = "test-utils")]
             recorder: None,
             #[cfg(feature = "test-utils")]
             next_frame_id: 0,
         }
+    }
+
+    /// Schedule an export of the active session to `path` on graceful exit.
+    /// When `path` is `None`, the session is written to the default export
+    /// directory (`<workdir>/.amadeus/exports/`).
+    pub fn set_export_on_exit(&mut self, path: Option<PathBuf>) {
+        self.pending_export = path;
+    }
+
+    /// Take the configured export path, clearing the pending flag.
+    pub fn take_pending_export(&mut self) -> Option<PathBuf> {
+        self.pending_export.take()
     }
 
     #[cfg(feature = "test-utils")]
@@ -3148,6 +3835,23 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend)?;
         terminal.show_cursor()?;
+
+        if let Some(path) = self.take_pending_export() {
+            if res.is_ok() {
+                let active_idx = self.active_idx.min(self.sessions.len().saturating_sub(1));
+                match self.sessions[active_idx].export_to_path(Some(&path)) {
+                    Ok(written) => tracing::info!(
+                        path = %written.display(),
+                        "Exported conversation on exit"
+                    ),
+                    Err(e) => tracing::warn!(
+                        error = %e,
+                        path = %path.display(),
+                        "Failed to export conversation on exit"
+                    ),
+                }
+            }
+        }
 
         #[cfg(feature = "test-utils")]
         if let Some(ref recorder) = self.recorder {
@@ -3971,14 +4675,16 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
 #[cfg(test)]
 mod tests {
-    use super::{App, MonitorStatus, Session, ToolMonitorState};
+    use super::{App, MonitorStatus, Session, SlashDialogState, ToolMonitorState};
     use crate::agent::messages::{ContentBlock, Message};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use ratatui::{
         backend::{CrosstermBackend, TestBackend},
         Terminal,
     };
+    use std::fs;
     use std::path::PathBuf;
+    use std::process::Command;
     use std::sync::Arc;
 
     use crate::agent::config::Config;
@@ -4537,17 +5243,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ctrl_p_and_ctrl_n_match_up_and_down_history_behavior() {
+    async fn ctrl_p_and_ctrl_n_move_cursor_up_and_down() {
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
 
-        for ch in "alpha".chars() {
-            session.input.handle_char(ch);
-        }
-        session.input.clear();
-        for ch in "beta".chars() {
+        for ch in "line1\nline2\nline3".chars() {
             session.input.handle_char(ch);
         }
 
@@ -4557,8 +5259,7 @@ mod tests {
                 &mut terminal,
             )
             .await
-            .expect("ctrl+p should match up");
-        assert_eq!(session.input.get_input(), "alpha");
+            .expect("ctrl+p should move cursor up");
 
         session
             .handle_input_key(
@@ -4566,8 +5267,7 @@ mod tests {
                 &mut terminal,
             )
             .await
-            .expect("ctrl+n should match down");
-        assert_eq!(session.input.get_input(), "beta");
+            .expect("ctrl+n should move cursor down");
     }
 
     #[tokio::test]
@@ -4591,17 +5291,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn slash_unknown_skill_stays_local() {
+    async fn slash_btw_uses_input_dropup_without_transcript_history() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
         for ch in "/btw".chars() {
             session.input.handle_char(ch);
         }
 
-        session.submit_input().await.expect("unknown skill command");
+        session.submit_input().await.expect("btw command");
 
         assert!(matches!(session.mode, super::AppMode::Input));
         assert!(session.stream_rx.is_none());
+        assert!(session.input.btw_dropup_is_visible());
+        assert_eq!(session.input.completion_height(), 2);
         let rendered = session
             .messages
             .take_unrendered_lines(80)
@@ -4609,7 +5311,47 @@ mod tests {
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(rendered.contains("Unknown skill: btw"));
+        assert!(!rendered.contains("Usage: /btw"));
+    }
+
+    #[tokio::test]
+    async fn submitting_prompt_clears_previous_btw_dropup() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.input.set_btw_dropup("/btw", "Usage: /btw", false);
+        for ch in "hi".chars() {
+            session.input.handle_char(ch);
+        }
+
+        session.submit_input().await.expect("prompt command");
+
+        assert!(!session.input.btw_dropup_is_visible());
+    }
+
+    #[test]
+    fn render_shows_btw_dropup_inside_input_area() {
+        let backend = TestBackend::new(90, 20);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.input.set_btw_dropup("/btw", "Usage: /btw", false);
+
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+
+        let buffer = terminal.backend().buffer();
+        let lines = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol().to_string())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>();
+
+        assert!(lines.iter().any(|line| line.contains("/btw")));
+        assert!(lines.iter().any(|line| line.contains("Usage:")));
+        assert!(lines.iter().any(|line| line.contains("└")));
     }
 
     #[tokio::test]
@@ -4653,6 +5395,208 @@ mod tests {
         assert!(!rendered.contains("world"));
     }
 
+    #[tokio::test]
+    async fn slash_export_writes_file_to_path() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("conversation.md");
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("hello there".to_string());
+        session.messages.add_assistant("general kenobi".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("export command");
+
+        assert!(target.exists());
+        let body = fs::read_to_string(&target).expect("read export");
+        assert!(body.contains("# Amadeus Conversation Export"));
+        assert!(body.contains("hello there"));
+        assert!(body.contains("general kenobi"));
+    }
+
+    #[tokio::test]
+    async fn slash_export_default_path_lands_under_amadeus_exports() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let workdir = dir.path().to_path_buf();
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.workdir = workdir.clone();
+        session.messages.add_user("hi".to_string());
+        for ch in "/export".chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("export command");
+
+        let exports_dir = workdir.join(".amadeus").join("exports");
+        assert!(
+            exports_dir.exists(),
+            "default export directory should exist"
+        );
+        let written: Vec<_> = fs::read_dir(&exports_dir)
+            .expect("read exports")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .path()
+                    .extension()
+                    .and_then(|ext| ext.to_str())
+                    .map(|ext| ext == "md")
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert_eq!(written.len(), 1, "exactly one markdown export should land");
+    }
+
+    #[tokio::test]
+    async fn slash_export_appends_timestamp_on_collision() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("export.md");
+
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("first".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session.input.handle_char(ch);
+        }
+        session.submit_input().await.expect("first export");
+        assert!(target.exists());
+
+        let mut app2 = test_app();
+        let session2 = active_session_mut(&mut app2);
+        session2.messages.add_user("second".to_string());
+        for ch in format!("/export {}", target.display()).chars() {
+            session2.input.handle_char(ch);
+        }
+        session2.submit_input().await.expect("second export");
+
+        let siblings: Vec<_> = fs::read_dir(dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+        let with_prefix = siblings
+            .iter()
+            .filter(|name| name.starts_with("export-") && name.ends_with(".md"))
+            .count();
+        assert!(
+            with_prefix >= 1,
+            "collision should produce a timestamped sibling, got {siblings:?}"
+        );
+    }
+
+    #[test]
+    fn app_exposes_export_on_exit_setter() {
+        let mut app = test_app();
+        assert!(app.take_pending_export().is_none());
+        app.set_export_on_exit(Some(PathBuf::from("/tmp/out.md")));
+        let taken = app.take_pending_export();
+        assert_eq!(taken, Some(PathBuf::from("/tmp/out.md")));
+        assert!(app.take_pending_export().is_none());
+    }
+
+    #[tokio::test]
+    async fn session_export_to_path_with_format_writes_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let target = dir.path().join("export.json");
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("format me".to_string());
+        let written = session
+            .export_to_path_with_format(&target, crate::ui::export::ExportFormat::Json)
+            .expect("export json");
+        assert_eq!(written, target);
+        let body = fs::read_to_string(&target).expect("read json");
+        let value: serde_json::Value = serde_json::from_str(&body).expect("parse json");
+        assert!(value.get("turns").is_some());
+        assert!(value.get("schema_version").is_some());
+    }
+
+    #[test]
+    fn code_snapshot_summary_counts_changed_lines_and_files() {
+        let diff = "\
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1,2 +1,3 @@
+ fn main() {
+-    old();
++    new();
++    extra();
+ }
+";
+
+        let summary = Session::<BenchmarkMockClient>::summarize_code_snapshot(diff);
+
+        assert_eq!(summary.files, vec!["src/main.rs"]);
+        assert_eq!(summary.additions, 2);
+        assert_eq!(summary.deletions, 1);
+    }
+
+    #[tokio::test]
+    async fn rewind_dialog_confirm_step_is_shown_for_selected_checkpoint() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session
+            .capture_rewind_checkpoint("before".to_string())
+            .await
+            .expect("checkpoint");
+
+        session.show_rewind_dialog().await.expect("rewind dialog");
+        session
+            .submit_slash_dialog()
+            .await
+            .expect("select checkpoint");
+
+        assert!(matches!(
+            session.slash_dialog,
+            Some(SlashDialogState::RewindConfirm(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn restore_rewind_code_restores_tracked_git_diff() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        run_git(root, &["init"]);
+        run_git(root, &["config", "user.email", "test@example.com"]);
+        run_git(root, &["config", "user.name", "Test User"]);
+        fs::write(root.join("tracked.txt"), "one\n").expect("write tracked");
+        run_git(root, &["add", "tracked.txt"]);
+        run_git(root, &["commit", "-m", "initial"]);
+
+        let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+        let mut config = Config::default();
+        config.workdir = root.to_path_buf();
+        let agent = Agent::builder(client, Arc::new(config)).build();
+        let mut session = Session::new(
+            agent,
+            root.to_path_buf(),
+            "test-model".to_string(),
+            0,
+            "root".to_string(),
+            0,
+        );
+
+        session
+            .capture_rewind_checkpoint("before edit".to_string())
+            .await
+            .expect("checkpoint");
+        fs::write(root.join("tracked.txt"), "one\ntwo\n").expect("modify tracked");
+
+        let entry = session.rewind_checkpoints[0].clone();
+        session
+            .restore_rewind_code(&entry)
+            .expect("restore code snapshot");
+
+        assert_eq!(
+            fs::read_to_string(root.join("tracked.txt")).expect("read tracked"),
+            "one\n"
+        );
+    }
+
     #[test]
     fn rewind_transcript_reset_inserts_spacer_lines_and_clears_pending_flag() {
         let backend = CrosstermBackend::new(std::io::stdout());
@@ -4666,6 +5610,20 @@ mod tests {
             .expect("rewind reset should succeed");
 
         assert!(!session.pending_transcript_reset);
+    }
+
+    fn run_git(root: &std::path::Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git should run");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
     }
 
     #[test]

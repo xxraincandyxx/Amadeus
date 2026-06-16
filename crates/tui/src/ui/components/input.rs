@@ -22,16 +22,18 @@
 
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+use amadeus_core::parse_render_spans;
 use amadeus_core::{
     apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
-    format_citation_markdown, normalize_pasted_path, parse_render_spans,
-    scan_workspace_citation_candidates, ActiveCitationQuery, CitationCandidate,
+    format_citation_markdown, normalize_pasted_path, scan_workspace_citation_candidates,
+    ActiveCitationQuery, CitationCandidate,
 };
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use tui_textarea::{CursorMove, TextArea};
@@ -39,6 +41,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::ui::components::completion::{render_completion_lines, CompletionState};
 use crate::ui::get_colors;
+#[cfg(test)]
 use crate::ui::semantic_colors::SemanticColors;
 
 /// Example text inside the `Try "…"` hint (configurable, English UI).
@@ -89,7 +92,16 @@ pub struct InputComponent {
     citation_matches: Vec<CitationCandidate>,
     active_citation_query: Option<ActiveCitationQuery>,
     citation_selected_index: usize,
+    btw_dropup: Option<BtwDropupState>,
     shortcuts_visible: bool,
+    placeholder_visible: bool,
+    shell_mode: bool,
+}
+
+struct BtwDropupState {
+    command: String,
+    lines: Vec<String>,
+    is_error: bool,
 }
 
 impl InputComponent {
@@ -129,7 +141,10 @@ impl InputComponent {
             citation_matches: Vec::new(),
             active_citation_query: None,
             citation_selected_index: 0,
+            btw_dropup: None,
             shortcuts_visible: false,
+            placeholder_visible: true,
+            shell_mode: false,
         };
         input.refresh_suggestions();
         input
@@ -148,7 +163,27 @@ impl InputComponent {
         self.setup_textarea();
         self.history_index = None;
         self.current_draft.clear();
+        self.clear_btw_dropup();
+        self.shell_mode = false;
         self.refresh_suggestions();
+    }
+
+    pub fn is_shell_mode(&self) -> bool {
+        self.shell_mode
+    }
+
+    pub fn shell_command(&self) -> Option<String> {
+        if self.shell_mode {
+            let input = self.get_input();
+            let cmd = input.trim();
+            if !cmd.is_empty() {
+                Some(cmd.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     fn textarea_block() -> Block<'static> {
@@ -171,7 +206,17 @@ impl InputComponent {
                 .fg(colors.ui.comment)
                 .add_modifier(Modifier::ITALIC),
         );
-        self.textarea.set_placeholder_text(composer_placeholder());
+        let placeholder = if self.placeholder_visible {
+            composer_placeholder()
+        } else {
+            String::new()
+        };
+        self.textarea.set_placeholder_text(placeholder);
+    }
+
+    pub fn set_placeholder_visible(&mut self, visible: bool) {
+        self.placeholder_visible = visible;
+        self.setup_textarea();
     }
 
     pub fn history_up(&mut self) {
@@ -223,51 +268,72 @@ impl InputComponent {
     }
 
     pub fn insert_newline(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.insert_newline();
         self.refresh_suggestions();
     }
 
     pub fn handle_char(&mut self, c: char) {
+        self.clear_btw_dropup();
+        let was_empty = self.get_input().is_empty();
+        if was_empty && c == '!' {
+            self.shell_mode = true;
+            self.refresh_suggestions();
+            return;
+        }
         self.textarea.insert_char(c);
         self.refresh_suggestions();
     }
 
     pub fn handle_backspace(&mut self) {
+        self.clear_btw_dropup();
+        if self.shell_mode && self.get_input().is_empty() {
+            self.shell_mode = false;
+            self.refresh_suggestions();
+            return;
+        }
         self.textarea.delete_char();
         self.refresh_suggestions();
     }
 
     pub fn handle_delete(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_next_char();
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_left(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Back);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_right(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Forward);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_start(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::Head);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_line_end(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::End);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_forward(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::WordForward);
         self.refresh_suggestions();
     }
 
     pub fn move_cursor_word_back(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.move_cursor(CursorMove::WordBack);
         self.refresh_suggestions();
     }
@@ -283,26 +349,31 @@ impl InputComponent {
     }
 
     pub fn delete_line_by_end(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_line_by_end();
         self.refresh_suggestions();
     }
 
     pub fn delete_line_by_head(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_line_by_head();
         self.refresh_suggestions();
     }
 
     pub fn delete_word(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_word();
         self.refresh_suggestions();
     }
 
     pub fn delete_next_word(&mut self) {
+        self.clear_btw_dropup();
         self.textarea.delete_next_word();
         self.refresh_suggestions();
     }
 
     pub fn handle_paste(&mut self, pasted: &str) {
+        self.clear_btw_dropup();
         let normalized = if !pasted.contains('\n') && !pasted.contains('\r') {
             normalize_pasted_path(pasted)
         } else {
@@ -393,6 +464,8 @@ impl InputComponent {
 
         let comp_rows = if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
+        } else if let Some(dropup) = self.btw_dropup.as_ref() {
+            1u16.saturating_add(dropup.lines.len() as u16)
         } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
         } else {
@@ -474,7 +547,9 @@ impl InputComponent {
         }
 
         if let Some(ci) = comp_idx {
-            if self.citation_completion_is_visible() {
+            if self.btw_dropup_is_visible() {
+                self.render_btw_dropup(frame, chunks[ci]);
+            } else if self.citation_completion_is_visible() {
                 self.render_citation_lines(frame, chunks[ci]);
             } else {
                 render_completion_lines(frame, chunks[ci], &self.completion);
@@ -483,10 +558,23 @@ impl InputComponent {
 
         let inner = chunks[inner_idx];
         self.textarea.set_block(Self::textarea_block());
-        self.textarea.set_placeholder_text(composer_placeholder());
+        let placeholder = if self.shell_mode {
+            String::new()
+        } else if self.placeholder_visible {
+            composer_placeholder()
+        } else {
+            String::new()
+        };
+        self.textarea.set_placeholder_text(placeholder);
 
         const PROMPT: &str = "❯ ";
-        let gutter_w = (PROMPT.width() as u16).clamp(1, inner.width);
+        const SHELL_PROMPT: &str = "$ ";
+        let active_prompt = if self.shell_mode {
+            SHELL_PROMPT
+        } else {
+            PROMPT
+        };
+        let gutter_w = (active_prompt.width() as u16).clamp(1, inner.width);
         let ta_w = inner.width.saturating_sub(gutter_w);
         if ta_w == 0 || inner.height == 0 {
             return;
@@ -505,10 +593,16 @@ impl InputComponent {
         };
 
         frame.render_widget(&self.textarea, ta_rect);
+
+        let prompt_color = if self.shell_mode {
+            colors.status.warning
+        } else {
+            colors.text.accent
+        };
         frame.render_widget(
             Paragraph::new(Line::from(Span::styled(
-                PROMPT,
-                Style::default().fg(colors.text.accent),
+                active_prompt,
+                Style::default().fg(prompt_color),
             )))
             .alignment(Alignment::Left),
             prompt_rect,
@@ -520,9 +614,14 @@ impl InputComponent {
         );
 
         if comp_rows == 0 {
+            let hint_text = if self.shell_mode {
+                "  ! for shell mode · backspace to exit"
+            } else {
+                "  ? for shortcuts"
+            };
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(
-                    "  ? for shortcuts",
+                    hint_text,
                     Style::default().fg(colors.ui.comment),
                 ))),
                 chunks[shortcuts_idx],
@@ -543,11 +642,16 @@ impl InputComponent {
 
     /// Check if completion popup is visible.
     pub fn completion_is_visible(&self) -> bool {
-        self.citation_completion_is_visible() || self.completion.is_visible()
+        self.btw_dropup_is_visible()
+            || self.citation_completion_is_visible()
+            || self.completion.is_visible()
     }
 
     /// Move selection up in completion list.
     pub fn completion_select_up(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             self.citation_selected_index = self.citation_selected_index.saturating_sub(1);
         } else {
@@ -557,6 +661,9 @@ impl InputComponent {
 
     /// Move selection down in completion list.
     pub fn completion_select_down(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             if !self.citation_matches.is_empty() {
                 self.citation_selected_index =
@@ -569,12 +676,16 @@ impl InputComponent {
 
     pub fn force_show_completion(&mut self) {
         let input = self.get_input();
+        self.clear_btw_dropup();
         self.completion.update(&input);
         self.refresh_suggestions();
     }
 
     /// Apply the selected completion (replace input with command).
     pub fn apply_completion(&mut self) {
+        if self.btw_dropup_is_visible() {
+            return;
+        }
         if self.citation_completion_is_visible() {
             if let (Some(query), Some(candidate)) = (
                 self.active_citation_query.clone(),
@@ -624,7 +735,9 @@ impl InputComponent {
     }
 
     pub fn completion_height(&self) -> u16 {
-        if self.citation_completion_is_visible() {
+        if let Some(dropup) = self.btw_dropup.as_ref() {
+            1u16.saturating_add(dropup.lines.len() as u16)
+        } else if self.citation_completion_is_visible() {
             self.citation_visible_count() as u16
         } else if self.completion.is_visible() {
             self.completion.visible_count() as u16
@@ -651,6 +764,37 @@ impl InputComponent {
 
     pub fn is_shortcuts_visible(&self) -> bool {
         self.shortcuts_visible
+    }
+
+    pub fn set_btw_dropup(
+        &mut self,
+        command: impl Into<String>,
+        content: impl Into<String>,
+        is_error: bool,
+    ) {
+        let lines = content
+            .into()
+            .lines()
+            .take(4)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        self.btw_dropup = Some(BtwDropupState {
+            command: command.into(),
+            lines: if lines.is_empty() {
+                vec![String::new()]
+            } else {
+                lines
+            },
+            is_error,
+        });
+    }
+
+    pub fn clear_btw_dropup(&mut self) {
+        self.btw_dropup = None;
+    }
+
+    pub fn btw_dropup_is_visible(&self) -> bool {
+        self.btw_dropup.is_some()
     }
 
     fn citation_completion_is_visible(&self) -> bool {
@@ -715,6 +859,46 @@ impl InputComponent {
         frame.render_widget(Paragraph::new(lines), area);
     }
 
+    fn render_btw_dropup(&self, frame: &mut Frame, area: Rect) {
+        let Some(dropup) = self.btw_dropup.as_ref() else {
+            return;
+        };
+        if area.height == 0 {
+            return;
+        }
+
+        let colors = get_colors();
+        let command_style = Style::default()
+            .fg(colors.text.primary)
+            .bg(colors.background.message);
+        let body_style = if dropup.is_error {
+            Style::default().fg(colors.status.error)
+        } else {
+            Style::default().fg(colors.text.secondary)
+        };
+
+        let command_width = area.width.saturating_sub(2) as usize;
+        let body_width = area.width.saturating_sub(6) as usize;
+        let mut lines = Vec::with_capacity(dropup.lines.len().saturating_add(1));
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {}",
+                truncate_with_ellipsis(&dropup.command, command_width.max(1))
+            ),
+            command_style,
+        )));
+        lines.extend(dropup.lines.iter().map(|line| {
+            let text = truncate_with_ellipsis(line, body_width.max(1));
+            Line::from(vec![
+                Span::styled("  └ ", Style::default().fg(colors.text.secondary)),
+                Span::styled(text, body_style),
+            ])
+        }));
+
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+
+    #[cfg(test)]
     fn visible_input_lines(&self) -> Vec<Line<'static>> {
         let colors = get_colors();
         let input = self.get_input();
@@ -750,6 +934,7 @@ impl Default for InputComponent {
     }
 }
 
+#[cfg(test)]
 fn build_visible_line(
     line: &str,
     spans: &[amadeus_core::CitationRenderSpan],
@@ -1060,6 +1245,24 @@ mod tests {
 
         assert!(input.citation_completion_is_visible());
         assert!(input.completion_height() > 0);
+    }
+
+    #[test]
+    fn test_btw_dropup_reports_popup_height() {
+        let (_temp, mut input) = temp_input();
+        input.set_btw_dropup("/btw", "Usage: /btw", false);
+
+        assert!(input.btw_dropup_is_visible());
+        assert_eq!(input.completion_height(), 2);
+    }
+
+    #[test]
+    fn test_editing_clears_btw_dropup() {
+        let (_temp, mut input) = temp_input();
+        input.set_btw_dropup("/btw", "Usage: /btw", false);
+        input.handle_char('a');
+
+        assert!(!input.btw_dropup_is_visible());
     }
 
     #[test]

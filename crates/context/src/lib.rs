@@ -17,7 +17,12 @@
 // - cmd: cargo test -p context
 // @end-amadeus-header
 
-//! Project context loading utilities.
+//! Project context loading and memory providers.
+
+pub mod memory;
+pub mod memory_file;
+pub mod memory_json;
+pub mod memory_session;
 
 use std::path::{Path, PathBuf};
 

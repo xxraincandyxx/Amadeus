@@ -42,6 +42,7 @@ pub mod colors;
 pub mod components;
 pub mod constants;
 pub mod event;
+pub mod export;
 pub mod repl;
 pub mod scroll;
 pub mod semantic_colors;

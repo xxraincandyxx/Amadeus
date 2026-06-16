@@ -6,7 +6,6 @@ Current precedence:
 1. `~/.amadeus/settings.json`
 2. `.amadeus/settings.json`
 3. `.amadeus/settings.local.json`
-4. process environment variables
 
 Current supported layout:
 

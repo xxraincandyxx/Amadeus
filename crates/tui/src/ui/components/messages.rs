@@ -1544,6 +1544,26 @@ impl MessagesComponent {
     pub fn is_empty(&self) -> bool {
         self.items.is_empty()
     }
+
+    /// Borrow the history items for inspection or export.
+    pub fn iter_items(&self) -> std::slice::Iter<'_, HistoryItem> {
+        self.items.iter()
+    }
+
+    /// Append a fully-formed tool group with a known turn number. Intended for
+    /// export pipelines and tests; live tool execution should use
+    /// `start_tool`/`complete_tool` instead.
+    #[doc(hidden)]
+    pub fn push_tool_group(&mut self, group: ToolGroup, turn: usize) {
+        self.items.push(HistoryItem::ToolGroup { group, turn });
+    }
+
+    /// Append a compression history item. Intended for export pipelines and
+    /// tests; live compaction should use `start_compression` instead.
+    #[doc(hidden)]
+    pub fn push_compression(&mut self, compression: CompressionItem) {
+        self.items.push(HistoryItem::Compression { compression });
+    }
 }
 
 impl Default for MessagesComponent {

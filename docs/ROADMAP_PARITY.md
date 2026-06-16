@@ -6,13 +6,14 @@ This document captures the current architectural gaps between Amadeus and the `c
 
 ### 0. Architecture
 
-- Amadeus currently uses a 3-crate workspace: `core`, `tui`, and `api`.
-- The current `core` crate is still a large monolith and carries too many responsibilities.
-- The reference baseline uses a larger workspace with sharper crate boundaries and clearer subsystem ownership.
+- Amadeus now uses a multi-crate workspace with a root compatibility facade plus dedicated crates for API, TUI, runtime models, config, commands, permissions, hooks, skills, telemetry, messages, events, and related support code.
+- The remaining architecture gap is not crate count. `crates/core` still owns too many live runtime responsibilities: the agent loop, provider clients, tool registry, built-in tools, MCP adapter, policy, hooks integration, telemetry integration, and orchestration surface.
+- The reference baseline has sharper subsystem ownership and fewer cross-cutting dependencies through the central runtime crate.
 
 ### 1. Telemetry and Observability
 
-- Amadeus currently has basic tracing logs.
+- Amadeus has a telemetry crate with JSONL and in-memory sinks, plus structured runtime events in parts of the agent and orchestration paths.
+- The remaining gap is complete event coverage and request/tool profiling across sessions, prompts, hooks, approvals, streaming, and worker state transitions.
 - The reference baseline has a dedicated telemetry subsystem with structured session tracing, analytics events, JSONL sinks, in-memory sinks, and request profiling.
 
 ### 2. Hooks
@@ -34,13 +35,14 @@ This document captures the current architectural gaps between Amadeus and the `c
 
 ### 5. Permissions
 
-- Amadeus currently has a simpler permission model plus dangerous-pattern checks.
+- Amadeus has a dedicated permissions crate with modes and rule parsing, plus core enforcement around dangerous operations.
+- The remaining gap is consistent workspace boundary validation, explainable decisions across all tool paths, and deeper hook-driven overrides.
 - The reference baseline has more permission modes, rule-based matching, hook-driven overrides, and stronger workspace validation heuristics.
 
 ### 6. Configuration
 
-- Amadeus already loads structured settings from `~/.amadeus/settings.json` and `.amadeus/settings.json`.
-- The remaining gap is multi-source depth, local overrides, deep merge semantics, and stronger validation.
+- Amadeus loads structured settings from global, workspace, and workspace-local settings files, with typed sections for several subsystems.
+- The remaining gap is stronger schema validation, clearer ownership between `crates/config` and `crates/core`, and deeper typed coverage for MCP, LSP, worker lifecycle, and tools.
 - The reference baseline supports a deeper 3-tier merge model with validation and richer typed sections.
 
 ### 7. Worker Boot Protocol
@@ -52,32 +54,30 @@ This document captures the current architectural gaps between Amadeus and the `c
 
 The work should be done in this order:
 
-1. Remove mesh mode
-2. Split the monolithic `core` crate into sharper workspace crates
-3. Add a dedicated telemetry crate
-4. Rebuild configuration into a validated, layered config system
-5. Expand the permission system into rule-based policy evaluation
-6. Expand hooks into a richer, configurable lifecycle system
-7. Add a worker boot and lifecycle protocol
-8. Replace the current MCP adapter-only approach with a full MCP lifecycle stack
-9. Add LSP integration
+1. Finish workspace ownership cleanup around `crates/core`
+2. Complete telemetry coverage across agent, tool, hook, approval, and worker flows
+3. Harden configuration validation and typed subsystem settings
+4. Expand permission enforcement into a consistent rule and boundary system
+5. Expand hooks into a richer, configurable lifecycle system
+6. Add a worker boot and lifecycle protocol
+7. Replace the current MCP adapter-only approach with a full MCP lifecycle stack
+8. Add LSP integration
 
 ## Why This Order
 
-- Mesh removal should happen first because it is a low-depth feature with cross-cutting behavior and little architectural value.
-- Workspace restructuring should happen early because telemetry, MCP, LSP, hooks, and permissions all become harder if they continue to accumulate inside `core`.
-- Telemetry should come before deeper MCP and worker lifecycle work so those systems produce structured diagnostics from the start.
-- Configuration and permissions should stabilize before hook expansion, MCP auth, and worker boot, because those subsystems depend on policy and settings resolution.
+- Workspace ownership cleanup should happen first because many target crates already exist, but `core` still owns live implementations that should move behind narrower interfaces.
+- Telemetry coverage should come before deeper MCP and worker lifecycle work so those systems produce structured diagnostics from the start.
+- Configuration and permissions should stabilize before hook expansion, MCP auth, and worker boot because those subsystems depend on policy and settings resolution.
 - MCP should come before LSP if the primary parity target is tool/runtime lifecycle depth rather than editor assistance first.
 
 ## Target Workspace Shape
 
-The current 3-crate layout should evolve toward a sharper workspace:
+The current workspace already has many of the target crates. The remaining target is to move implementation ownership out of `crates/core` where a narrower crate already exists, while keeping the root compatibility facade stable.
 
 - `crates/runtime`
-  Agent loop, sessions, team coordination, worker lifecycle, approval routing
+  Live runtime ownership for sessions, team coordination, worker lifecycle, approval routing, and eventually the agent loop
 - `crates/tools`
-  Tool trait, tool registry, built-in tools, tool bridge integration
+  Future home for the tool trait, tool registry, built-in tools, and tool bridge integration
 - `crates/commands`
   Slash command specs, parsers, command handlers, shared command metadata
 - `crates/config`
@@ -97,83 +97,60 @@ The current 3-crate layout should evolve toward a sharper workspace:
 - `crates/api`
   HTTP API only
 - `crates/compat`
-  Temporary compatibility re-exports during migration
+  Optional compatibility layer if the root crate becomes too large as a facade
 
 The goal is not to copy the exact crate count of the reference baseline. The goal is to copy the boundary discipline.
 
 ## Phase Schedule
 
-### Phase 0. Remove Mesh Mode
-
-Estimated duration: 1 day
-
-Scope:
-
-- Remove `MeshManager` and `.amadeus_mesh` lock-file behavior
-- Remove auto-discovery and auto-attachment behavior from startup
-- Remove mesh indicator state from the TUI footer
-- Remove mesh-specific testflow and capture metadata
-- Remove the `mesh` feature flag if it has no remaining behavior
-
-Acceptance:
-
-- `cargo run --features full -- --server` does not write `.amadeus_mesh`
-- TUI startup in the same working directory does not auto-connect to a server instance
-- Footer does not display mesh state
-- No recorder, snapshot, or comparison code references mesh
-
-### Phase 1. Workspace Restructure
+### Phase 0. Workspace Ownership Cleanup
 
 Estimated duration: 4 to 6 days
 
 Scope:
 
-- Split `core` into `runtime`, `tools`, `commands`, `config`, `permissions`, and `hooks`
-- Preserve compatibility through temporary re-exports
-- Reduce direct `tui` and `api` dependencies on the monolithic crate
+- Move live implementations from `core` into existing narrower crates where the crate boundary already exists.
+- Create missing workspace crates only where no suitable crate exists yet, such as `tools`, `mcp`, or `lsp`.
+- Preserve compatibility through root and core re-exports during migration.
+- Reduce direct `tui` and `api` dependencies on broad `core` modules.
 
 Acceptance:
 
-- `core` is no longer the primary ownership point for unrelated subsystems
-- `tui` and `api` depend on narrower crates
-- compile and tests still pass through compatibility shims
+- `core` is no longer the primary ownership point for unrelated subsystems.
+- `tui` and `api` depend on narrower crates where practical.
+- Compile and tests still pass through compatibility shims.
 
-### Phase 2. Telemetry
+### Phase 1. Telemetry Coverage
 
 Estimated duration: 3 to 4 days
 
 Scope:
 
-- Add a dedicated telemetry crate
-- Emit structured events for sessions, prompts, tool runs, hooks, approvals, and worker state transitions
-- Add JSONL and memory sinks
-- Add request and tool profiling
+- Emit structured events for all sessions, prompts, tool runs, hooks, approvals, streams, and worker state transitions.
+- Add request and tool profiling where missing.
+- Ensure API, TUI, and tests consume the same telemetry model.
 
 Acceptance:
 
-- session and tool events are queryable without scraping logs
-- tests can assert against in-memory telemetry sinks
+- Session and tool events are queryable without scraping logs.
+- Tests can assert against in-memory telemetry sinks.
 
-### Phase 3. Configuration
+### Phase 2. Configuration Validation
 
 Estimated duration: 4 to 5 days
 
 Scope:
 
-- Move config logic into a dedicated crate
-- Support:
-  - `~/.amadeus/settings.json`
-  - `.amadeus/settings.json`
-  - `.amadeus/settings.local.json`
-- Add deep merge and schema validation
-- Introduce typed sections for permissions, hooks, MCP, LSP, telemetry, team, and tools
+- Keep config ownership in `crates/config` and remove duplicated parsing behavior from `core`.
+- Add stronger schema validation and user-facing diagnostics.
+- Complete typed sections for permissions, hooks, MCP, LSP, telemetry, team, worker lifecycle, and tools.
 
 Acceptance:
 
-- layered config is deterministic and validated
-- runtime behavior does not depend on scattered ad hoc config parsing
+- Layered config is deterministic and validated.
+- Runtime behavior does not depend on scattered ad hoc config parsing.
 
-### Phase 4. Permissions
+### Phase 3. Permissions
 
 Estimated duration: 4 to 5 days
 
@@ -194,7 +171,7 @@ Acceptance:
 - policy decisions are composable and explainable
 - dangerous access checks are not limited to a small static blocklist
 
-### Phase 5. Hooks
+### Phase 4. Hooks
 
 Estimated duration: 3 to 4 days
 
@@ -208,7 +185,7 @@ Acceptance:
 
 - hooks become a general policy and automation layer, not only shell callbacks
 
-### Phase 6. Worker Boot Protocol
+### Phase 5. Worker Boot Protocol
 
 Estimated duration: 4 days
 
@@ -230,7 +207,7 @@ Acceptance:
 
 - multi-agent behavior is observable and stateful rather than implicit
 
-### Phase 7. MCP Lifecycle
+### Phase 6. MCP Lifecycle
 
 Estimated duration: 1.5 to 2 weeks
 
@@ -245,7 +222,7 @@ Acceptance:
 
 - MCP is a managed subsystem rather than a thin adapter wrapper
 
-### Phase 8. LSP Integration
+### Phase 7. LSP Integration
 
 Estimated duration: 1 to 1.5 weeks
 
@@ -263,7 +240,7 @@ Acceptance:
 
 Start with:
 
-1. Phase 0: remove mesh mode
-2. Phase 1: split `core` into narrower crates while preserving compatibility
+1. Phase 0: move one live subsystem out of `core` behind compatibility re-exports.
+2. Phase 1: fill telemetry gaps around the moved subsystem before starting the next extraction.
 
-This is the safest first move because it removes low-value runtime complexity and creates the boundaries needed for the remaining work.
+This is the safest first move because the workspace shape already exists; the next value comes from making those boundaries real one subsystem at a time.

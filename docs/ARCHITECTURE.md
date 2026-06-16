@@ -1,753 +1,316 @@
 # Amadeus Architecture
 
-> AI Agent SDK - Production-ready multi-agent system with LLM support
+> Workspace-oriented architecture guide for the current Amadeus SDK.
 
 ## Overview
 
-Amadeus is a Rust SDK for building AI agents with comprehensive LLM support. It provides multi-provider compatibility (Anthropic Claude, OpenAI GPT), streaming responses, an extensible tool system, and both TUI and HTTP API interfaces.
+Amadeus is organized as a Cargo workspace with a thin compatibility facade at the root and most implementation living in dedicated crates.
 
-**Key Capabilities:**
-- Core-first agent runtime shared by TUI and HTTP adapters
-- Orchestra-based multi-agent coordination with a shared task list
-- Task queuing and backpressure control via the orchestra runtime
-- P2P recursive delegation through `PeerTool` for inter-agent collaboration
+- The root `amadeus` crate re-exports the workspace crates for downstream compatibility.
+- `crates/core` contains the transport-agnostic agent runtime, provider clients, tool system, policy layer, orchestration runtime, and shared commands.
+- `crates/runtime` contains reusable coordination models and selection logic for teams, orchestras, workers, and scheduling.
+- `crates/api` is the Axum HTTP adapter.
+- `crates/tui` is the ratatui terminal adapter.
+- Supporting crates such as `config`, `commands`, `skills`, `telemetry`, `messages`, `events`, and `permissions` hold reusable building blocks consumed by `core`.
 
-Parity with the `refs/claw-code-parity` reference is treated as a behavioral testing problem. Architecture and README claims should only describe flows that are covered by automated tests in this repository.
+The practical mental model is:
 
----
+`CLI or library call -> config + provider selection -> core runtime -> TUI or HTTP adapter`
 
-## High-Level Architecture
+## Workspace Shape
 
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           Amadeus SDK                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ┌─────────────────┐     ┌──────────────────────────────────────────┐    │
-│  │     Agent       │     │                Orchestra                 │    │
-│  │     Loop        │     │    Registry + Shared Task Runtime       │    │
-│  └────────┬────────┘     └──────────────────┬───────────────────────┘    │
-│           │                                  │                           │
-│           └──────────────────────────────────┘                           │
-│                                   │                                     │
-│           ┌───────────────────────┴───────────────────────┐             │
-│           │              Tool Registry                    │             │
-│           │  ┌─────────────────────────────────────────┐  │             │
-│           │  │ bash │ file │ glob │ grep │ web │ ...    │  │             │
-│           │  └─────────────────────────────────────────┘  │             │
-│           └───────────────────────┬───────────────────────┘             │
-│                                   │                                     │
-│           ┌───────────────────────┴───────────────────────┐             │
-│           │              Policy System                    │             │
-│           │     (Auto/Ask/Strict approval modes)          │             │
-│           └───────────────────────┬───────────────────────┘             │
-│                                   │                                     │
-│  ┌────────────────────────────────┼────────────────────────────────┐    │
-│  │                                ▼                                │    │
-│  │  ┌──────────────────────────────────────────────────────────┐   │    │
-│  │  │                    LLMClient Trait                       │   │    │
-│  │  │            (Provider Abstraction Layer)                  │   │    │
-│  │  └────────────────────────────┬─────────────────────────────┘   │    │
-│  │                               │                                 │    │
-│  │         ┌─────────────────────┴─────────────────────┐           │    │
-│  │         ▼                                           ▼           │    │
-│  │  ┌─────────────────┐                         ┌──────────────┐   │    │
-│  │  │ AnthropicClient │                         │ OpenAIClient │   │    │
-│  │  └─────────────────┘                         └──────────────┘   │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-│  ┌─────────────────────────────────────────────────────────────────┐    │
-│  │                        Output Interfaces                        │    │
-│  │  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────┐  │    │
-│  │  │  TUI (ratatui)  │    │  HTTP API       │    │  Streaming  │  │    │
-│  │  │                 │    │  (Axum)         │    │  Events     │  │    │
-│  │  └─────────────────┘    └─────────────────┘    └─────────────┘  │    │
-│  └─────────────────────────────────────────────────────────────────┘    │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Module Structure
-
-### Core Modules
-
-| Module | Purpose |
-|--------|---------|
-| `agent/` | Agent loop, orchestration surface, configuration, messages, events, worker |
-| `client/` | LLM provider abstraction (trait-based) |
-| `tools/` | Tool registry and implementations |
-| `policy/` | Approval/policy system |
-| `hooks/` | Extensibility hooks |
-| `error/` | Error types (thiserror-based) |
-
-### Optional Modules (Feature-Gated)
-
-| Module | Feature | Purpose |
-|--------|---------|---------|
-| `ui/` | `tui` | Terminal UI (ratatui) |
-| `api/` | `api` | HTTP REST API (axum) |
-| `concurrency/` | `concurrency` | Lock management |
-| `orchestra/` | `orchestra` | Canonical multi-agent coordination surface |
-| `manager/`, `supervisor/`, `team/` | `orchestra` | Deprecated compatibility shims |
-| `mcp/` | - | Model Context Protocol |
-| `skills/` | - | Reusable prompt templates |
-| `benchmark/` | - | Benchmark & evaluation |
-
-### Module Dependencies
-
-```
-lib.rs
-├── agent/
-│   ├── config.rs          ← Depends on: error, context
-│   ├── loop_agent.rs      ← Depends on: client, tools, policy, hooks
-│   ├── orchestra.rs       ← Depends on: concurrency, worker, peer tool
+```text
+amadeus/
+├── src/
+│   ├── lib.rs              # compatibility facade
+│   └── main.rs             # CLI mode switch
+├── crates/
+│   ├── core/               # agent loop, tools, policy, orchestration
+│   ├── runtime/            # shared orchestration data models and selectors
+│   ├── api/                # Axum router + handlers
+│   ├── tui/                # ratatui application
+│   ├── config/             # layered settings loading
+│   ├── commands/           # slash command parsing and helpers
+│   ├── skills/             # skill registry and loading
+│   ├── telemetry/          # sinks and events
+│   ├── permissions/        # permission modes and rules
+│   ├── messages/           # message/content block types
+│   ├── events/             # event and tool-call payloads
 │   └── ...
-├── client/
-│   ├── mod.rs             ← Defines LLMClient trait
-│   ├── anthropic.rs       ← Depends on: reqwest
-│   └── openai.rs          ← Depends on: reqwest
-├── tools/
-│   ├── mod.rs
-│   ├── registry.rs
-│   ├── bash.rs            ← Depends on: std::process
-│   ├── file.rs            ← Depends on: std::fs
-│   └── ...
-├── policy/                ← No external deps
-├── hooks/                 ← Depends on: async_trait
-├── ui/                    ← Depends on: ratatui
-├── api/                   ← Depends on: axum
-├── context.rs             ← Depends on: std::fs
-├── error.rs               ← Uses: thiserror
-└── ...
+├── tests/                  # integration suites and shared harnesses
+├── examples/               # adapter bootstraps
+└── docs/
 ```
 
----
+## Entry Points
 
-## Core Components
+### Root facade
 
-### 1. Agent Loop (`agent/loop_agent.rs`)
+`src/lib.rs` is intentionally small. It re-exports `amadeus_core::*` and conditionally re-exports the API and TUI adapters.
 
-The heart of the SDK - orchestrates LLM interactions and tool execution using the ReAct (Reason + Act) pattern.
+That means library users can still import through `amadeus::...`, while implementation continues to move into workspace crates.
 
-```
-User Prompt
-    │
-    ▼
-┌─────────────────┐
-│  Add to History │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐     ┌─────────────────┐
-│  Call LLM       │────▶│  Parse Response │
-└────────┬────────┘     └────────┬────────┘
-         │                       │
-         │              ┌────────┴────────┐
-         │              ▼                 ▼
-         │      ┌───────────┐     ┌────────────┐
-         │      │  Text     │     │  Tool Call │
-         │      └─────┬─────┘     └──────┬─────┘
-         │            │                  │
-         │            ▼                  ▼
-         │      ┌─────────────────────────────┐
-         │      │  Policy Check (approval)    │
-         │      └──────────────┬──────────────┘
-         │                     │
-         │            ┌────────┴────────┐
-         │            ▼                 ▼
-         │    ┌──────────────┐   ┌──────────────┐
-         │    │   Execute    │   │    Deny      │
-         │    │   Tool       │   │    Tool      │
-         │    └──────┬───────┘   └──────────────┘
-         │           │
-         │           ▼
-         │    ┌──────────────┐
-         │    │  Add Result  │
-         │    │  to History  │
-         │    └──────┬───────┘
-         │           │
-         └───────────┘
-              (loop until done)
-```
+### CLI bootstrap
 
-**Key Types:**
-- `Agent<C: LLMClient>` - Main agent struct, generic over LLM provider
-- `AgentBuilder<C>` - Fluent builder for agent construction
-- `RunResult` - Result of an agent run
-- `AgentEvent` - Events emitted during execution
+`src/main.rs` is a mode switch, not the main runtime layer.
 
-### 2. LLM Client Trait (`client/mod.rs`)
+Its flow is:
 
-Abstraction layer for LLM providers, enabling zero-cost provider switching:
+1. Parse flags.
+2. Load config.
+3. Build the configured LLM client.
+4. Branch into one of:
+   - assessment mode
+   - HTTP server mode
+   - TUI mode
 
-```rust
-#[async_trait]
-pub trait LLMClient: Send + Sync {
-    async fn create_message(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Value],
-        max_tokens: u32,
-    ) -> Result<(String, Vec<ContentBlock>)>;
+In other words, the binary selects an adapter and hands control to the shared runtime.
 
-    async fn create_message_stream(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Value],
-        max_tokens: u32,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
-}
-```
+## Core Runtime
 
-**Implementations:**
-- `AnthropicClient` - Anthropic Claude API
-- `OpenAIClient` - OpenAI GPT API
+### `crates/core`
 
-### 3. Tool System (`tools/`)
+`crates/core` is the heart of the system. It owns:
 
-```
-Tool Trait
-    │
-    ├── name() -> &'static str
-    ├── schema() -> &'static Value
-    └── execute(input: Value) -> Result<String>
+- the ReAct-style `Agent` loop
+- provider abstractions and concrete clients
+- tool registration and execution
+- approval and permission handling
+- hooks and telemetry
+- orchestration surfaces such as `AgentOrchestrator` and `OrchestraRuntime`
 
-ToolRegistry
-    │
-    ├── register(tool: Box<dyn Tool>)
-    ├── get(name: &str) -> Option<&dyn Tool>
-    └── get_all_schemas() -> Vec<Value>
+Important module groups:
+
+| Module | Responsibility |
+|---|---|
+| `agent/loop_agent.rs` | Main agent loop, history, streaming, approvals, session logging |
+| `agent/orchestra.rs` | Local orchestration surface and queued orchestration runtime |
+| `client/` | `LLMClient` trait plus Anthropic and OpenAI implementations |
+| `tools/` | Tool trait, registry, built-in tools, peer and sub-agent tools |
+| `policy/` | Dangerous-operation policy decisions |
+| `permissions.rs` | Permission modes and enforcement hooks |
+| `hooks/` | Hook loading and execution |
+| `assessment/` | Read-only feature assessment flow |
+| `benchmark/` | Benchmark runner and reporting |
+
+### `crates/runtime`
+
+`crates/runtime` does not run the live agent loop. Instead, it provides reusable coordination types and algorithms used by the core orchestration layer.
+
+It contains:
+
+- team and orchestra state models
+- worker/task models
+- dispatch strategies and worker selection
+- transport-agnostic helpers for agent routing
+
+This split keeps the shared coordination semantics reusable while `crates/core` handles the live async execution with real agents.
+
+## Request and Event Flows
+
+### Agent loop
+
+The core execution loop in `crates/core/src/agent/loop_agent.rs` follows a ReAct pattern:
+
+1. Add user input to history.
+2. Call the configured `LLMClient`.
+3. Stream or parse model output.
+4. If the model emits tool calls, run policy and permission checks.
+5. Execute tools through the `ToolRegistry`.
+6. Append tool results to history.
+7. Continue until a final text result is produced.
+
+```text
+User/Input
+   ↓
+History update
+   ↓
+LLMClient call
+   ↓
+Model output
+   ├── text delta -> emit events / accumulate final response
+   └── tool call -> policy + permissions -> execute tool -> append result -> loop
 ```
 
-#### Tool Schema Format
-
-Each tool defines a JSON schema that describes what it does and how to call it:
-
-```json
-{
-  "name": "read_file",
-  "description": "Read file contents. Returns UTF-8 text. Use for understanding existing code.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "path": {
-        "type": "string",
-        "description": "Relative path to the file"
-      },
-      "limit": {
-        "type": "integer",
-        "description": "Max lines to read (optional, default: all)"
-      }
-    },
-    "required": ["path"]
-  }
-}
-```
-
-The LLM uses these fields to make decisions:
-
-| Field | Purpose |
-|-------|---------|
-| `name` | Unique identifier (`read_file`, `bash`, `grep`) |
-| `description` | **"Use for"** hint - tells the LLM when to use this tool |
-| `parameters[].description` | What each parameter means |
-| `required` | Which parameters are mandatory |
-
-#### How the LLM Selects Tools
-
-The LLM receives three inputs at each turn:
-1. **System prompt** - general instructions about its role
-2. **Conversation history** - previous messages and tool results
-3. **Tool schemas** - all available tools with descriptions
-
-For each turn, the LLM:
-1. **Reads the user request** - e.g., "show me the contents of Cargo.toml"
-2. **Consults tool descriptions** - sees `read_file` has "Use for understanding existing code"
-3. **Matches intent** - user wants to read a file → `read_file` tool matches
-4. **Extracts parameters** - fills in `path` from the user's message
-5. **Calls the tool** - returns a `ToolCall` content block
-
-```
-User: "show me Cargo.toml"
-         │
-         ▼ LLM Reasoning (internal)
-         │
-         ├─→ Match tool: read_file
-         ├─→ Extract param: path="Cargo.toml"
-         │
-         ▼ LLM Output (streaming)
-         │
-    ToolCallStart { id: "abc", name: "read_file" }
-         │
-    ToolCallDelta { arguments: "{\"path\": \"" }
-         │
-    ToolCallDelta { arguments: "\"Cargo.toml\"" }
-         │
-    ToolCallDelta { arguments: "\"}" }
-         │
-    ToolCallDone { id: "abc" }
-         │
-         ▼ Our Code
-         │
-    Parse JSON → {"path": "Cargo.toml"}
-         │
-    Execute tool(path="Cargo.toml")
-```
-
-#### Parameter Extraction Flow
-
-The **parameter extraction** (figuring out `path="Cargo.toml"` from the user's message) happens inside the LLM's reasoning. Our code handles the streaming JSON assembly:
-
-**Step 1: Tool call starts** (`loop_agent.rs:776`)
-```rust
-StreamEvent::ToolCallStart { id, name } => {
-    current_tool = Some((id.clone(), name.clone(), String::new()));
-}
-```
-
-**Step 2: Arguments stream in chunks** (`loop_agent.rs:787`)
-```rust
-StreamEvent::ToolCallDelta { arguments } => {
-    input_str.push_str(&arguments);  // Accumulate JSON fragments
-}
-```
-
-**Step 3: Tool call completes - JSON is parsed** (`loop_agent.rs:800`)
-```rust
-StreamEvent::ToolCallDone(_id) => {
-    let input: serde_json::Value = serde_json::from_str(&input_str)?;
-}
-```
-
-**Step 4: Tool executes with parsed input** (`loop_agent.rs:1274`)
-```rust
-async fn execute_tool_call(..., input: serde_json::Value) {
-    tools.execute(&name, input.clone()).await
-}
-```
-
-After execution, the result is added back to the conversation history, and the LLM can:
-- **Continue with another tool call** (e.g., grep the file it just read)
-- **Provide a final text response** (done)
-- **Ask clarifying questions** (need more info)
-
-#### Built-in Tools
-
-| Tool | Description |
-|------|-------------|
-| `bash` | Execute shell commands |
-| `read_file` | Read file contents |
-| `write_file` | Write/create files |
-| `edit_file` | Surgical file edits |
-| `glob` | Pattern-based file matching |
-| `grep` | Search file contents |
-| `web_fetch` | Fetch web content |
-| `todo` | Task management |
-| `sub_agent` | Recursive sub-agent spawning |
-| `peer` | Peer-to-peer agent communication |
-
-### 4. Policy System (`policy/mod.rs`)
-
-Three approval modes:
-- **Auto** - Execute all tools automatically
-- **Ask** (default) - Only dangerous operations require approval
-- **Strict** - All tools require approval
-
-**Dangerous Pattern Detection:**
-- `sudo` commands
-- `chmod 777`
-- `rm -rf /`
-- Writing to `.env`, `.pem`, `.key` files
-
-### 5. Session Management
-
-Automatic session logging with:
-- Full conversation history
-- JSON or compressed JSON.gz format
-- Session restoration capability
-
----
-
-## Multi-Agent Orchestration
-
-### Orchestra Pattern
-
-Amadeus now treats **orchestra** as the canonical coordination surface. An orchestra owns:
-- the local agent roster
-- the shared task list for an agent team
-- direct local task routing
-- queued worker execution for delegated work
-
-Legacy `Supervisor`, `AgentManager`, and `team` names remain only as deprecated compatibility shims over the orchestra implementation.
-
-| Feature | Implementation |
-|---------|----------------|
-| **Concurrency** | Parallel task execution via `JoinSet` |
-| **Queuing** | Async `VecDeque` with periodic processing |
-| **Load Balancing** | `LeastLoaded`, `RoundRobin`, and `CapabilityMatch` strategies |
-| **P2P Help** | Recursive sub-tasking via the `HelpRequest` bus |
-
-### The Orchestra Runtime Loop
-
-The queued orchestra runtime runs a reactive background loop that handles two main event sources:
-1. **P2P Help Requests**: Incoming from agents via `HelpRequest` channels
-2. **Task Queue**: Periodic processing of pending tasks whenever workers become available
-
-```rust
-pub async fn run(&self) -> Result<()> {
-    loop {
-        tokio::select! {
-            help_req = self.help_rx.recv() => {
-                // Dispatch or fail immediately if no workers
-            }
-            _ = interval.tick() => {
-                self.process_queue().await;
-            }
-        }
-    }
-}
-```
-
-### Task Buffering
-
-When `OrchestraRuntime::execute` is called and no workers are immediately available, the task is pushed into a `VecDeque`. This ensures bursty traffic doesn't fail immediately, provided it stays within the `max_pending_tasks` limit.
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        ORCHESTRA                                │
-│                                                                 │
-│   Task Queue: [Task1, Task2, Task3, ...]                        │
-│                                                                 │
-│   ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐            │
-│   │Worker A │  │Worker B │  │Worker C │  │Worker D │            │
-│                                                                 │
-│ ─────────────────────────────────────────────────────────────── │
-│                                                                 │
-│ ### AgentOrchestrator                                            │
-│                                                                  │
-│ `AgentOrchestrator` is the primary API for local orchestration:  │
-│                                                                  │
-│ - Multiple agents with different profiles and capabilities       │
-│ - Orchestra/team membership and shared task tracking             │
-│ - Direct local task routing                                      │
-│ - Agent switching in the TUI and HTTP surfaces                   │
-│                                                                  │
-│ ```rust                                                          │
-│ let mut orchestrator = AgentOrchestrator::new(client, config);   │
-│ orchestrator.create_agent(None, AgentProfile::Debug).await?;     │
-│ orchestrator.create_agent(None, AgentProfile::Docs).await?;      │
-│ let agents = orchestrator.list_agents();                         │
-│ orchestrator.switch_next();                                      │
-│ ```                                                              │
-│   │ 2 tasks │  │ 0 tasks │  │ 3 tasks │  │ 1 task  │            │
-│   │ [bash]  │  │ [web]   │  │ [file]  │  │ [bash]  │            │
-│   └─────────┘  └─────────┘  └─────────┘  └─────────┘            │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Dispatch Strategies
-
-The orchestra runtime supports three load balancing strategies for distributing tasks across worker agents.
-
-#### RoundRobin (default)
-
-Cycles through workers in order, regardless of current load.
-
-```rust
-DispatchStrategy::RoundRobin => {
-    let mut next_idx = next_idx_mutex.lock().await;
-    let idx = *next_idx % candidates.len();
-    *next_idx += 1;
-    Some(candidates[idx].0)
-}
-```
-
-**Example:**
-```
-Task 1 → Worker A
-Task 2 → Worker B
-Task 3 → Worker C
-Task 4 → Worker A  (cycles back)
-Task 5 → Worker B
-```
-
-| Pros | Cons |
-|------|------|
-| Simple, predictable | Ignores current workload |
-| Even distribution over time | Busy workers get equal share |
-| No state tracking beyond index | Can queue on overloaded workers |
-
-**Best for:** Homogeneous tasks, equal worker capacity
-
-#### LeastLoaded
-
-Always picks the worker with the fewest active tasks.
-
-```rust
-DispatchStrategy::LeastLoaded => candidates
-    .iter()
-    .min_by_key(|(_, info)| info.active_tasks)
-    .map(|(id, _)| *id)
-```
-
-**Example:**
-```
-Current state:  A(2 tasks), B(0 tasks), C(3 tasks), D(1 task)
-Task arrives → Worker B (has 0 active tasks)
-Next state:    A(2), B(1), C(3), D(1)
-Another task → Worker B or D (tie, both have 1)
-```
-
-| Pros | Cons |
-|------|------|
-| Balances load dynamically | Requires tracking active_tasks per worker |
-| Prevents hot spots | Doesn't consider task complexity |
-| Better resource utilization | Race conditions possible (handled via locks) |
-
-**Best for:** Variable task durations, uneven workloads
-
-#### CapabilityMatch
-
-First filters workers by required capabilities, then picks least loaded among them.
-
-```rust
-DispatchStrategy::CapabilityMatch => candidates
-    .iter()
-    .filter(|(_, info)| info.has_capabilities(&task.required_capabilities))
-    .min_by_key(|(_, info)| info.active_tasks)
-    .map(|(id, _)| *id)
-```
-
-**Example:**
-```
-Workers:
-  Worker A - capabilities: [bash, file]     - active: 2
-  Worker B - capabilities: [web, search]    - active: 0
-  Worker C - capabilities: [bash, docker]   - active: 1
-  Worker D - capabilities: [web, bash]      - active: 3
-
-Task arrives requiring: [bash]
-Eligible: A, C, D (all have bash)
-Selected: Worker C (has bash, lowest active count = 1)
-```
-
-| Pros | Cons |
-|------|------|
-| Routes tasks to specialized workers | Can fail if no capable worker available |
-| Prevents dispatching to incapable workers | More complex matching logic |
-| Combines capability filtering with load balancing | Requires capability declaration at spawn |
-
-**Best for:** Heterogeneous workers, specialized tasks (e.g., web scraping, code execution)
-
-#### Strategy Selection Guide
-
-| Scenario | Best Strategy | Why |
-|----------|---------------|-----|
-| Quick uniform tasks | RoundRobin | Simplicity, even spread |
-| Mixed short/long tasks | LeastLoaded | Prevents queuing |
-| Specialized workers | CapabilityMatch | Routes to right worker |
-| Unknown task profiles | LeastLoaded | Safe default |
-
-#### Configuration
-
-Set the dispatch strategy in `OrchestraConfig`:
-
-```rust
-let config = OrchestraConfig {
-    strategy: OrchestraStrategy::LeastLoaded,
-    max_pending_tasks: 100,
-    task_timeout: Duration::from_secs(300),
-    retry_failed_tasks: true,
-    max_retries: 3,
-};
-```
-
-#### Worker Capabilities
-
-Workers declare capabilities when spawned:
-
-```rust
-let worker_configs = vec![
-    WorkerConfig {
-        name: "code-executor".to_string(),
-        capabilities: vec!["bash".to_string(), "file".to_string()],
-        max_concurrent: 3,
-        ..Default::default()
-    },
-    WorkerConfig {
-        name: "web-scraper".to_string(),
-        capabilities: vec!["web".to_string(), "search".to_string()],
-        max_concurrent: 2,
-        ..Default::default()
-    },
-];
-```
-
----
-
-## P2P Collaboration (Help System)
-
-### The PeerTool
-
-Agents are initialized with a `PeerTool`, which allows them to send `HelpRequest`s back to the orchestra runtime. This enables recursive collaboration where a Coder agent can ask a Reviewer agent for feedback mid-task.
-
-### Deadlock Prevention
-
-To prevent circular dependency deadlocks (e.g., Worker A waits for Worker B, who is waiting for Worker A), the orchestra runtime implements:
-1. **Timeout Enforcement**: Every task has a `task_timeout`
-2. **Saturation Errors**: If a help request cannot be fulfilled because all potential workers are busy, it returns an error immediately rather than queuing indefinitely (which would block the requester)
-
----
-
-## Data Flow
-
-### Streaming Response Flow
-
-```
-LLM API (SSE)
-    │
-    ▼
-StreamEvent
-    │
-    ├─▶ TextDelta ──────────────────▶ Display
-    │
-    ├─▶ ThinkingDelta ──────────────▶ Display (reasoning)
-    │
-    ├─▶ ToolCallStart ──────────────▶ Record tool call
-    │
-    ├─▶ ToolCallDelta ──────────────▶ Append arguments
-    │
-    ├─▶ ToolCallDone ───────────────▶ Execute tool
-    │
-    ├─▶ TokenUsage ──────────────────▶ Track usage
-    │
-    └─▶ StopReason ──────────────────▶ Check if done
-```
-
-### Request/Response Types
-
-```rust
-// Message types for conversation history
-enum Message {
-    System { content: String },
-    User { content: String },
-    Assistant { content: Vec<ContentBlock> },
-    Tool { tool_use_id: String, content: String },
-}
-
-// Content blocks in responses
-enum ContentBlock {
-    Text { text: String },
-    ToolUse { id: String, name: String, input: Value },
-    ToolResult { tool_use_id: String, content: String },
-}
-```
-
----
-
-## Performance
-
-### Concurrent Execution
-
-Tasks are spawned as independent Tokio tasks. In a batch of 5 tasks taking 2s each, total time is ~2s instead of 10s (5x speedup).
-
-### Backpressure Control
-
-The `OrchestraConfig::max_pending_tasks` (default: 100) prevents OOM and API exhaustion by rejecting new tasks when the buffer is full.
-
----
-
-## Feature Flags
-
-```toml
-[features]
-default = []
-
-# Testing/Examples
-api = ["axum", "tower", "tower-http", "tokio-util", "orchestra"]
-tui = ["crossterm", "ratatui", "tui-textarea", "unicode-width", "colored", "lazy_static"]
-test-utils = ["tempfile"]
-
-# Concurrency & Multi-Agent
-concurrency = []
-orchestra = ["concurrency"]
-team = ["orchestra"]       # deprecated alias
-supervisor = ["orchestra"] # deprecated alias
-
-# Context Management
-context = []
-
-# All features
-full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
-```
-
-Feature flag chain: `team`/`supervisor` → `orchestra` → `concurrency`
-
----
-
-## Testing Strategy
-
-- **Unit Tests**: Co-located with implementation
-- **Integration Tests**: `tests/` directory
-- **Feature-Gated Tests**: Using `#[cfg(feature = "...")]`
-- **Mock LLM**: For deterministic testing without API calls
-
----
+### Tool system
+
+Every tool implements the shared `Tool` trait and is registered in a `ToolRegistry`.
+
+The registry is responsible for:
+
+- exposing schemas to the model
+- dispatching execution by tool name
+- composing default tool packs
+- adding recursive sub-agent and peer capabilities when enabled
+
+Built-in tools include bash, file, glob, grep, web, todo, sub-agent, and peer collaboration surfaces.
+
+### Orchestration surfaces
+
+Amadeus has two related but distinct orchestration surfaces in `agent/orchestra.rs`.
+
+`AgentOrchestrator`
+- Manages the local roster of agents.
+- Supports create/list/get/switch/kill operations.
+- Routes direct tasks to one local agent.
+- Is the main orchestration surface used by the current HTTP server.
+
+`OrchestraRuntime`
+- Adds queued background execution, help-request handling, and worker scheduling.
+- Uses channels plus a periodic processing loop.
+- Is the heavier coordination runtime for delegated and queued work.
+
+The distinction matters because current docs sometimes blur them together. The HTTP adapter currently uses `AgentOrchestrator`, not the queued `OrchestraRuntime`.
+
+## Adapter Architecture
+
+### HTTP adapter
+
+`crates/api` is an Axum wrapper around the core runtime.
+
+`run_server` builds shared `AppState` containing:
+
+- the shared base client
+- loaded config
+- an `AgentOrchestrator`
+- the default orchestra id used by stateless task endpoints
+
+Current ingress map:
+
+| Path | Actual runtime path |
+|---|---|
+| `POST /chat` | request -> `Task` -> `AgentOrchestrator::execute_task` -> `Agent::run` |
+| `POST /tasks` | request -> `Task` -> `AgentOrchestrator::execute_task` |
+| `GET /stream` | build fresh `Agent` -> inject user message -> `run_stream()` |
+| `POST /execute` | instantiate `BashTool` directly and execute it |
+| `/agents/*` | mostly agent roster management; some task endpoints are still provisional |
+
+Two important details:
+
+- `/stream` bypasses the orchestrator and creates a fresh agent for SSE output.
+- `/execute` is a direct tool endpoint, not a normal agent-turn path.
+
+### TUI adapter
+
+`crates/tui` is an in-process ratatui frontend over the core `Agent`.
+
+Its flow is:
+
+1. Read terminal events through the TUI event handler.
+2. Update `App` state.
+3. Push user messages into agent history.
+4. Start `agent.run_stream_with_approval(...)`.
+5. Render incoming agent events, tool activity, approvals, and session state.
+
+The TUI is not an API client. It talks to the same in-process runtime used by the library and server.
+
+## Provider Layer
+
+The provider abstraction lives behind `LLMClient` in `crates/core/src/client/mod.rs`.
+
+The two primary implementations are:
+
+- `AnthropicClient`
+- `OpenAIClient`
+
+The agent and orchestration types are generic over `C: LLMClient`, which keeps provider swapping explicit and avoids pushing dynamic dispatch through the hot path.
 
 ## Configuration
 
-Structured configuration via `.amadeus/settings.json` and `~/.amadeus/settings.json`:
-- Provider selection (Anthropic/OpenAI)
-- API keys and endpoints
-- Model selection
-- Working directory
-- Timeout settings
-- Session logging
-- Context window management
-- Permission and hook settings
+Configuration is loaded from the dedicated `config` crate and merged from layered settings roots under `.amadeus/`.
 
----
+Important runtime concerns include:
 
-## Extension Points
+- provider and model selection
+- workdir resolution
+- permission mode and rules
+- tool profile settings
+- session logging
+- compaction thresholds
+- hooks and telemetry
 
-1. **Custom Tools**: Implement `Tool` trait
-2. **Custom Hooks**: Implement `Hook` trait
-3. **Custom Providers**: Implement `LLMClient` trait
-4. **Skills**: YAML-based prompt templates
-5. **Policy**: JSON-based approval rules
+## Feature Flags
 
----
+The root crate intentionally has no default features.
 
-## Implementation Status
+Current top-level feature relationships from `Cargo.toml`:
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| Agent Loop (ReAct) | ✅ Complete | Core orchestration |
-| LLM Client Trait | ✅ Complete | Anthropic, OpenAI |
-| Tool System | ✅ Complete | 10+ built-in tools |
-| Policy System | ✅ Complete | Auto/Ask/Strict |
-| Concurrent Execution (JoinSet) | ✅ Complete | Parallel processing |
-| Task Queuing & Backpressure | ✅ Complete | Centralized TaskQueue |
-| P2P Help System | ✅ Complete | PeerTool integration |
-| Orchestra Runtime | ✅ Complete | Multi-agent coordination |
-| TUI Interface | ✅ Complete | ratatui-based |
-| HTTP API | ✅ Complete | axum-based |
-| Actor-based Agents | ⏳ Planned | Persistent tasks with mailboxes |
-| Delta State Management | ⏳ Planned | Surgical state updates |
+```toml
+default = []
 
----
+api = ["amadeus_core/api", "dep:amadeus_api", "orchestra"]
+tui = [
+  "amadeus_core/tui",
+  "dep:amadeus_tui",
+  "dep:crossterm",
+  "dep:ratatui",
+  "concurrency",
+]
+test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", "rustc_version_runtime"]
 
-## Roadmap
+concurrency = ["amadeus_core/concurrency"]
+orchestra = ["amadeus_core/orchestra", "concurrency"]
+team = ["orchestra"]       # legacy alias
+supervisor = ["orchestra"] # legacy alias
+context = ["amadeus_core/context"]
 
-1. **Actor-Based Agents** - Transform agents into persistent tasks with mailboxes to support `Pause`/`Resume` and better state persistence
-2. **Delta State** - Implement surgical state updates to handle large workspaces efficiently
+full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
+```
 
----
+Important implications:
 
-*Document Version: 2.0*
-*Last Updated: 2026-03-19*
+- `api` implies `orchestra`
+- `tui` implies `concurrency`
+- `orchestra` implies `concurrency`
+- `team` and `supervisor` are compatibility aliases, not separate subsystems
+- there is no active `mesh` feature in the current manifest
+
+## Testing Structure
+
+Tests are split across three layers.
+
+### Unit tests
+
+Many workspace crates, especially `crates/core`, keep unit tests inline with implementation modules.
+
+### Root integration tests
+
+The root `tests/` directory covers end-to-end behavior such as:
+
+- agent runs
+- approvals
+- compaction
+- telemetry
+- file locking
+- orchestration and P2P delegation
+- TUI snapshots and scenarios
+
+### Shared harnesses
+
+Reusable testing infrastructure lives under:
+
+- `tests/scenarios/`
+- `tests/tui/`
+- `tests/mock_llm.rs`
+
+Feature gating is mixed:
+
+- some integration tests are gated in `Cargo.toml` with `required-features`
+- some use `cfg(feature = "...")`
+- many simply assume `--features full`
+
+For contributor workflows, the safest default remains:
+
+```bash
+cargo check --features full
+cargo test --features full
+```
+
+## Architectural Notes
+
+- The root crate is now mostly a compatibility surface.
+- The current public architecture is workspace-first, not monolithic.
+- `AgentOrchestrator` is the main local orchestration API today.
+- `OrchestraRuntime` is the queued/background coordination layer.
+- HTTP and TUI are adapters over the same in-process runtime rather than independent implementations.
+- Documentation should only claim behavior that is both implemented and exercised by tests where practical.

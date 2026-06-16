@@ -5,8 +5,10 @@
 // feature_flags: none
 // provides:
 // - module: crate::commands
+// - module: crate::commands::btw
 // - module: crate::commands::composer
 // - module: crate::commands::context
+// - fn: crate::commands::btw::answer_side_question
 // - fn: crate::commands::composer::apply_citation_candidate
 // - fn: crate::commands::composer::filter_citation_candidates
 // - fn: crate::commands::composer::find_active_citation_query
@@ -14,6 +16,7 @@
 // - fn: crate::commands::composer::normalize_pasted_path
 // - fn: crate::commands::composer::parse_render_spans
 // - fn: crate::commands::composer::scan_workspace_citation_candidates
+// - type: crate::commands::btw::SideQuestionOptions
 // - type: crate::commands::composer::ActiveCitationQuery
 // - type: crate::commands::composer::CitationApplyResult
 // - type: crate::commands::composer::CitationCandidate
@@ -35,10 +38,12 @@
 // - cmd: cargo test -p core slash_command --features full
 // @end-amadeus-header
 
+pub mod btw;
 pub mod composer;
 pub mod context;
 
 pub use amadeus_commands::{SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS};
+pub use btw::{answer_side_question, SideQuestionOptions};
 pub use composer::{
     apply_citation_candidate, filter_citation_candidates, find_active_citation_query,
     format_citation_markdown, normalize_pasted_path, parse_render_spans,
@@ -55,18 +60,28 @@ mod tests {
 
     #[test]
     fn slash_command_specs_include_hooks_and_rewind() {
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
     }
 
     #[test]
     fn parse_known_commands_and_aliases() {
+        assert_eq!(
+            SlashCommand::parse("/btw"),
+            Some(SlashCommand::Btw { question: None })
+        );
         assert_eq!(SlashCommand::parse("/help"), Some(SlashCommand::Help));
         assert_eq!(SlashCommand::parse("/compact"), Some(SlashCommand::Compact));
         assert_eq!(
             SlashCommand::parse("/compress"),
             Some(SlashCommand::Compact)
         );
+        assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
+        assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),
@@ -76,10 +91,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_export_command_from_core() {
+        assert_eq!(
+            SlashCommand::parse("/export notes.md"),
+            Some(SlashCommand::Export {
+                path: Some("notes.md".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export"),
+            Some(SlashCommand::Export { path: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export").map(|c| c.primary_name()),
+            Some("export")
+        );
+    }
+
+    #[test]
     fn parse_unknown_command() {
         assert_eq!(
-            SlashCommand::parse("/btw"),
-            Some(SlashCommand::Unknown("btw".to_string()))
+            SlashCommand::parse("/unknown-command"),
+            Some(SlashCommand::Unknown("unknown-command".to_string()))
         );
         assert_eq!(SlashCommand::parse("hello"), None);
     }

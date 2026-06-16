@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Source file for error.
+// summary: Shared agent error types and conversions from config and runtime failures.
 // layer: infra
 // status: active
 // feature_flags: none
@@ -10,8 +10,7 @@
 // uses: none
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
-// side_effects:
-// - Performs network or HTTP operations.
+// side_effects: none
 // tests:
 // - tests/error_recovery_test.rs
 // @end-amadeus-header
@@ -52,8 +51,8 @@ pub enum AgentError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    #[error("Environment variable '{0}' not set")]
-    MissingEnvVar(String),
+    #[error("Required setting '{0}' not configured")]
+    MissingSetting(String),
 
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
@@ -146,7 +145,7 @@ impl From<ConfigError> for AgentError {
     fn from(error: ConfigError) -> Self {
         match error {
             ConfigError::Config(message) => AgentError::Config(message),
-            ConfigError::MissingEnvVar(name) => AgentError::MissingEnvVar(name),
+            ConfigError::MissingSetting(name) => AgentError::MissingSetting(name),
             ConfigError::Serde(error) => AgentError::Serde(error),
             ConfigError::Io(error) => AgentError::Io(error),
         }

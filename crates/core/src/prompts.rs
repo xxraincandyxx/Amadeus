@@ -18,4 +18,8 @@
 
 //! Compatibility layer for shared system prompts.
 
-pub use amadeus_prompts::{render_system_prompt, SYSTEM_PROMPT};
+pub use amadeus_prompts::sections;
+pub use amadeus_prompts::sections::default_sections;
+pub use amadeus_prompts::{
+    build_system_prompt, render_system_prompt, PromptSection, SystemPromptBuilder, SYSTEM_PROMPT,
+};

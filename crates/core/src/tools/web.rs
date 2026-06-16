@@ -110,6 +110,19 @@ impl WebFetchTool {
     }
 }
 
+fn truncate_to_utf8_boundary(body: &str, max_bytes: usize) -> (&str, usize) {
+    if body.len() <= max_bytes {
+        return (body, 0);
+    }
+
+    let mut end = max_bytes;
+    while !body.is_char_boundary(end) {
+        end -= 1;
+    }
+
+    (&body[..end], body.len() - end)
+}
+
 #[async_trait]
 impl Tool for WebFetchTool {
     fn name(&self) -> &'static str {
@@ -183,17 +196,33 @@ impl Tool for WebFetchTool {
 
         // Truncate if needed
         let result = if body.len() > max_bytes {
-            let truncated = &body[..max_bytes];
+            let (truncated, removed_bytes) = truncate_to_utf8_boundary(&body, max_bytes);
             format!(
                 "Content from: {}\n\n{}\n\n... (truncated {} bytes)",
-                parsed.url,
-                truncated,
-                body.len() - max_bytes
+                parsed.url, truncated, removed_bytes
             )
         } else {
             format!("Content from: {}\n\n{}", parsed.url, body)
         };
 
         Ok(result)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn truncate_to_utf8_boundary_handles_multibyte_characters() {
+        let body = "hello 🌍 world";
+        assert_eq!(truncate_to_utf8_boundary(body, 8).0, "hello ");
+        assert_eq!(truncate_to_utf8_boundary(body, 10).0, "hello 🌍");
+    }
+
+    #[test]
+    fn truncate_to_utf8_boundary_returns_full_body_when_small_enough() {
+        let body = "hello 🌍";
+        assert_eq!(truncate_to_utf8_boundary(body, 128), (body, 0));
     }
 }

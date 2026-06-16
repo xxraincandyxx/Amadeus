@@ -13,6 +13,7 @@ path = "src/lib.rs"
 
 [dependencies]
 amadeus_core = { package = "core", path = "../core", default-features = false, features = ["api", "orchestra"] }
+amadeus_rag = { package = "rag", path = "../rag" }
 axum = "0.7"
 futures = "0.3"
 serde = { version = "1.0", features = ["derive"] }
@@ -21,3 +22,4 @@ tokio = { version = "1.39", features = ["full"] }
 tokio-util = { version = "0.7", features = ["io"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
+uuid = { version = "1.10", features = ["v4"] }

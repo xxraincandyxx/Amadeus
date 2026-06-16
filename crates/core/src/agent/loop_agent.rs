@@ -49,7 +49,7 @@ use tokio::sync::{mpsc, RwLock};
 use tokio::sync::{oneshot, Mutex};
 use tracing::{debug, info, instrument, warn};
 
-use crate::agent::compaction::ContextCompactor;
+use crate::agent::compaction::{CompactionTrigger, ContextCompactor};
 use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 use crate::agent::messages::{ContentBlock, Message};
@@ -179,6 +179,11 @@ pub struct AgentBuilder<C: LLMClient> {
     hooks: HookRegistry,
     policy: Policy,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    compaction_trigger: Option<Box<dyn CompactionTrigger>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
+    rag_tool: Option<Box<dyn crate::tools::tool_trait::Tool>>,
+    tool_profile_override: Option<String>,
+    prompt_profile_override: Option<String>,
 }
 
 impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
@@ -196,6 +201,11 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             hooks,
             policy: Policy::default(),
             telemetry: None,
+            compaction_trigger: None,
+            memory_registry: None,
+            rag_tool: None,
+            tool_profile_override: None,
+            prompt_profile_override: None,
         }
     }
 
@@ -203,6 +213,11 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_default_tools(mut self) -> Self {
         self.tools =
             ToolRegistry::with_defaults_and_todo(&self.config, Arc::clone(&self.todo_manager));
+        if let Some(profile_name) = &self.tool_profile_override {
+            let profile =
+                ToolRegistry::configured_profile(&self.config, false, Some(profile_name.as_str()));
+            self.tools = self.tools.with_profile(profile);
+        }
         self.include_sub_agent_tool = true;
         self
     }
@@ -217,6 +232,22 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
     pub fn with_tools(mut self, tools: ToolRegistry) -> Self {
         self.tools = tools;
         self.include_sub_agent_tool = false;
+        self
+    }
+
+    /// Select a configured tool profile for this agent session.
+    pub fn with_tool_profile(mut self, profile: impl Into<String>) -> Self {
+        let profile = profile.into();
+        self.tool_profile_override = Some(profile.clone());
+        let resolved =
+            ToolRegistry::configured_profile(&self.config, false, Some(profile.as_str()));
+        self.tools = self.tools.with_profile(resolved);
+        self
+    }
+
+    /// Select a configured prompt profile for this agent session.
+    pub fn with_prompt_profile(mut self, profile: impl Into<String>) -> Self {
+        self.prompt_profile_override = Some(profile.into());
         self
     }
 
@@ -268,15 +299,51 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Set a custom compaction trigger.
+    ///
+    /// If not set, the agent uses a [`ThresholdCompactionTrigger`] derived from config.
+    pub fn with_compaction_trigger(mut self, trigger: Box<dyn CompactionTrigger>) -> Self {
+        self.compaction_trigger = Some(trigger);
+        self
+    }
+
+    /// Set a memory registry for dynamic context injection.
+    ///
+    /// Memory providers in the registry supply entries that are included
+    /// in the system prompt as dynamic sections.
+    pub fn with_memory_registry(
+        mut self,
+        registry: crate::context::memory::MemoryRegistry,
+    ) -> Self {
+        self.memory_registry = Some(registry);
+        self
+    }
+
+    /// Register a RAG tool for semantic document search.
+    ///
+    /// The tool is created externally (in the `rag` crate) and passed in
+    /// to avoid a circular dependency between `core` and `rag`.
+    pub fn with_rag(mut self, rag_tool: Box<dyn crate::tools::tool_trait::Tool>) -> Self {
+        self.rag_tool = Some(rag_tool);
+        self
+    }
+
     pub fn build(self) -> Agent<C> {
+        let config = if let Some(profile) = self.prompt_profile_override {
+            let mut config = (*self.config).clone();
+            config.prompts.active_profile = profile;
+            Arc::new(config)
+        } else {
+            Arc::clone(&self.config)
+        };
         let policy_snapshot = Arc::new(StdRwLock::new(self.policy.clone()));
         let policy = Arc::new(RwLock::new(self.policy));
         let subagent_coordinator = Arc::new(SubAgentCoordinator::new());
         let tools = if self.include_sub_agent_tool {
-            if self.subagent_depth < self.config.max_subagent_depth {
+            if self.subagent_depth < config.max_subagent_depth {
                 self.tools.register(Box::new(SubAgentTool::new(
                     self.client.clone(),
-                    Arc::clone(&self.config),
+                    Arc::clone(&config),
                     self.hooks.clone(),
                     Arc::clone(&policy),
                     self.subagent_depth,
@@ -288,6 +355,23 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             self.tools
         };
 
+        // Register the memory tool if a memory registry is available
+        let tools = if let Some(ref mem_reg) = self.memory_registry {
+            let shared = Arc::new(std::sync::RwLock::new(mem_reg.clone()));
+            tools.register(Box::new(
+                crate::tools::memory_tool::MemoryTool::new(shared),
+            ))
+        } else {
+            tools
+        };
+
+        // Register the RAG tool if provided
+        let tools = if let Some(rag_tool) = self.rag_tool {
+            tools.register(rag_tool)
+        } else {
+            tools
+        };
+
         let history = self
             .history
             .unwrap_or_else(|| Arc::new(RwLock::new(Vec::new())));
@@ -295,7 +379,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         Agent {
             client: self.client,
             tools,
-            config: self.config,
+            config,
             history,
             todo_manager: self.todo_manager,
             hooks: self.hooks,
@@ -305,6 +389,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator,
             telemetry: self.telemetry,
+            compaction_trigger: self.compaction_trigger.map(Arc::from),
+            memory_registry: self.memory_registry,
         }
     }
 }
@@ -324,6 +410,8 @@ pub struct Agent<C: LLMClient> {
     delegate_subagents: bool,
     subagent_coordinator: Arc<SubAgentCoordinator>,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    compaction_trigger: Option<Arc<dyn CompactionTrigger>>,
+    memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -531,6 +619,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),
             telemetry: self.telemetry.clone(),
+            compaction_trigger: self.compaction_trigger.clone(),
+            memory_registry: self.memory_registry.clone(),
         };
 
         // Run with the rendered prompt
@@ -813,9 +903,17 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let history = Arc::clone(&self.history);
         let hooks = self.hooks.clone();
         let policy = Arc::clone(&self.policy);
+        let compaction_trigger = self.compaction_trigger.clone();
         let telemetry = self.telemetry.clone();
+        let memory_registry = self.memory_registry.clone();
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
+        let mut system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
+        if let Some(ref mem) = memory_registry {
+            if let Some(mem_content) = mem.build_memory_content() {
+                system.push_str("\n\n## Persistent Memory\n\n");
+                system.push_str(&mem_content);
+            }
+        }
         let tool_schemas: Vec<serde_json::Value> = tools.schemas();
 
         Box::pin(async_stream::stream! {
@@ -824,9 +922,16 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             let mut should_continue = true;
             let mut turn_count = 0;
 
-            // Create compactor if auto_compact is enabled
+            // Create compactor if auto_compact is enabled.
+            // Uses the agent's custom trigger if provided, otherwise defaults to threshold.
             let compactor = if config.auto_compact {
-                Some(ContextCompactor::new(config.to_compaction_config()))
+                let compaction_config = config.to_compaction_config();
+                let c = if let Some(ref trigger) = compaction_trigger {
+                    ContextCompactor::new(compaction_config, Arc::clone(trigger))
+                } else {
+                    ContextCompactor::from_config(compaction_config)
+                };
+                Some(c)
             } else {
                 None
             };
@@ -883,13 +988,13 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut stream = {
                     let history_guard = history.read().await;
                     client
-                        .create_message_stream(&system, &history_guard, &tool_schemas, 8000)
+                        .create_message_stream(&system, &history_guard, &tool_schemas, config.max_output_tokens)
                         .await?
                 };
 
                 let mut tool_uses: Vec<ContentBlock> = Vec::new();
                 let mut tool_results: Vec<ContentBlock> = Vec::new();
-                let mut current_tool: Option<(String, String, String)> = None;
+                let mut pending_tools: Vec<(String, String, String)> = Vec::new();
                 let mut turn_text = String::new();
                 let mut has_activity_in_turn = false;
                 let mut turn_stop_reason = String::new();
@@ -912,7 +1017,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::ToolCallStart { id, name } => {
                             debug!(turn = turn_count, tool = %name, id = %id, "Received ToolCallStart");
                             has_activity_in_turn = true;
-                            current_tool = Some((id.clone(), name.clone(), String::new()));
+                            pending_tools.push((id.clone(), name.clone(), String::new()));
                             yield Ok(AgentEvent::ToolStart {
                                 id,
                                 name,
@@ -922,7 +1027,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         }
 
                         StreamEvent::ToolCallDelta { arguments } => {
-                            if let Some((ref id, _, ref mut input_str)) = current_tool {
+                            if let Some((ref id, _, ref mut input_str)) = pending_tools.last_mut() {
                                 input_str.push_str(&arguments);
                                 yield Ok(AgentEvent::ToolInputDelta {
                                     id: id.clone(),
@@ -932,10 +1037,42 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                             }
                         }
 
-                        StreamEvent::ToolCallDone(_id) => {
-                            if let Some((id, name, input_str)) = current_tool.take() {
-                                let mut input: serde_json::Value =
-                                    serde_json::from_str(&input_str).unwrap_or_else(|_| serde_json::json!({}));
+                        StreamEvent::ToolCallDone(done_id) => {
+                            let completed_tools = if done_id.is_empty() {
+                                std::mem::take(&mut pending_tools)
+                            } else if let Some(position) =
+                                pending_tools.iter().position(|(id, _, _)| id == &done_id)
+                            {
+                                vec![pending_tools.remove(position)]
+                            } else {
+                                pending_tools.pop().into_iter().collect::<Vec<_>>()
+                            };
+
+                            for (id, name, input_str) in completed_tools {
+                                let mut input: serde_json::Value = match serde_json::from_str(&input_str) {
+                                    Ok(input) => input,
+                                    Err(error) => {
+                                        let record = ToolExecutionRecord::new(
+                                            id,
+                                            name,
+                                            serde_json::json!({
+                                                "raw": input_str,
+                                                "error": error.to_string(),
+                                            }),
+                                            format!("Invalid tool JSON: {}", error),
+                                            true,
+                                        );
+
+                                        yield Ok(record.completion_event());
+                                        record_tool_execution(
+                                            &mut total_result,
+                                            &mut tool_uses,
+                                            &mut tool_results,
+                                            &record,
+                                        );
+                                        continue;
+                                    }
+                                };
 
                                 // Run on_tool_start hooks
                                 let hook_action = hooks.on_tool_start(&name, &input).await;
@@ -1076,10 +1213,10 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                         Some(ApprovalDecision::AlwaysApprove) => {
                                             debug!(tool = %name, "Tool approved with remember, executing");
-                                            // Add to auto-approve list
+                                            // Remember the exact invocation rather than approving the whole tool.
                                             {
                                                 let mut policy_guard = policy.write().await;
-                                                policy_guard.add_auto_approve(&name);
+                                                policy_guard.add_scoped_auto_approve(&name, &input);
                                             }
                                             // Fall through to execute
                                         }

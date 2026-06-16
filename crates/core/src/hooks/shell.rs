@@ -48,11 +48,13 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::io::Write;
-use std::process::{Command, Stdio};
+use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::error::Result;
 use crate::hooks::{Hook, HookAction, HookEvent};
+use crate::permissions::PermissionMode;
+use crate::security::{CommandRequest, CommandRunner, SandboxProfile};
 
 struct ShellHookResult {
     exit_code: i32,
@@ -74,6 +76,10 @@ pub struct ShellHook {
     pub env: HashMap<String, String>,
     /// Whether to block on non-zero exit.
     pub block_on_error: bool,
+    pub timeout_secs: u64,
+    pub max_output_bytes: usize,
+    pub workdir: PathBuf,
+    pub permission_mode: PermissionMode,
 }
 
 impl ShellHook {
@@ -90,6 +96,10 @@ impl ShellHook {
             tools: Vec::new(),
             env: HashMap::new(),
             block_on_error: false,
+            timeout_secs: 10,
+            max_output_bytes: 65_536,
+            workdir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            permission_mode: PermissionMode::DangerFullAccess,
         }
     }
 
@@ -160,6 +170,15 @@ impl ShellHook {
             .get("block_on_error")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let timeout_secs = config
+            .get("timeout_seconds")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(10);
+        let max_output_bytes = config
+            .get("max_output_bytes")
+            .and_then(|v| v.as_u64())
+            .and_then(|value| usize::try_from(value).ok())
+            .unwrap_or(65_536);
 
         Ok(Self {
             name,
@@ -168,11 +187,15 @@ impl ShellHook {
             tools,
             env,
             block_on_error,
+            timeout_secs,
+            max_output_bytes,
+            workdir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+            permission_mode: PermissionMode::DangerFullAccess,
         })
     }
 
     /// Execute the shell command.
-    fn execute(
+    async fn execute(
         &self,
         event: HookEvent,
         tool_name: &str,
@@ -180,7 +203,7 @@ impl ShellHook {
         tool_output: Option<&str>,
         is_error: bool,
         duration_ms: Option<u64>,
-    ) -> std::io::Result<ShellHookResult> {
+    ) -> Result<ShellHookResult> {
         let tool_input_str = serde_json::to_string(tool_input).unwrap_or_default();
         let payload = serde_json::json!({
             "event": match event {
@@ -195,50 +218,49 @@ impl ShellHook {
             "duration_ms": duration_ms.unwrap_or(0),
         });
 
-        let mut child = Command::new("sh")
-            .arg("-c")
-            .arg(&self.command)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .env(
-                "HOOK_EVENT",
-                match event {
-                    HookEvent::PreToolUse => "pre_tool_use",
-                    HookEvent::PostToolUse => "post_tool_use",
-                    HookEvent::PostToolUseFailure => "post_tool_use_failure",
-                },
-            )
-            .env("HOOK_TOOL_NAME", tool_name)
-            .env("HOOK_TOOL_INPUT", &tool_input_str)
-            .env("HOOK_TOOL_OUTPUT", tool_output.unwrap_or(""))
-            .env(
-                "HOOK_TOOL_DURATION_MS",
-                duration_ms.unwrap_or(0).to_string(),
-            )
-            .env("HOOK_TOOL_IS_ERROR", if is_error { "1" } else { "0" })
-            .envs(&self.env)
-            .spawn()?;
+        let mut env = self.env.clone();
+        env.insert("HOOK_EVENT".to_string(), hook_event_name(event).to_string());
+        env.insert("HOOK_TOOL_NAME".to_string(), tool_name.to_string());
+        env.insert("HOOK_TOOL_INPUT".to_string(), tool_input_str);
+        env.insert(
+            "HOOK_TOOL_OUTPUT".to_string(),
+            tool_output.unwrap_or("").to_string(),
+        );
+        env.insert(
+            "HOOK_TOOL_DURATION_MS".to_string(),
+            duration_ms.unwrap_or(0).to_string(),
+        );
+        env.insert(
+            "HOOK_TOOL_IS_ERROR".to_string(),
+            if is_error { "1" } else { "0" }.to_string(),
+        );
 
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(payload.to_string().as_bytes())?;
-        }
-
-        let output = child.wait_with_output()?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let combined = if stderr.is_empty() {
-            stdout
-        } else {
-            format!("{}\n{}", stdout, stderr)
-        };
+        let result = CommandRunner::new()
+            .run(CommandRequest {
+                command: self.command.clone(),
+                cwd: self.workdir.clone(),
+                permission_mode: self.permission_mode,
+                sandbox: SandboxProfile::DangerFullAccess,
+                timeout: Duration::from_secs(self.timeout_secs),
+                max_output_bytes: self.max_output_bytes,
+                env,
+                stdin: Some(payload.to_string().into_bytes()),
+            })
+            .await?;
 
         Ok(ShellHookResult {
-            exit_code: output.status.code().unwrap_or(-1),
-            success: output.status.success(),
-            output: combined,
+            exit_code: result.exit_code,
+            success: result.exit_code == 0 && !result.timed_out,
+            output: result.output,
         })
+    }
+}
+
+fn hook_event_name(event: HookEvent) -> &'static str {
+    match event {
+        HookEvent::PreToolUse => "pre_tool_use",
+        HookEvent::PostToolUse => "post_tool_use",
+        HookEvent::PostToolUseFailure => "post_tool_use_failure",
     }
 }
 
@@ -262,9 +284,7 @@ impl Hook for ShellHook {
 
         let result = self
             .execute(HookEvent::PreToolUse, tool_name, input, None, false, None)
-            .map_err(|e| {
-                crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
-            })?;
+            .await?;
 
         if result.exit_code == 2 {
             Ok(HookAction::Block(format!(
@@ -316,9 +336,7 @@ impl Hook for ShellHook {
                 is_error,
                 Some(duration_ms),
             )
-            .map_err(|e| {
-                crate::error::AgentError::Command(format!("Hook execution failed: {}", e))
-            })?;
+            .await?;
 
         if !result.success {
             tracing::warn!(

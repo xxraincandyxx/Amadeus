@@ -8,6 +8,8 @@
 // - type: crate::Provider
 // - type: crate::Config
 // - type: crate::ConfigError
+// - type: crate::PromptSettings
+// - type: crate::ToolOverrideConfig
 // uses:
 // - module: amadeus_prompts
 // - module: amadeus_context
@@ -15,9 +17,9 @@
 // - module: amadeus_permissions
 // - artifact: filesystem paths and files
 // invariants:
-// - Workspace settings override global settings and process env overrides both.
+// - Workspace settings override global settings and workspace-local settings override both.
 // side_effects:
-// - Reads filesystem state and process environment variables.
+// - Reads filesystem state to resolve layered settings and relative paths.
 // tests:
 // - cmd: cargo test -p config
 // @end-amadeus-header
@@ -40,10 +42,20 @@ use thiserror::Error;
 const DEFAULT_MODEL: &str = "claude-sonnet-4-5-20250929";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 300;
 const DEFAULT_MAX_OUTPUT_BYTES: usize = 50_000;
+const DEFAULT_MAX_OUTPUT_TOKENS: u32 = 8000;
 const DEFAULT_CONTEXT_WINDOW_SIZE: u32 = 200_000;
 const DEFAULT_COMPACT_THRESHOLD_PERCENT: u8 = 75;
+const DEFAULT_COMPACT_TARGET_PERCENT: u8 = 40;
 const DEFAULT_COMPACT_PRESERVE_RECENT: usize = 6;
+const DEFAULT_COMPACT_USE_LLM_SUMMARY: bool = true;
+const DEFAULT_COMPACT_MAX_SUMMARY_CHARS: usize = 2000;
+const DEFAULT_COMPACT_MIN_MESSAGES: usize = 10;
+const DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS: usize = 5000;
 const DEFAULT_MAX_SUBAGENT_DEPTH: usize = 2;
+const DEFAULT_RAG_ENABLED: bool = false;
+const DEFAULT_RAG_CHUNK_SIZE: usize = 1200;
+const DEFAULT_RAG_CHUNK_OVERLAP: usize = 200;
+const DEFAULT_RAG_TOP_K: usize = 5;
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -52,8 +64,8 @@ pub enum ConfigError {
     #[error("Configuration error: {0}")]
     Config(String),
 
-    #[error("Environment variable '{0}' not set")]
-    MissingEnvVar(String),
+    #[error("Required setting '{0}' not configured")]
+    MissingSetting(String),
 
     #[error("Serde error: {0}")]
     Serde(#[from] serde_json::Error),
@@ -68,25 +80,46 @@ pub enum Provider {
     OpenAI,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookSettings {
     #[serde(default)]
     pub files: Vec<PathBuf>,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_hook_timeout_seconds")]
+    pub timeout_seconds: u64,
+    #[serde(default = "default_hook_max_output_bytes")]
+    pub max_output_bytes: usize,
+    #[serde(default)]
+    pub sandbox: HookSandboxMode,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+impl Default for HookSettings {
+    fn default() -> Self {
+        Self {
+            files: Vec::new(),
+            enabled: true,
+            timeout_seconds: default_hook_timeout_seconds(),
+            max_output_bytes: default_hook_max_output_bytes(),
+            sandbox: HookSandboxMode::Inherit,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum HookSandboxMode {
+    #[default]
+    Inherit,
+    ReadOnly,
+    WorkspaceWrite,
+    DangerFullAccess,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TelemetrySettings {
     pub enabled: bool,
     pub jsonl_path: Option<PathBuf>,
-}
-
-impl Default for TelemetrySettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            jsonl_path: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -134,12 +167,27 @@ pub struct ToolProfileConfig {
     pub model_permission_mode: Option<PermissionMode>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolOverrideConfig {
+    pub description: Option<String>,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    pub prompt_approval: Option<bool>,
+    #[serde(default)]
+    pub visible_in_modes: Vec<PermissionMode>,
+    pub required_permission: Option<PermissionMode>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolSettings {
     pub default_profile: String,
     pub subagent_profile: String,
     #[serde(default)]
     pub profiles: HashMap<String, ToolProfileConfig>,
+    #[serde(default)]
+    pub overrides: HashMap<String, ToolOverrideConfig>,
 }
 
 impl Default for ToolSettings {
@@ -147,6 +195,63 @@ impl Default for ToolSettings {
         Self {
             default_profile: "default".to_string(),
             subagent_profile: "subagent".to_string(),
+            profiles: HashMap::new(),
+            overrides: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PromptMergeMode {
+    #[default]
+    Append,
+    Prepend,
+    Replace,
+    Off,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptSectionConfig {
+    pub id: String,
+    pub title: Option<String>,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptProfileConfig {
+    #[serde(default)]
+    pub mode: PromptMergeMode,
+    #[serde(default)]
+    pub sections: Vec<PromptSectionConfig>,
+    #[serde(default)]
+    pub files: Vec<PathBuf>,
+    #[serde(default = "default_true")]
+    pub include_project_context: bool,
+}
+
+impl Default for PromptProfileConfig {
+    fn default() -> Self {
+        Self {
+            mode: PromptMergeMode::Append,
+            sections: Vec::new(),
+            files: Vec::new(),
+            include_project_context: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PromptSettings {
+    pub active_profile: String,
+    #[serde(default)]
+    pub profiles: HashMap<String, PromptProfileConfig>,
+}
+
+impl Default for PromptSettings {
+    fn default() -> Self {
+        Self {
+            active_profile: "default".to_string(),
             profiles: HashMap::new(),
         }
     }
@@ -161,14 +266,26 @@ pub struct Config {
     pub workdir: PathBuf,
     pub timeout_seconds: u64,
     pub max_output_bytes: usize,
+    pub max_output_tokens: u32,
     pub blocked_commands: Vec<String>,
     pub session_log_dir: Option<PathBuf>,
     pub session_log_compress: bool,
     pub context_window_size: u32,
     pub auto_compact: bool,
     pub compact_threshold_percent: u8,
+    pub compact_target_percent: u8,
     pub compact_preserve_recent: usize,
+    pub compact_use_llm_summary: bool,
+    pub compact_max_summary_chars: usize,
+    pub compact_min_messages: usize,
+    pub compact_max_tool_result_chars: usize,
     pub max_subagent_depth: usize,
+    pub rag_enabled: bool,
+    pub embedding_model: Option<String>,
+    pub embedding_base_url: Option<String>,
+    pub rag_chunk_size: usize,
+    pub rag_chunk_overlap: usize,
+    pub rag_top_k: usize,
     pub permission_mode: PermissionMode,
     #[serde(default)]
     pub hooks: HookSettings,
@@ -178,6 +295,8 @@ pub struct Config {
     pub permissions: PermissionSettings,
     #[serde(default)]
     pub tools: ToolSettings,
+    #[serde(default)]
+    pub prompts: PromptSettings,
 }
 
 impl Default for Config {
@@ -190,19 +309,32 @@ impl Default for Config {
             workdir: env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
             timeout_seconds: DEFAULT_TIMEOUT_SECONDS,
             max_output_bytes: DEFAULT_MAX_OUTPUT_BYTES,
+            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
             blocked_commands: vec!["rm -rf /".to_string()],
             session_log_dir: None,
             session_log_compress: false,
             context_window_size: DEFAULT_CONTEXT_WINDOW_SIZE,
             auto_compact: true,
             compact_threshold_percent: DEFAULT_COMPACT_THRESHOLD_PERCENT,
+            compact_target_percent: DEFAULT_COMPACT_TARGET_PERCENT,
             compact_preserve_recent: DEFAULT_COMPACT_PRESERVE_RECENT,
+            compact_use_llm_summary: DEFAULT_COMPACT_USE_LLM_SUMMARY,
+            compact_max_summary_chars: DEFAULT_COMPACT_MAX_SUMMARY_CHARS,
+            compact_min_messages: DEFAULT_COMPACT_MIN_MESSAGES,
+            compact_max_tool_result_chars: DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS,
             max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
+            rag_enabled: DEFAULT_RAG_ENABLED,
+            embedding_model: None,
+            embedding_base_url: None,
+            rag_chunk_size: DEFAULT_RAG_CHUNK_SIZE,
+            rag_chunk_overlap: DEFAULT_RAG_CHUNK_OVERLAP,
+            rag_top_k: DEFAULT_RAG_TOP_K,
             permission_mode: PermissionMode::WorkspaceWrite,
             hooks: HookSettings::default(),
             telemetry: TelemetrySettings::default(),
             permissions: PermissionSettings::default(),
             tools: ToolSettings::default(),
+            prompts: PromptSettings::default(),
         }
     }
 }
@@ -327,16 +459,71 @@ impl Config {
     }
 
     pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
-        let mut prompt = amadeus_prompts::render_system_prompt(
+        let base_prompt = amadeus_prompts::render_system_prompt(
             &self.workdir.display().to_string(),
             include_sub_agent_tool,
         );
+        let profile = self.prompt_profile();
+        let custom_sections = self.render_prompt_profile_sections(profile);
+        let mut prompt = match profile.map(|profile| profile.mode).unwrap_or_default() {
+            PromptMergeMode::Append => append_prompt_sections(base_prompt, custom_sections),
+            PromptMergeMode::Prepend => append_prompt_sections(custom_sections, base_prompt),
+            PromptMergeMode::Replace => custom_sections,
+            PromptMergeMode::Off => base_prompt,
+        };
 
-        if let Some(ctx) = ProjectContext::load(&self.workdir) {
-            prompt.push_str(&ctx.to_prompt_section());
+        let include_project_context = profile
+            .map(|profile| profile.include_project_context)
+            .unwrap_or(true);
+        if include_project_context {
+            if let Some(ctx) = ProjectContext::load(&self.workdir) {
+                prompt.push_str(&ctx.to_prompt_section());
+            }
         }
 
         prompt
+    }
+
+    pub fn prompt_profile(&self) -> Option<&PromptProfileConfig> {
+        self.prompts.profiles.get(&self.prompts.active_profile)
+    }
+
+    pub fn prompt_profile_name(&self) -> &str {
+        &self.prompts.active_profile
+    }
+
+    pub fn prompt_profile_section_count(&self) -> usize {
+        self.prompt_profile()
+            .map(|profile| profile.sections.len() + profile.files.len())
+            .unwrap_or(0)
+    }
+
+    fn render_prompt_profile_sections(&self, profile: Option<&PromptProfileConfig>) -> String {
+        let Some(profile) = profile else {
+            return String::new();
+        };
+
+        let mut rendered = String::new();
+        for section in &profile.sections {
+            append_prompt_section(
+                &mut rendered,
+                section.title.as_deref().unwrap_or(section.id.as_str()),
+                &section.content,
+            );
+        }
+        for file in &profile.files {
+            if let Ok(content) = std::fs::read_to_string(file) {
+                append_prompt_section(
+                    &mut rendered,
+                    &file
+                        .file_stem()
+                        .and_then(|stem| stem.to_str())
+                        .unwrap_or("Prompt File"),
+                    &content,
+                );
+            }
+        }
+        rendered
     }
 
     pub fn load_from_file(path: &Path) -> Result<Self> {
@@ -407,6 +594,11 @@ impl Config {
             } else {
                 self.max_output_bytes
             },
+            max_output_tokens: if other.max_output_tokens != DEFAULT_MAX_OUTPUT_TOKENS {
+                other.max_output_tokens
+            } else {
+                self.max_output_tokens
+            },
             blocked_commands: if !other.blocked_commands.is_empty()
                 && other.blocked_commands != vec!["rm -rf /".to_string()]
             {
@@ -440,19 +632,72 @@ impl Config {
             } else {
                 self.compact_preserve_recent
             },
+            compact_target_percent: if other.compact_target_percent
+                != DEFAULT_COMPACT_TARGET_PERCENT
+            {
+                other.compact_target_percent
+            } else {
+                self.compact_target_percent
+            },
+            compact_use_llm_summary: if !other.compact_use_llm_summary {
+                other.compact_use_llm_summary
+            } else {
+                self.compact_use_llm_summary
+            },
+            compact_max_summary_chars: if other.compact_max_summary_chars
+                != DEFAULT_COMPACT_MAX_SUMMARY_CHARS
+            {
+                other.compact_max_summary_chars
+            } else {
+                self.compact_max_summary_chars
+            },
+            compact_min_messages: if other.compact_min_messages != DEFAULT_COMPACT_MIN_MESSAGES {
+                other.compact_min_messages
+            } else {
+                self.compact_min_messages
+            },
+            compact_max_tool_result_chars: if other.compact_max_tool_result_chars
+                != DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS
+            {
+                other.compact_max_tool_result_chars
+            } else {
+                self.compact_max_tool_result_chars
+            },
             max_subagent_depth: if other.max_subagent_depth != DEFAULT_MAX_SUBAGENT_DEPTH {
                 other.max_subagent_depth
             } else {
                 self.max_subagent_depth
+            },
+            rag_enabled: other.rag_enabled || self.rag_enabled,
+            embedding_model: other.embedding_model.or(self.embedding_model),
+            embedding_base_url: other.embedding_base_url.or(self.embedding_base_url),
+            rag_chunk_size: if other.rag_chunk_size != DEFAULT_RAG_CHUNK_SIZE {
+                other.rag_chunk_size
+            } else {
+                self.rag_chunk_size
+            },
+            rag_chunk_overlap: if other.rag_chunk_overlap != DEFAULT_RAG_CHUNK_OVERLAP {
+                other.rag_chunk_overlap
+            } else {
+                self.rag_chunk_overlap
+            },
+            rag_top_k: if other.rag_top_k != DEFAULT_RAG_TOP_K {
+                other.rag_top_k
+            } else {
+                self.rag_top_k
             },
             permission_mode: if other.permission_mode != PermissionMode::WorkspaceWrite {
                 other.permission_mode
             } else {
                 self.permission_mode
             },
-            hooks: if !other.hooks.files.is_empty() {
+            hooks: if other.hooks != HookSettings::default() {
                 HookSettings {
                     files: append_unique_paths(self.hooks.files, other.hooks.files),
+                    enabled: other.hooks.enabled,
+                    timeout_seconds: other.hooks.timeout_seconds,
+                    max_output_bytes: other.hooks.max_output_bytes,
+                    sandbox: other.hooks.sandbox,
                 }
             } else {
                 self.hooks
@@ -494,113 +739,35 @@ impl Config {
                         self.tools.subagent_profile
                     },
                     profiles: merge_tool_profiles(self.tools.profiles, other.tools.profiles),
+                    overrides: merge_tool_overrides(self.tools.overrides, other.tools.overrides),
                 }
             } else {
                 self.tools
             },
-        }
-    }
-
-    pub fn merge_env(mut self) -> Self {
-        if let Ok(provider) = env::var("PROVIDER") {
-            self.provider = parse_provider(&provider);
-        }
-
-        match &self.provider {
-            Provider::Anthropic => {
-                if let Ok(key) = env::var("ANTHROPIC_API_KEY") {
-                    self.api_key = key;
+            prompts: if other.prompts != PromptSettings::default() {
+                PromptSettings {
+                    active_profile: if other.prompts.active_profile != "default" {
+                        other.prompts.active_profile
+                    } else {
+                        self.prompts.active_profile
+                    },
+                    profiles: merge_prompt_profiles(self.prompts.profiles, other.prompts.profiles),
                 }
-                if let Ok(url) = env::var("ANTHROPIC_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
-            Provider::OpenAI => {
-                if let Ok(key) = env::var("OPENAI_API_KEY") {
-                    self.api_key = key;
-                }
-                if let Ok(url) = env::var("OPENAI_BASE_URL") {
-                    self.base_url = Some(url);
-                }
-            }
+            } else {
+                self.prompts
+            },
         }
-
-        if let Ok(model) = env::var("MODEL_ID") {
-            self.model = model;
-        }
-
-        if let Ok(max_bytes) = env::var("MAX_OUTPUT_BYTES") {
-            if let Ok(bytes) = max_bytes.parse::<usize>() {
-                self.max_output_bytes = bytes;
-            }
-        }
-
-        if let Ok(blocked) = env::var("BLOCKED_COMMANDS") {
-            self.blocked_commands = blocked
-                .split(',')
-                .map(|cmd| cmd.trim().to_string())
-                .filter(|cmd| !cmd.is_empty())
-                .collect();
-        }
-
-        if let Ok(log_dir) = env::var("SESSION_LOG_DIR") {
-            self.session_log_dir = Some(PathBuf::from(log_dir));
-        }
-
-        if let Ok(compress) = env::var("SESSION_LOG_COMPRESS") {
-            if let Ok(value) = compress.parse::<bool>() {
-                self.session_log_compress = value;
-            }
-        }
-
-        if let Ok(timeout) = env::var("TIMEOUT_SECONDS") {
-            if let Ok(seconds) = timeout.parse::<u64>() {
-                self.timeout_seconds = seconds;
-            }
-        }
-
-        if let Ok(auto_compact) = env::var("AUTO_COMPACT") {
-            if let Ok(value) = auto_compact.parse::<bool>() {
-                self.auto_compact = value;
-            }
-        }
-
-        if let Ok(threshold) = env::var("COMPACT_THRESHOLD_PERCENT") {
-            if let Ok(value) = threshold.parse::<u8>() {
-                self.compact_threshold_percent = value;
-            }
-        }
-
-        if let Ok(preserve) = env::var("COMPACT_PRESERVE_RECENT") {
-            if let Ok(value) = preserve.parse::<usize>() {
-                self.compact_preserve_recent = value;
-            }
-        }
-
-        if let Ok(max_depth) = env::var("MAX_SUBAGENT_DEPTH") {
-            if let Ok(value) = max_depth.parse::<usize>() {
-                self.max_subagent_depth = value;
-            }
-        }
-
-        if let Ok(permission_mode) = env::var("PERMISSION_MODE") {
-            if let Some(mode) = PermissionMode::parse(&permission_mode) {
-                self.permission_mode = mode;
-            }
-        }
-
-        self
     }
 
     pub fn to_compaction_config(&self) -> CompactionConfig {
         CompactionConfig {
             threshold_percent: self.compact_threshold_percent,
-            target_percent: 40,
+            target_percent: self.compact_target_percent,
             preserve_recent: self.compact_preserve_recent,
-            use_llm_summary: true,
-            max_summary_chars: 2000,
-            min_messages: 10,
-            max_tool_result_chars: 5000,
+            use_llm_summary: self.compact_use_llm_summary,
+            max_summary_chars: self.compact_max_summary_chars,
+            min_messages: self.compact_min_messages,
+            max_tool_result_chars: self.compact_max_tool_result_chars,
         }
     }
 
@@ -630,7 +797,6 @@ impl Config {
             }
         }
 
-        config = config.merge_env();
         config.workdir = workdir.to_path_buf();
         if validate_credentials {
             config.validate_credentials()?;
@@ -639,14 +805,31 @@ impl Config {
     }
 
     fn validate_credentials(&self) -> Result<()> {
-        match self.provider {
-            Provider::Anthropic if self.api_key.is_empty() => {
-                Err(ConfigError::MissingEnvVar("ANTHROPIC_API_KEY".into()))
+        if self.api_key.is_empty() {
+            // Skip validation for self-hosted / local providers with a custom base URL
+            let has_custom_endpoint = self
+                .base_url
+                .as_ref()
+                .map(|url| {
+                    let lower = url.to_lowercase();
+                    !lower.contains("api.anthropic.com")
+                        && !lower.contains("api.openai.com")
+                        && !lower.is_empty()
+                })
+                .unwrap_or(false);
+
+            if has_custom_endpoint {
+                return Ok(());
             }
-            Provider::OpenAI if self.api_key.is_empty() => {
-                Err(ConfigError::MissingEnvVar("OPENAI_API_KEY".into()))
+
+            match self.provider {
+                Provider::Anthropic | Provider::OpenAI => {
+                    Err(ConfigError::MissingSetting("api_key".into()))
+                }
+                _ => Ok(()),
             }
-            _ => Ok(()),
+        } else {
+            Ok(())
         }
     }
 
@@ -677,6 +860,9 @@ impl Config {
 
         if let Some(max_bytes) = json.get("max_output_bytes").and_then(|v| v.as_u64()) {
             self.max_output_bytes = max_bytes as usize;
+        }
+        if let Some(max_tokens) = json.get("max_output_tokens").and_then(|v| v.as_u64()) {
+            self.max_output_tokens = max_tokens as u32;
         }
 
         if let Some(blocked) = json.get("blocked_commands").and_then(|v| v.as_array()) {
@@ -716,8 +902,67 @@ impl Config {
             self.compact_preserve_recent = preserve_recent as usize;
         }
 
+        if let Some(target) = json.get("compact_target_percent").and_then(|v| v.as_u64()) {
+            self.compact_target_percent = target as u8;
+        }
+
+        if let Some(use_llm) = json
+            .get("compact_use_llm_summary")
+            .and_then(|v| v.as_bool())
+        {
+            self.compact_use_llm_summary = use_llm;
+        }
+
+        if let Some(max_chars) = json
+            .get("compact_max_summary_chars")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_max_summary_chars = max_chars as usize;
+        }
+
+        if let Some(min_msgs) = json.get("compact_min_messages").and_then(|v| v.as_u64()) {
+            self.compact_min_messages = min_msgs as usize;
+        }
+
+        if let Some(max_tr) = json
+            .get("compact_max_tool_result_chars")
+            .and_then(|v| v.as_u64())
+        {
+            self.compact_max_tool_result_chars = max_tr as usize;
+        }
+
         if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {
             self.max_subagent_depth = max_subagent_depth as usize;
+        }
+
+        if let Some(rag_enabled) = json.get("rag_enabled").and_then(|v| v.as_bool()) {
+            self.rag_enabled = rag_enabled;
+        }
+
+        if let Some(embedding_model) = json.get("embedding_model").and_then(|v| v.as_str()) {
+            self.embedding_model = Some(embedding_model.to_string());
+        }
+        if matches!(json.get("embedding_model"), Some(Value::Null)) {
+            self.embedding_model = None;
+        }
+
+        if let Some(embedding_base_url) = json.get("embedding_base_url").and_then(|v| v.as_str()) {
+            self.embedding_base_url = Some(embedding_base_url.to_string());
+        }
+        if matches!(json.get("embedding_base_url"), Some(Value::Null)) {
+            self.embedding_base_url = None;
+        }
+
+        if let Some(chunk_size) = json.get("rag_chunk_size").and_then(|v| v.as_u64()) {
+            self.rag_chunk_size = chunk_size as usize;
+        }
+
+        if let Some(chunk_overlap) = json.get("rag_chunk_overlap").and_then(|v| v.as_u64()) {
+            self.rag_chunk_overlap = chunk_overlap as usize;
+        }
+
+        if let Some(top_k) = json.get("rag_top_k").and_then(|v| v.as_u64()) {
+            self.rag_top_k = top_k as usize;
         }
 
         if let Some(permission_mode) = json.get("permission_mode").and_then(|v| v.as_str()) {
@@ -728,6 +973,25 @@ impl Config {
         }
 
         if let Some(hooks) = json.get("hooks").and_then(|v| v.as_object()) {
+            if let Some(enabled) = hooks.get("enabled").and_then(|v| v.as_bool()) {
+                self.hooks.enabled = enabled;
+            }
+            if let Some(timeout_seconds) = hooks.get("timeout_seconds").and_then(|v| v.as_u64()) {
+                self.hooks.timeout_seconds = timeout_seconds;
+            }
+            if let Some(max_output_bytes) = hooks.get("max_output_bytes").and_then(|v| v.as_u64()) {
+                if let Ok(max_output_bytes) = usize::try_from(max_output_bytes) {
+                    self.hooks.max_output_bytes = max_output_bytes;
+                }
+            }
+            if let Some(sandbox) = hooks.get("sandbox").and_then(|v| v.as_str()) {
+                self.hooks.sandbox = match sandbox {
+                    "read-only" => HookSandboxMode::ReadOnly,
+                    "workspace-write" => HookSandboxMode::WorkspaceWrite,
+                    "danger-full-access" => HookSandboxMode::DangerFullAccess,
+                    _ => HookSandboxMode::Inherit,
+                };
+            }
             if let Some(files) = hooks.get("files").and_then(|v| v.as_array()) {
                 self.hooks.files = append_unique_paths(
                     self.hooks.files.clone(),
@@ -849,6 +1113,90 @@ impl Config {
                     self.tools.profiles.insert(name.clone(), profile);
                 }
             }
+            if let Some(overrides) = tool_settings.get("overrides").and_then(|v| v.as_object()) {
+                for (name, raw_override) in overrides {
+                    let mut tool_override =
+                        self.tools.overrides.get(name).cloned().unwrap_or_default();
+                    if let Some(description) =
+                        raw_override.get("description").and_then(|v| v.as_str())
+                    {
+                        tool_override.description = Some(description.to_string());
+                    }
+                    if let Some(aliases) = raw_override.get("aliases").and_then(|v| v.as_array()) {
+                        tool_override.aliases = append_unique_strings(
+                            tool_override.aliases,
+                            parse_string_list(aliases),
+                        );
+                    }
+                    if let Some(tags) = raw_override.get("tags").and_then(|v| v.as_array()) {
+                        tool_override.tags =
+                            append_unique_strings(tool_override.tags, parse_string_list(tags));
+                    }
+                    if let Some(prompt_approval) = raw_override
+                        .get("prompt_approval")
+                        .and_then(|v| v.as_bool())
+                    {
+                        tool_override.prompt_approval = Some(prompt_approval);
+                    }
+                    if let Some(visible_in_modes) = raw_override
+                        .get("visible_in_modes")
+                        .and_then(|v| v.as_array())
+                    {
+                        tool_override.visible_in_modes = visible_in_modes
+                            .iter()
+                            .filter_map(|mode| mode.as_str().and_then(PermissionMode::parse))
+                            .collect();
+                    }
+                    if let Some(required_permission) = raw_override
+                        .get("required_permission")
+                        .and_then(|v| v.as_str())
+                        .and_then(PermissionMode::parse)
+                    {
+                        tool_override.required_permission = Some(required_permission);
+                    }
+                    self.tools.overrides.insert(name.clone(), tool_override);
+                }
+            }
+        }
+
+        if let Some(prompt_settings) = json.get("prompts").and_then(|v| v.as_object()) {
+            if let Some(active_profile) = prompt_settings
+                .get("active_profile")
+                .and_then(|v| v.as_str())
+            {
+                self.prompts.active_profile = active_profile.to_string();
+            }
+            if let Some(profiles) = prompt_settings.get("profiles").and_then(|v| v.as_object()) {
+                for (name, raw_profile) in profiles {
+                    let mut profile = self.prompts.profiles.get(name).cloned().unwrap_or_default();
+                    if let Some(mode) = raw_profile.get("mode").and_then(|v| v.as_str()) {
+                        profile.mode = parse_prompt_merge_mode(mode);
+                    }
+                    if let Some(include_project_context) = raw_profile
+                        .get("include_project_context")
+                        .and_then(|v| v.as_bool())
+                    {
+                        profile.include_project_context = include_project_context;
+                    }
+                    if let Some(files) = raw_profile.get("files").and_then(|v| v.as_array()) {
+                        profile.files = append_unique_paths(
+                            profile.files,
+                            files
+                                .iter()
+                                .filter_map(|v| v.as_str())
+                                .map(|path| resolve_path(base_dir, path))
+                                .collect(),
+                        );
+                    }
+                    if let Some(sections) = raw_profile.get("sections").and_then(|v| v.as_array()) {
+                        profile.sections = merge_prompt_sections(
+                            profile.sections,
+                            parse_prompt_sections(sections),
+                        );
+                    }
+                    self.prompts.profiles.insert(name.clone(), profile);
+                }
+            }
         }
     }
 }
@@ -894,8 +1242,41 @@ fn parse_string_list(values: &[Value]) -> Vec<String> {
         .collect()
 }
 
+fn parse_prompt_merge_mode(input: &str) -> PromptMergeMode {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "prepend" => PromptMergeMode::Prepend,
+        "replace" => PromptMergeMode::Replace,
+        "off" => PromptMergeMode::Off,
+        _ => PromptMergeMode::Append,
+    }
+}
+
+fn parse_prompt_sections(values: &[Value]) -> Vec<PromptSectionConfig> {
+    values
+        .iter()
+        .filter_map(|value| {
+            let object = value.as_object()?;
+            let id = object.get("id")?.as_str()?.to_string();
+            let content = object.get("content")?.as_str()?.to_string();
+            let title = object
+                .get("title")
+                .and_then(|value| value.as_str())
+                .map(ToString::to_string);
+            Some(PromptSectionConfig { id, title, content })
+        })
+        .collect()
+}
+
 fn default_true() -> bool {
     true
+}
+
+fn default_hook_timeout_seconds() -> u64 {
+    10
+}
+
+fn default_hook_max_output_bytes() -> usize {
+    65_536
 }
 
 fn append_unique_strings(existing: Vec<String>, incoming: Vec<String>) -> Vec<String> {
@@ -917,6 +1298,91 @@ fn merge_tool_profiles(
         merged.insert(name, profile);
     }
     merged
+}
+
+fn merge_tool_overrides(
+    existing: HashMap<String, ToolOverrideConfig>,
+    incoming: HashMap<String, ToolOverrideConfig>,
+) -> HashMap<String, ToolOverrideConfig> {
+    let mut merged = existing;
+    for (name, incoming_override) in incoming {
+        let current = merged.remove(&name).unwrap_or_default();
+        merged.insert(
+            name,
+            ToolOverrideConfig {
+                description: incoming_override.description.or(current.description),
+                aliases: append_unique_strings(current.aliases, incoming_override.aliases),
+                tags: append_unique_strings(current.tags, incoming_override.tags),
+                prompt_approval: incoming_override
+                    .prompt_approval
+                    .or(current.prompt_approval),
+                visible_in_modes: if incoming_override.visible_in_modes.is_empty() {
+                    current.visible_in_modes
+                } else {
+                    incoming_override.visible_in_modes
+                },
+                required_permission: incoming_override
+                    .required_permission
+                    .or(current.required_permission),
+            },
+        );
+    }
+    merged
+}
+
+fn merge_prompt_profiles(
+    existing: HashMap<String, PromptProfileConfig>,
+    incoming: HashMap<String, PromptProfileConfig>,
+) -> HashMap<String, PromptProfileConfig> {
+    let mut merged = existing;
+    for (name, incoming_profile) in incoming {
+        let current = merged.remove(&name).unwrap_or_default();
+        merged.insert(
+            name,
+            PromptProfileConfig {
+                mode: incoming_profile.mode,
+                sections: merge_prompt_sections(current.sections, incoming_profile.sections),
+                files: append_unique_paths(current.files, incoming_profile.files),
+                include_project_context: incoming_profile.include_project_context,
+            },
+        );
+    }
+    merged
+}
+
+fn merge_prompt_sections(
+    existing: Vec<PromptSectionConfig>,
+    incoming: Vec<PromptSectionConfig>,
+) -> Vec<PromptSectionConfig> {
+    let mut merged = existing;
+    for section in incoming {
+        if let Some(existing) = merged.iter_mut().find(|item| item.id == section.id) {
+            *existing = section;
+        } else {
+            merged.push(section);
+        }
+    }
+    merged
+}
+
+fn append_prompt_sections(first: String, second: String) -> String {
+    if first.is_empty() {
+        second
+    } else if second.is_empty() {
+        first
+    } else {
+        format!("{first}\n\n{second}")
+    }
+}
+
+fn append_prompt_section(rendered: &mut String, title: &str, content: &str) {
+    if !rendered.is_empty() {
+        rendered.push_str("\n\n");
+    }
+    rendered.push_str("## ");
+    rendered.push_str(title);
+    rendered.push_str("\n\n");
+    rendered.push_str(content.trim());
 }
 
 fn append_unique_paths(existing: Vec<PathBuf>, incoming: Vec<PathBuf>) -> Vec<PathBuf> {
@@ -958,10 +1424,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
 
         let fake_home = temp.path().join("home");
         let global_root = fake_home.join(".amadeus");
@@ -1007,7 +1470,6 @@ mod tests {
             ]
         );
 
-        restore_env("PROVIDER", provider);
         restore_env("HOME", home);
     }
 
@@ -1019,22 +1481,15 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
         std::fs::write(workspace_root.join("env"), "MODEL_ID=env-model\n").unwrap();
-
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
-        let model = env::var("MODEL_ID").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "env-test-key");
-        env::remove_var("MODEL_ID");
+        std::fs::write(
+            workspace_root.join("settings.json"),
+            r#"{"provider":"anthropic","api_key":"settings-key"}"#,
+        )
+        .unwrap();
 
         let config = Config::load_with_hierarchy(&workdir).unwrap();
 
         assert_eq!(config.model, DEFAULT_MODEL);
-
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
-        restore_env("MODEL_ID", model);
     }
 
     #[test]
@@ -1095,6 +1550,95 @@ mod tests {
     }
 
     #[test]
+    fn load_from_file_reads_prompt_profiles_and_tool_overrides() {
+        let temp = tempdir().unwrap();
+        let config_dir = temp.path().join(".amadeus");
+        std::fs::create_dir_all(config_dir.join("prompts")).unwrap();
+        std::fs::write(config_dir.join("prompts/team.md"), "Prefer short replies.").unwrap();
+        let path = config_dir.join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{
+                "api_key":"x",
+                "prompts":{
+                    "active_profile":"team",
+                    "profiles":{
+                        "team":{
+                            "mode":"prepend",
+                            "include_project_context":false,
+                            "sections":[{"id":"style","title":"Style","content":"Be concise."}],
+                            "files":["prompts/team.md"]
+                        }
+                    }
+                },
+                "tools":{
+                    "overrides":{
+                        "bash":{
+                            "description":"Run approved workspace shell commands.",
+                            "aliases":["shell"],
+                            "tags":["custom"],
+                            "prompt_approval":true,
+                            "visible_in_modes":["workspace-write"],
+                            "required_permission":"workspace-write"
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.prompts.active_profile, "team");
+        let profile = config.prompts.profiles.get("team").unwrap();
+        assert_eq!(profile.mode, PromptMergeMode::Prepend);
+        assert!(!profile.include_project_context);
+        assert_eq!(profile.sections[0].id, "style");
+        assert_eq!(profile.files, vec![config_dir.join("prompts/team.md")]);
+
+        let bash = config.tools.overrides.get("bash").unwrap();
+        assert_eq!(
+            bash.description.as_deref(),
+            Some("Run approved workspace shell commands.")
+        );
+        assert_eq!(bash.aliases, vec!["shell".to_string()]);
+        assert_eq!(bash.tags, vec!["custom".to_string()]);
+        assert_eq!(bash.prompt_approval, Some(true));
+        assert_eq!(bash.visible_in_modes, vec![PermissionMode::WorkspaceWrite]);
+        assert_eq!(
+            bash.required_permission,
+            Some(PermissionMode::WorkspaceWrite)
+        );
+    }
+
+    #[test]
+    fn configured_system_prompt_preserves_default_and_supports_append() {
+        let temp = tempdir().unwrap();
+        let mut config = Config {
+            workdir: temp.path().to_path_buf(),
+            ..Config::default()
+        };
+        let default_prompt = config.system_prompt(false);
+
+        config.prompts.profiles.insert(
+            "default".to_string(),
+            PromptProfileConfig {
+                sections: vec![PromptSectionConfig {
+                    id: "style".to_string(),
+                    title: Some("Style".to_string()),
+                    content: "Prefer compact explanations.".to_string(),
+                }],
+                ..PromptProfileConfig::default()
+            },
+        );
+
+        let configured_prompt = config.system_prompt(false);
+        assert!(configured_prompt.starts_with(&default_prompt));
+        assert!(configured_prompt.contains("## Style"));
+        assert!(configured_prompt.contains("Prefer compact explanations."));
+    }
+
+    #[test]
     fn load_with_hierarchy_prefers_local_settings_layer() {
         let _guard = env_lock();
         let temp = tempdir().unwrap();
@@ -1102,12 +1646,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "layer-key");
 
         let fake_home = temp.path().join("home");
         std::fs::create_dir_all(fake_home.join(".amadeus")).unwrap();
@@ -1115,7 +1654,7 @@ mod tests {
 
         std::fs::write(
             workspace_root.join("settings.json"),
-            r#"{"model":"workspace-model","timeout_seconds":45}"#,
+            r#"{"api_key":"workspace-key","model":"workspace-model","timeout_seconds":45}"#,
         )
         .unwrap();
         std::fs::write(
@@ -1132,8 +1671,6 @@ mod tests {
             workspace_root.join("settings.local.json")
         );
 
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
         restore_env("HOME", home);
     }
 
@@ -1219,12 +1756,7 @@ mod tests {
         let workspace_root = workdir.join(".amadeus");
         std::fs::create_dir_all(&workspace_root).unwrap();
 
-        let provider = env::var("PROVIDER").ok();
-        let anthropic_key = env::var("ANTHROPIC_API_KEY").ok();
         let home = env::var("HOME").ok();
-
-        env::remove_var("PROVIDER");
-        env::set_var("ANTHROPIC_API_KEY", "merge-key");
 
         let fake_home = temp.path().join("home");
         let global_root = fake_home.join(".amadeus");
@@ -1276,8 +1808,6 @@ mod tests {
             vec!["tool(write_file)".to_string()]
         );
 
-        restore_env("PROVIDER", provider);
-        restore_env("ANTHROPIC_API_KEY", anthropic_key);
         restore_env("HOME", home);
     }
 }

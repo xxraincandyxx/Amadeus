@@ -42,14 +42,22 @@ impl SlashCommandSpec {
     }
 
     pub fn matches(&self, candidate: &str) -> bool {
-        self.name == candidate || self.aliases.iter().any(|alias| *alias == candidate)
+        self.name == candidate || self.aliases.contains(&candidate)
     }
 }
 
 pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
+    SlashCommandSpec::new(
+        "btw",
+        &[],
+        "Ask a side question without adding to conversation history",
+        Some("<question>"),
+    ),
     SlashCommandSpec::new("help", &[], "Show available commands", None),
     SlashCommandSpec::new("compact", &["compress"], "Trigger context compaction", None),
     SlashCommandSpec::new("context", &[], "Show current context usage", None),
+    SlashCommandSpec::new("tools", &[], "Inspect active tool catalog", None),
+    SlashCommandSpec::new("prompt", &[], "Inspect active prompt profile", None),
     SlashCommandSpec::new("hooks", &[], "Inspect configured hook phases", None),
     SlashCommandSpec::new("new-agent", &[], "Create a new agent session", None),
     SlashCommandSpec::new(
@@ -58,17 +66,27 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         "Restore the session to an earlier checkpoint",
         Some("[steps]"),
     ),
+    SlashCommandSpec::new(
+        "export",
+        &[],
+        "Export the current conversation to a .md or .json file",
+        Some("[path|json]"),
+    ),
     SlashCommandSpec::new("exit", &[], "Exit the current TUI session", None),
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SlashCommand {
+    Btw { question: Option<String> },
     Help,
     Compact,
     Context,
+    Tools,
+    Prompt,
     Hooks,
     NewAgent,
     Rewind { steps: Option<usize> },
+    Export { path: Option<String> },
     Exit,
     Unknown(String),
 }
@@ -80,18 +98,31 @@ impl SlashCommand {
             return None;
         }
 
-        let mut parts = trimmed.trim_start_matches('/').split_whitespace();
+        let mut parts = trimmed
+            .trim_start_matches('/')
+            .splitn(2, char::is_whitespace);
         let command = parts.next()?.to_ascii_lowercase();
-        let remainder = parts.next();
+        let remainder = parts
+            .next()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
 
         Some(match command.as_str() {
+            "btw" => Self::Btw {
+                question: remainder.map(String::from),
+            },
             "help" => Self::Help,
             "compact" | "compress" => Self::Compact,
             "context" => Self::Context,
+            "tools" => Self::Tools,
+            "prompt" => Self::Prompt,
             "hooks" => Self::Hooks,
             "new-agent" => Self::NewAgent,
             "rewind" => Self::Rewind {
                 steps: remainder.and_then(|value| value.parse::<usize>().ok()),
+            },
+            "export" => Self::Export {
+                path: remainder.map(String::from),
             },
             "exit" => Self::Exit,
             other => Self::Unknown(other.to_string()),
@@ -100,12 +131,16 @@ impl SlashCommand {
 
     pub fn primary_name(&self) -> &'static str {
         match self {
+            Self::Btw { .. } => "btw",
             Self::Help => "help",
             Self::Compact => "compact",
             Self::Context => "context",
+            Self::Tools => "tools",
+            Self::Prompt => "prompt",
             Self::Hooks => "hooks",
             Self::NewAgent => "new-agent",
             Self::Rewind { .. } => "rewind",
+            Self::Export { .. } => "export",
             Self::Exit => "exit",
             Self::Unknown(_) => "unknown",
         }
@@ -118,18 +153,34 @@ mod tests {
 
     #[test]
     fn slash_command_specs_include_hooks_and_rewind() {
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "btw"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
     }
 
     #[test]
     fn parse_known_commands_and_aliases() {
+        assert_eq!(
+            SlashCommand::parse("/btw"),
+            Some(SlashCommand::Btw { question: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/btw hello there"),
+            Some(SlashCommand::Btw {
+                question: Some("hello there".to_string())
+            })
+        );
         assert_eq!(SlashCommand::parse("/help"), Some(SlashCommand::Help));
         assert_eq!(SlashCommand::parse("/compact"), Some(SlashCommand::Compact));
         assert_eq!(
             SlashCommand::parse("/compress"),
             Some(SlashCommand::Compact)
         );
+        assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
+        assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),
@@ -139,10 +190,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_export_command() {
+        assert_eq!(
+            SlashCommand::parse("/export"),
+            Some(SlashCommand::Export { path: None })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export notes.md"),
+            Some(SlashCommand::Export {
+                path: Some("notes.md".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/export path/to/conv.json"),
+            Some(SlashCommand::Export {
+                path: Some("path/to/conv.json".to_string())
+            })
+        );
+        assert_eq!(
+            SlashCommand::parse("/EXPORT").map(|c| c.primary_name()),
+            Some("export")
+        );
+    }
+
+    #[test]
     fn parse_unknown_command() {
         assert_eq!(
-            SlashCommand::parse("/btw"),
-            Some(SlashCommand::Unknown("btw".to_string()))
+            SlashCommand::parse("/unknown-command"),
+            Some(SlashCommand::Unknown("unknown-command".to_string()))
         );
         assert_eq!(SlashCommand::parse("hello"), None);
     }

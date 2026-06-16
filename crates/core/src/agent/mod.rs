@@ -43,7 +43,10 @@ pub mod worker;
 pub use compaction::{
     CompactionConfig, CompactionEvent, CompactionResult, CompressionStatus, ContextCompactor,
 };
-pub use config::{Config, Provider};
+pub use config::{
+    Config, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider,
+    ToolOverrideConfig, ToolProfileConfig, ToolSettings,
+};
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
 #[cfg(feature = "orchestra")]

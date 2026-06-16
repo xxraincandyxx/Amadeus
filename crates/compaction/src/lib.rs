@@ -19,7 +19,14 @@
 
 //! Shared compaction model types.
 
+pub mod trigger;
+
 use serde::{Deserialize, Serialize};
+
+pub use trigger::{
+    CompactionInput, CompactionTrigger, CompositeCompactionTrigger, CompositeMode,
+    ThresholdCompactionTrigger,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionConfig {

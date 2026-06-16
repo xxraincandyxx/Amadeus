@@ -13,7 +13,7 @@
 ---
 
 ## Building and Running
-The project uses standard Cargo workflows. Environment variables are managed via a `.env` file.
+The project uses standard Cargo workflows. Runtime settings are loaded from `.amadeus/settings.json` with optional global defaults in `~/.amadeus/settings.json`.
 
 | Task | Command |
 | :--- | :--- |

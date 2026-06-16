@@ -23,7 +23,9 @@
 
 pub mod agent;
 pub mod assessment;
+pub mod audit;
 pub mod benchmark;
+pub mod bridge;
 pub mod client;
 pub mod commands;
 #[cfg(feature = "concurrency")]
@@ -36,22 +38,29 @@ pub mod mcp;
 pub mod permissions;
 pub mod policy;
 pub mod prompts;
+pub mod security;
 pub mod skills;
 pub mod telemetry;
 #[cfg(any(test, feature = "test-utils"))]
 pub mod test_utils;
 pub mod tools;
+pub mod transcript;
 
+pub use agent::config::{
+    Config, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider,
+    ToolOverrideConfig, ToolProfileConfig, ToolSettings,
+};
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,
     AssessmentRunner, ScriptedAssessmentClient,
 };
 pub use commands::{
-    apply_citation_candidate, build_context_report, filter_citation_candidates,
-    find_active_citation_query, format_citation_markdown, normalize_pasted_path,
-    parse_render_spans, scan_workspace_citation_candidates, ActiveCitationQuery,
-    CitationApplyResult, CitationCandidate, CitationRenderSpan, ContextEntry, ContextReport,
-    ContextSection, ContextSectionGroup, SlashCommand, SlashCommandSpec, SLASH_COMMAND_SPECS,
+    answer_side_question, apply_citation_candidate, build_context_report,
+    filter_citation_candidates, find_active_citation_query, format_citation_markdown,
+    normalize_pasted_path, parse_render_spans, scan_workspace_citation_candidates,
+    ActiveCitationQuery, CitationApplyResult, CitationCandidate, CitationRenderSpan, ContextEntry,
+    ContextReport, ContextSection, ContextSectionGroup, SideQuestionOptions, SlashCommand,
+    SlashCommandSpec, SLASH_COMMAND_SPECS,
 };
 pub use error::{AgentError, Result};
 pub use permissions::{PermissionDecision, PermissionEnforcer, PermissionMode};

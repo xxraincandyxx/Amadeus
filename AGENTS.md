@@ -8,7 +8,7 @@
 - Multi-provider compatibility (Anthropic Claude, OpenAI GPT)
 - Streaming responses, extensible tool system (bash, file ops, web, sub-agents)
 - Terminal UI (ratatui) and HTTP API (axum) interfaces
-- Multi-agent coordination via Supervisor/Worker pattern (ReAct loop)
+- Multi-agent coordination via orchestra-based routing and delegation
 
 ---
 
@@ -34,11 +34,12 @@
 
 ## Feature Flags
 
-`tui` (ratatui UI), `api` (axum HTTP server, implies `supervisor`), `concurrency` (lock primitives),
-`supervisor` (multi-agent orchestration, implies `concurrency`), `mesh` (distributed, implies `supervisor`),
-`context` (context management), `test-utils` (tempfile helpers), `full` (all features).
+`api` (axum HTTP adapter, implies `orchestra`), `tui` (ratatui UI, implies `concurrency`),
+`concurrency` (lock primitives), `orchestra` (canonical multi-agent orchestration surface, implies `concurrency`),
+`team`/`supervisor` (legacy aliases for `orchestra`), `context` (context management),
+`test-utils` (test helpers and recording), `full` (all features).
 
-Chain: `mesh` → `supervisor` → `concurrency`
+Chains: `api` → `orchestra` → `concurrency`, `tui` → `concurrency`, `team`/`supervisor` → `orchestra`
 
 ---
 
@@ -74,10 +75,10 @@ Chain: `mesh` → `supervisor` → `concurrency`
 
 ## Key Architecture
 
-### Agent Loop (ReAct Pattern) — `src/agent/loop_agent.rs`
+### Agent Loop (ReAct Pattern) — `crates/core/src/agent/loop_agent.rs`
 User prompt → LLM call → parse response → if text: emit event | if tool: policy check → execute → add result → loop.
 
-### LLM Client Trait — `src/client/mod.rs`
+### LLM Client Trait — `crates/core/src/client/mod.rs`
 ```rust
 pub trait LLMClient: Send + Sync {
     async fn create_message(...) -> Result<(String, Vec<ContentBlock>)>;
@@ -86,7 +87,7 @@ pub trait LLMClient: Send + Sync {
 ```
 Implemented for Anthropic and OpenAI. `Agent<C>` is generic over provider.
 
-### Tool Trait — `src/tools/tool_trait.rs`
+### Tool Trait — `crates/core/src/tools/tool_trait.rs`
 ```rust
 pub trait Tool: Send + Sync {
     fn name(&self) -> &'static str;
@@ -95,7 +96,7 @@ pub trait Tool: Send + Sync {
 }
 ```
 
-### Policy System — `src/policy/mod.rs`
+### Policy System — `crates/core/src/policy/mod.rs`
 Three modes: **Auto** (all automatic), **Ask** (default, dangerous ops require approval), **Strict** (all require approval).
 
 ---
@@ -104,7 +105,7 @@ Three modes: **Auto** (all automatic), **Ask** (default, dangerous ops require a
 
 - **Mock-first**: Use `tests/mock_llm.rs` for deterministic testing. HTTP mocking via `mockito`/`wiremock`.
 - **Unit tests**: Inline in `src/` modules (`#[cfg(test)] mod tests`).
-- **Integration tests**: In `tests/` directory. Some require specific features (check `Cargo.toml` `[[test]]` `required-features`).
+- **Integration tests**: In `tests/` directory. Feature gating is mixed: some suites use `Cargo.toml` `[[test]]` `required-features`, some use `cfg(feature = "...")`, and many assume `--features full`.
 - **Test naming**: Name files by behavior: `tool_approval_test.rs`, `stress_memory_test.rs`.
 
 ### Key integration test files
@@ -121,9 +122,10 @@ Copy `.env.example` to `.env`. Set `PROVIDER`, API keys (`ANTHROPIC_API_KEY`, `O
 
 ## Important Files
 
-`src/lib.rs` (public API), `src/main.rs` (entry point), `src/agent/loop_agent.rs` (core loop),
-`src/agent/supervisor.rs` (multi-agent), `src/policy/mod.rs` (policy), `src/tools/tool_trait.rs` (tool trait),
-`src/error.rs` (error types), `Cargo.toml`, `verify.sh`, `CLAUDE.md`, `docs/ARCHITECTURE.md`
+`src/lib.rs` (compatibility facade), `src/main.rs` (entry point), `crates/core/src/agent/loop_agent.rs` (core loop),
+`crates/core/src/agent/orchestra.rs` (multi-agent orchestration), `crates/core/src/policy/mod.rs` (policy),
+`crates/core/src/tools/tool_trait.rs` (tool trait), `crates/core/src/error.rs` (error types),
+`Cargo.toml`, `verify.sh`, `CLAUDE.md`, `docs/ARCHITECTURE.md`
 
 ---
 

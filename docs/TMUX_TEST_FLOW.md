@@ -126,15 +126,20 @@ Steps:
 3. Press `Tab`.
 4. Capture the selected completion state.
 5. Press `Esc` to leave completion.
-6. Type a short prompt such as `abc`.
-7. Send `Ctrl+B`, `Ctrl+F`, `Ctrl+P`, and `Ctrl+N` in focused scenarios and capture after each.
+6. Type `/btw` and press Enter.
+7. Capture immediately and verify the transient slash response block.
+8. Type a short prompt such as `abc`.
+9. Send `Ctrl+B`, `Ctrl+F`, `Ctrl+P`, and `Ctrl+N` in focused scenarios and capture after each.
 
 Expected anchors:
 - slash command suggestions are visible
 - `Tab` is consumed by completion when the popup is active
 - returning to the input field hides the popup cleanly
+- `/btw` shows a visible local response such as `❯ /btw` and `⎿  Usage: /btw`
+- that `/btw` response is transient and does not become a later conversation turn
 - `Ctrl+B/F` move like `Left/Right`
-- `Ctrl+P/N` behave like `Up/Down` for the active composer state
+- `Ctrl+P/N` move the cursor up/down (like arrow keys in the composer)
+- `Up/Down` arrows navigate command history (previous/next)
 
 ### 3a. Context And Tool Inventory
 

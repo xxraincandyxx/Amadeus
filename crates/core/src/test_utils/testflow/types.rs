@@ -142,11 +142,20 @@ pub struct ConfigSnapshot {
     pub provider: String,
     pub model: String,
     pub workdir: String,
+    #[serde(default = "default_permission_mode")]
     pub permission_mode: String,
+    #[serde(default)]
     pub config_roots: Vec<String>,
+    #[serde(default)]
     pub hook_paths: Vec<String>,
+    #[serde(default)]
     pub agent_roots: Vec<String>,
+    #[serde(default)]
     pub skill_roots: Vec<String>,
+}
+
+fn default_permission_mode() -> String {
+    "workspace-write".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
