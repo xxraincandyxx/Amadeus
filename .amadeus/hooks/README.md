@@ -50,4 +50,4 @@ Shell hook stdin:
 
 Working example:
 
-- [local-hooks.json](/Users/raincandy_u/Dev/amadeus/.amadeus/hooks/local-hooks.json)
+- [local-hooks.json](/.amadeus/hooks/local-hooks.json)

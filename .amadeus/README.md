@@ -16,22 +16,22 @@ Current supported layout:
 - `hooks/`
   Hook configuration files referenced from `settings.json`.
 - `skills/`
-  Project skills. See [skills/README.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/README.md).
+  Project skills. See [skills/README.md](/.amadeus/skills/README.md).
 - `agents/`
-  Project agent definitions and markdown inventories. See [agents/README.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/README.md).
+  Project agent definitions and markdown inventories. See [agents/README.md](/.amadeus/agents/README.md).
 - `mcp/`
-  MCP notes and examples. See [mcp/README.md](/Users/raincandy_u/Dev/amadeus/.amadeus/mcp/README.md).
+  MCP notes and examples. See [mcp/README.md](/.amadeus/mcp/README.md).
 
 Example files in this repo:
 
-- [settings.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/settings.example.json)
-- [settings.local.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/settings.local.example.json)
-- [hooks/local-hooks.json](/Users/raincandy_u/Dev/amadeus/.amadeus/hooks/local-hooks.json)
-- [skills/feature-assessment-loop/SKILL.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/feature-assessment-loop/SKILL.md)
-- [skills/code-review/SKILL.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/skills/code-review/SKILL.example.md)
-- [agents/reviewer/AGENT.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/reviewer/AGENT.example.md)
-- [agents/planner/agent.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/planner/agent.example.md)
-- [mcp/servers.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/mcp/servers.example.json)
+- [settings.example.json](/.amadeus/settings.example.json)
+- [settings.local.example.json](/.amadeus/settings.local.example.json)
+- [hooks/local-hooks.json](/.amadeus/hooks/local-hooks.json)
+- [skills/feature-assessment-loop/SKILL.md](/.amadeus/skills/feature-assessment-loop/SKILL.md)
+- [skills/code-review/SKILL.example.md](/.amadeus/skills/code-review/SKILL.example.md)
+- [agents/reviewer/AGENT.example.md](/.amadeus/agents/reviewer/AGENT.example.md)
+- [agents/planner/agent.example.md](/.amadeus/agents/planner/agent.example.md)
+- [mcp/servers.example.json](/.amadeus/mcp/servers.example.json)
 
 Current settings sections:
 

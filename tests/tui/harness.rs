@@ -20,6 +20,10 @@
 // - cmd: cargo test harness --features full
 // @end-amadeus-header
 
+//! **Deprecated.** This harness captures blank/empty frames and does not drive
+//! the real `App`. Use `amadeus::ui::headless::HeadlessApp` (feature
+//! `test-utils`) instead. Retained only until callers migrate.
+//!
 //! TUI Test Harness
 //!
 //! Sets up a complete TUI testing environment with mocked LLM.

@@ -1,0 +1,14 @@
+{
+  "name": "text_turn",
+  "description": "Assistant replies with one text message and stops.",
+  "steps": [
+    {
+      "delay_ms": null,
+      "error": null,
+      "events": [
+        { "type": "text_delta", "text": "Sure — here is a one-line answer." },
+        { "type": "stop_reason", "reason": "end_turn" }
+      ]
+    }
+  ]
+}

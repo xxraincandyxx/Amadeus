@@ -12,12 +12,15 @@ __pycache__/
 
 # Embedded repos
 refs/codex/
+refs/claw-code-parity/
 
 .amadeus/settings.json
 .amadeus/settings.local.json
+.amadeus/.settings.json
 .amadeus/logs/
 .amadeus/memory.json
 .amadeus/rag_index.json
+.amadeus/hooks/local-hooks.json
 
 # Runtime generated output
 runtime/locomo/debug_logs/
@@ -39,6 +42,15 @@ test_*.txt
 # IDE / tooling
 .claude/
 .opencode/
+.crush/
+
+# Python virtual environments
+.venv/
+python-sdk/.venv/
+
+# Privacy / local-only (do not publish)
+audit.md
+.privacy-audit/
 
 # User notes
 Song Lyric.txt

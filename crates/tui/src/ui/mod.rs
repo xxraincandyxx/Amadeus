@@ -38,6 +38,9 @@
 
 pub mod api_client;
 pub mod app;
+
+#[cfg(feature = "test-utils")]
+pub mod headless;
 pub mod colors;
 pub mod components;
 pub mod constants;

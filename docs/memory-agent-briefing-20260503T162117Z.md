@@ -173,7 +173,7 @@ agent.rag.delete_document("my-doc")                   # → dict
 ```json
 {
   "provider": "openai",
-  "base_url": "http://118.31.102.225:1112/v1",
+  "base_url": "http://localhost:1112/v1",
   "model": "gemma-4-26b-a4b-it-fp8",
   "rag_enabled": true,
   "embedding_model": "BAAI/bge-small-en-v1.5",

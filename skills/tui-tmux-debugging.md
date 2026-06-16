@@ -34,7 +34,7 @@ Start a remote tmux session and execute the binary inside it.
 tmux-cli launch "bash"  # Returns a pane id, e.g., remote-cli-session:1
 
 # Run the app
-tmux-cli send "/Users/raincandy_u/Dev/amadeus/target/debug/amadeus" --pane=remote-cli-session:1
+tmux-cli send "/path/to/amadeus/target/debug/amadeus" --pane=remote-cli-session:1
 ```
 
 ### 3. Interact and Inspect

@@ -48,5 +48,5 @@ Current note:
 
 Examples:
 
-- [reviewer/AGENT.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/reviewer/AGENT.example.md)
-- [planner/agent.example.md](/Users/raincandy_u/Dev/amadeus/.amadeus/agents/planner/agent.example.md)
+- [reviewer/AGENT.example.md](/.amadeus/agents/reviewer/AGENT.example.md)
+- [planner/agent.example.md](/.amadeus/agents/planner/agent.example.md)

@@ -1,6 +1,6 @@
 # Prompt Surface Review: Amadeus vs `claw-code-parity`
 
-This document compares the prompt-bearing surfaces in Amadeus and the `claw-code-parity` reference snapshot under [refs/claw-code-parity](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity).
+This document compares the prompt-bearing surfaces in Amadeus and the `claw-code-parity` reference snapshot under [refs/claw-code-parity](/refs/claw-code-parity).
 
 The goal is not to compare branding or UX copy. The focus is the instruction surface seen by the model or by hook/tool subprocesses:
 - system prompts
@@ -16,24 +16,24 @@ The goal is not to compare branding or UX copy. The focus is the instruction sur
 This comparison is based on prompt-bearing source files that are actually present in this workspace.
 
 Amadeus sources reviewed:
-- [crates/prompts/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/prompts/src/lib.rs)
-- [crates/config/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/config/src/lib.rs)
-- [crates/core/src/agent/compaction.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/agent/compaction.rs)
-- [crates/profiles/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/profiles/src/lib.rs)
-- [crates/context/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/context/src/lib.rs)
-- [crates/core/src/tools/schema.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/tools/schema.rs)
-- [crates/core/src/hooks/mod.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/hooks/mod.rs)
-- [crates/core/src/hooks/shell.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/hooks/shell.rs)
-- [crates/core/src/assessment/mod.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/assessment/mod.rs)
+- [crates/prompts/src/lib.rs](/crates/prompts/src/lib.rs)
+- [crates/config/src/lib.rs](/crates/config/src/lib.rs)
+- [crates/core/src/agent/compaction.rs](/crates/core/src/agent/compaction.rs)
+- [crates/profiles/src/lib.rs](/crates/profiles/src/lib.rs)
+- [crates/context/src/lib.rs](/crates/context/src/lib.rs)
+- [crates/core/src/tools/schema.rs](/crates/core/src/tools/schema.rs)
+- [crates/core/src/hooks/mod.rs](/crates/core/src/hooks/mod.rs)
+- [crates/core/src/hooks/shell.rs](/crates/core/src/hooks/shell.rs)
+- [crates/core/src/assessment/mod.rs](/crates/core/src/assessment/mod.rs)
 
 `claw-code-parity` sources reviewed:
-- [refs/claw-code-parity/rust/crates/runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs)
-- [refs/claw-code-parity/rust/crates/runtime/src/compact.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/compact.rs)
-- [refs/claw-code-parity/rust/crates/runtime/src/hooks.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs)
-- [refs/claw-code-parity/rust/crates/tools/src/lib.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs)
+- [refs/claw-code-parity/rust/crates/runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs)
+- [refs/claw-code-parity/rust/crates/runtime/src/compact.rs](/refs/claw-code-parity/rust/crates/runtime/src/compact.rs)
+- [refs/claw-code-parity/rust/crates/runtime/src/hooks.rs](/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs)
+- [refs/claw-code-parity/rust/crates/tools/src/lib.rs](/refs/claw-code-parity/rust/crates/tools/src/lib.rs)
 
 Important limitation:
-- The parity snapshot references many archived `tools/*/prompt.ts` files in JSON snapshots, but those prompt files are not present in this repo snapshot. Tool-level comparison therefore uses the actual registered `ToolSpec.description` and schema surface in [tools/src/lib.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs), not the missing archived files.
+- The parity snapshot references many archived `tools/*/prompt.ts` files in JSON snapshots, but those prompt files are not present in this repo snapshot. Tool-level comparison therefore uses the actual registered `ToolSpec.description` and schema surface in [tools/src/lib.rs](/refs/claw-code-parity/rust/crates/tools/src/lib.rs), not the missing archived files.
 
 ## Executive Summary
 
@@ -67,8 +67,8 @@ The largest quality gaps in Amadeus are:
 ### 1. Main System Prompt
 
 Amadeus:
-- main prompt is a single static template in [crates/prompts/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/prompts/src/lib.rs#L25)
-- config appends optional project context in [crates/config/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/config/src/lib.rs#L329)
+- main prompt is a single static template in [crates/prompts/src/lib.rs](/crates/prompts/src/lib.rs#L25)
+- config appends optional project context in [crates/config/src/lib.rs](/crates/config/src/lib.rs#L329)
 - structure is:
   - core loop
   - security
@@ -80,7 +80,7 @@ Amadeus:
   - output style
 
 `claw-code-parity`:
-- system prompt is assembled section-by-section in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L95)
+- system prompt is assembled section-by-section in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L95)
 - it includes:
   - intro
   - optional output style
@@ -111,19 +111,19 @@ Assessment:
 ### 2. Instruction Memory And Project Context
 
 Amadeus:
-- project context is a single file lookup in [crates/context/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/context/src/lib.rs#L21)
-- it injects one `## Project Context` block in [crates/context/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/context/src/lib.rs#L53)
+- project context is a single file lookup in [crates/context/src/lib.rs](/crates/context/src/lib.rs#L21)
+- it injects one `## Project Context` block in [crates/context/src/lib.rs](/crates/context/src/lib.rs#L53)
 - no ancestry search
 - no dedupe
 - no prompt budget
 - no git snapshot
 
 `claw-code-parity`:
-- discovers instruction files across ancestor directories in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L192)
+- discovers instruction files across ancestor directories in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L192)
 - supports `CLAUDE.md`, `CLAUDE.local.md`, `.claw/CLAUDE.md`, `.claw/instructions.md`
-- dedupes identical instruction content in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L326)
-- truncates instruction content with per-file and total budgets in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L303)
-- includes git status and diff snapshots in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L276)
+- dedupes identical instruction content in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L326)
+- truncates instruction content with per-file and total budgets in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L303)
+- includes git status and diff snapshots in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L276)
 
 Comparison:
 - Amadeus treats context as one optional note.
@@ -136,7 +136,7 @@ Assessment:
 ### 3. Profile Prompts
 
 Amadeus:
-- has standalone profile prompts in [crates/profiles/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/profiles/src/lib.rs#L35)
+- has standalone profile prompts in [crates/profiles/src/lib.rs](/crates/profiles/src/lib.rs#L35)
 - profiles include:
   - default
   - debug
@@ -147,7 +147,7 @@ Amadeus:
 
 `claw-code-parity`:
 - does not use the same kind of named profile prompt enum in the reviewed runtime files
-- instead it supports output-style injection and runtime-specific assembled sections in [runtime/src/prompt.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L102)
+- instead it supports output-style injection and runtime-specific assembled sections in [runtime/src/prompt.rs](/refs/claw-code-parity/rust/crates/runtime/src/prompt.rs#L102)
 
 Comparison:
 - Amadeus has more explicit role variants.
@@ -161,7 +161,7 @@ Assessment:
 ### 4. Context Compaction And Summarization
 
 Amadeus:
-- uses an explicit LLM compaction prompt in [crates/core/src/agent/compaction.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/agent/compaction.rs#L76)
+- uses an explicit LLM compaction prompt in [crates/core/src/agent/compaction.rs](/crates/core/src/agent/compaction.rs#L76)
 - prompt is structured and strong:
   - explicit prompt-injection warning
   - required XML output
@@ -169,7 +169,7 @@ Amadeus:
   - asks for dense state preservation
 
 `claw-code-parity`:
-- compaction in [runtime/src/compact.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/compact.rs#L1) is deterministic and local
+- compaction in [runtime/src/compact.rs](/refs/claw-code-parity/rust/crates/runtime/src/compact.rs#L1) is deterministic and local
 - it does not use an LLM prompt for compaction in the reviewed code
 - instead it:
   - summarizes messages into a tagged `<summary>`
@@ -192,8 +192,8 @@ Assessment:
 
 Amadeus:
 - tool guidance is split between:
-  - system prompt tool bullets in [crates/prompts/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/prompts/src/lib.rs#L49)
-  - JSON tool descriptions in [crates/core/src/tools/schema.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/tools/schema.rs#L37)
+  - system prompt tool bullets in [crates/prompts/src/lib.rs](/crates/prompts/src/lib.rs#L49)
+  - JSON tool descriptions in [crates/core/src/tools/schema.rs](/crates/core/src/tools/schema.rs#L37)
 - strengths:
   - direct language
   - clear basic intent for `bash`, `read_file`, `edit_file`, `todo`
@@ -203,7 +203,7 @@ Amadeus:
   - system prompt says “Use tools to accomplish tasks, not to explain” but tool descriptions do not consistently encode planning heuristics or safety hints
 
 `claw-code-parity`:
-- tool descriptions are defined centrally in [refs/claw-code-parity/rust/crates/tools/src/lib.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L377)
+- tool descriptions are defined centrally in [refs/claw-code-parity/rust/crates/tools/src/lib.rs](/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L377)
 - the tool surface is much broader:
   - primitive file/shell/search tools
   - web fetch/search
@@ -225,10 +225,10 @@ Assessment:
 ### 6. Hook Prompt / Payload Contract
 
 Amadeus:
-- hooks are described as simple pre/post tool callbacks in [crates/core/src/hooks/mod.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/hooks/mod.rs#L21)
+- hooks are described as simple pre/post tool callbacks in [crates/core/src/hooks/mod.rs](/crates/core/src/hooks/mod.rs#L21)
 - shell hooks get:
   - stdin JSON payload with `event`, `tool_name`, `tool_input`, `tool_output`, `is_error`, `duration_ms`
-  - env vars like `HOOK_EVENT`, `HOOK_TOOL_INPUT`, `HOOK_TOOL_OUTPUT` in [crates/core/src/hooks/shell.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/hooks/shell.rs#L167)
+  - env vars like `HOOK_EVENT`, `HOOK_TOOL_INPUT`, `HOOK_TOOL_OUTPUT` in [crates/core/src/hooks/shell.rs](/crates/core/src/hooks/shell.rs#L167)
 - outputs are weakly interpreted:
   - exit code `2` blocks
   - non-zero optionally blocks if `block_on_error`
@@ -236,8 +236,8 @@ Amadeus:
 - no structured permission override or structured updated-input protocol
 
 `claw-code-parity`:
-- hooks build richer JSON payloads in [runtime/src/hooks.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L591)
-- hook output parser supports structured fields in [runtime/src/hooks.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L560):
+- hooks build richer JSON payloads in [runtime/src/hooks.rs](/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L591)
+- hook output parser supports structured fields in [runtime/src/hooks.rs](/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L560):
   - `additionalContext`
   - `permissionDecision`
   - `permissionDecisionReason`
@@ -255,17 +255,17 @@ Assessment:
 ### 7. Sub-Agent Prompting
 
 Amadeus:
-- main system prompt conditionally mentions `sub_agent` in [crates/prompts/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/prompts/src/lib.rs#L20)
+- main system prompt conditionally mentions `sub_agent` in [crates/prompts/src/lib.rs](/crates/prompts/src/lib.rs#L20)
 - sub-agent availability is mostly controlled by tool registration, not a specialized sub-agent system prompt
 
 `claw-code-parity`:
-- background agents use the assembled system prompt plus an extra sub-agent line in [tools/src/lib.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3005)
+- background agents use the assembled system prompt plus an extra sub-agent line in [tools/src/lib.rs](/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3005)
 - that line explicitly constrains behavior:
   - work only on delegated task
   - use only available tools
   - do not ask user questions
   - finish with concise result
-- allowed tools are also narrowed by sub-agent type in [tools/src/lib.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3021)
+- allowed tools are also narrowed by sub-agent type in [tools/src/lib.rs](/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3021)
 
 Comparison:
 - Amadeus exposes sub-agents mainly as a capability.
@@ -278,7 +278,7 @@ Assessment:
 ### 8. Assessment / Review Prompting
 
 Amadeus:
-- has a concrete assessment default prompt in [crates/core/src/assessment/mod.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/assessment/mod.rs#L220)
+- has a concrete assessment default prompt in [crates/core/src/assessment/mod.rs](/crates/core/src/assessment/mod.rs#L220)
 - it is surprisingly specific:
   - references `docs/TMUX_TEST_FLOW.md`
   - references runtime flows and targeted tests
@@ -301,10 +301,10 @@ Assessment:
 ### Where Amadeus Is Better
 
 1. Compaction prompt quality
-- The XML state snapshot prompt in [compaction.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/agent/compaction.rs#L76) is more explicit and safer than the average summarization prompt.
+- The XML state snapshot prompt in [compaction.rs](/crates/core/src/agent/compaction.rs#L76) is more explicit and safer than the average summarization prompt.
 
 2. Specialized assessment prompting
-- The assessment prompt in [assessment/mod.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/assessment/mod.rs#L220) is focused and operationally useful.
+- The assessment prompt in [assessment/mod.rs](/crates/core/src/assessment/mod.rs#L220) is focused and operationally useful.
 
 3. Simplicity
 - The main prompt is easy to read and maintain.
@@ -359,11 +359,11 @@ Add a prompt builder that assembles:
 - optional profile overlay
 - optional sub-agent overlay
 
-This should replace the current single template in [crates/prompts/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/prompts/src/lib.rs#L25) as the primary runtime prompt path.
+This should replace the current single template in [crates/prompts/src/lib.rs](/crates/prompts/src/lib.rs#L25) as the primary runtime prompt path.
 
 ### Priority 2: Unify profile prompts with runtime prompt assembly
 
-The profile prompts in [crates/profiles/src/lib.rs](/Users/raincandy_u/Dev/amadeus/crates/profiles/src/lib.rs#L35) should become composable overlays, not a separate parallel system.
+The profile prompts in [crates/profiles/src/lib.rs](/crates/profiles/src/lib.rs#L35) should become composable overlays, not a separate parallel system.
 
 ### Priority 3: Strengthen the hook contract
 
@@ -373,7 +373,7 @@ Extend shell hook output parsing so hooks can return structured data like:
 - permission reason
 - updated input
 
-That would move hooks closer to parity with [runtime/src/hooks.rs](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L560).
+That would move hooks closer to parity with [runtime/src/hooks.rs](/refs/claw-code-parity/rust/crates/runtime/src/hooks.rs#L560).
 
 ### Priority 4: Make tool descriptions more intentional
 
@@ -385,7 +385,7 @@ Now that Amadeus has a richer tool platform, the prompt layer should:
 
 ### Priority 5: Add explicit sub-agent overlays
 
-When a sub-agent is spawned, append an additional instruction block similar in spirit to [build_agent_system_prompt](/Users/raincandy_u/Dev/amadeus/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3005), with:
+When a sub-agent is spawned, append an additional instruction block similar in spirit to [build_agent_system_prompt](/refs/claw-code-parity/rust/crates/tools/src/lib.rs#L3005), with:
 - delegated scope
 - no user-question rule
 - result-format expectation

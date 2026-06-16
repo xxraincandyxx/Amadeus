@@ -40,87 +40,9 @@ use amadeus::agent::messages::Message;
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::{AgentError, Result};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScenarioDefinition {
-    pub name: String,
-    pub description: String,
-    pub steps: Vec<ScenarioStepDef>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ScenarioStepDef {
-    pub delay_ms: Option<u64>,
-    pub events: Vec<StreamEventDef>,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum StreamEventDef {
-    TextDelta {
-        text: String,
-    },
-    ThinkingDelta {
-        text: String,
-    },
-    ToolCallStart {
-        id: String,
-        name: String,
-    },
-    ToolCallDelta {
-        arguments: String,
-    },
-    ToolCallDone {
-        id: String,
-    },
-    StopReason {
-        reason: String,
-    },
-    TokenUsage {
-        input_tokens: u32,
-        output_tokens: u32,
-    },
-}
-
-impl From<StreamEventDef> for StreamEvent {
-    fn from(def: StreamEventDef) -> Self {
-        match def {
-            StreamEventDef::TextDelta { text } => StreamEvent::TextDelta(text),
-            StreamEventDef::ThinkingDelta { text } => StreamEvent::ThinkingDelta(text),
-            StreamEventDef::ToolCallStart { id, name } => StreamEvent::ToolCallStart { id, name },
-            StreamEventDef::ToolCallDelta { arguments } => StreamEvent::ToolCallDelta { arguments },
-            StreamEventDef::ToolCallDone { id } => StreamEvent::ToolCallDone(id),
-            StreamEventDef::StopReason { reason } => StreamEvent::StopReason(reason),
-            StreamEventDef::TokenUsage {
-                input_tokens,
-                output_tokens,
-            } => StreamEvent::TokenUsage {
-                input_tokens,
-                output_tokens,
-            },
-        }
-    }
-}
-
-impl From<StreamEvent> for StreamEventDef {
-    fn from(event: StreamEvent) -> Self {
-        match event {
-            StreamEvent::TextDelta(text) => StreamEventDef::TextDelta { text },
-            StreamEvent::ThinkingDelta(text) => StreamEventDef::ThinkingDelta { text },
-            StreamEvent::ToolCallStart { id, name } => StreamEventDef::ToolCallStart { id, name },
-            StreamEvent::ToolCallDelta { arguments } => StreamEventDef::ToolCallDelta { arguments },
-            StreamEvent::ToolCallDone(id) => StreamEventDef::ToolCallDone { id },
-            StreamEvent::StopReason(reason) => StreamEventDef::StopReason { reason },
-            StreamEvent::TokenUsage {
-                input_tokens,
-                output_tokens,
-            } => StreamEventDef::TokenUsage {
-                input_tokens,
-                output_tokens,
-            },
-        }
-    }
-}
+pub use amadeus::test_utils::scenario::{
+    ScenarioDefinition, ScenarioStepDef, StreamEventDef,
+};
 
 #[derive(Debug, Clone)]
 pub struct CapturedRequest {
@@ -151,6 +73,13 @@ impl ScenarioMockClient {
             steps: Arc::new(Mutex::new(def.steps.into_iter().collect())),
             captured_requests: Arc::new(Mutex::new(Vec::new())),
         })
+    }
+
+    pub fn from_definition(def: ScenarioDefinition) -> Self {
+        Self {
+            steps: Arc::new(Mutex::new(def.steps.into_iter().collect())),
+            captured_requests: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     pub fn scripted(event_batches: Vec<Vec<StreamEvent>>) -> Self {

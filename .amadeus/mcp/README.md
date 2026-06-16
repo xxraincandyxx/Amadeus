@@ -9,8 +9,8 @@ Current state:
 
 Current runtime types:
 
-- [crates/core/src/mcp/client.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/mcp/client.rs)
-- [crates/core/src/mcp/adapter.rs](/Users/raincandy_u/Dev/amadeus/crates/core/src/mcp/adapter.rs)
+- [crates/core/src/mcp/client.rs](/crates/core/src/mcp/client.rs)
+- [crates/core/src/mcp/adapter.rs](/crates/core/src/mcp/adapter.rs)
 
 Current code-level server configuration:
 
@@ -31,7 +31,7 @@ let tools = client.list_tools().await?;
 
 Documentation example file:
 
-- [servers.example.json](/Users/raincandy_u/Dev/amadeus/.amadeus/mcp/servers.example.json)
+- [servers.example.json](/.amadeus/mcp/servers.example.json)
 
 Planned settings direction:
 

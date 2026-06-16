@@ -215,7 +215,7 @@ async def run_rag_eval(
     qa_per_item: int = 50,
     quick: bool = False,
     seed: int = 42,
-    llm_base_url: str = "http://118.31.102.225:1112/v1",
+    llm_base_url: str = "http://localhost:1112/v1",
     llm_model: str = "gemma-4-26b-a4b-it-fp8",
     no_full_context: bool = False,
 ) -> dict:
@@ -459,7 +459,7 @@ def main() -> None:
     parser.add_argument("--top-k", type=int, default=5, help="Top-k chunks for RAG")
     parser.add_argument("--output", type=Path, default=None, help="Save results to JSON")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--llm-base-url", default="http://118.31.102.225:1112/v1")
+    parser.add_argument("--llm-base-url", default="http://localhost:1112/v1")
     parser.add_argument("--llm-model", default="gemma-4-26b-a4b-it-fp8")
     parser.add_argument("--no-full-context", action="store_true",
                         help="Skip full-context oracle (faster)")
