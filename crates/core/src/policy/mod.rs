@@ -98,7 +98,7 @@ pub struct ScopedApprovalGrant {
 impl Default for Policy {
     fn default() -> Self {
         let mut policy = Self {
-            mode: ApprovalMode::Ask,
+            mode: ApprovalMode::Auto,
             auto_approve: vec![
                 "read_file".to_string(),
                 "glob".to_string(),
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn test_policy_default() {
         let policy = Policy::new();
-        assert_eq!(policy.mode, ApprovalMode::Ask);
+        assert_eq!(policy.mode, ApprovalMode::Auto);
         assert!(policy.auto_approve.contains(&"read_file".to_string()));
         assert!(policy.auto_approve.contains(&"todo".to_string()));
     }
@@ -357,27 +357,24 @@ mod tests {
     }
 
     #[test]
-    fn test_dangerous_pattern() {
+    fn test_default_policy_does_not_require_approval_for_dangerous_patterns() {
         let policy = Policy::new();
 
-        // Sudo commands are dangerous
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
+        assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "sudo apt install"})));
 
-        // Writing to .env is dangerous
-        assert!(policy.needs_approval(
+        assert!(!policy.needs_approval(
             "write_file",
             &serde_json::json!({"path": ".env", "content": ""})
         ));
 
-        // Normal commands are fine
         assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "ls -la"})));
     }
 
     #[test]
-    fn test_default_policy_blocks_rm_rf_root() {
+    fn test_default_policy_allows_rm_rf_root() {
         let policy = Policy::new();
 
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
+        assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
     }
 
     #[test]
@@ -392,11 +389,13 @@ mod tests {
     }
 
     #[test]
-    fn test_bash_workspace_write_requires_approval() {
+    fn test_default_policy_allows_bash_workspace_write() {
         let policy = Policy::new();
 
-        assert!(policy.needs_approval("bash", &serde_json::json!({"command": "echo hi > out.txt"})));
-        assert!(policy.needs_approval(
+        assert!(
+            !policy.needs_approval("bash", &serde_json::json!({"command": "echo hi > out.txt"}))
+        );
+        assert!(!policy.needs_approval(
             "bash",
             &serde_json::json!({"command": "sed -i 's/old/new/' file.txt"})
         ));
