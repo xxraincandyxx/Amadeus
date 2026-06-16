@@ -515,8 +515,7 @@ impl Config {
             if let Ok(content) = std::fs::read_to_string(file) {
                 append_prompt_section(
                     &mut rendered,
-                    &file
-                        .file_stem()
+                    file.file_stem()
                         .and_then(|stem| stem.to_str())
                         .unwrap_or("Prompt File"),
                     &content,
@@ -826,7 +825,6 @@ impl Config {
                 Provider::Anthropic | Provider::OpenAI => {
                     Err(ConfigError::MissingSetting("api_key".into()))
                 }
-                _ => Ok(()),
             }
         } else {
             Ok(())

@@ -79,9 +79,38 @@ impl PermissionEnforcer {
         input: &Value,
         required: PermissionMode,
     ) -> PermissionDecision {
-        let _ = self.rule_decision(tool_name, input, required);
-        let _ = self.reason(tool_name, required, input);
-        PermissionDecision::Allow
+        if let Some(rule_decision) = self.rule_decision(tool_name, input, required) {
+            return rule_decision;
+        }
+
+        if self.active_mode == PermissionMode::Allow {
+            return PermissionDecision::Allow;
+        }
+
+        if self.active_mode == PermissionMode::Prompt {
+            return PermissionDecision::Ask {
+                required,
+                reason: self.reason(tool_name, required, input),
+            };
+        }
+
+        if self.active_mode == PermissionMode::WorkspaceWrite
+            && required == PermissionMode::DangerFullAccess
+        {
+            return PermissionDecision::Ask {
+                required,
+                reason: self.reason(tool_name, required, input),
+            };
+        }
+
+        if self.active_mode >= required {
+            PermissionDecision::Allow
+        } else {
+            PermissionDecision::Deny {
+                required,
+                reason: self.reason(tool_name, required, input),
+            }
+        }
     }
 
     fn required_mode_for(&self, tool_name: &str, input: &Value) -> PermissionMode {
@@ -264,31 +293,49 @@ mod tests {
     }
 
     #[test]
-    fn read_only_mode_allows_writes() {
-        let enforcer = PermissionEnforcer::from_config(&make_config(PermissionMode::ReadOnly));
+    fn read_only_mode_denies_writes() {
+        // Use a real tempdir so PathPolicy can canonicalize the workspace root;
+        // a non-existent /tmp/workspace makes in-workspace paths resolve as
+        // DangerFullAccess rather than WorkspaceWrite.
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            permission_mode: PermissionMode::ReadOnly,
+            workdir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let enforcer = PermissionEnforcer::from_config(&config);
 
-        assert_eq!(
+        assert!(matches!(
             enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
-            PermissionDecision::Allow
-        );
-        assert_eq!(
+            PermissionDecision::Deny {
+                required: PermissionMode::WorkspaceWrite,
+                ..
+            }
+        ));
+        assert!(matches!(
             enforcer.check(
                 "bash",
                 &serde_json::json!({"command": "echo hi > notes.md"})
             ),
-            PermissionDecision::Allow
-        );
+            PermissionDecision::Deny {
+                required: PermissionMode::WorkspaceWrite,
+                ..
+            }
+        ));
     }
 
     #[test]
-    fn workspace_write_mode_allows_destructive_bash() {
+    fn workspace_write_mode_requests_approval_for_destructive_bash() {
         let enforcer =
             PermissionEnforcer::from_config(&make_config(PermissionMode::WorkspaceWrite));
 
-        assert_eq!(
+        assert!(matches!(
             enforcer.check("bash", &serde_json::json!({"command": "rm -rf /"})),
-            PermissionDecision::Allow
-        );
+            PermissionDecision::Ask {
+                required: PermissionMode::DangerFullAccess,
+                ..
+            }
+        ));
     }
 
     #[test]
@@ -314,31 +361,35 @@ mod tests {
     }
 
     #[test]
-    fn deny_rules_do_not_block_when_permissions_are_disabled() {
+    fn deny_rules_block_even_in_allow_mode() {
         let mut config = make_config(PermissionMode::Allow);
         config.permissions.rules = vec!["deny:tool(write_file)".to_string()];
         let enforcer = PermissionEnforcer::from_config(&config);
 
-        assert_eq!(
+        assert!(matches!(
             enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
-            PermissionDecision::Allow
-        );
+            PermissionDecision::Deny { .. }
+        ));
     }
 
     #[test]
     fn additional_directories_extend_workspace_boundary() {
-        let mut config = make_config(PermissionMode::WorkspaceWrite);
+        let workspace = tempfile::tempdir().unwrap();
+        let extra = tempfile::tempdir().unwrap();
+        let mut config = Config {
+            permission_mode: PermissionMode::WorkspaceWrite,
+            workdir: workspace.path().to_path_buf(),
+            ..Config::default()
+        };
         config
             .permissions
             .additional_directories
-            .push(PathBuf::from("/tmp/extra"));
+            .push(extra.path().to_path_buf());
         let enforcer = PermissionEnforcer::from_config(&config);
 
+        let target = extra.path().join("notes.md");
         assert_eq!(
-            enforcer.check(
-                "write_file",
-                &serde_json::json!({"path": "/tmp/extra/notes.md"})
-            ),
+            enforcer.check("write_file", &serde_json::json!({"path": target})),
             PermissionDecision::Allow
         );
     }
@@ -355,20 +406,25 @@ mod tests {
             enforcer.check("read_file", &serde_json::json!({"path": "notes.md"})),
             PermissionDecision::Allow
         );
-        assert_eq!(
+        assert!(matches!(
             enforcer.check("bash", &serde_json::json!({"command": "git:status"})),
-            PermissionDecision::Allow
-        );
-        assert_eq!(
+            PermissionDecision::Ask { .. }
+        ));
+        assert!(matches!(
             enforcer.check("write_file", &serde_json::json!({"path": "notes.md"})),
-            PermissionDecision::Allow
-        );
+            PermissionDecision::Deny { .. }
+        ));
     }
 
     #[test]
     fn spec_permission_defaults_to_declared_mode_with_runtime_escalation() {
-        let enforcer =
-            PermissionEnforcer::from_config(&make_config(PermissionMode::WorkspaceWrite));
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config {
+            permission_mode: PermissionMode::WorkspaceWrite,
+            workdir: dir.path().to_path_buf(),
+            ..Config::default()
+        };
+        let enforcer = PermissionEnforcer::from_config(&config);
         let spec = ToolSpec {
             name: "write_file".to_string(),
             description: "write".to_string(),
@@ -386,13 +442,20 @@ mod tests {
             ],
         };
 
+        // Create the in-workspace target so PathPolicy canonicalizes it as inside.
+        let in_workspace = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(in_workspace.parent().unwrap()).unwrap();
         assert_eq!(
-            enforcer.check_with_spec(&spec, &serde_json::json!({"path": "src/lib.rs"})),
+            enforcer.check_with_spec(&spec, &serde_json::json!({"path": in_workspace})),
             PermissionDecision::Allow
         );
-        assert_eq!(
+        assert!(matches!(
             enforcer.check_with_spec(&spec, &serde_json::json!({"path": "/tmp/outside.rs"})),
-            PermissionDecision::Allow
-        );
+            PermissionDecision::Ask {
+                required: PermissionMode::DangerFullAccess,
+                ..
+            }
+        ));
     }
 }
+

@@ -118,6 +118,7 @@ async fn test_scenario_runner_records_denied_approval_decision() {
         .build();
 
     let timeline = ScenarioRunner::new(scenario)
+        .with_ask_policy()
         .execute_timeline(client)
         .await
         .expect("Scenario failed");

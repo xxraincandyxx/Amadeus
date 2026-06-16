@@ -33,16 +33,12 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Stream;
-use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
 use amadeus::agent::messages::Message;
 use amadeus::client::{LLMClient, StreamEvent};
 use amadeus::error::{AgentError, Result};
-
-pub use amadeus::test_utils::scenario::{
-    ScenarioDefinition, ScenarioStepDef, StreamEventDef,
-};
+use amadeus::test_utils::scenario::{ScenarioDefinition, ScenarioStepDef};
 
 #[derive(Debug, Clone)]
 pub struct CapturedRequest {

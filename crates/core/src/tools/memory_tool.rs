@@ -239,8 +239,7 @@ impl Tool for MemoryTool {
                     "Unknown operation '{}'. Use store, recall, search, list, or delete.",
                     other
                 ),
-            }
-            .into()),
+            }),
         }
     }
 }
