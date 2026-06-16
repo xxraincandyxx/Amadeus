@@ -100,7 +100,7 @@ pub fn session_log_to_scenario(log: &SessionLog) -> ScenarioDefinition {
 #[cfg(test)]
 mod tests {
     use super::session_log_to_scenario;
-    use crate::test_utils::scenario::StreamEventDef;
+    use crate::test_utils::scenario::{ScenarioDefinition, StreamEventDef};
     use crate::test_utils::testflow::types::{
         AgentEventData, RecordedEvent, SessionLog, SessionMetadata, TimelineEvent,
     };
@@ -167,5 +167,30 @@ mod tests {
         log.timeline.push(agent(AgentEventData::Done { text: "ok".to_string(), tool_call_count: 0 }));
         let def = session_log_to_scenario(&log);
         assert!(def.steps[0].events.iter().any(|e| matches!(e, StreamEventDef::ThinkingDelta { text } if text == "hmm")));
+    }
+
+    /// Regression guard: the on-disk `session_*.json` fixture produced by the
+    /// recorder must (a) deserialize via `load_session`, (b) convert cleanly
+    /// into a `ScenarioDefinition`, and (c) round-trip back through
+    /// `serde_json` so the `convert_session` CLI example's stdout is consumable
+    /// by `ScenarioMockClient::from_json`. Without this, the convert -> replay
+    /// pipeline silently breaks the moment the recorder's JSON schema drifts.
+    #[test]
+    fn on_disk_fixture_round_trips_through_convert_session() {
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        // CARGO_MANIFEST_DIR for this crate is <repo>/crates/core, so the
+        // workspace-level fixture lives two levels up.
+        let fixture = manifest_dir.join("../../tests/testflow/fixtures/sample_session.json");
+        let log = crate::test_utils::testflow::recorder::load_session(&fixture)
+            .expect("sample_session.json must load");
+        let def = session_log_to_scenario(&log);
+        assert!(!def.steps.is_empty(), "fixture should yield at least one step");
+
+        // Round-trip through JSON, which is what the CLI example produces and
+        // what ScenarioMockClient::from_json consumes.
+        let json = serde_json::to_string(&def).expect("serialize scenario");
+        let parsed: ScenarioDefinition =
+            serde_json::from_str(&json).expect("scenario JSON round-trips");
+        assert_eq!(parsed.steps.len(), def.steps.len());
     }
 }
