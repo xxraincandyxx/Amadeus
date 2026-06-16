@@ -4673,6 +4673,42 @@ impl<C: LLMClient + Clone + 'static> App<C> {
     }
 }
 
+#[cfg(feature = "test-utils")]
+impl<C: LLMClient + Clone + 'static> App<C> {
+    /// Test-only accessor for the active session (headless driver).
+    pub(crate) fn test_session_mut(&mut self) -> &mut Session<C> {
+        self.active_session_mut()
+    }
+}
+
+#[cfg(feature = "test-utils")]
+impl<C: LLMClient + Clone + 'static> Session<C> {
+    /// Type one character into the input box.
+    pub(crate) fn test_type_char(&mut self, c: char) {
+        self.input.handle_char(c);
+    }
+
+    /// Read the current input text.
+    pub(crate) fn test_input_text(&self) -> String {
+        self.input.get_input()
+    }
+
+    /// Submit the current input (starts a prompt turn or runs a slash command).
+    pub(crate) async fn test_submit(&mut self) -> Result<()> {
+        self.submit_input().await
+    }
+
+    /// True while a prompt turn is streaming (used to await settle).
+    pub(crate) fn test_is_streaming(&self) -> bool {
+        self.stream_rx.is_some()
+    }
+
+    /// Render the session into a ratatui frame (TestBackend draws into a buffer).
+    pub(crate) fn test_render(&mut self, frame: &mut ratatui::Frame) {
+        self.render(frame);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{App, MonitorStatus, Session, SlashDialogState, ToolMonitorState};
