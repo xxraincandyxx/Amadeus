@@ -26,7 +26,7 @@ Do not make live provider/API checks part of the core acceptance path. The basel
 3. Launch the TUI inside `tmux-cli` instead of attaching directly to your terminal.
 4. Prefer launching the prebuilt binary after a successful build to avoid compile noise in captures:
    ```bash
-   tmux-cli send "cd /Users/raincandy_u/Dev/amadeus && target/debug/amadeus" --pane=<pane>
+   tmux-cli send "cd /path/to/amadeus && target/debug/amadeus" --pane=<pane>
    ```
    Use `cargo run --features full` only when you specifically need to validate the launch path.
 4. Prefer an 80x24 or larger pane when comparing splash layout across runs.
@@ -45,7 +45,7 @@ Use the same loop for every debugging task:
    ```
 2. Start the TUI:
    ```bash
-   tmux-cli send "cd /Users/raincandy_u/Dev/amadeus && target/debug/amadeus" --pane=<pane>
+   tmux-cli send "cd /path/to/amadeus && target/debug/amadeus" --pane=<pane>
    ```
 3. Wait for a stable frame:
    ```bash

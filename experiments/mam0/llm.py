@@ -283,7 +283,7 @@ class LLMClient:
         api_key: str = "",
         timeout: float = 120.0,
     ):
-        self.base_url = (base_url or "http://118.31.102.225:1112/v1").rstrip("/")
+        self.base_url = (base_url or "http://localhost:1112/v1").rstrip("/")
         self.api_key = api_key or "EMPTY"
         self.timeout = timeout
         self.messages = Messages(self)

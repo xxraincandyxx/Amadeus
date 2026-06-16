@@ -2,7 +2,7 @@
 
 Goal: mini_locomo > 99%, mini_mmlu >= 84% (no regression)
 
-Model: gemma-4-26b-a4b-it-fp8 @ http://118.31.102.225:1112/v1
+Model: gemma-4-26b-a4b-it-fp8 @ http://localhost:1112/v1
 
 ---
 

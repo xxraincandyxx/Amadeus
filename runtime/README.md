@@ -32,7 +32,7 @@ For benchmarks that use the `openbench-quick` harness:
 ```bash
 # Baseline: direct model evaluation
 scripts/openbench-quick \
-  --base-url http://118.31.102.225:1112/v1 \
+  --base-url http://localhost:1112/v1 \
   --model gemma-4-26b-a4b-it-fp8 \
   --benchmarks mini_locomo
 

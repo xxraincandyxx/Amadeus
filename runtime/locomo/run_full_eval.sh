@@ -16,7 +16,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-BASE_URL="${LOCOMO_BASE_URL:-http://118.31.102.225:1112/v1}"
+BASE_URL="${LOCOMO_BASE_URL:-http://localhost:1112/v1}"
 MODEL="${LOCOMO_MODEL:-gemma-4-26b-a4b-it-fp8}"
 API_KEY="${LOCOMO_API_KEY:-EMPTY}"
 SERVER_URL="${AMADEUS_SERVER:-http://localhost:3000}"
