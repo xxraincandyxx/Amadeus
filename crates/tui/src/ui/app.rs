@@ -79,20 +79,54 @@ use crate::ui::export::{
     SessionHeader,
 };
 use crate::ui::{get_theme, next_theme, SidebarKind};
+use crate::{Config, LiveViewportConfig, LiveViewportMode};
 
 const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
 const STREAM_FLUSH_CHAR_THRESHOLD: usize = 32;
-const DEFAULT_VIEWPORT_HEIGHT_PERCENT: u16 = 32;
+const MIN_VIEWPORT_HEIGHT_PERCENT: u16 = 5;
 const DEFAULT_SHELF_HEIGHT: u16 = 6;
 const MIN_LIVE_VIEWPORT_WIDTH: u16 = 4;
 const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
 const MIN_DASHBOARD_HEIGHT: u16 = 6;
 const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
+const LIVE_VIEWPORT_ENV: &str = "AMADEUS_LIVE_VIEWPORT";
 const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
+
+/// Runtime view of the live-viewport policy, derived from `Config::tui.live_viewport`
+/// at session start and overridable at runtime via the `/viewport` slash command.
+///
+/// - `mode`: visibility policy. `Hidden` reserves zero height; `Auto` shows the viewport
+///   only while there is live activity (streaming text, tool runs, pending compaction);
+///   `Always` keeps it on, including the idle dashboard.
+/// - `height_percent`: percentage of terminal height to allocate when visible, clamped by
+///   `LiveViewportConfig::clamp_height_percent`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LiveViewportRuntime {
+    mode: LiveViewportMode,
+    height_percent: u16,
+}
+
+impl LiveViewportRuntime {
+    fn from_config(config: &Config) -> Self {
+        let cfg_mode = config.tui.live_viewport.mode;
+        let env_mode = std::env::var(LIVE_VIEWPORT_ENV)
+            .ok()
+            .and_then(|raw| LiveViewportMode::parse_str(&raw));
+        let mode = env_mode.unwrap_or(cfg_mode);
+        let height_percent =
+            LiveViewportConfig::clamp_height_percent(config.tui.live_viewport.height_percent)
+                .max(MIN_VIEWPORT_HEIGHT_PERCENT);
+        Self {
+            mode,
+            height_percent,
+        }
+    }
+}
+
 /// Convert a character with SHIFT modifier to its shifted counterpart.
 /// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
 fn apply_shift_modifier(c: char) -> char {
@@ -693,8 +727,9 @@ pub(crate) struct Session<C: LLMClient> {
     flush_before_compaction: bool,
     /// Filter for removing internal tags
     tag_filter: TagFilter,
-    /// Configurable viewport height as percentage of terminal height
-    viewport_height_percent: u16,
+    /// Live viewport runtime state: visibility mode (configurable, runtime-overridable)
+    /// plus the height percent to allocate when it is shown.
+    live_viewport: LiveViewportRuntime,
     current_shelf_height: u16,
     tool_monitor: ToolMonitorState,
     monitor_navigation_prefix: bool,
@@ -865,6 +900,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         session_id: usize,
     ) -> Self {
         let hooks = HookRegistry::load_for_config(agent.config().as_ref()).unwrap_or_default();
+        let live_viewport = LiveViewportRuntime::from_config(agent.config().as_ref());
         let mut footer = Footer::new(model_name.clone());
         // Set default agent name for multi-agent indicator
         footer.set_agent_name(Some("main".to_string()));
@@ -895,7 +931,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             streaming_buffer: StreamingBuffer::new(),
             flush_before_compaction: false,
             tag_filter: TagFilter::new(),
-            viewport_height_percent: DEFAULT_VIEWPORT_HEIGHT_PERCENT,
+            live_viewport,
             current_shelf_height: DEFAULT_SHELF_HEIGHT,
             tool_monitor: ToolMonitorState::new(Self::tool_monitor_line_count()),
             monitor_navigation_prefix: false,
@@ -1446,7 +1482,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     fn max_shelf_height_for_terminal(&self, terminal_height: u16) -> u16 {
         let input_max = 12;
         let available = terminal_height.saturating_sub(input_max).saturating_sub(2);
-        let live_max = ((available.saturating_mul(self.viewport_height_percent)) / 100).max(3);
+        let live_max = ((available.saturating_mul(self.live_viewport.height_percent)) / 100).max(3);
         (input_max + live_max).min(terminal_height.max(4))
     }
 
@@ -1652,28 +1688,45 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return 0;
         }
 
-        let max_height = ((total_height.saturating_mul(self.viewport_height_percent)) / 100)
+        let mode = self.live_viewport.mode;
+        if matches!(mode, LiveViewportMode::Hidden) {
+            return 0;
+        }
+
+        let max_height = ((total_height.saturating_mul(self.live_viewport.height_percent)) / 100)
             .max(MIN_LIVE_VIEWPORT_HEIGHT);
         let is_streaming = self.stream_rx.is_some();
-        if self.tool_monitor.has_running_tools() {
+        let has_tool_activity = self.tool_monitor.has_running_tools();
+        let has_pending_compaction = self.messages.is_compression_pending();
+        let has_stream_text = !self.streaming_buffer.is_empty();
+
+        if has_tool_activity || has_pending_compaction {
             return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
 
-        if self.messages.is_compression_pending() {
-            return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
+        if has_stream_text {
+            let inner_width = width.saturating_sub(4) as usize;
+            let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
+            let content_height = lines.max(1);
+            return (content_height + 2).min(max_height);
         }
 
-        if self.streaming_buffer.is_empty() && !is_streaming {
-            if !self.messages.is_empty() {
-                return 0;
-            }
-            return max_height.max(20);
+        if is_streaming {
+            return max_height.max(MIN_LIVE_VIEWPORT_HEIGHT);
         }
 
-        let inner_width = width.saturating_sub(4) as usize;
-        let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
-        let content_height = lines.max(1);
-        (content_height + 2).min(max_height)
+        // Idle (no streaming text, no tool activity, no pending compaction).
+        let show_dashboard = match mode {
+            LiveViewportMode::Always => true,
+            LiveViewportMode::Auto => self.messages.is_empty(),
+            LiveViewportMode::Hidden => false,
+        };
+
+        if show_dashboard {
+            max_height.max(20)
+        } else {
+            0
+        }
     }
 
     fn handle_monitor_navigation(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -3134,6 +3187,40 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         build_context_report(&self.agent)
     }
 
+    /// Apply a `/viewport [mode]` slash command and return a status note for the
+    /// transcript. With no argument, reports the current mode without changing it.
+    fn apply_viewport_command(&mut self, requested: Option<&str>) -> String {
+        match requested {
+            None => {
+                let mode = self.live_viewport.mode;
+                format!(
+                    "Live viewport: **{}** (height: {}% of terminal).\n\
+                     Usage: `/viewport hidden|auto|always`.",
+                    mode.as_str(),
+                    self.live_viewport.height_percent,
+                )
+            }
+            Some(raw) => match LiveViewportMode::parse_str(raw) {
+                Some(new_mode) => {
+                    let prev = self.live_viewport.mode;
+                    self.live_viewport.mode = new_mode;
+                    if prev == new_mode {
+                        format!("Live viewport already **{}**.", new_mode.as_str())
+                    } else {
+                        format!(
+                            "Live viewport: **{}** → **{}**.",
+                            prev.as_str(),
+                            new_mode.as_str(),
+                        )
+                    }
+                }
+                None => {
+                    format!("Unknown viewport mode `{raw}`. Use `hidden`, `auto`, or `always`.")
+                }
+            },
+        }
+    }
+
     /// Build an export artifact for the current session and write it to `path`.
     /// When `path` is `None`, the conversation is written to
     /// `<workdir>/.amadeus/exports/conversation-<label>-<id>-<stamp>.md`.
@@ -3355,6 +3442,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 - `/new-agent`: Spawn new agent session
 - `/rewind`: Restore an earlier local checkpoint
 - `/export [path|json]`: Export the conversation (markdown by default, `.json` → JSON)
+- `/viewport [hidden|auto|always]`: Show or hide the live viewport
 - `/exit`: Quit
 - `!`: Shell mode — execute shell commands directly
 - `Ctrl+C` / `Esc`: Cancel active stream
@@ -3404,6 +3492,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                             .messages
                             .add_local_command_result(format!("Export failed: {e}")),
                     }
+                    return Ok(());
+                }
+                SlashCommand::Viewport { mode } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let note = self.apply_viewport_command(mode.as_deref());
+                    self.messages.add_local_command_result(note);
                     return Ok(());
                 }
                 SlashCommand::Exit => {
@@ -4773,6 +4869,7 @@ mod tests {
     use crate::benchmark::case::MockScript;
     use crate::benchmark::mock::BenchmarkMockClient;
     use crate::ui::components::StreamingState;
+    use crate::LiveViewportMode;
 
     fn test_app() -> App<BenchmarkMockClient> {
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
@@ -5868,6 +5965,7 @@ diff --git a/src/main.rs b/src/main.rs
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
+        session.live_viewport.mode = LiveViewportMode::Auto;
         session.messages.start_compression();
         session.messages.tick();
 
@@ -5889,6 +5987,7 @@ diff --git a/src/main.rs b/src/main.rs
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
+        session.live_viewport.mode = LiveViewportMode::Auto;
         session
             .tool_monitor
             .start_tool("tool-1".to_string(), "bash".to_string(), None, None);
@@ -5919,6 +6018,7 @@ diff --git a/src/main.rs b/src/main.rs
         let mut terminal = Terminal::new(backend).expect("test terminal");
         let mut app = test_app();
         let session = active_session_mut(&mut app);
+        session.live_viewport.mode = LiveViewportMode::Auto;
         session.tool_monitor.start_tool(
             "tool-1".to_string(),
             "bash".to_string(),
@@ -6024,5 +6124,116 @@ diff --git a/src/main.rs b/src/main.rs
         ));
         assert_eq!(monitor.selected_id.as_deref(), Some("root-2"));
         assert!(!prefix);
+    }
+
+    fn render_session_to_string(
+        session: &mut Session<BenchmarkMockClient>,
+        width: u16,
+        height: u16,
+    ) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| session.render(frame))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+        (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn live_viewport_defaults_to_hidden_and_reserves_zero_height() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        // Default mode is Hidden; height percent stays at the configured default but
+        // is irrelevant because the mode forces zero allocation.
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
+        assert_eq!(session.live_viewport_height(80, 24), 0);
+    }
+
+    #[test]
+    fn viewport_slash_command_toggles_modes() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
+
+        // Status query without changing mode.
+        let note = session.apply_viewport_command(None);
+        assert!(note.contains("Live viewport: **hidden**"));
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
+
+        // Switch to auto.
+        let note = session.apply_viewport_command(Some("auto"));
+        assert!(note.contains("**hidden** → **auto**"));
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Auto);
+
+        // Idempotent re-set.
+        let note = session.apply_viewport_command(Some("auto"));
+        assert!(note.contains("already **auto**"));
+
+        // Switch to always via an alias.
+        let note = session.apply_viewport_command(Some("on"));
+        assert!(note.contains("**auto** → **always**"));
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Always);
+
+        // Reject unknown mode.
+        let note = session.apply_viewport_command(Some("banana"));
+        assert!(note.contains("Unknown viewport mode"));
+        assert_eq!(session.live_viewport.mode, LiveViewportMode::Always);
+    }
+
+    #[test]
+    fn auto_mode_hides_idle_dashboard_once_messages_exist() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.live_viewport.mode = LiveViewportMode::Auto;
+
+        // Idle with no messages: dashboard shows.
+        assert!(session.live_viewport_height(80, 24) > 0);
+
+        // Once a committed message exists, the idle viewport collapses to zero height.
+        session
+            .messages
+            .add_local_command_result("hello".to_string());
+        assert_eq!(session.live_viewport_height(80, 24), 0);
+
+        // But streaming text still surfaces even in Auto mode.
+        session.streaming_buffer.push("partial response");
+        let height = session.live_viewport_height(80, 24);
+        assert!(height > 0, "streaming text should be visible in Auto mode");
+
+        // The rendered frame must contain the partial text.
+        let rendered = render_session_to_string(session, 90, 16);
+        assert!(
+            rendered.contains("partial response"),
+            "expected streaming text to render, got: {rendered}"
+        );
+    }
+
+    #[test]
+    fn always_mode_shows_dashboard_even_with_messages() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.live_viewport.mode = LiveViewportMode::Always;
+        session
+            .messages
+            .add_local_command_result("prior turn".to_string());
+
+        // Always mode keeps the idle dashboard visible despite prior messages.
+        assert!(
+            session.live_viewport_height(80, 24) > 0,
+            "Always mode should reserve height for the dashboard even with messages"
+        );
+    }
+
+    #[test]
+    fn hidden_mode_never_renders_live_activity_preview() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        // Hidden default stays hidden even when there is live activity.
+        session.messages.start_compression();
+        session.messages.tick();
+        assert_eq!(session.live_viewport_height(80, 24), 0);
     }
 }

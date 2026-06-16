@@ -310,6 +310,19 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
+                Span::styled("LIVE VIEWPORT", Style::default().fg(colors.text.primary)),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("   /viewport ", Style::default().fg(colors.text.link)),
+                Span::styled(
+                    " hidden | auto | always",
+                    Style::default().fg(colors.ui.comment),
+                ),
+            ]),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled("SCROLLING", Style::default().fg(colors.text.primary)),
             ]),
             Line::from(""),
