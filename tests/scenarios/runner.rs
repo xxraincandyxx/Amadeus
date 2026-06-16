@@ -31,6 +31,7 @@ use amadeus::agent::events::{AgentEvent, ApprovalDecision};
 use amadeus::agent::loop_agent::{create_approval_channels, Agent};
 use amadeus::agent::messages::Message;
 use amadeus::error::Result;
+use amadeus::policy::{ApprovalMode, Policy};
 
 use super::timeline::EventTimeline;
 use super::{builder::ApprovalScript, Scenario};
@@ -40,6 +41,7 @@ pub struct ScenarioRunner {
     initial_user_prompt: Option<String>,
     approvals: VecDeque<ApprovalScript>,
     config: Arc<Config>,
+    policy: Policy,
 }
 
 impl ScenarioRunner {
@@ -57,12 +59,31 @@ impl ScenarioRunner {
             initial_user_prompt: scenario.initial_user_prompt,
             approvals: scenario.approvals,
             config,
+            policy: Policy::default(),
         }
     }
 
     pub fn with_config(mut self, config: Arc<Config>) -> Self {
         self.config = config;
         self
+    }
+
+    /// Override the approval policy. The default is `Policy::default()`, which
+    /// since the project switched to `ApprovalMode::Auto` no longer routes any
+    /// tool call through approval. Tests that exercise the approval flow must
+    /// call this with a `Policy` whose mode is `ApprovalMode::Ask`.
+    pub fn with_policy(mut self, policy: Policy) -> Self {
+        self.policy = policy;
+        self
+    }
+
+    /// Convenience: run with `ApprovalMode::Ask` and the default dangerous-
+    /// pattern list, so dangerous tools (e.g. `bash rm -rf /`) trigger
+    /// `AgentEvent::ApprovalRequired`.
+    pub fn with_ask_policy(self) -> Self {
+        let mut policy = Policy::default();
+        policy.set_mode(ApprovalMode::Ask);
+        self.with_policy(policy)
     }
 
     pub async fn execute<C: amadeus::client::LLMClient + Clone + 'static>(
@@ -88,6 +109,7 @@ impl ScenarioRunner {
     ) -> Result<EventTimeline> {
         let agent = Agent::builder(client, self.config)
             .with_default_tools()
+            .with_policy(self.policy.clone())
             .build();
 
         let history = agent.history();

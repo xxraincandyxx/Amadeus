@@ -142,7 +142,7 @@ async fn test_monitoring_timeline_exposes_missing_default_policy_monitoring_gap(
         .user_says("Delete the root filesystem.")
         .build();
 
-    let runner = ScenarioRunner::new(scenario);
+    let runner = ScenarioRunner::new(scenario).with_ask_policy();
     let timeline = runner
         .execute_timeline(client)
         .await
@@ -150,7 +150,7 @@ async fn test_monitoring_timeline_exposes_missing_default_policy_monitoring_gap(
 
     assert!(
         timeline.has_approval_requests(),
-        "default test harness policy did not emit approval"
+        "ask policy did not emit approval for dangerous command"
     );
     assert_timeline_text_contains(&timeline, "I could not run that command.");
 
@@ -186,6 +186,7 @@ async fn scenario_runner_can_script_approval_decisions() {
         .build();
 
     let timeline = ScenarioRunner::new(scenario)
+        .with_ask_policy()
         .execute_timeline(client)
         .await
         .expect("timeline execution failed");
@@ -207,6 +208,7 @@ async fn scenario_runner_supports_fixture_backed_approval_scenarios() {
         .build();
 
     let timeline = ScenarioRunner::new(scenario)
+        .with_ask_policy()
         .execute_timeline(client)
         .await
         .expect("timeline execution failed");
