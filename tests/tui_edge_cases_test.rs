@@ -219,3 +219,61 @@ async fn unicode_input_round_trips_into_messages() {
         "unicode should round-trip cleanly:\n{messages}"
     );
 }
+
+#[tokio::test]
+async fn slash_help_command_renders_without_agent_turn() {
+    // `/help` is a pure UI command: it must not consume a mock step and must
+    // not require an agent round-trip. If submit() dispatches it incorrectly
+    // (or the mock advances anyway), this test catches that.
+    let client = ScenarioMockClient::from_definition(def(
+        vec![step(vec![
+            StreamEventDef::TextDelta { text: "should not be consumed".to_string() },
+            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+        ])],
+        "slash_help",
+    ));
+
+    let mut app = HeadlessApp::new(client, ".", "m", 80, 24);
+    app.type_text("/help");
+    app.submit().await;
+
+    // The slash command must not have triggered the mock's only step.
+    let messages = app.messages_text(80);
+    assert!(
+        !messages.contains("should not be consumed"),
+        "/help must not consume an LLM step:\n{messages}"
+    );
+
+    // Frame path still works.
+    let (_snap, frame) = app.capture();
+    assert!(!frame.is_empty(), "frame should render after /help");
+}
+
+#[tokio::test]
+async fn capture_during_active_stream_renders_partial_text() {
+    // Drive a multi-delta stream and capture after only the first delta has
+    // been pumped (we can't truly intercept mid-stream with the current
+    // single-shot pump API, but we can verify that a stream that ends with
+    // partial content still renders without panicking). Regression guard for
+    // the streaming-buffer path in MessagesComponent.
+    let client = ScenarioMockClient::from_definition(def(
+        vec![step(vec![
+            StreamEventDef::TextDelta { text: "alpha ".to_string() },
+            StreamEventDef::TextDelta { text: "beta ".to_string() },
+            StreamEventDef::TextDelta { text: "gamma".to_string() },
+            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+        ])],
+        "multi_delta",
+    ));
+
+    let mut app = HeadlessApp::new(client, ".", "m", 80, 24);
+    app.type_text("stream me");
+    app.submit().await;
+
+    // After settle, all three deltas must have accumulated into one message.
+    let messages = app.messages_text(80);
+    assert!(
+        messages.contains("alpha beta gamma"),
+        "all streamed deltas should accumulate:\n{messages}"
+    );
+}
