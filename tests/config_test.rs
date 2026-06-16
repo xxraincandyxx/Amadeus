@@ -36,6 +36,39 @@ fn restore_env(key: &str, original: Option<String>) {
     }
 }
 
+/// RAII guard that points `HOME` (and `USERPROFILE`) at a tempdir for the
+/// duration of a test, so the config loader does not pick up the developer's
+/// real `~/.amadeus/settings.json` as the global layer. Without this, tests
+/// that assert default-derived values silently inherit whatever provider/model
+/// the developer happens to have configured globally.
+struct GlobalConfigIsolation {
+    home: Option<String>,
+    userprofile: Option<String>,
+    _temp: tempfile::TempDir,
+}
+
+impl GlobalConfigIsolation {
+    fn isolate() -> Self {
+        let home = std::env::var("HOME").ok();
+        let userprofile = std::env::var("USERPROFILE").ok();
+        let temp = tempfile::tempdir().expect("tempdir for HOME isolation");
+        std::env::set_var("HOME", temp.path());
+        std::env::set_var("USERPROFILE", temp.path());
+        Self {
+            home,
+            userprofile,
+            _temp: temp,
+        }
+    }
+}
+
+impl Drop for GlobalConfigIsolation {
+    fn drop(&mut self) {
+        restore_env("HOME", self.home.take());
+        restore_env("USERPROFILE", self.userprofile.take());
+    }
+}
+
 #[test]
 fn test_provider_equality() {
     assert_eq!(Provider::Anthropic, Provider::Anthropic);
@@ -55,6 +88,7 @@ fn test_provider_debug_formatting() {
 #[test]
 fn test_config_timeout_value() {
     let _guard = env_lock();
+    let _global = GlobalConfigIsolation::isolate();
     let temp = tempdir().unwrap();
     let settings_dir = temp.path().join(".amadeus");
     std::fs::create_dir_all(&settings_dir).unwrap();
@@ -71,6 +105,7 @@ fn test_config_timeout_value() {
 #[test]
 fn test_config_workdir_type() {
     let _guard = env_lock();
+    let _global = GlobalConfigIsolation::isolate();
     let temp = tempdir().unwrap();
     let settings_dir = temp.path().join(".amadeus");
     std::fs::create_dir_all(&settings_dir).unwrap();
@@ -95,6 +130,7 @@ fn parity_doc_exists_and_mentions_reference_baseline() {
 #[test]
 fn load_with_hierarchy_reads_workspace_settings_json() {
     let _guard = env_lock();
+    let _global = GlobalConfigIsolation::isolate();
     let temp = tempdir().unwrap();
     let settings_dir = temp.path().join(".amadeus");
     std::fs::create_dir_all(&settings_dir).unwrap();
@@ -125,6 +161,7 @@ fn load_with_hierarchy_reads_workspace_settings_json() {
 #[test]
 fn load_with_hierarchy_ignores_legacy_dotenv_files() {
     let _guard = env_lock();
+    let _global = GlobalConfigIsolation::isolate();
     let temp = tempdir().unwrap();
     std::fs::write(
         temp.path().join(".env"),
@@ -159,6 +196,7 @@ fn load_with_hierarchy_ignores_legacy_dotenv_files() {
 #[test]
 fn load_with_hierarchy_ignores_process_env_overrides() {
     let _guard = env_lock();
+    let _global = GlobalConfigIsolation::isolate();
     let temp = tempdir().unwrap();
     let settings_dir = temp.path().join(".amadeus");
     std::fs::create_dir_all(&settings_dir).unwrap();
