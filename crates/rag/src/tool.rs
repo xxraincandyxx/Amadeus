@@ -146,10 +146,12 @@ impl RagTool {
                 reason: format!("Failed to read file '{}': {}", path, e),
             })?
         } else if let Some(url) = input.url {
-            let resp = reqwest::get(&url).await.map_err(|e| AgentError::ToolInput {
-                tool: "rag".into(),
-                reason: format!("Failed to fetch URL '{}': {}", url, e),
-            })?;
+            let resp = reqwest::get(&url)
+                .await
+                .map_err(|e| AgentError::ToolInput {
+                    tool: "rag".into(),
+                    reason: format!("Failed to fetch URL '{}': {}", url, e),
+                })?;
             if !resp.status().is_success() {
                 return Err(AgentError::ToolInput {
                     tool: "rag".into(),
@@ -165,8 +167,8 @@ impl RagTool {
         } else {
             return Err(AgentError::ToolInput {
                 tool: "rag".into(),
-                reason:
-                    "One of 'path', 'url', or 'text' is required for the 'ingest' operation.".into(),
+                reason: "One of 'path', 'url', or 'text' is required for the 'ingest' operation."
+                    .into(),
             });
         };
 
@@ -214,14 +216,14 @@ impl RagTool {
         })?;
         let top_k = input.top_k.unwrap_or(self.default_top_k);
 
-        let query_embedding = self
-            .embedder
-            .embed_single(&query_text)
-            .await
-            .map_err(|e| AgentError::ToolInput {
-                tool: "rag".into(),
-                reason: format!("Embedding failed: {}", e),
-            })?;
+        let query_embedding =
+            self.embedder
+                .embed_single(&query_text)
+                .await
+                .map_err(|e| AgentError::ToolInput {
+                    tool: "rag".into(),
+                    reason: format!("Embedding failed: {}", e),
+                })?;
 
         let results = self.store.search(&query_embedding, top_k);
 
@@ -267,17 +269,21 @@ impl RagTool {
             })
             .collect();
 
-        Ok(format!("{} document(s):\n{}", lines.len(), lines.join("\n")))
+        Ok(format!(
+            "{} document(s):\n{}",
+            lines.len(),
+            lines.join("\n")
+        ))
     }
 
     fn do_delete_document(&self, document_id: &str) -> Result<String> {
-        let removed = self
-            .store
-            .delete_document(document_id)
-            .map_err(|e| AgentError::ToolInput {
-                tool: "rag".into(),
-                reason: format!("Delete failed: {}", e),
-            })?;
+        let removed =
+            self.store
+                .delete_document(document_id)
+                .map_err(|e| AgentError::ToolInput {
+                    tool: "rag".into(),
+                    reason: format!("Delete failed: {}", e),
+                })?;
 
         Ok(format!(
             "Deleted {} chunk(s) for document '{}'.",
@@ -383,7 +389,10 @@ mod tests {
         let input = serde_json::json!({"operation": "invalid"});
         let result = tool.execute(input).await;
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Unknown operation"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown operation"));
     }
 
     #[tokio::test]
@@ -407,10 +416,11 @@ impl Tool for RagTool {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
-        let parsed: RagInput = serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
-            tool: "rag".to_string(),
-            reason: e.to_string(),
-        })?;
+        let parsed: RagInput =
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "rag".to_string(),
+                reason: e.to_string(),
+            })?;
 
         match parsed.operation.as_str() {
             "ingest" => self.do_ingest(parsed).await,

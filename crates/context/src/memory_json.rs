@@ -83,14 +83,12 @@ impl JsonFileMemoryProvider {
             .map(EntryJson::from)
             .collect();
 
-        let json = serde_json::to_string_pretty(&entries).map_err(|e| {
-            MemoryError::WriteFailed(format!("serialization failed: {}", e))
-        })?;
+        let json = serde_json::to_string_pretty(&entries)
+            .map_err(|e| MemoryError::WriteFailed(format!("serialization failed: {}", e)))?;
 
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                MemoryError::WriteFailed(format!("create dir failed: {}", e))
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|e| MemoryError::WriteFailed(format!("create dir failed: {}", e)))?;
         }
 
         fs::write(&self.path, json)

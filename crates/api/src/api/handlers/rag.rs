@@ -50,9 +50,7 @@ pub async fn rag_ingest<C: LLMClient + Clone + 'static>(
         .document_id
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    let chunk_size = request
-        .chunk_size
-        .unwrap_or(state.config.rag_chunk_size);
+    let chunk_size = request.chunk_size.unwrap_or(state.config.rag_chunk_size);
     let chunk_overlap = request
         .chunk_overlap
         .unwrap_or(state.config.rag_chunk_overlap);
@@ -70,21 +68,17 @@ pub async fn rag_ingest<C: LLMClient + Clone + 'static>(
         ));
     }
 
-    let embeddings = state
-        .embedding_client
-        .embed(&chunks)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(ErrorResponse {
-                    error: "rag_embedding_failed".into(),
-                    message: e.to_string(),
-                    tool: None,
-                    retry_after: None,
-                }),
-            )
-        })?;
+    let embeddings = state.embedding_client.embed(&chunks).await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            Json(ErrorResponse {
+                error: "rag_embedding_failed".into(),
+                message: e.to_string(),
+                tool: None,
+                retry_after: None,
+            }),
+        )
+    })?;
 
     let chunk_count = state
         .rag_provider

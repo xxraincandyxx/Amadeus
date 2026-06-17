@@ -143,9 +143,8 @@ impl VectorMemoryProvider {
             .map_err(|e| MemoryError::WriteFailed(format!("serialization failed: {}", e)))?;
 
         if let Some(parent) = self.path.parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                MemoryError::WriteFailed(format!("create dir failed: {}", e))
-            })?;
+            fs::create_dir_all(parent)
+                .map_err(|e| MemoryError::WriteFailed(format!("create dir failed: {}", e)))?;
         }
 
         fs::write(&self.path, json)
@@ -225,7 +224,8 @@ impl VectorMemoryProvider {
     pub fn list_documents(&self) -> Vec<DocumentInfo> {
         let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
 
-        let mut docs: std::collections::HashMap<String, DocumentInfo> = std::collections::HashMap::new();
+        let mut docs: std::collections::HashMap<String, DocumentInfo> =
+            std::collections::HashMap::new();
         for entry in entries.iter() {
             let doc_id = &entry.metadata.document_id;
             docs.entry(doc_id.clone())
@@ -288,7 +288,10 @@ impl MemoryProvider for VectorMemoryProvider {
                 ingested_at: chrono_now(),
             },
         };
-        if let Some(existing) = entries.iter_mut().find(|e| e.entry.key == vec_entry.entry.key) {
+        if let Some(existing) = entries
+            .iter_mut()
+            .find(|e| e.entry.key == vec_entry.entry.key)
+        {
             *existing = vec_entry;
         } else {
             entries.push(vec_entry);

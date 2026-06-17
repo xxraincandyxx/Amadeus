@@ -25,9 +25,7 @@
 #[path = "mocks/mod.rs"]
 mod mocks;
 
-use amadeus::test_utils::scenario::{
-    ScenarioDefinition, ScenarioStepDef, StreamEventDef,
-};
+use amadeus::test_utils::scenario::{ScenarioDefinition, ScenarioStepDef, StreamEventDef};
 use amadeus::ui::headless::HeadlessApp;
 
 use mocks::ScenarioMockClient;
@@ -61,12 +59,20 @@ async fn multi_turn_advances_through_scripted_steps() {
     let client = ScenarioMockClient::from_definition(def(
         vec![
             step(vec![
-                StreamEventDef::TextDelta { text: "first answer".to_string() },
-                StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                StreamEventDef::TextDelta {
+                    text: "first answer".to_string(),
+                },
+                StreamEventDef::StopReason {
+                    reason: "end_turn".to_string(),
+                },
             ]),
             step(vec![
-                StreamEventDef::TextDelta { text: "second answer".to_string() },
-                StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                StreamEventDef::TextDelta {
+                    text: "second answer".to_string(),
+                },
+                StreamEventDef::StopReason {
+                    reason: "end_turn".to_string(),
+                },
             ]),
         ],
         "multi_turn",
@@ -110,8 +116,12 @@ async fn error_turn_does_not_deadlock_the_session() {
         vec![
             error_step,
             step(vec![
-                StreamEventDef::TextDelta { text: "recovered".to_string() },
-                StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                StreamEventDef::TextDelta {
+                    text: "recovered".to_string(),
+                },
+                StreamEventDef::StopReason {
+                    reason: "end_turn".to_string(),
+                },
             ]),
         ],
         "error_then_recover",
@@ -145,8 +155,12 @@ async fn tiny_viewport_does_not_panic_on_render() {
     // still return the requested number of cells.
     let client = ScenarioMockClient::from_definition(def(
         vec![step(vec![
-            StreamEventDef::TextDelta { text: "tiny".to_string() },
-            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+            StreamEventDef::TextDelta {
+                text: "tiny".to_string(),
+            },
+            StreamEventDef::StopReason {
+                reason: "end_turn".to_string(),
+            },
         ])],
         "tiny",
     ));
@@ -168,12 +182,20 @@ async fn double_submit_with_empty_input_does_not_corrupt_state() {
     let client = ScenarioMockClient::from_definition(def(
         vec![
             step(vec![
-                StreamEventDef::TextDelta { text: "only once".to_string() },
-                StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                StreamEventDef::TextDelta {
+                    text: "only once".to_string(),
+                },
+                StreamEventDef::StopReason {
+                    reason: "end_turn".to_string(),
+                },
             ]),
             step(vec![
-                StreamEventDef::TextDelta { text: "should not appear".to_string() },
-                StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                StreamEventDef::TextDelta {
+                    text: "should not appear".to_string(),
+                },
+                StreamEventDef::StopReason {
+                    reason: "end_turn".to_string(),
+                },
             ]),
         ],
         "double_submit",
@@ -203,8 +225,12 @@ async fn unicode_input_round_trips_into_messages() {
     // component.
     let client = ScenarioMockClient::from_definition(def(
         vec![step(vec![
-            StreamEventDef::TextDelta { text: "echo: 你好 🦀".to_string() },
-            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+            StreamEventDef::TextDelta {
+                text: "echo: 你好 🦀".to_string(),
+            },
+            StreamEventDef::StopReason {
+                reason: "end_turn".to_string(),
+            },
         ])],
         "unicode",
     ));
@@ -227,8 +253,12 @@ async fn slash_help_command_renders_without_agent_turn() {
     // (or the mock advances anyway), this test catches that.
     let client = ScenarioMockClient::from_definition(def(
         vec![step(vec![
-            StreamEventDef::TextDelta { text: "should not be consumed".to_string() },
-            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+            StreamEventDef::TextDelta {
+                text: "should not be consumed".to_string(),
+            },
+            StreamEventDef::StopReason {
+                reason: "end_turn".to_string(),
+            },
         ])],
         "slash_help",
     ));
@@ -258,10 +288,18 @@ async fn capture_during_active_stream_renders_partial_text() {
     // the streaming-buffer path in MessagesComponent.
     let client = ScenarioMockClient::from_definition(def(
         vec![step(vec![
-            StreamEventDef::TextDelta { text: "alpha ".to_string() },
-            StreamEventDef::TextDelta { text: "beta ".to_string() },
-            StreamEventDef::TextDelta { text: "gamma".to_string() },
-            StreamEventDef::StopReason { reason: "end_turn".to_string() },
+            StreamEventDef::TextDelta {
+                text: "alpha ".to_string(),
+            },
+            StreamEventDef::TextDelta {
+                text: "beta ".to_string(),
+            },
+            StreamEventDef::TextDelta {
+                text: "gamma".to_string(),
+            },
+            StreamEventDef::StopReason {
+                reason: "end_turn".to_string(),
+            },
         ])],
         "multi_delta",
     ));

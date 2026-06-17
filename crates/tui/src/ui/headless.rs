@@ -45,7 +45,13 @@ impl<C: LLMClient + Clone + 'static> HeadlessApp<C> {
         let agent = Agent::builder(client, Arc::new(Config::default())).build();
         let app = App::new(agent, workdir.into(), model.to_string());
         let terminal = Terminal::new(TestBackend::new(width, height)).expect("test terminal");
-        Self { app, terminal, width, height, frame_counter: 0 }
+        Self {
+            app,
+            terminal,
+            width,
+            height,
+            frame_counter: 0,
+        }
     }
 
     /// Type a string into the input box (no submission).
@@ -70,7 +76,9 @@ impl<C: LLMClient + Clone + 'static> HeadlessApp<C> {
     /// scrollback rather than the frame buffer, so assert on this for turn
     /// verification. (Frame-buffer assertions cover chrome/dashboard/streaming.)
     pub fn messages_text(&mut self, width: u16) -> String {
-        self.app.test_session_mut().test_drain_unrendered_text(width)
+        self.app
+            .test_session_mut()
+            .test_drain_unrendered_text(width)
     }
 
     /// Render the current state and return a populated snapshot + its text form.
@@ -150,7 +158,10 @@ mod tests {
         let mut app = HeadlessApp::new(client, ".", "m", 80, 24);
         app.type_text("hello");
         let (_snap, text) = app.capture();
-        assert!(text.contains("hello"), "capture should show typed text:\n{text}");
+        assert!(
+            text.contains("hello"),
+            "capture should show typed text:\n{text}"
+        );
     }
 
     #[test]

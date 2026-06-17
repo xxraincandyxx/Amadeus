@@ -27,12 +27,12 @@ use amadeus::test_utils::replay::session_log_to_scenario;
 use amadeus::test_utils::testflow::recorder::load_session;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let path = std::env::args_os()
-    .nth(1)
-    .map(PathBuf::from)
-    .expect("usage: convert_session <session_log.json>");
-  let log = load_session(&path)?;
-  let scenario = session_log_to_scenario(&log);
-  println!("{}", serde_json::to_string_pretty(&scenario)?);
-  Ok(())
+    let path = std::env::args_os()
+        .nth(1)
+        .map(PathBuf::from)
+        .expect("usage: convert_session <session_log.json>");
+    let log = load_session(&path)?;
+    let scenario = session_log_to_scenario(&log);
+    println!("{}", serde_json::to_string_pretty(&scenario)?);
+    Ok(())
 }

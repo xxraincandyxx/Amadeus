@@ -43,13 +43,29 @@ pub struct ScenarioStepDef {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum StreamEventDef {
-    TextDelta { text: String },
-    ThinkingDelta { text: String },
-    ToolCallStart { id: String, name: String },
-    ToolCallDelta { arguments: String },
-    ToolCallDone { id: String },
-    StopReason { reason: String },
-    TokenUsage { input_tokens: u32, output_tokens: u32 },
+    TextDelta {
+        text: String,
+    },
+    ThinkingDelta {
+        text: String,
+    },
+    ToolCallStart {
+        id: String,
+        name: String,
+    },
+    ToolCallDelta {
+        arguments: String,
+    },
+    ToolCallDone {
+        id: String,
+    },
+    StopReason {
+        reason: String,
+    },
+    TokenUsage {
+        input_tokens: u32,
+        output_tokens: u32,
+    },
 }
 
 impl From<StreamEventDef> for StreamEvent {
@@ -61,7 +77,10 @@ impl From<StreamEventDef> for StreamEvent {
             StreamEventDef::ToolCallDelta { arguments } => StreamEvent::ToolCallDelta { arguments },
             StreamEventDef::ToolCallDone { id } => StreamEvent::ToolCallDone(id),
             StreamEventDef::StopReason { reason } => StreamEvent::StopReason(reason),
-            StreamEventDef::TokenUsage { input_tokens, output_tokens } => StreamEvent::TokenUsage {
+            StreamEventDef::TokenUsage {
+                input_tokens,
+                output_tokens,
+            } => StreamEvent::TokenUsage {
                 input_tokens,
                 output_tokens,
             },
@@ -78,9 +97,13 @@ impl From<StreamEvent> for StreamEventDef {
             StreamEvent::ToolCallDelta { arguments } => StreamEventDef::ToolCallDelta { arguments },
             StreamEvent::ToolCallDone(id) => StreamEventDef::ToolCallDone { id },
             StreamEvent::StopReason(reason) => StreamEventDef::StopReason { reason },
-            StreamEvent::TokenUsage { input_tokens, output_tokens } => {
-                StreamEventDef::TokenUsage { input_tokens, output_tokens }
-            }
+            StreamEvent::TokenUsage {
+                input_tokens,
+                output_tokens,
+            } => StreamEventDef::TokenUsage {
+                input_tokens,
+                output_tokens,
+            },
         }
     }
 }
@@ -97,8 +120,12 @@ mod tests {
             steps: vec![ScenarioStepDef {
                 delay_ms: None,
                 events: vec![
-                    StreamEventDef::TextDelta { text: "Hi".to_string() },
-                    StreamEventDef::StopReason { reason: "end_turn".to_string() },
+                    StreamEventDef::TextDelta {
+                        text: "Hi".to_string(),
+                    },
+                    StreamEventDef::StopReason {
+                        reason: "end_turn".to_string(),
+                    },
                 ],
                 error: None,
             }],

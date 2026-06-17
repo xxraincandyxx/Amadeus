@@ -39,13 +39,13 @@
 pub mod api_client;
 pub mod app;
 
-#[cfg(feature = "test-utils")]
-pub mod headless;
 pub mod colors;
 pub mod components;
 pub mod constants;
 pub mod event;
 pub mod export;
+#[cfg(feature = "test-utils")]
+pub mod headless;
 pub mod repl;
 pub mod scroll;
 pub mod semantic_colors;

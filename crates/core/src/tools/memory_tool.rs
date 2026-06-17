@@ -83,7 +83,10 @@ impl MemoryTool {
                 stored += 1;
             }
         }
-        Ok(format!("Stored memory '{}' ({} provider(s) updated)", key, stored))
+        Ok(format!(
+            "Stored memory '{}' ({} provider(s) updated)",
+            key, stored
+        ))
     }
 
     fn do_recall(&self, key: &str) -> Result<String> {
@@ -192,12 +195,11 @@ impl Tool for MemoryTool {
     }
 
     async fn execute(&self, input: Value) -> Result<String> {
-        let parsed: MemoryInput = serde_json::from_value(input).map_err(|e| {
-            AgentError::ToolInput {
+        let parsed: MemoryInput =
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
                 tool: "memory".to_string(),
                 reason: e.to_string(),
-            }
-        })?;
+            })?;
 
         match parsed.operation.as_str() {
             "store" => {

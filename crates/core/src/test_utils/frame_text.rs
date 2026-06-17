@@ -29,8 +29,9 @@ pub fn render_frame_text(snapshot: &TuiFrameSnapshot) -> String {
         snapshot.frame_id, snapshot.width, snapshot.height, snapshot.timestamp_ms
     ));
 
-    let mut grid: Vec<Vec<char>> =
-        (0..snapshot.height).map(|_| vec![' '; snapshot.width as usize]).collect();
+    let mut grid: Vec<Vec<char>> = (0..snapshot.height)
+        .map(|_| vec![' '; snapshot.width as usize])
+        .collect();
     for cell in &snapshot.cells {
         if cell.y < snapshot.height && cell.x < snapshot.width {
             let sym = cell.symbol.chars().next().unwrap_or(' ');

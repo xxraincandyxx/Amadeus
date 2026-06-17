@@ -68,21 +68,18 @@ pub async fn store_entry<C: LLMClient + Clone + 'static>(
     Json(request): Json<StoreMemoryRequest>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
     let entry = MemoryEntry::new(request.key, request.content, request.source);
-    state
-        .memory_provider
-        .store(entry)
-        .map_err(|e| {
-            let msg = e.to_string();
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ErrorResponse {
-                    error: "memory_store_failed".into(),
-                    message: msg,
-                    tool: None,
-                    retry_after: None,
-                }),
-            )
-        })?;
+    state.memory_provider.store(entry).map_err(|e| {
+        let msg = e.to_string();
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "memory_store_failed".into(),
+                message: msg,
+                tool: None,
+                retry_after: None,
+            }),
+        )
+    })?;
 
     Ok(Json(serde_json::json!({"success": true})))
 }
@@ -92,24 +89,21 @@ pub async fn delete_entry<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Path(key): Path<String>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<ErrorResponse>)> {
-    state
-        .memory_provider
-        .delete(&key)
-        .map_err(|e| {
-            let status = match &e {
-                crate::context::memory::MemoryError::NotFound(_) => StatusCode::NOT_FOUND,
-                _ => StatusCode::INTERNAL_SERVER_ERROR,
-            };
-            (
-                status,
-                Json(ErrorResponse {
-                    error: "memory_delete_failed".into(),
-                    message: e.to_string(),
-                    tool: None,
-                    retry_after: None,
-                }),
-            )
-        })?;
+    state.memory_provider.delete(&key).map_err(|e| {
+        let status = match &e {
+            crate::context::memory::MemoryError::NotFound(_) => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        (
+            status,
+            Json(ErrorResponse {
+                error: "memory_delete_failed".into(),
+                message: e.to_string(),
+                tool: None,
+                retry_after: None,
+            }),
+        )
+    })?;
 
     Ok(Json(serde_json::json!({"success": true})))
 }
