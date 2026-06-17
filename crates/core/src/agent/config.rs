@@ -12,6 +12,9 @@
 // - type: crate::agent::config::ToolOverrideConfig
 // - type: crate::agent::config::ToolProfileConfig
 // - type: crate::agent::config::ToolSettings
+// - type: crate::agent::config::TuiSettings
+// - type: crate::agent::config::LiveViewportConfig
+// - type: crate::agent::config::LiveViewportMode
 // uses:
 // - module: amadeus_config
 // invariants:
@@ -24,7 +27,7 @@
 //! Compatibility re-exports for configuration types.
 
 pub use amadeus_config::{
-    Config, ConfigError, HookSandboxMode, PromptMergeMode, PromptProfileConfig,
-    PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig, ToolProfileConfig,
-    ToolSettings,
+    Config, ConfigError, HookSandboxMode, LiveViewportConfig, LiveViewportMode, PromptMergeMode,
+    PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig,
+    ToolProfileConfig, ToolSettings, TuiSettings,
 };

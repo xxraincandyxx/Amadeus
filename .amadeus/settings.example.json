@@ -45,5 +45,11 @@
     "additionalDirectories": [
       "../shared"
     ]
+  },
+  "tui": {
+    "live_viewport": {
+      "mode": "hidden",
+      "height_percent": 32
+    }
   }
 }

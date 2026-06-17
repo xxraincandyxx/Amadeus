@@ -1,24 +1,24 @@
-# Amadeus - AI Agent SDK
+# Amadeus
 
-A Rust SDK for building AI agents with LLM support, featuring multi-provider compatibility, streaming responses, a powerful tool system, and both HTTP and terminal adapters over a shared core runtime.
+An AI agent framework in Rust with a ReAct-style agent loop, multi-provider LLM support, an extensible tool system, policy-based safety controls, and both interactive TUI and REST API adapters over a shared core runtime.
 
-## Overview
+![Amadeus Preview](assets/amadeus_preview.jpg)
 
-Amadeus is a production-ready AI agent framework that provides:
+## Features
 
-- **Multi-Provider Support**: Works with Anthropic (Claude) and OpenAI APIs
-- **Streaming Responses**: Real-time event streaming with async/await
-- **Tool System**: Extensible tool registry with bash, file operations, glob, grep, and web fetch
-- **Policy-Based Safety**: Configurable approval system for dangerous operations
-- **Terminal UI**: Beautiful ratatui-based TUI for interactive use
-- **HTTP API**: Optional REST API server for integration
-- **Session Management**: Automatic logging and session restoration
-- **TUI Capture**: Optional frame snapshots for visual debugging in session recordings
-- **Multi-Agent Coordination**: Orchestra-based local routing and delegated task execution
+- **Multi-Provider LLM** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
+- **ReAct Agent Loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
+- **Extensible Tool System** — Built-in tools for shell, filesystem, search, and web; register custom tools via the `Tool` trait; MCP server integration.
+- **Policy-Based Safety** — Three-layer execution gate: hooks (input mutation/blocking), permissionenforcer (hard blocks by mode), and policy (Auto / Ask / Strict approval).
+- **Multi-Agent Orchestration** — Spawn agents with distinct profiles, route tasks by capability, and coordinate with a priority-ordered task queue.
+- **RAG Semantic Search** — Ingest files, URLs, or raw text into a persistent vector store; agents can query at runtime through the `rag` tool.
+- **Context Compaction** — Automatic context-window management with configurable thresholds, LLM-based summarization, and pluggable triggers.
+- **Interactive TUI** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, themed rendering, and conversation export.
+- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more.
+- **Telemetry** — Structured event recording with pluggable sinks (JSONL file, in-memory) for runtime observability.
+- **Session Management** — Automatic session persistence, restore, checkpoints with code-state rewind, and conversation export to Markdown or JSON.
 
-Parity progress against the `refs/claw-code-parity` reference is treated as a testing problem and should only be advanced when covered by automated tests in this repository.
-
-## Installation
+## Quickstart
 
 ### Prerequisites
 
@@ -31,100 +31,63 @@ Parity progress against the `refs/claw-code-parity` reference is treated as a te
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
 
-# Copy structured settings template
+# Copy settings template and configure your provider
 mkdir -p .amadeus
 cp .amadeus/settings.example.json .amadeus/settings.json
-
-# Add your provider and API key to .amadeus/settings.json
+# Edit .amadeus/settings.json with your API key and provider
 
 cargo build --release --features full
 ```
 
-## Usage
-
-### Terminal UI Mode (Default)
+### Interactive Terminal UI
 
 ```bash
-# Run with TUI (requires 'tui' feature)
 cargo run --features full
-
-# Or with just TUI support
-cargo run --features tui
 ```
 
-### HTTP Server Mode
+### HTTP API Server
 
 ```bash
-# Start HTTP API server on default port 3000
+# Default port 3000
 cargo run --features full -- --server
 
 # Custom port
 cargo run --features full -- --server 8080
 ```
 
-### As a System Shortcut
-
-Install the launcher to your PATH and bind a global hotkey:
-
-```bash
-# Install launcher (adds ~/bin/amadeus)
-ln -sf scripts/amadeus-launch.sh ~/bin/amadeus
-export PATH="$HOME/bin:$PATH"  # add to ~/.zshrc permanently
-```
-
-Then pick a global hotkey method:
-
-| Method | Hotkey | Install |
-|--------|--------|---------|
-| [skhd](https://github.com/koekeishiya/skhd) | `Cmd+Shift+A` | `brew install skhd` — copy `scripts/amadeus-hotkey.skhd` to `~/.config/skhd/skhdrc` |
-| macOS Shortcuts.app | Custom | New Shortcut → "Run Shell Script" → `amadeus` → assign key in details |
-| [HammerSpoon](https://www.hammerspoon.org/) | Custom | `hs.hotkey.bind({"cmd","shift"}, "a", function() hs.osascript.applescript('tell app "Terminal" to do script "amadeus"') end)` |
-
-### As a Library
+## Using as a Library
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-amadeus = { git = "https://github.com/xxraincandyxx/Amadeus" }
-tokio = { version = "1.39", features = ["full"] }
+amadeus = { git = "https://github.com/xxraincandyxx/Amadeus", features = ["full"] }
+tokio = { version = "1", features = ["full"] }
 ```
 
-Basic usage:
+### Creating an Agent
 
 ```rust
-use amadeus::{
-    Agent, Config, Provider,
-    AnthropicClient, OpenAIClient,
-};
+use amadeus::{Agent, Config, AnthropicClient};
 use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Load configuration
     let config = Arc::new(Config::load()?);
-    
-    // Create LLM client
-    let client = match config.provider {
-        Provider::Anthropic => AnthropicClient::new(
-            config.api_key.clone(),
-            config.base_url.clone(),
-            config.model.clone(),
-        ).into(),
-        Provider::OpenAI => OpenAIClient::new(
-            config.api_key.clone(),
-            config.base_url.clone(),
-            config.model.clone(),
-        ).into(),
-    };
-    
-    // Build agent with default tools
-    let agent = Agent::new(client, config);
-    
-    // Run a prompt
+
+    let client = AnthropicClient::new(
+        config.api_key.clone(),
+        config.base_url.clone(),
+        config.model.clone(),
+    );
+
+    let agent = Agent::builder(client, config)
+        .with_default_tools()
+        .build();
+
     let result = agent.run("Create a hello world program in Rust").await?;
     println!("{}", result.text);
-    
+
     Ok(())
 }
 ```
@@ -132,176 +95,66 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ### Custom Tools
 
 ```rust
-use amadeus::{Agent, Tool};
+use amadeus::{Agent, Config, OpenAIClient, Tool};
+use amadeus::error::AgentError;
 use async_trait::async_trait;
 use serde_json::Value;
+use std::sync::Arc;
 
-struct MyTool;
+struct WeatherTool;
 
 #[async_trait]
-impl Tool for MyTool {
+impl Tool for WeatherTool {
     fn name(&self) -> &'static str {
-        "my_tool"
+        "get_weather"
     }
-    
+
     fn schema(&self) -> &'static Value {
         &serde_json::json!({
-            "name": "my_tool",
-            "description": "A custom tool",
+            "name": "get_weather",
+            "description": "Get the current weather for a location",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "input": { "type": "string" }
+                    "location": { "type": "string" }
                 },
-                "required": ["input"]
+                "required": ["location"]
             }
         })
     }
-    
-    async fn execute(&self, input: Value) -> Result<String, amadeus::AgentError> {
-        // Your tool logic here
-        Ok(format!("Processed: {:?}", input))
+
+    async fn execute(&self, input: Value) -> Result<String, AgentError> {
+        let location = input["location"].as_str().unwrap_or("unknown");
+        Ok(format!("Sunny, 72F in {location}"))
     }
 }
 
-// Register the tool
-let agent = Agent::builder(client, config)
-    .with_default_tools()
-    .register_tool(Box::new(MyTool))
-    .build();
-```
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = Arc::new(Config::load()?);
+    let client = OpenAIClient::new(
+        config.api_key.clone(),
+        config.base_url.clone(),
+        config.model.clone(),
+    );
 
-## Architecture
+    let agent = Agent::builder(client, config)
+        .with_default_tools()
+        .register_tool(Box::new(WeatherTool))
+        .build();
 
-Amadeus is a workspace-based system rather than a single large crate.
+    let result = agent.run("What's the weather in Tokyo?").await?;
+    println!("{}", result.text);
 
-- The root `amadeus` crate is a compatibility facade.
-- `crates/core` contains the agent loop, provider clients, tools, policy, and orchestration runtime.
-- `crates/runtime` contains reusable coordination models and dispatch logic.
-- `crates/api` is the Axum HTTP adapter.
-- `crates/tui` is the ratatui terminal adapter.
-
-Runtime ingress looks like this:
-
-```text
-CLI/library call
-  -> config + provider selection
-  -> core runtime
-  -> TUI adapter | HTTP adapter | assessment runner
-```
-
-The main live execution path is the ReAct-style `Agent` loop in `crates/core/src/agent/loop_agent.rs`, while local multi-agent routing is handled by `AgentOrchestrator` in `crates/core/src/agent/orchestra.rs`.
-
-## Built-in Tools
-
-| Tool | Description | Safety |
-|------|-------------|--------|
-| `bash` | Execute shell commands | Requires approval for dangerous commands |
-| `read_file` | Read file contents | Auto-approved |
-| `write_file` | Write/create files | Requires approval for sensitive paths |
-| `edit_file` | Surgical file edits | Requires approval |
-| `glob` | Pattern-based file matching | Auto-approved |
-| `grep` | Search file contents | Auto-approved |
-| `web_fetch` | Fetch web content | Requires approval |
-
-## Policy System
-
-Control tool execution with three modes:
-
-### Auto Mode
-```rust
-let mut policy = Policy::new();
-policy.set_mode(ApprovalMode::Auto);
-// All tools execute automatically
-```
-
-### Ask Mode (Default)
-```rust
-let mut policy = Policy::new();
-policy.set_mode(ApprovalMode::Ask);
-// Only dangerous operations require approval
-policy.add_auto_approve("read_file");
-policy.add_auto_approve("glob");
-```
-
-### Strict Mode
-```rust
-let mut policy = Policy::new();
-policy.set_mode(ApprovalMode::Strict);
-// All tools require approval except those in auto_approve list
-```
-
-### Dangerous Patterns
-
-The policy system blocks:
-- `sudo` commands
-- `chmod 777`
-- `rm -rf /`
-- Writing to `.env`, `.pem`, `.key` files
-- Shell pipe to bash/sh
-
-## Configuration
-
-Structured settings live in `.amadeus/settings.json`, with optional global defaults in `~/.amadeus/settings.json` and workspace overrides in `.amadeus/settings.local.json`:
-
-```json
-{
-  "provider": "anthropic",
-  "api_key": "sk-ant-xxx",
-  "base_url": "https://api.anthropic.com",
-  "model": "claude-sonnet-4-5-20250929",
-  "timeout_seconds": 120,
-  "max_output_bytes": 50000,
-  "session_log_dir": "./logs",
-  "session_log_compress": true,
-  "blocked_commands": ["rm -rf /", "sudo"]
+    Ok(())
 }
 ```
 
-## Features
-
-Enable features in `Cargo.toml`:
-
-```toml
-[dependencies]
-amadeus = { git = "https://github.com/xxraincandyxx/Amadeus", features = ["full"] }
-```
-
-Available features:
-
-- `api` - HTTP adapter and API surface, implies `orchestra`
-- `tui` - Terminal UI adapter, implies `concurrency`
-- `concurrency` - Locking and shared coordination primitives
-- `orchestra` - Canonical multi-agent orchestration surface
-- `team` - Legacy alias for `orchestra`
-- `supervisor` - Legacy alias for `orchestra`
-- `context` - Context management support
-- `test-utils` - Test helpers and recording support
-- `full` - All of the above
-
-## Session Management
-
-Sessions are automatically logged with full conversation history:
+### Event Streaming
 
 ```rust
-// Sessions are saved automatically after each run
-let result = agent.run("My prompt").await?;
+use amadeus::events::AgentEvent;
 
-// List saved sessions
-let sessions = agent.list_sessions()?;
-
-// Restore a previous session
-let session = Agent::load_session(&sessions[0].0)?;
-agent.restore_session(&session).await;
-```
-
-Session files are stored in JSON or compressed JSON.gz format.
-
-## Event Streaming
-
-Monitor agent execution in real-time:
-
-```rust
 let mut stream = agent.run_stream();
 
 while let Some(event) = stream.next().await {
@@ -324,144 +177,248 @@ while let Some(event) = stream.next().await {
 }
 ```
 
-## Development
-
-### Building
-
-```bash
-# Debug build
-cargo build --features full
-
-# Release build
-cargo build --release --features full
-
-# Run tests
-cargo test --features full
-
-# Run with specific features
-cargo run --features tui
-```
-
-### Project Structure
-
-```text
-amadeus/
-├── src/                # facade crate + CLI bootstrap
-├── crates/
-│   ├── core/           # agent loop, tools, policy, orchestration
-│   ├── runtime/        # shared orchestration/task models
-│   ├── api/            # Axum adapter
-│   ├── tui/            # ratatui adapter
-│   ├── config/         # layered settings loading
-│   ├── commands/       # slash commands and helpers
-│   ├── skills/         # skill loading
-│   └── ...             # supporting shared crates
-├── tests/              # integration suites and harnesses
-├── examples/           # example bootstraps
-└── docs/               # architecture and workflow docs
-```
-
-### Code Count
-
-```bash
-./count-code.sh
-```
-
-## API Reference
-
-### Agent
+### Policy & Safety
 
 ```rust
-// Create agent
-let agent = Agent::new(client, config);
+use amadeus::policy::{Policy, ApprovalMode};
+use std::sync::Arc;
 
-// Builder pattern
+// Auto: all tools execute without approval
+let mut policy = Policy::new();
+policy.set_mode(ApprovalMode::Auto);
+
+// Ask (default): only dangerous operations require approval
+let mut policy = Policy::new();
+policy.set_mode(ApprovalMode::Ask);
+
+// Strict: all tools require approval except auto-approved ones
+let mut policy = Policy::new();
+policy.set_mode(ApprovalMode::Strict);
+
 let agent = Agent::builder(client, config)
     .with_default_tools()
-    .with_policy(policy)
-    .with_hooks(hooks)
+    .with_policy(Arc::new(policy))
     .build();
-
-// Run
-let result = agent.run("prompt").await?;
-
-// Stream
-let stream = agent.run_stream();
 ```
 
-### LLMClient Trait
+The policy system blocks dangerous patterns including `sudo`, `chmod 777`, `rm -rf /`, writing to `.env`/`.pem`/`.key` files, and shell pipes to `bash`/`sh`.
 
-```rust
-#[async_trait]
-pub trait LLMClient: Send + Sync {
-    async fn create_message(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Value],
-        max_tokens: u32,
-    ) -> Result<(String, Vec<ContentBlock>)>;
-    
-    async fn create_message_stream(
-        &self,
-        system: &str,
-        messages: &[Message],
-        tools: &[Value],
-        max_tokens: u32,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<StreamEvent>> + Send>>>;
+## Architecture
+
+Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends.
+
+```
+CLI / Library call
+  -> Config + Provider selection
+  -> Core Runtime
+  -> TUI adapter | HTTP adapter | Assessment runner
+```
+
+### Workspace Layout
+
+| Crate | Role |
+|-------|------|
+| `amadeus` (root) | Compatibility facade and CLI entry point |
+| `crates/core` | Agent loop, LLM clients, tools, policy, hooks, orchestration |
+| `crates/tui` | ratatui terminal UI adapter |
+| `crates/api` | Axum HTTP + SSE server |
+| `crates/config` | Layered settings loading |
+| `crates/events` | Shared event model (`AgentEvent`, `RunResult`, etc.) |
+| `crates/runtime` | Orchestration models, worker selection, task dispatch |
+| `crates/compaction` | Context window compaction triggers and results |
+| `crates/context` | Project context loading, memory providers |
+| `crates/rag` | Semantic search, embedding, vector store |
+| `crates/telemetry` | Structured event recording with pluggable sinks |
+| `crates/permissions` | Permission modes and enforcement |
+| `crates/hooks` | Pre/post-tool hook descriptors |
+| `crates/profiles` | Agent profile definitions |
+| `crates/prompts` | System prompt templating |
+| `crates/messages` | Message and content block types |
+| `crates/commands` | Slash commands and citation handling |
+| `crates/skills` | Prompt template skill loading |
+| `crates/ids` | Identity types (`AgentId`, `TeamId`) |
+
+### Core Execution Flow
+
+The agent loop follows a ReAct-style pattern:
+
+1. **Compaction Check** — If context window exceeds the configurable threshold (default 75%), summarize older messages to reclaim tokens.
+2. **LLM Call** — Stream LLM response with system prompt, conversation history, and tool schemas.
+3. **Event Processing** — Parse text deltas, reasoning output, and incremental tool call JSON.
+4. **Tool Execution Gate** — For each completed tool call: hooks (can modify input or block) → permission enforcer (hard blocks by mode) → policy (Auto/Ask/Strict approval) → execute.
+5. **History Update** — Push assistant and tool result messages back into history.
+6. **Loop or Complete** — If tools were used, continue to the next turn; otherwise emit the final response.
+
+Sub-agents are spawned as full child `Agent` instances with namespaced event IDs, bounded recursion depth, and optional UI delegation.
+
+### Three-Layer Safety Gate
+
+| Layer | Purpose |
+|-------|---------|
+| **Hooks** | Extensible pre/post-tool interceptors that can modify input or block execution |
+| **Permissions** | Mode-based hard blocks: `ReadOnly`, `WorkspaceWrite`, `DangerFullAccess`, `Prompt` |
+| **Policy** | Runtime approval: `Auto` (none), `Ask` (dangerous only), `Strict` (all) |
+
+## Built-in Tools
+
+| Tool | Description | Permission |
+|------|-------------|------------|
+| `bash` | Execute shell commands | Requires approval for dangerous commands |
+| `read_file` | Read file contents | Auto-approved |
+| `write_file` | Write or create files | Requires approval for sensitive paths |
+| `edit_file` | Surgical file edits with diff rendering | Requires approval |
+| `glob` | Pattern-based file matching | Auto-approved |
+| `grep` | Search file contents with regex | Auto-approved |
+| `web_fetch` | Fetch and render web page content | Requires approval |
+| `todo` | Task tracking and planning | Auto-approved |
+| `rag` | Ingest, search, and manage a vector-knowledge base | Runtime |
+| `memory` | Store and retrieve session-scoped notes | Runtime |
+
+## Feature Flags
+
+```toml
+[dependencies]
+amadeus = { git = "https://github.com/xxraincandyxx/Amadeus", features = ["full"] }
+```
+
+| Feature | Description |
+|---------|-------------|
+| `api` | HTTP adapter and REST/SSE server (implies `orchestra`) |
+| `tui` | Terminal UI adapter (implies `concurrency`) |
+| `concurrency` | Locking and shared coordination primitives |
+| `orchestra` | Multi-agent orchestration surface (implies `concurrency`) |
+| `context` | Context management and memory providers |
+| `test-utils` | Test helpers and recording support |
+| `full` | All of the above |
+
+## Configuration
+
+Structured settings in `.amadeus/settings.json`, with global defaults in `~/.amadeus/settings.json` and workspace overrides in `.amadeus/settings.local.json`:
+
+```json
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-xxx",
+  "base_url": "https://api.anthropic.com",
+  "model": "claude-sonnet-4-5-20250929",
+  "timeout_seconds": 120,
+  "max_output_bytes": 50000,
+  "session_log_dir": "./logs",
+  "session_log_compress": true,
+  "blocked_commands": ["rm -rf /", "sudo"]
 }
 ```
 
-## Error Handling
+### TUI: Live Viewport
 
-```rust
-use amadeus::{AgentError, Result};
+The **live viewport** is the reserved region above the composer that shows in-progress streaming text, tool-monitor previews, and compaction previews (plus an idle dashboard when empty). It defaults to **hidden** so the terminal stays focused on the committed transcript.
 
-match agent.run("prompt").await {
-    Ok(result) => println!("{}", result.text),
-    Err(AgentError::Timeout(secs)) => eprintln!("Timed out after {}s", secs),
-    Err(AgentError::ToolNotFound(tool)) => eprintln!("Tool not found: {}", tool),
-    Err(AgentError::CommandBlocked(cmd)) => eprintln!("Command blocked: {}", cmd),
-    Err(e) => eprintln!("Error: {}", e),
-}
-
-// Check if error is retryable
-if error.is_retryable() {
-    // Retry the operation
+```json
+{
+  "tui": {
+    "live_viewport": {
+      "mode": "hidden",
+      "height_percent": 32
+    }
+  }
 }
 ```
 
-## Examples
+| `mode`     | Behavior                                                                                  |
+|------------|-------------------------------------------------------------------------------------------|
+| `hidden`   | Never render the viewport. **Default.**                                                   |
+| `auto`     | Render only during live activity (streaming / tool runs / pending compaction) or when empty. |
+| `always`   | Always reserve space, including the idle dashboard.                                       |
 
-See the `examples/` directory for more:
+- `height_percent` (5–95, default 32) controls how much terminal height the viewport claims when visible.
+- Override at launch without editing settings via `AMADEUS_LIVE_VIEWPORT=hidden|auto|always`.
+- Toggle at runtime with `/viewport` (no arg reports current mode): `/viewport auto`, `/viewport hidden`, `/viewport always`.
 
-- `examples/tui/` - Terminal UI example
-- `examples/server/` - HTTP server example
+## HTTP API
+
+The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start with `--server [port]` (default 3000).
+
+### Core Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Health check |
+| `POST` | `/chat` | Stateless single-turn chat |
+| `POST` | `/execute` | Direct bash command execution |
+| `GET` | `/stream` | SSE streaming chat with event protocol |
+| `POST` | `/tasks` | Multi-agent task dispatch |
+
+### Agent Management
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/agents` | List agents |
+| `POST` | `/agents` | Create agent with profile |
+| `POST` | `/agents/:id/chat` | Chat with specific agent |
+| `GET` | `/agents/:id/stream` | SSE stream from agent |
+
+### Sessions
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/sessions` | List saved sessions |
+| `GET` | `/sessions/:id` | Session detail with history |
+| `POST` | `/sessions/:id/restore` | Restore session history |
+
+### RAG
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/rag/ingest` | Ingest file, URL, or text into vector store |
+| `POST` | `/rag/query` | Semantic search with natural language |
+| `GET` | `/rag/documents` | List ingested documents |
+
+### Configuration & Info
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/config` | Current configuration |
+| `PATCH` | `/config` | Update runtime settings |
+| `GET` | `/tools/catalog` | Available tools with schemas |
+| `GET` | `/skills` | Available prompt template skills |
+
+The API has no built-in authentication and full CORS enabled, designed for trusted internal use or deployment behind a reverse proxy.
+
+## TUI
+
+The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
+
+**Layout:**
+- **Messages pane** — Markdown-rendered conversation history with collapsible tool execution groups and reasoning blocks
+- **Input editor** — Multi-line input with slash-command completion, `@` file citation, and `!` shell mode
+- **Footer** — Model name, context usage bar, session duration, Git branch, working directory, sandbox status
+- **Sidebars** — File explorer, keyboard shortcut reference, and skill browser
+
+**Key bindings:**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit prompt |
+| `Ctrl+T` | Cycle themes (12 built-in) |
+| `Shift+B` | Toggle file explorer |
+| `Alt+S` | Toggle skill browser |
+| `Ctrl+]` / `Ctrl+[` | Navigate sub-agent sessions |
+| `Tab` / `Shift+Tab` | Cycle agent sessions |
+
+**Slash commands:** `/compact`, `/context`, `/hooks`, `/rewind`
+
+Conversation export to Markdown or JSON includes full session metadata, config snapshot, context report, and statistics.
 
 ## Contributing
 
-Contributions are welcome! Please:
+Contributions are welcome. Please:
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests: `cargo test`
+4. Run `cargo test --features full` and `cargo clippy --all-features -- -D warnings`
 5. Submit a pull request
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) file for details.
-
-## Acknowledgments
-
-Built with:
-- [tokio](https://tokio.rs/) - Async runtime
-- [reqwest](https://docs.rs/reqwest/) - HTTP client
-- [ratatui](https://ratatui.rs/) - Terminal UI
-- [serde](https://serde.rs/) - Serialization
-- [tracing](https://docs.rs/tracing/) - Logging
-
-## Contact
-
-- Repository: https://github.com/xxraincandyxx/Amadeus
-- Issues: https://github.com/xxraincandyxx/Amadeus/issues
+MIT — see [LICENSE](LICENSE).
