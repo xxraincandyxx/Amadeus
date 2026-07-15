@@ -8,7 +8,9 @@ Amadeus is a Rust SDK for building AI agents with LLM support, featuring multi-p
 
 > **Workspace layout.** Amadeus is a **Cargo workspace**, not a single crate. The root `amadeus` crate is a thin compatibility facade that re-exports `amadeus_core` and conditionally the `api`/`tui` adapters. Almost all implementation lives under `crates/`. Library callers keep importing through `amadeus::...`; the implementation keeps moving into workspace crates underneath. See `docs/ARCHITECTURE.md` for the authoritative deep-dive.
 
-> **Synced instruction files.** `AGENTS.md`, `GEMINI.md`, and this file describe the same codebase for different tools and are meant to stay in sync. When you update one, consider whether the others need the same change.
+> **Synced instruction files.** `AGENTS.md`, `GEMINI.md`, and this file describe the same codebase for different tools and are meant to stay in sync. When you update one, consider whether the others need the same change. (`.github/copilot-instructions.md` also exists but defers to this file and is partly stale — e.g. it claims 2-space indent; the real style is rustfmt's 4-space default.)
+
+> **Polyglot repo.** The root is **also a Python package**, not only a Cargo workspace. Root `pyproject.toml` (hatchling) builds the `amadeus` Python SDK from `python-sdk/amadeus_sdk/` — an async `httpx` client for the HTTP server. Two more Python trees sit alongside it and are **not** part of the Rust build: `runtime/` (benchmarks: `locomo` conversational-memory, `rag_eval`) and `experiments/` (e.g. `mam0` memory agent). **Do not confuse top-level `runtime/` with `crates/runtime/`** — the former is Python benchmark experiments, the latter is Rust orchestration data models. They are unrelated.
 
 ## Common Commands
 
@@ -95,6 +97,24 @@ cargo clippy --features full
 
 # Validate @amadeus-header blocks on source files (see Code Style)
 python scripts/check_source_headers.py
+```
+
+### Python SDK & Benchmark Experiments
+
+Separate from the Rust workspace. Most need the HTTP server running first (`cargo run --features full -- --server 3000`); see `runtime/README.md` for the authoritative benchmark workflow.
+
+```bash
+# Python SDK — async httpx client for the server. Root pyproject.toml builds the `amadeus`
+# package from python-sdk/amadeus_sdk/.
+pip install -e ".[dev]"                      # httpx + pytest/pytest-asyncio dev deps
+python python-sdk/examples/basic_agent.py    # smoke test against a running server
+python python-sdk/examples/memory_agent.py   # memory-agent example
+
+# Benchmarks & experiments (Python, under runtime/ and experiments/)
+bash scripts/openbench-quick.sh              # openbench-quick harness vs an OpenAI-compatible API (see runtime/README.md for flags)
+bash scripts/run-benchmark.sh                # benchmark automation
+python runtime/locomo/memory_agent_runner.py # LoCoMo conversational-memory eval
+python runtime/rag_eval/rag_eval_runner.py   # RAG retrieval eval
 ```
 
 ## Feature Flags
