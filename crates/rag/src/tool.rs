@@ -292,6 +292,45 @@ impl RagTool {
     }
 }
 
+#[async_trait::async_trait]
+impl Tool for RagTool {
+    fn name(&self) -> &'static str {
+        "rag"
+    }
+
+    fn schema(&self) -> &'static Value {
+        rag_schema()
+    }
+
+    async fn execute(&self, input: Value) -> Result<String> {
+        let parsed: RagInput =
+            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
+                tool: "rag".to_string(),
+                reason: e.to_string(),
+            })?;
+
+        match parsed.operation.as_str() {
+            "ingest" => self.do_ingest(parsed).await,
+            "query" => self.do_query(parsed).await,
+            "list_documents" => self.do_list_documents(),
+            "delete_document" => {
+                let doc_id = parsed.document_id.ok_or_else(|| AgentError::ToolInput {
+                    tool: "rag".into(),
+                    reason: "document_id is required for 'delete_document' operation.".into(),
+                })?;
+                self.do_delete_document(&doc_id)
+            }
+            other => Err(AgentError::ToolInput {
+                tool: "rag".into(),
+                reason: format!(
+                    "Unknown operation '{}'. Use ingest, query, list_documents, or delete_document.",
+                    other
+                ),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,44 +441,5 @@ mod tests {
         let result = tool.execute(input).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("document_id"));
-    }
-}
-
-#[async_trait::async_trait]
-impl Tool for RagTool {
-    fn name(&self) -> &'static str {
-        "rag"
-    }
-
-    fn schema(&self) -> &'static Value {
-        rag_schema()
-    }
-
-    async fn execute(&self, input: Value) -> Result<String> {
-        let parsed: RagInput =
-            serde_json::from_value(input).map_err(|e| AgentError::ToolInput {
-                tool: "rag".to_string(),
-                reason: e.to_string(),
-            })?;
-
-        match parsed.operation.as_str() {
-            "ingest" => self.do_ingest(parsed).await,
-            "query" => self.do_query(parsed).await,
-            "list_documents" => self.do_list_documents(),
-            "delete_document" => {
-                let doc_id = parsed.document_id.ok_or_else(|| AgentError::ToolInput {
-                    tool: "rag".into(),
-                    reason: "document_id is required for 'delete_document' operation.".into(),
-                })?;
-                self.do_delete_document(&doc_id)
-            }
-            other => Err(AgentError::ToolInput {
-                tool: "rag".into(),
-                reason: format!(
-                    "Unknown operation '{}'. Use ingest, query, list_documents, or delete_document.",
-                    other
-                ),
-            }),
-        }
     }
 }
