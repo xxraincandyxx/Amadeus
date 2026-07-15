@@ -1,0 +1,42 @@
+@media (max-width: 940px) {
+  .page-shell {
+    padding: 42px 28px 64px;
+  }
+
+  .hero-grid,
+  .exam-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .model-card {
+    width: min(420px, 100%);
+  }
+
+  .result-pane {
+    min-height: 520px;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-shell {
+    padding: 26px 16px 42px;
+  }
+
+  .eyebrow-row,
+  .result-head {
+    flex-direction: column;
+  }
+
+  h1 {
+    font-size: 44px;
+  }
+
+  .mode-list,
+  .action-row {
+    grid-template-columns: 1fr;
+  }
+
+  textarea {
+    min-height: 300px;
+  }
+}

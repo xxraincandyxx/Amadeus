@@ -1,0 +1,100 @@
+.result-pane {
+  min-height: 640px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 24px;
+  overflow: hidden;
+}
+
+.result-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: start;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.meta-chip {
+  flex: 0 0 auto;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--brand);
+  background: var(--tag-bg);
+  text-transform: uppercase;
+}
+
+.empty-state {
+  align-self: center;
+  justify-self: center;
+  display: grid;
+  gap: 16px;
+  width: min(360px, 100%);
+  color: var(--olive);
+  text-align: center;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.thin-rule {
+  width: 86px;
+  height: 2px;
+  justify-self: center;
+  background: var(--brand);
+}
+
+.error-state {
+  color: #8b4513;
+}
+
+.loading-state {
+  display: grid;
+  gap: 13px;
+  align-self: start;
+  padding-top: 28px;
+}
+
+.loading-state span {
+  height: 15px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--warm-sand), #fdfcf8, var(--warm-sand));
+  background-size: 220% 100%;
+  animation: shimmer 1.1s linear infinite;
+}
+
+.loading-state span:nth-child(1) {
+  width: 92%;
+}
+
+.loading-state span:nth-child(2) {
+  width: 76%;
+}
+
+.loading-state span:nth-child(3) {
+  width: 86%;
+}
+
+.loading-state span:nth-child(4) {
+  width: 64%;
+}
+
+.result-text {
+  min-height: 0;
+  margin: 20px 0 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--dark-warm);
+  font-family: var(--serif);
+  font-size: 15px;
+  line-height: 1.54;
+}
+
+.session-log {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-soft);
+  color: var(--stone);
+  font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
