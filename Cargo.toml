@@ -112,6 +112,11 @@ name = "test_layout"
 path = "examples/test_layout.rs"
 required-features = ["tui"]
 
+[[example]]
+name = "ielts_examinator"
+path = "examples/ielts_examinator/main.rs"
+required-features = ["full"]
+
 [[test]]
 name = "agent_integration_test"
 path = "tests/agent_integration_test.rs"
