@@ -93,8 +93,10 @@ mod tests {
 
     #[test]
     fn validate_execute_permissions_allows_read_only_command() {
-        let mut config = crate::agent::config::Config::default();
-        config.permission_mode = PermissionMode::ReadOnly;
+        let config = crate::agent::config::Config {
+            permission_mode: PermissionMode::ReadOnly,
+            ..Default::default()
+        };
 
         let input = serde_json::json!({
             "command": "ls -la"
@@ -108,8 +110,10 @@ mod tests {
 
     #[test]
     fn validate_execute_permissions_denies_dangerous_command_for_read_only_mode() {
-        let mut config = crate::agent::config::Config::default();
-        config.permission_mode = PermissionMode::ReadOnly;
+        let config = crate::agent::config::Config {
+            permission_mode: PermissionMode::ReadOnly,
+            ..Default::default()
+        };
 
         let input = serde_json::json!({
             "command": "rm -rf /tmp/amadeus_test"
@@ -122,8 +126,10 @@ mod tests {
 
     #[test]
     fn validate_execute_permissions_denies_policy_gated_command() {
-        let mut config = crate::agent::config::Config::default();
-        config.permission_mode = PermissionMode::Allow;
+        let config = crate::agent::config::Config {
+            permission_mode: PermissionMode::Allow,
+            ..Default::default()
+        };
 
         let input = serde_json::json!({
             "command": "echo hello > /tmp/amadeus_test.txt"

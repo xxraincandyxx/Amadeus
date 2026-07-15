@@ -515,8 +515,10 @@ mod tests {
         ]));
 
         let client = BenchmarkMockClient::new(MockScript::default());
-        let mut config = Config::default();
-        config.workdir = workdir.to_path_buf();
+        let config = Config {
+            workdir: workdir.to_path_buf(),
+            ..Default::default()
+        };
         let agent = Agent::builder(client, Arc::new(config))
             .with_default_tools()
             .register_tool(Box::new(ExtraTool))

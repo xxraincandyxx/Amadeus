@@ -5746,8 +5746,10 @@ diff --git a/src/main.rs b/src/main.rs
         run_git(root, &["commit", "-m", "initial"]);
 
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
-        let mut config = Config::default();
-        config.workdir = root.to_path_buf();
+        let config = Config {
+            workdir: root.to_path_buf(),
+            ..Default::default()
+        };
         let agent = Agent::builder(client, Arc::new(config)).build();
         let mut session = Session::new(
             agent,

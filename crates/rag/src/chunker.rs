@@ -116,7 +116,7 @@ mod tests {
     fn test_overlap() {
         let text = "first sentence. second sentence. third sentence. fourth sentence.";
         let chunks = chunk_text(text, 50, 15);
-        assert!(chunks.len() >= 1);
+        assert!(!chunks.is_empty());
         if chunks.len() > 1 {
             let first_end = &chunks[0][chunks[0].len().saturating_sub(10)..];
             let second_start = &chunks[1][..10.min(chunks[1].len())];

@@ -118,8 +118,10 @@ Context: {context}
         let home = std::env::var("HOME").ok();
         std::env::set_var("HOME", &fake_home);
 
-        let mut config = crate::agent::config::Config::default();
-        config.workdir = workspace;
+        let config = crate::agent::config::Config {
+            workdir: workspace,
+            ..Default::default()
+        };
         let registry = load_for_config(&config).unwrap();
 
         match home {
