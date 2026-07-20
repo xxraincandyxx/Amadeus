@@ -213,6 +213,7 @@ pub struct MessagesComponent {
     last_rendered_index: usize,
     last_rendered_turn: Option<usize>,
     skip_next_assistant_history_item: bool,
+    startup_banner_pending: bool,
     /// Vertical scroll offset (number of lines scrolled from top)
     scroll_offset: usize,
 }
@@ -232,6 +233,7 @@ impl MessagesComponent {
             last_rendered_index: 0,
             last_rendered_turn: None,
             skip_next_assistant_history_item: false,
+            startup_banner_pending: true,
             scroll_offset: 0,
         }
     }
@@ -243,6 +245,7 @@ impl MessagesComponent {
         self.last_rendered_index = 0;
         self.last_rendered_turn = None;
         self.skip_next_assistant_history_item = false;
+        self.startup_banner_pending = true;
     }
 
     /// Get the current turn number
@@ -261,15 +264,13 @@ impl MessagesComponent {
         let mut last_turn = self.last_rendered_turn;
         let mut skipped_streamed_assistant = false;
 
-        if self.last_rendered_index == 0
-            && self.last_rendered_turn.is_none()
-            && !self.items.is_empty()
-        {
+        if self.startup_banner_pending {
             let dashboard_lines = self.render_dashboard_lines(width);
             if !dashboard_lines.is_empty() {
                 lines.extend(dashboard_lines);
                 lines.push(Line::from(""));
             }
+            self.startup_banner_pending = false;
         }
 
         for item in self.items[self.last_rendered_index..].iter() {
@@ -1901,6 +1902,22 @@ mod tests {
         assert!(!rendered.contains("/help"));
         assert!(rendered.contains("turn 1"));
         assert!(rendered.contains("Hello"));
+    }
+
+    #[test]
+    fn test_take_unrendered_lines_emits_startup_dashboard_once() {
+        let mut messages = MessagesComponent::new();
+
+        let first = messages.take_unrendered_lines(100);
+        let first_rendered = first
+            .iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(first_rendered.contains("Amadeus v0.1.0"));
+
+        let second = messages.take_unrendered_lines(100);
+        assert!(second.is_empty());
     }
 
     #[test]
