@@ -1976,10 +1976,26 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         let height = lines.len() as u16;
-        terminal.insert_before(height, move |buf| {
+        if let Err(error) = terminal.insert_before(height, move |buf| {
             Paragraph::new(lines).render(buf.area, buf);
-        })?;
+        }) {
+            if Self::is_recoverable_terminal_insert_error(&error) {
+                warn!(
+                    error = %error,
+                    "Terminal scrollback insert failed; continuing with live redraw"
+                );
+                self.footer
+                    .set_status_message("Terminal scrollback update skipped; redraw continued");
+                return Ok(());
+            }
+            return Err(error.into());
+        }
         Ok(())
+    }
+
+    fn is_recoverable_terminal_insert_error(error: &std::io::Error) -> bool {
+        let text = error.to_string();
+        text.contains("cursor position") && text.contains("could not be read")
     }
 
     fn insert_assistant_chunk_before(
@@ -5788,6 +5804,14 @@ diff --git a/src/main.rs b/src/main.rs
             .expect("rewind reset should succeed");
 
         assert!(!session.pending_transcript_reset);
+    }
+
+    #[test]
+    fn cursor_position_timeout_is_recoverable_terminal_insert_error() {
+        let error =
+            std::io::Error::other("The cursor position could not be read within a normal duration");
+
+        assert!(Session::<BenchmarkMockClient>::is_recoverable_terminal_insert_error(&error));
     }
 
     fn run_git(root: &std::path::Path, args: &[&str]) {
