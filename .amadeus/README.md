@@ -7,6 +7,11 @@ Current precedence:
 2. `.amadeus/settings.json`
 3. `.amadeus/settings.local.json`
 
+User-wide preferences, including TUI layout choices such as the live viewport mode,
+belong in `~/.amadeus/settings.json` so they follow you across workspaces.
+Keep provider, model, and workspace-specific runtime settings in the project
+`.amadeus/settings.json` files.
+
 Current supported layout:
 
 - `settings.json`
