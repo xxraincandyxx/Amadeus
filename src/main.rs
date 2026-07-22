@@ -48,8 +48,6 @@ use tracing_subscriber::EnvFilter;
 use amadeus::api::http::run_server;
 
 #[cfg(feature = "tui")]
-use amadeus::agent::loop_agent::Agent;
-#[cfg(feature = "tui")]
 use amadeus::ui::App;
 
 #[cfg(feature = "test-utils")]
@@ -98,6 +96,7 @@ fn parse_args(args: &[String]) -> CliArgs {
                 println!(
                     "  --export PATH    Export the TUI conversation to PATH on exit (.md or .json)"
                 );
+                println!("  --llm-trace [DIR]  Log full LLM request/response payloads per turn (default: logs/llm_trace)");
                 println!("  --help, -h       Show this help message");
                 std::process::exit(0);
             }
@@ -111,6 +110,13 @@ fn parse_args(args: &[String]) -> CliArgs {
             "--permission-mode" => {
                 if i + 1 < args.len() {
                     cli.permission_mode = PermissionMode::parse(&args[i + 1]);
+                    i += 1;
+                }
+            }
+            "--llm-trace" => {
+                cli.llm_trace = true;
+                if i + 1 < args.len() && !args[i + 1].starts_with('-') {
+                    cli.llm_trace_dir = Some(PathBuf::from(&args[i + 1]));
                     i += 1;
                 }
             }
@@ -131,6 +137,8 @@ struct CliArgs {
     assessment_dir: Option<PathBuf>,
     permission_mode: Option<PermissionMode>,
     export_path: Option<PathBuf>,
+    llm_trace: bool,
+    llm_trace_dir: Option<PathBuf>,
 }
 
 #[tokio::main]
@@ -215,6 +223,29 @@ async fn main() -> Result<()> {
     let sdk_config = Arc::clone(&config);
     let provider = build_client(&config);
 
+    // Build an LLM I/O trace sink when explicitly requested or when session
+    // logging is already configured. Captures full request/response payloads.
+    let llm_trace_dir = cli
+        .llm_trace_dir
+        .clone()
+        .or_else(|| config.session_log_dir.clone())
+        .unwrap_or_else(|| config.workdir.join("logs").join("llm_trace"));
+    let llm_trace = if cli.llm_trace || config.session_log_dir.is_some() {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        match amadeus::agent::llm_trace::LlmTraceSink::open(&llm_trace_dir, &session_id) {
+            Ok(sink) => {
+                println!("📝 Logging LLM I/O trace to {}", sink.path().display());
+                Some(std::sync::Arc::new(sink))
+            }
+            Err(error) => {
+                eprintln!("Failed to open llm trace log: {error}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // --- SERVER MODE ---
     #[cfg(feature = "api")]
     if cli.server_mode {
@@ -222,10 +253,10 @@ async fn main() -> Result<()> {
 
         match provider {
             ClientKind::Anthropic(c) => {
-                run_server(port, c.clone(), sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone(), llm_trace.clone()).await?;
             }
             ClientKind::OpenAI(c) => {
-                run_server(port, c.clone(), sdk_config.clone()).await?;
+                run_server(port, c.clone(), sdk_config.clone(), llm_trace.clone()).await?;
             }
         }
         return Ok(());
@@ -252,7 +283,7 @@ async fn main() -> Result<()> {
 
         match provider {
             ClientKind::Anthropic(c) => {
-                let agent = Agent::new(c, sdk_config);
+                let agent = build_agent(c, Arc::clone(&sdk_config), &llm_trace);
                 let mut app = App::new(agent, workdir, model);
                 #[cfg(feature = "test-utils")]
                 if let Some(rec) = recorder {
@@ -264,7 +295,7 @@ async fn main() -> Result<()> {
                 app.run().await?;
             }
             ClientKind::OpenAI(c) => {
-                let agent = Agent::new(c, sdk_config);
+                let agent = build_agent(c, Arc::clone(&sdk_config), &llm_trace);
                 let mut app = App::new(agent, workdir, model);
                 #[cfg(feature = "test-utils")]
                 if let Some(rec) = recorder {
@@ -282,6 +313,7 @@ async fn main() -> Result<()> {
     // --- NO FEATURE ENABLED ---
     #[allow(unreachable_code)]
     {
+        let _ = (sdk_config, llm_trace);
         println!("Amadeus SDK - No features enabled.");
         println!("Enable 'tui' or 'api' feature to run.");
         Ok(())
@@ -306,4 +338,19 @@ fn build_client(config: &Config) -> ClientKind {
             config.model.clone(),
         )),
     }
+}
+
+/// Build a default-tools agent, attaching the LLM trace sink when present.
+#[cfg(feature = "tui")]
+fn build_agent<C: amadeus::client::LLMClient + Clone + 'static>(
+    client: C,
+    config: Arc<Config>,
+    llm_trace: &Option<Arc<amadeus::agent::llm_trace::LlmTraceSink>>,
+) -> amadeus::agent::loop_agent::Agent<C> {
+    let mut builder =
+        amadeus::agent::loop_agent::Agent::builder(client, config).with_default_tools();
+    if let Some(trace) = llm_trace {
+        builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+    }
+    builder.build()
 }

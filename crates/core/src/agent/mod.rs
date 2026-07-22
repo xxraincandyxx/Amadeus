@@ -19,6 +19,7 @@
 pub mod compaction;
 pub mod config;
 pub mod events;
+pub mod llm_trace;
 pub mod loop_agent;
 #[cfg(feature = "orchestra")]
 #[deprecated(note = "use crate::agent::orchestra::AgentOrchestrator")]
@@ -48,6 +49,7 @@ pub use config::{
     ToolOverrideConfig, ToolProfileConfig, ToolSettings,
 };
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
+pub use llm_trace::{LlmTraceRequest, LlmTraceResponse, LlmTraceSink, LlmTraceToolCall};
 pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
 #[cfg(feature = "orchestra")]
 #[deprecated(

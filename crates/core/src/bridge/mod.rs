@@ -127,6 +127,7 @@ pub struct LocalSessionBridge<C: LLMClient + Clone + 'static> {
     sessions: Arc<RwLock<BridgeSessionMap<C>>>,
     active_session_id: Arc<RwLock<Option<String>>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
+    llm_trace: Option<Arc<crate::agent::llm_trace::LlmTraceSink>>,
 }
 
 impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
@@ -138,6 +139,7 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             active_session_id: Arc::new(RwLock::new(None)),
             memory_registry: None,
+            llm_trace: None,
         }
     }
 
@@ -147,6 +149,12 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         registry: crate::context::memory::MemoryRegistry,
     ) -> Self {
         self.memory_registry = Some(registry);
+        self
+    }
+
+    /// Attach an LLM I/O trace sink to every session created by this bridge.
+    pub fn with_llm_trace(mut self, trace: Arc<crate::agent::llm_trace::LlmTraceSink>) -> Self {
+        self.llm_trace = Some(trace);
         self
     }
 
@@ -186,6 +194,9 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                     .with_default_tools();
                 if let Some(ref mem) = self.memory_registry {
                     builder = builder.with_memory_registry(mem.clone());
+                }
+                if let Some(ref trace) = self.llm_trace {
+                    builder = builder.with_llm_trace(Some(Arc::clone(trace)));
                 }
                 builder.build()
             }

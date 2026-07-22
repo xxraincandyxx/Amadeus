@@ -84,6 +84,7 @@ pub(crate) struct OrchestraRoster<C: LLMClient> {
     config: Arc<Config>,
     telemetry: Option<Arc<TelemetryRecorder>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
+    llm_trace: Option<Arc<crate::agent::llm_trace::LlmTraceSink>>,
     pub(crate) agents: Vec<OrchestratedAgent<C>>,
     pub(crate) active_index: usize,
     name_counter: usize,
@@ -100,6 +101,7 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
             config,
             telemetry,
             memory_registry: None,
+            llm_trace: None,
             agents: Vec::new(),
             active_index: 0,
             name_counter: 0,
@@ -111,6 +113,14 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
         registry: crate::context::memory::MemoryRegistry,
     ) -> Self {
         self.memory_registry = Some(registry);
+        self
+    }
+
+    pub(crate) fn with_llm_trace(
+        mut self,
+        trace: Arc<crate::agent::llm_trace::LlmTraceSink>,
+    ) -> Self {
+        self.llm_trace = Some(trace);
         self
     }
 
@@ -313,6 +323,9 @@ impl<C: LLMClient + Clone + 'static> OrchestraRoster<C> {
         if let Some(ref mem) = self.memory_registry {
             builder = builder.with_memory_registry(mem.clone());
         }
+        if let Some(ref trace) = self.llm_trace {
+            builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+        }
         let agent = builder.build();
 
         self.agents.push(OrchestratedAgent {
@@ -392,6 +405,12 @@ impl<C: LLMClient + Clone + 'static> AgentOrchestrator<C> {
         registry: crate::context::memory::MemoryRegistry,
     ) -> Self {
         self.roster = self.roster.with_memory_registry(registry);
+        self
+    }
+
+    /// Attach an LLM I/O trace sink to every agent created by this orchestrator.
+    pub fn with_llm_trace(mut self, trace: Arc<crate::agent::llm_trace::LlmTraceSink>) -> Self {
+        self.roster = self.roster.with_llm_trace(trace);
         self
     }
 

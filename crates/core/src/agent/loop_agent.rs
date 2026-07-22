@@ -52,6 +52,7 @@ use tracing::{debug, info, instrument, warn};
 use crate::agent::compaction::{CompactionTrigger, ContextCompactor};
 use crate::agent::config::Config;
 use crate::agent::events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
+use crate::agent::llm_trace::{LlmTraceRequest, LlmTraceResponse, LlmTraceSink, LlmTraceToolCall};
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::{LLMClient, StreamEvent};
 use crate::error::{AgentError, Result};
@@ -179,6 +180,7 @@ pub struct AgentBuilder<C: LLMClient> {
     hooks: HookRegistry,
     policy: Policy,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    llm_trace: Option<Arc<LlmTraceSink>>,
     compaction_trigger: Option<Box<dyn CompactionTrigger>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
     rag_tool: Option<Box<dyn crate::tools::tool_trait::Tool>>,
@@ -201,6 +203,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             hooks,
             policy: Policy::default(),
             telemetry: None,
+            llm_trace: None,
             compaction_trigger: None,
             memory_registry: None,
             rag_tool: None,
@@ -299,6 +302,17 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         self
     }
 
+    /// Attach an LLM I/O trace sink.
+    ///
+    /// When set, the agent loop records the full request (system + history +
+    /// tools) and assembled response (text + tool calls + token usage) for every
+    /// provider call to the sink's JSONL file. Used for diagnosing what the
+    /// model saw and said on each turn.
+    pub fn with_llm_trace(mut self, trace: Option<Arc<LlmTraceSink>>) -> Self {
+        self.llm_trace = trace;
+        self
+    }
+
     /// Set a custom compaction trigger.
     ///
     /// If not set, the agent uses a [`ThresholdCompactionTrigger`] derived from config.
@@ -387,6 +401,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator,
             telemetry: self.telemetry,
+            llm_trace: self.llm_trace,
             compaction_trigger: self.compaction_trigger.map(Arc::from),
             memory_registry: self.memory_registry,
         }
@@ -408,6 +423,7 @@ pub struct Agent<C: LLMClient> {
     delegate_subagents: bool,
     subagent_coordinator: Arc<SubAgentCoordinator>,
     telemetry: Option<Arc<TelemetryRecorder>>,
+    llm_trace: Option<Arc<LlmTraceSink>>,
     compaction_trigger: Option<Arc<dyn CompactionTrigger>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
 }
@@ -579,6 +595,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             .with_hooks(self.hooks.clone())
             .with_policy(self.policy())
             .with_optional_telemetry(self.telemetry.clone())
+            .with_llm_trace(self.llm_trace.clone())
             .with_subagent_depth(depth)
             .build()
     }
@@ -617,6 +634,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             delegate_subagents: self.delegate_subagents,
             subagent_coordinator: Arc::clone(&self.subagent_coordinator),
             telemetry: self.telemetry.clone(),
+            llm_trace: self.llm_trace.clone(),
             compaction_trigger: self.compaction_trigger.clone(),
             memory_registry: self.memory_registry.clone(),
         };
@@ -903,6 +921,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let policy = Arc::clone(&self.policy);
         let compaction_trigger = self.compaction_trigger.clone();
         let telemetry = self.telemetry.clone();
+        let llm_trace = self.llm_trace.clone();
         let memory_registry = self.memory_registry.clone();
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let mut system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
@@ -985,6 +1004,18 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                 let mut stream = {
                     let history_guard = history.read().await;
+                    if let Some(ref trace) = llm_trace {
+                        if let Err(error) = trace.log_request(LlmTraceRequest {
+                            turn: turn_count,
+                            model: &config.model,
+                            system: &system,
+                            messages: &history_guard,
+                            tools: &tool_schemas,
+                            max_tokens: config.max_output_tokens,
+                        }) {
+                            warn!(error = %error, "Failed to write llm trace request");
+                        }
+                    }
                     client
                         .create_message_stream(&system, &history_guard, &tool_schemas, config.max_output_tokens)
                         .await?
@@ -994,8 +1025,12 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                 let mut tool_results: Vec<ContentBlock> = Vec::new();
                 let mut pending_tools: Vec<(String, String, String)> = Vec::new();
                 let mut turn_text = String::new();
+                let mut turn_thinking = String::new();
                 let mut has_activity_in_turn = false;
                 let mut turn_stop_reason = String::new();
+                let mut turn_input_tokens: Option<u32> = None;
+                let mut turn_output_tokens: Option<u32> = None;
+                let llm_call_start = Instant::now();
 
                 while let Some(event) = stream.next().await {
                     match event? {
@@ -1009,6 +1044,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         StreamEvent::ThinkingDelta(thinking) => {
                             debug!(turn = turn_count, thinking_len = thinking.len(), "Received ThinkingDelta");
                             has_activity_in_turn = true;
+                            turn_thinking.push_str(&thinking);
                             yield Ok(AgentEvent::ThinkingDelta { delta: thinking });
                         }
 
@@ -1543,6 +1579,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
 
                         StreamEvent::TokenUsage { input_tokens, output_tokens } => {
                             let total = input_tokens + output_tokens;
+                            turn_input_tokens = Some(input_tokens);
+                            turn_output_tokens = Some(output_tokens);
                             debug!(
                                 turn = turn_count,
                                 input = input_tokens,
@@ -1556,6 +1594,34 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                 total_tokens: total,
                             });
                         }
+                    }
+                }
+
+                // Record the assembled response for the LLM trace.
+                if let Some(ref trace) = llm_trace {
+                    let tool_calls: Vec<LlmTraceToolCall> = tool_uses
+                        .iter()
+                        .filter_map(|block| match block {
+                            ContentBlock::ToolUse { id, name, input } => Some(LlmTraceToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                input: input.clone(),
+                            }),
+                            _ => None,
+                        })
+                        .collect();
+                    if let Err(error) = trace.log_response(LlmTraceResponse {
+                        turn: turn_count,
+                        model: config.model.clone(),
+                        stop_reason: turn_stop_reason.clone(),
+                        text: turn_text.clone(),
+                        thinking: turn_thinking.clone(),
+                        tool_calls,
+                        duration_ms: llm_call_start.elapsed().as_millis() as u64,
+                        input_tokens: turn_input_tokens,
+                        output_tokens: turn_output_tokens,
+                    }) {
+                        warn!(error = %error, "Failed to write llm trace response");
                     }
                 }
 

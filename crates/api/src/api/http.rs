@@ -200,6 +200,7 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
     client: C,
     config: Arc<Config>,
+    llm_trace: Option<Arc<crate::agent::llm_trace::LlmTraceSink>>,
 ) -> Result<()> {
     // Build memory registry for persistent context injection.
     let memory_path = config.workdir.join(".amadeus").join("memory.json");
@@ -224,18 +225,28 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
         config.api_key.clone(),
     ));
 
-    let mut orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
+    let orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
         .with_memory_registry(memory_registry.clone());
+    let mut orchestrator = if let Some(ref trace) = llm_trace {
+        orchestrator.with_llm_trace(Arc::clone(trace))
+    } else {
+        orchestrator
+    };
     let default_orchestra_id = orchestrator.ensure_default_orchestra(OrchestraLeader::User);
     let main_agent_id = orchestrator
         .create_agent(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
     orchestrator.add_agent_to_orchestra(default_orchestra_id, main_agent_id)?;
     let orchestrator = Arc::new(RwLock::new(orchestrator));
-    let session_bridge = Arc::new(
-        LocalSessionBridge::new(client.clone(), Arc::clone(&config))
-            .with_memory_registry(memory_registry),
-    );
+    let session_bridge = Arc::new({
+        let bridge = LocalSessionBridge::new(client.clone(), Arc::clone(&config))
+            .with_memory_registry(memory_registry);
+        if let Some(ref trace) = llm_trace {
+            bridge.with_llm_trace(Arc::clone(trace))
+        } else {
+            bridge
+        }
+    });
     let _ = session_bridge
         .create_session(Some("Main Agent".to_string()), AgentProfile::Default)
         .await?;
