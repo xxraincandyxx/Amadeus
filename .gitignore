@@ -39,6 +39,12 @@ test_*.txt
 # Benchmark output directory
 /benchmark_runs
 
+# External/vendored benchmark repos (cloned, not committed)
+benchmarks/intercode/
+# intercode harness run artifacts
+benchmarks/results/
+benchmarks/.venv/
+
 # IDE / tooling
 .claude/
 .opencode/

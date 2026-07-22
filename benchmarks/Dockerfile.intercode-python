@@ -1,0 +1,17 @@
+# Corrected build for intercode's python execution container.
+#
+# The upstream docker/python.Dockerfile uses `COPY ../docker/utils/python_server.py`
+# which escapes the build context and fails on modern Docker. This fixed
+# Dockerfile is built with the intercode repo root as context:
+#   docker build -t intercode-python -f benchmarks/Dockerfile.intercode-python benchmarks/intercode
+FROM python:3.9-slim
+
+WORKDIR /
+
+RUN pip install --no-cache-dir rpyc
+
+# The rpyc execution server that PythonEnv connects to on port 3006.
+COPY docker/utils/python_server.py /python_server.py
+
+EXPOSE 3006
+CMD ["python", "python_server.py"]

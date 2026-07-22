@@ -1,0 +1,17 @@
+# Python deps for the intercode harness (AmadeusPolicy + intercode env).
+# Install into benchmarks/.venv:
+#   python3 -m venv benchmarks/.venv && benchmarks/.venv/bin/pip install -r benchmarks/requirements.txt
+rpyc
+docker
+gymnasium
+pandas
+scikit-learn
+rich
+tqdm
+nltk
+sqlalchemy
+tenacity
+ansiconv
+gnureadline
+mysql-connector-python
+pymysql
