@@ -80,3 +80,34 @@ plus sampling noise, not a scoring defect — feeding the gold solution through
 the same `def` + `submit` path yields reward 1.0 on every problem. The first
 diagnosis pass also caught and fixed a real harness bug (rpyc netref objects
 were not JSON-serializable when fed back as observations).
+
+### Full-split result (2026-07-23)
+
+Full MBPP split (973/974 problems), single-turn pass@1, canonical intercode
+docker scoring, gemma-4-26b-a4b-it-fp8 via the OpenAI-compatible endpoint:
+
+| metric | value |
+|---|---|
+| **Solved (pass@1), headline** | **506/973 = 52.0%** |
+| Solved, among good attempts (excl. server-bounce errors) | 506/945 = 53.5% |
+| Mean reward (all) | 0.559 |
+| Mean reward (among good attempts) | 0.576 |
+| Problems lost to contained server-bounce windows | 28 (2.9%) |
+
+Two bugs surfaced and were fixed during the run, both found via the
+`llm_trace` logs:
+
+1. **Reward clobbering** — `summarize_obs()` used `.get()` on rpyc netref
+   dicts, which raised and was caught by the turn loop's outer `except`,
+   forcing `reward=0` for *every* correct solution (the first full attempt
+   scored 0/N). Fixed by capturing the true reward before observation
+   processing and making `summarize_obs` netref-safe. Validation went 0/10 → 6/10.
+2. **Signature guessing** — without the canonical function signature the
+   model invented names/arities (the dominant genuine failure). Fixed by
+   passing the gold's `def` line (standard MBPP setup, no test leakage).
+
+The Amadeus server's streaming path degraded intermittently under sustained
+load (returning "result expired"); the harness self-heals by bouncing the
+server listener on ≥5 consecutive errors (the auto-restart wrapper re-spawns
+it), costing ~3% of problems to contained windows.
+
