@@ -142,6 +142,19 @@ class AmadeusPolicy:
     def reset(self):
         self.query = None
 
+    def _request(self, req, tries: int = 5):
+        """HTTP request with retry/backoff so a transient server hiccup or
+        auto-restart doesn't kill the whole run."""
+        last = None
+        for attempt in range(tries):
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout + 30) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                last = exc
+                time.sleep(3 + attempt * 5)
+        raise RuntimeError(f"request failed after {tries} tries: {last}")
+
     def start(self, tag: str = "intercode"):
         """Create a fresh Amadeus agent for one problem (clean history)."""
         body = json.dumps({"name": tag, "profile": "default"}).encode("utf-8")
@@ -151,9 +164,7 @@ class AmadeusPolicy:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        self.agent_id = data["agent"]["id"]
+        self.agent_id = self._request(req)["agent"]["id"]
 
     def stop(self):
         """Delete the per-problem agent so history never leaks across problems."""
@@ -181,12 +192,7 @@ class AmadeusPolicy:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout + 30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="replace")
-            raise RuntimeError(f"Amadeus agent_chat HTTP {exc.code}: {detail}") from exc
+        data = self._request(req)
         return data.get("content", "") or ""
 
     def forward(self, query, observation, reward, available_actions):
@@ -297,6 +303,31 @@ def run_problem(env: PythonEnv, policy: AmadeusPolicy, idx: int, max_turns: int)
     }
 
 
+def bounce_server(amadeus_url: str) -> bool:
+    """Kill the Amadeus server listener so the auto-restart wrapper re-spawns it.
+
+    Used when sustained 'result expired' / streaming errors indicate the server's
+    in-process state (session bridge / connection pool) has degraded. Killing only
+    the port listener leaves the wrapper bash loop alive to restart. Returns True
+    once /health responds again.
+    """
+    from urllib.parse import urlparse
+
+    port = urlparse(amadeus_url).port or 3000
+    print(f"  [bounce] restarting amadeus server on port {port}", flush=True)
+    os.system(f"lsof -ti tcp:{port} | xargs kill 2>/dev/null")
+    for _ in range(60):
+        time.sleep(2)
+        try:
+            with urllib.request.urlopen(f"{amadeus_url}/health", timeout=3) as resp:
+                if resp.status == 200:
+                    print("  [bounce] server healthy again", flush=True)
+                    return True
+        except Exception:  # noqa: BLE001
+            pass
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -348,14 +379,35 @@ def main():
             json.dump(summary, fh, indent=2)
 
     per_problem = []
+    consec_errors = 0
     try:
         for done, idx in enumerate(indices, start=1):
             t0 = time.time()
-            result = run_problem(env, policy, idx, cli.max_turns)
+            try:
+                result = run_problem(env, policy, idx, cli.max_turns)
+            except Exception as exc:  # noqa: BLE001
+                # Never let one problem (or a server blip) abort the whole run.
+                result = {
+                    "task_id": idx,
+                    "query": "",
+                    "reward": 0.0,
+                    "turns": 0,
+                    "history": {"actions": [f"<run-error: {exc}>"], "observations": [], "rewards": [0.0], "raw_replies": []},
+                }
+                policy.agent_id = None
             result["duration_s"] = round(time.time() - t0, 2)
             per_problem.append(result)
             with open(per_problem_path, "a") as fh:
                 fh.write(json.dumps(result) + "\n")
+            # Self-heal: if the server's streaming path has degraded (sustained
+            # run-errors), bounce it so the wrapper re-spawns a fresh one.
+            if result["turns"] == 0:
+                consec_errors += 1
+                if consec_errors >= 5:
+                    bounce_server(cli.amadeus_url)
+                    consec_errors = 0
+            else:
+                consec_errors = 0
             rewards_so_far = [r["reward"] for r in per_problem]
             solved_so_far = sum(1 for r in rewards_so_far if r >= 1.0)
             print(
