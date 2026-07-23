@@ -93,3 +93,38 @@ Full setup/diagnosis detail: `benchmarks/README.md`.
 - `test(benchmarks): add intercode python/mbpp harness driven by the Amadeus agent`
 - `fix(benchmarks): record true reward; add canonical signature prompt`
 - `fix(benchmarks): make the intercode harness self-healing under load`
+
+---
+
+## fs-coding mini-suite — agent tool-loop check
+
+| | |
+|---|---|
+| **Benchmark** | bespoke, `benchmarks/fs_bench/` — 15 single-file Python bug-fix tasks |
+| **Backbone model** | `gemma-4-26b-a4b-it-fp8-25603` (same endpoint as above) |
+| **Agent** | Amadeus default agent, one fresh agent per task, driven over HTTP `/agents/:id/chat` |
+| **Metric** | tasks where `test_solution.py` exits 0 after the agent's turn |
+| **What it exercises** | the agent's **native tools** (`read_file`, `edit_file`, `bash`, `grep`) and the ReAct read→edit→test→iterate loop — the surface MBPP skips |
+| **Date** | 2026-07-23 |
+
+### Result
+
+| metric | value |
+|---|---|
+| **Solved** | **15 / 15 = 100%** |
+| Median time / task | ~8 s |
+| Tools observed (via trace) | `read_file`, `edit_file`, `bash` |
+
+### Interpretation and caveat
+
+This is the **complement** of the MBPP number: MBPP showed gemma's raw coding
+(~52%); fs-coding shows the **Amadeus agent's tool loop works** (the agent
+reads the failing test, edits the file, runs the test, iterates to green).
+
+But 100% means the suite is **at ceiling** — each task is a one-line fix in a
+~5-line function, so it validates the loop without discriminating between
+agents. Treat it as a "smoke test that the agent's tools function end-to-end,"
+not a ranking signal. Harder variants (multi-file, non-obvious bugs) can be
+added in `tasks.py` when a discriminating agent benchmark is wanted.
+
+Reproduce and details: `benchmarks/fs_bench/README.md`.

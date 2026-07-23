@@ -1,0 +1,30 @@
+{
+  "run_id": "20260723_135440",
+  "done": 2,
+  "total": 2,
+  "solved": 2,
+  "results": [
+    {
+      "name": "sum_list_off_by_one",
+      "blurb": "Sum should include every element; the loop skips the first.",
+      "passed_before": false,
+      "passed_after": true,
+      "solved": true,
+      "reply": "The tests passed successfully.",
+      "test_output_after": "OK",
+      "error": null,
+      "duration_s": 30.88
+    },
+    {
+      "name": "max_wrong_operator",
+      "blurb": "Track the max, not the min.",
+      "passed_before": false,
+      "passed_after": true,
+      "solved": true,
+      "reply": "The tests passed successfully.",
+      "test_output_after": "OK",
+      "error": null,
+      "duration_s": 26.8
+    }
+  ]
+}
