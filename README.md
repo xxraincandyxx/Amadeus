@@ -207,6 +207,8 @@ The policy system blocks dangerous patterns including `sudo`, `chmod 777`, `rm -
 
 Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends.
 
+The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
+
 ```
 CLI / Library call
   -> Config + Provider selection
