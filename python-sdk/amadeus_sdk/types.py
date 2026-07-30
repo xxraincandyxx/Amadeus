@@ -200,6 +200,15 @@ class SessionDetail:
     stats: dict = field(default_factory=dict)
 
 
+@dataclass
+class LiveSession:
+    id: str
+    name: str
+    profile: str
+    status: str
+    parent_session_id: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Skills
 # ---------------------------------------------------------------------------

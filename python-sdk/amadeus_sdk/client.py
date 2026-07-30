@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Optional, Union
+from typing import AsyncIterator, Optional, Union
 from urllib.parse import urljoin
 
 import httpx
@@ -33,6 +33,7 @@ from .types import (
     RagQueryResponse,
     RagSearchResult,
     SessionDetail,
+    LiveSession,
     SessionSummary,
     SkillSummary,
     SummarizeResponse,
@@ -161,26 +162,75 @@ class AmadeusClient:
     # Sessions
     # ------------------------------------------------------------------
 
-    async def list_sessions(self) -> list[SessionSummary]:
-        """List saved conversation sessions."""
+    async def list_sessions(self) -> list[LiveSession]:
+        """List live external sessions."""
+        data = await self._get("/v1/sessions")
+        return [LiveSession(**s) for s in data.get("sessions", [])]
+
+    async def create_session(self, name: Optional[str] = None, profile: str = "default") -> LiveSession:
+        """Create a live external session."""
+        body: dict = {"profile": profile}
+        if name is not None:
+            body["name"] = name
+        return LiveSession(**await self._post("/v1/sessions", body))
+
+    async def get_session(self, session_id: str) -> LiveSession:
+        """Get live session metadata."""
+        return LiveSession(**await self._get(f"/v1/sessions/{session_id}"))
+
+    async def close_session(self, session_id: str) -> dict:
+        """Close a live session and abort any active turn."""
+        return await self._delete(f"/v1/sessions/{session_id}")
+
+    async def submit_message(self, session_id: str, content: str) -> dict:
+        """Start an asynchronous turn in a live session."""
+        return await self._post(f"/v1/sessions/{session_id}/messages", {"content": content})
+
+    async def iter_events(self, session_id: str) -> AsyncIterator[dict]:
+        """Yield parsed server-sent events for a live session."""
+        async with self.client.stream("GET", f"/v1/sessions/{session_id}/events") as response:
+            response.raise_for_status()
+            event_name = "message"
+            data_lines: list[str] = []
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[5:].strip())
+                elif not line and data_lines:
+                    yield {"event": event_name, "data": json.loads("\n".join(data_lines))}
+                    event_name = "message"
+                    data_lines = []
+
+    async def cancel_session(self, session_id: str) -> dict:
+        """Cancel an active turn without closing its session."""
+        return await self._post(f"/v1/sessions/{session_id}/cancel")
+
+    async def get_checkpoint(self, session_id: str) -> dict:
+        """Capture a serializable live-session checkpoint."""
+        return await self._get(f"/v1/sessions/{session_id}/checkpoint")
+
+    async def restore_checkpoint(self, session_id: str, checkpoint: dict) -> dict:
+        """Restore a checkpoint into a live session."""
+        resp = await self.client.put(f"/v1/sessions/{session_id}/checkpoint", json=checkpoint)
+        return self._handle(resp)
+
+    async def list_saved_sessions(self) -> list[SessionSummary]:
+        """List persisted session-log archives."""
         data = await self._get("/sessions")
         return [SessionSummary(**s) for s in data.get("sessions", [])]
 
-    async def get_session(self, session_id: str) -> SessionDetail:
-        """Get full session details."""
+    async def get_saved_session(self, session_id: str) -> SessionDetail:
+        """Get a persisted session-log archive."""
         return SessionDetail(**await self._get(f"/sessions/{session_id}"))
-
-    async def restore_session(self, session_id: str, clear_history: bool = False) -> dict:
-        """Restore a session into the active context."""
-        return await self._post(f"/sessions/{session_id}/restore", {"clear_history": clear_history})
 
     # ------------------------------------------------------------------
     # History
     # ------------------------------------------------------------------
 
-    async def get_history(self) -> list[dict]:
-        """Get conversation history."""
-        data = await self._get("/history")
+    async def get_history(self, session_id: str) -> list[dict]:
+        """Get the current history of a live session."""
+        data = await self._get(f"/v1/sessions/{session_id}/history")
         return data.get("messages", [])
 
     # ------------------------------------------------------------------
@@ -335,46 +385,41 @@ class AmadeusClient:
 
     async def list_agents(self) -> list[AgentInfo]:
         """List all agents."""
-        data = await self._get("/agents")
-        return [AgentInfo(**a) for a in data.get("agents", [])]
+        sessions = await self.list_sessions()
+        return [AgentInfo(id=s.id, name=s.name, profile=s.profile, status=s.status) for s in sessions]
 
     async def create_agent(self, name: Optional[str] = None, profile: str = "default") -> AgentInfo:
         """Create a new agent."""
-        body: dict = {"profile": profile}
-        if name:
-            body["name"] = name
-        data = await self._post("/agents", body)
-        return AgentInfo(**data["agent"])
+        session = await self.create_session(name, profile)
+        return AgentInfo(id=session.id, name=session.name, profile=session.profile, status=session.status)
 
     async def get_agent(self, agent_id: str) -> AgentInfo:
         """Get agent details."""
-        return AgentInfo(**await self._get(f"/agents/{agent_id}"))
+        session = await self.get_session(agent_id)
+        return AgentInfo(id=session.id, name=session.name, profile=session.profile, status=session.status)
 
     async def kill_agent(self, agent_id: str) -> dict:
         """Kill (remove) an agent."""
-        return await self._delete(f"/agents/{agent_id}", body={})
+        return await self.close_session(agent_id)
 
     async def switch_agent(self, agent_id: str) -> dict:
         """Switch to a different agent as the active one."""
-        return await self._post(f"/agents/{agent_id}/switch", {"agent_id": agent_id})
+        raise AmadeusError(410, ErrorResponse(error="Removed", message="Active-session switching is client-local in v1"))
 
     async def agent_chat(self, agent_id: str, message: str, timeout_secs: int = 300) -> AgentChatResponse:
         """Chat with a specific agent."""
-        data = await self._post(f"/agents/{agent_id}/chat", {"message": message, "timeout_secs": timeout_secs})
-        data["tool_calls"] = [ToolCall(**tc) for tc in data.get("tool_calls", [])]
-        return AgentChatResponse(**data)
+        await self.submit_message(agent_id, message)
+        raise AmadeusError(202, ErrorResponse(error="AsyncOnly", message="Consume /v1/sessions/{id}/events for results"))
 
     # ------------------------------------------------------------------
     # Approvals
     # ------------------------------------------------------------------
 
-    async def list_pending_approvals(self) -> list[dict]:
+    async def list_pending_approvals(self, session_id: str) -> list[dict]:
         """List pending tool approvals."""
-        return await self._get("/approvals")
+        return await self._get(f"/v1/sessions/{session_id}/approvals")
 
-    async def submit_approval(self, approval_id: str, decision: str, reason: Optional[str] = None) -> ApprovalResponse:
+    async def submit_approval(self, session_id: str, approval_id: str, decision: str) -> ApprovalResponse:
         """Submit an approval decision (approve/deny/modify)."""
-        body: dict = {"decision": decision}
-        if reason:
-            body["reason"] = reason
-        return ApprovalResponse(**await self._post(f"/approvals/{approval_id}", body))
+        data = await self._post(f"/v1/sessions/{session_id}/approvals/{approval_id}", {"decision": decision})
+        return ApprovalResponse(success=data["success"], decision=decision)
