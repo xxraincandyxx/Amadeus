@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
+  ArrowSquareOut,
   ArrowUp,
+  BookOpenText,
   CaretDown,
   Check,
   Code,
   Copy,
   FolderSimple,
   GearSix,
+  GithubLogo,
   List,
   Plus,
+  PlugsConnected,
   Robot,
   SidebarSimple,
   Sparkle,
@@ -20,7 +24,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 
-import { api } from "./api";
+import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
 import { historyToTimeline, reduceEvent } from "./sessionState";
 
 const emptyRuntime = {
@@ -77,6 +81,9 @@ function App() {
   const [creating, setCreating] = useState(false);
   const [newSessionName, setNewSessionName] = useState("");
   const [showDetails, setShowDetails] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showContribute, setShowContribute] = useState(false);
+  const [apiEpoch, setApiEpoch] = useState(0);
   const streamRef = useRef(null);
   const endRef = useRef(null);
   const textareaRef = useRef(null);
@@ -138,7 +145,7 @@ function App() {
     }
     bootstrap();
     return () => { cancelled = true; };
-  }, [refreshSessions]);
+  }, [refreshSessions, apiEpoch]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -172,7 +179,11 @@ function App() {
     };
 
     return () => source.close();
-  }, [activeId, loadHistory, serverOnline, setRuntime]);
+  }, [activeId, apiEpoch, loadHistory, serverOnline, setRuntime]);
+
+  useEffect(() => {
+    if (window.__TAURI_INTERNALS__) document.documentElement.classList.add("is-tauri");
+  }, []);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -252,6 +263,15 @@ function App() {
     [runtime.tools],
   );
 
+  const reconnect = useCallback(() => {
+    streamRef.current?.close();
+    setLoading(true);
+    setServerOnline(null);
+    setError("");
+    setRuntimeBySession({});
+    setApiEpoch((value) => value + 1);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -263,6 +283,8 @@ function App() {
         online={serverOnline}
         onSelect={setActiveId}
         onCreate={() => setCreating(true)}
+        onSettings={() => setShowSettings(true)}
+        onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
       />
 
@@ -275,7 +297,14 @@ function App() {
           onClose={closeSession}
         />
 
-        {error && <ErrorBanner message={error} onDismiss={() => setError("")} />}
+        {error && (
+          <ErrorBanner
+            message={error}
+            onRetry={reconnect}
+            onSettings={() => setShowSettings(true)}
+            onDismiss={() => setError("")}
+          />
+        )}
 
         <section className="conversation" aria-live="polite">
           {!activeSession ? (
@@ -324,11 +353,21 @@ function App() {
           onClose={() => setCreating(false)}
         />
       )}
+
+      {showSettings && (
+        <SettingsDialog
+          online={serverOnline}
+          onReconnect={reconnect}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+
+      {showContribute && <ContributionDialog onClose={() => setShowContribute(false)} />}
     </div>
   );
 }
 
-function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onClose }) {
+function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSettings, onContribute, onClose }) {
   return (
     <>
       <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label="Close sidebar" onClick={onClose} />
@@ -339,6 +378,7 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onClose
           <button onClick={onCreate}><Plus /><span>New session</span></button>
           <button><Robot /><span>Agents</span><span className="nav-count">{sessions.length}</span></button>
           <button><TerminalWindow /><span>Tools</span></button>
+          <button onClick={onContribute}><GithubLogo /><span>Contribute</span></button>
         </nav>
         <div className="section-label">Workspace</div>
         <div className="project-label"><FolderSimple /><span>amadeus</span></div>
@@ -356,7 +396,7 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onClose
         </div>
         <div className="sidebar-footer">
           <div className="connection"><i className={online ? "online" : "offline"} /><span>{online ? "Local API connected" : "API unavailable"}</span></div>
-          <button aria-label="Settings"><GearSix /></button>
+          <button onClick={onSettings} aria-label="Connection settings"><GearSix /></button>
         </div>
       </aside>
     </>
@@ -518,8 +558,96 @@ function CreateDialog({ value, onChange, onSubmit, onClose }) {
   );
 }
 
-function ErrorBanner({ message, onDismiss }) {
-  return <div className="error-banner"><WarningCircle /><span>{message}</span><button onClick={onDismiss}><X /></button></div>;
+function SettingsDialog({ online, onReconnect, onClose }) {
+  const [value, setValue] = useState(getApiBaseUrl());
+  const [status, setStatus] = useState("");
+  const [testing, setTesting] = useState(false);
+
+  const testConnection = async () => {
+    setTesting(true);
+    setStatus("");
+    try {
+      const normalized = value.trim().replace(/\/$/, "");
+      const parsed = new URL(normalized);
+      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Use an HTTP or HTTPS URL.");
+      await api.health(normalized);
+      setStatus("Connection successful.");
+    } catch (caught) {
+      setStatus(caught.message);
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const save = (event) => {
+    event.preventDefault();
+    try {
+      setApiBaseUrl(value);
+      onClose();
+      onReconnect();
+    } catch (caught) {
+      setStatus(caught.message);
+    }
+  };
+
+  const reset = () => {
+    const defaultUrl = resetApiBaseUrl();
+    setValue(defaultUrl);
+    setStatus("Restored the default local address. Save to reconnect.");
+  };
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <form className="dialog settings-dialog" onSubmit={save} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-heading">
+          <div className="dialog-icon"><PlugsConnected weight="fill" /></div>
+          <div><h2>Connection</h2><p>Choose the Amadeus HTTP server used by this client.</p></div>
+        </div>
+        <div className="connection-summary"><i className={online ? "online" : "offline"} /><span>{online ? "Connected" : "Not connected"}</span><code>{getApiBaseUrl()}</code></div>
+        <label htmlFor="api-url">HTTP API URL</label>
+        <input id="api-url" autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder="http://127.0.0.1:3000" />
+        <p className="field-help">Remote servers should use HTTPS and authentication at the network boundary.</p>
+        {status && <div className="connection-test-result" role="status">{status}</div>}
+        <div className="dialog-actions split-actions">
+          <button type="button" onClick={reset}>Reset default</button>
+          <span />
+          <button type="button" onClick={testConnection} disabled={testing}>{testing ? "Testing…" : "Test"}</button>
+          <button className="primary" type="submit">Save and reconnect</button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function ContributionDialog({ onClose }) {
+  const repositoryUrl = "https://github.com/xxraincandyxx/Amadeus";
+  const resources = [
+    { icon: BookOpenText, label: "Contribution guide", detail: "Setup, change scope, checks, and pull requests", href: `${repositoryUrl}/blob/master/CONTRIBUTING.md` },
+    { icon: Sparkle, label: "Interface design system", detail: "Tokens, component rules, states, and visual QA", href: `${repositoryUrl}/blob/master/docs/WEB_DESIGN_SYSTEM.md` },
+    { icon: PlugsConnected, label: "HTTP API contract", detail: "External endpoints, stability, and availability", href: `${repositoryUrl}/blob/master/docs/HTTP_API.md` },
+  ];
+
+  return (
+    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="dialog contribution-dialog" role="dialog" aria-modal="true" aria-labelledby="contribution-title" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-heading">
+          <div className="dialog-icon"><GithubLogo weight="fill" /></div>
+          <div><h2 id="contribution-title">Build Amadeus with us</h2><p>Every contribution should leave the product clearer, more useful, and more coherent.</p></div>
+        </div>
+        <div className="contribution-principles"><span>Preserve one visual language</span><span>Ship every interaction state</span><span>Verify desktop and mobile</span></div>
+        <div className="resource-list">
+          {resources.map(({ icon: Icon, label, detail, href }) => (
+            <a key={label} href={href} target="_blank" rel="noreferrer"><Icon /><span><strong>{label}</strong><small>{detail}</small></span><ArrowSquareOut /></a>
+          ))}
+        </div>
+        <div className="dialog-actions"><button type="button" onClick={onClose}>Close</button><a className="button-link primary" href={repositoryUrl} target="_blank" rel="noreferrer">Open repository<ArrowSquareOut /></a></div>
+      </section>
+    </div>
+  );
+}
+
+function ErrorBanner({ message, onRetry, onSettings, onDismiss }) {
+  return <div className="error-banner"><WarningCircle /><span>{message}</span><button className="text-action" onClick={onRetry}>Retry</button><button className="text-action" onClick={onSettings}>Settings</button><button onClick={onDismiss} aria-label="Dismiss"><X /></button></div>;
 }
 
 function AgentWorking() {

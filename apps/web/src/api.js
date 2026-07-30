@@ -1,13 +1,44 @@
-const API_BASE = (import.meta.env.VITE_AMADEUS_API_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
+const DEFAULT_API_BASE = (import.meta.env.VITE_AMADEUS_API_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
+const API_STORAGE_KEY = "amadeus.apiUrl";
 
-async function request(path, options = {}) {
-  const response = await fetch(`${API_BASE}${path}`, {
+function normalizeBaseUrl(value) {
+  return value.trim().replace(/\/$/, "");
+}
+
+export function getApiBaseUrl() {
+  const stored = localStorage.getItem(API_STORAGE_KEY);
+  return normalizeBaseUrl(stored || DEFAULT_API_BASE);
+}
+
+export function setApiBaseUrl(value) {
+  const normalized = normalizeBaseUrl(value);
+  if (!normalized) throw new Error("Enter an HTTP API URL.");
+  const parsed = new URL(normalized);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("The API URL must use HTTP or HTTPS.");
+  }
+  localStorage.setItem(API_STORAGE_KEY, normalized);
+  return normalized;
+}
+
+export function resetApiBaseUrl() {
+  localStorage.removeItem(API_STORAGE_KEY);
+  return DEFAULT_API_BASE;
+}
+
+async function request(path, options = {}, baseUrl = getApiBaseUrl()) {
+  const response = await fetch(`${baseUrl}${path}`, {
     headers: { "Content-Type": "application/json", ...options.headers },
     ...options,
   });
 
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`The API returned an invalid response (${response.status}).`);
+  }
   if (!response.ok) {
     throw new Error(payload?.message || payload?.error || `Request failed (${response.status})`);
   }
@@ -15,8 +46,10 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  baseUrl: API_BASE,
-  health: () => request("/health"),
+  get baseUrl() {
+    return getApiBaseUrl();
+  },
+  health: (baseUrl) => request("/health", {}, baseUrl),
   listSessions: () => request("/v1/sessions"),
   createSession: (name, profile = "default") =>
     request("/v1/sessions", { method: "POST", body: JSON.stringify({ name, profile }) }),
@@ -32,5 +65,5 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ decision }),
     }),
-  eventUrl: (id) => `${API_BASE}/v1/sessions/${id}/events`,
+  eventUrl: (id) => `${getApiBaseUrl()}/v1/sessions/${id}/events`,
 };
