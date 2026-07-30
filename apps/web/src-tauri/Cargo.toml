@@ -1,0 +1,20 @@
+[package]
+name = "amadeus-desktop"
+version = "0.1.0"
+description = "Native macOS client for the Amadeus agent runtime"
+authors = ["Amadeus contributors"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+
+[lib]
+name = "amadeus_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+[workspace]

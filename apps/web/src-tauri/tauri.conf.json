@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Amadeus",
+  "version": "0.1.0",
+  "identifier": "com.xxraincandyxx.amadeus",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --host 127.0.0.1",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://127.0.0.1:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self' customprotocol: asset:; connect-src ipc: http://ipc.localhost http://127.0.0.1:* http://localhost:* https:; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:"
+    },
+    "windows": [
+      {
+        "title": "Amadeus",
+        "width": 1360,
+        "height": 860,
+        "minWidth": 920,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "theme": "Dark",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "category": "DeveloperTool",
+    "copyright": "Copyright © Amadeus contributors",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ]
+  }
+}

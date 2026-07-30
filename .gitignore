@@ -58,6 +58,18 @@ python-sdk/.venv/
 node_modules/
 dist/
 
+# Native desktop build output
+apps/web/src-tauri/target/
+apps/web/src-tauri/gen/
+apps/web/src-tauri/icons/android/
+apps/web/src-tauri/icons/ios/
+apps/web/src-tauri/icons/Square*.png
+apps/web/src-tauri/icons/StoreLogo.png
+apps/web/src-tauri/icons/64x64.png
+apps/web/src-tauri/icons/icon.ico
+apps/web/src-tauri/icons/icon.png
+*.dmg
+
 # Privacy / local-only (do not publish)
 audit.md
 .privacy-audit/
