@@ -77,7 +77,7 @@ async fn scenario_drives_app_and_renders_assistant_text() {
 
 #[tokio::test]
 async fn loads_text_turn_fixture_from_json() {
-    let json = std::fs::read_to_string("tests/tui/scenarios/text_turn.json")
+    let json = std::fs::read_to_string("tests/fixtures/scenarios/basic_query.json")
         .expect("fixture should exist");
     let client = ScenarioMockClient::from_json(&json).expect("parse fixture");
     let mut app = HeadlessApp::new(client, ".", "test-model", 80, 24);
@@ -86,7 +86,7 @@ async fn loads_text_turn_fixture_from_json() {
 
     let messages = app.messages_text(80);
     assert!(
-        messages.contains("one-line answer"),
+        messages.contains("Rust is a systems programming language"),
         "fixture-driven turn should commit the assistant text:\n{messages}"
     );
 }

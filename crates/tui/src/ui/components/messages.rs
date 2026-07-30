@@ -633,12 +633,6 @@ impl MessagesComponent {
         ])])
     }
 
-    /// Update scrollbar colors (called on theme change)
-    pub fn update_scrollbar_colors(&mut self) {
-        // No-op for now - scrollbar colors are fetched dynamically in render
-        // This method exists for API compatibility
-    }
-
     /// Scroll up by the specified number of lines
     pub fn scroll_up(&mut self, lines: usize) {
         self.scroll_offset = self.scroll_offset.saturating_sub(lines);

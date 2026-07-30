@@ -75,8 +75,7 @@ use crate::ui::components::{
 };
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::export::{
-    build_export as build_export_artifact, default_export_path, write_export, ExportFormat,
-    SessionHeader,
+    build_export as build_export_artifact, default_export_path, write_export, SessionHeader,
 };
 use crate::ui::{get_theme, next_theme, SidebarKind};
 use crate::{Config, LiveViewportConfig, LiveViewportMode};
@@ -740,7 +739,6 @@ pub(crate) struct Session<C: LLMClient> {
     hooks: HookRegistry,
     slash_dialog: Option<SlashDialogState>,
     rewind_checkpoints: Vec<RewindCheckpointRecord>,
-    #[allow(dead_code)]
     subagent_depth: usize,
     session_label: String,
     session_id: usize,
@@ -1424,31 +1422,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         Ok(())
     }
 
-    #[allow(dead_code)]
-    pub async fn run(&mut self) -> Result<()> {
-        enable_raw_mode()?;
-        let mut stdout = std::io::stdout();
-        let _ = execute!(
-            stdout,
-            PushKeyboardEnhancementFlags(
-                KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
-                    | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-            )
-        );
-
-        let res = self.run_loop().await;
-
-        let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
-        disable_raw_mode()?;
-        // Use a temporary terminal to show cursor if needed
-        let backend = CrosstermBackend::new(std::io::stdout());
-        let mut terminal = Terminal::new(backend)?;
-        terminal.show_cursor()?;
-
-        res
-    }
-
     fn handle_tool_progress_timeout(&mut self) {
         if self.stream_rx.is_some() && self.tool_monitor.has_running_tools() {
             self.loading_indicator
@@ -1484,144 +1457,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let available = terminal_height.saturating_sub(input_max).saturating_sub(2);
         let live_max = ((available.saturating_mul(self.live_viewport.height_percent)) / 100).max(3);
         (input_max + live_max).min(terminal_height.max(4))
-    }
-
-    #[allow(dead_code)]
-    async fn run_loop(&mut self) -> Result<()> {
-        let terminal_size = crossterm::terminal::size()?;
-        self.current_shelf_height = self.max_shelf_height_for_terminal(terminal_size.1);
-
-        let stdout = std::io::stdout();
-        let backend = CrosstermBackend::new(stdout);
-        let mut terminal = Terminal::with_options(
-            backend,
-            TerminalOptions {
-                viewport: Viewport::Inline(self.current_shelf_height),
-            },
-        )?;
-
-        let mut events = EventHandler::new(Duration::from_millis(100));
-        loop {
-            if self.should_quit {
-                break;
-            }
-
-            self.sync_inline_viewport(&mut terminal)?;
-
-            self.flush_unrendered_history(&mut terminal)?;
-
-            terminal.draw(|f| self.render(f))?;
-
-            // Periodic flush for responsiveness
-            if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                self.flush_streaming_buffer(&mut terminal)?;
-            }
-
-            tokio::select! {
-                event = events.next() => {
-                    self.handle_event(event?, &mut terminal).await?;
-                    self.flush_unrendered_history(&mut terminal)?;
-
-                    // Handle compaction flush
-                    if self.flush_before_compaction {
-                        self.flush_streaming_buffer(&mut terminal)?;
-                        self.flush_before_compaction = false;
-                        self.start_compaction();
-                    }
-
-                    // Switch to fast tick rate when streaming starts
-                    if self.stream_rx.is_some() {
-                        events.set_tick_rate(Duration::from_millis(16));
-                    }
-                }
-
-                agent_event = async {
-                    match &mut self.stream_rx {
-                        Some(rx) => rx.recv().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    if let Some(event) = agent_event {
-                        if matches!(
-                            self.handle_agent_event(event, &mut terminal, true)?,
-                            SessionAction::Done
-                        ) {
-                            self.stream_rx = None;
-                            self.stream_abort = None;
-                            events.set_tick_rate(Duration::from_millis(100));
-                        }
-
-                        // Batch process remaining available events (max 100 per batch)
-                        const MAX_BATCH_SIZE: usize = 100;
-                        let events_to_process: Vec<AgentEvent> = if let Some(ref mut rx) = self.stream_rx {
-                            let mut collected = Vec::new();
-                            let mut batch_count = 0;
-                            while batch_count < MAX_BATCH_SIZE {
-                                match rx.try_recv() {
-                                    Ok(event) => {
-                                        collected.push(event);
-                                        batch_count += 1;
-                                    }
-                                    Err(mpsc::error::TryRecvError::Empty) |
-                                    Err(mpsc::error::TryRecvError::Disconnected) => break,
-                                }
-                            }
-                            if !collected.is_empty() {
-                                debug!(batch_size = collected.len(), "Batch processing events");
-                            }
-                            collected
-                        } else {
-                            Vec::new()
-                        };
-
-                        for event in events_to_process {
-                            if matches!(
-                                self.handle_agent_event(event, &mut terminal, true)?,
-                                SessionAction::Done
-                            ) {
-                                self.stream_rx = None;
-                                self.stream_abort = None;
-                                events.set_tick_rate(Duration::from_millis(100));
-                                break;
-                            }
-                        }
-
-                        // Flush buffer periodically during streaming
-                        if !self.streaming_buffer.is_empty() && self.streaming_buffer.should_flush() {
-                            self.flush_streaming_buffer(&mut terminal)?;
-                        }
-
-                        // Force immediate redraw to show streaming progress
-                        self.flush_unrendered_history(&mut terminal)?;
-                        self.sync_inline_viewport(&mut terminal)?;
-                        // Agent branch can starve `AppEvent::Tick`; advance loading animation every draw.
-                        self.loading_indicator.tick();
-                        self.sync_prompt_status_hint();
-                        terminal.draw(|f| self.render(f))?;
-                    } else {
-                        self.stream_rx = None;
-                        self.stream_abort = None;
-                        events.set_tick_rate(Duration::from_millis(100));
-                    }
-                }
-
-                // Poll for approval requests from agent
-                approval_request = async {
-                    match &mut self.approval_req_rx {
-                        Some(rx) => rx.recv().await,
-                        None => std::future::pending().await,
-                    }
-                } => {
-                    if let Some(request) = approval_request {
-                        // Flush buffer before showing approval dialog
-                        self.flush_streaming_buffer(&mut terminal)?;
-                        self.show_approval_dialog(request);
-                    }
-                }
-            }
-        }
-
-        Ok(())
     }
 
     fn flush_streaming_buffer(
@@ -2641,7 +2476,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             (KeyModifiers::CONTROL, KeyCode::Char('t')) => {
                 next_theme();
                 let theme_name = get_theme().name();
-                self.messages.update_scrollbar_colors();
                 info!("Switched to theme: {}", theme_name);
             }
             (KeyModifiers::CONTROL, KeyCode::Char('k')) => {
@@ -3258,30 +3092,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             None => default_export_path(&self.workdir, &self.session_label, self.session_id),
         };
         write_export(&artifact, &target)
-    }
-
-    /// Same as `export_to_path` but with an explicit format override.
-    ///
-    /// Currently only exercised by its own unit test (Session is pub(crate)),
-    /// but kept as API-shaped symmetry with `export_to_path` for the day
-    /// Session becomes part of the public TUI surface.
-    #[allow(dead_code)]
-    pub fn export_to_path_with_format(
-        &self,
-        path: &std::path::Path,
-        format: ExportFormat,
-    ) -> std::io::Result<std::path::PathBuf> {
-        use crate::ui::export::write_export_with_format;
-        let header = SessionHeader {
-            session_id: self.session_id.to_string(),
-            label: self.session_label.clone(),
-            parent_session_id: self.parent_session_id.map(|id| id.to_string()),
-            workdir: self.workdir.display().to_string(),
-            model: self.agent.config().model.clone(),
-            subagent_depth: self.subagent_depth,
-        };
-        let artifact = build_export_artifact(&self.messages, &self.agent, &header);
-        write_export_with_format(&artifact, path, format)
     }
 
     fn build_tools_info(&self) -> String {
@@ -5689,23 +5499,6 @@ mod tests {
         let taken = app.take_pending_export();
         assert_eq!(taken, Some(PathBuf::from("/tmp/out.md")));
         assert!(app.take_pending_export().is_none());
-    }
-
-    #[tokio::test]
-    async fn session_export_to_path_with_format_writes_json() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let target = dir.path().join("export.json");
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.messages.add_user("format me".to_string());
-        let written = session
-            .export_to_path_with_format(&target, crate::ui::export::ExportFormat::Json)
-            .expect("export json");
-        assert_eq!(written, target);
-        let body = fs::read_to_string(&target).expect("read json");
-        let value: serde_json::Value = serde_json::from_str(&body).expect("parse json");
-        assert!(value.get("turns").is_some());
-        assert!(value.get("schema_version").is_some());
     }
 
     #[test]
