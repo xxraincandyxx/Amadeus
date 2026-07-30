@@ -37,6 +37,14 @@ npm run mock-api
 npm run dev
 ```
 
+If port 3000 is already in use, select another IPv4 port and configure the client through Connection settings:
+
+```bash
+AMADEUS_MOCK_PORT=3100 npm run mock-api
+```
+
+The mock server binds to `127.0.0.1` by default. Override `AMADEUS_MOCK_HOST` only when a different local interface is required.
+
 ## Native macOS app
 
 The same workspace runs in a Tauri 2 shell with native window controls:

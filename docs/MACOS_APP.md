@@ -45,7 +45,7 @@ cd apps/web
 npm run desktop:dev
 ```
 
-For UI work without an LLM credential, start `npm run mock-api` in another terminal before launching the desktop client.
+For UI work without an LLM credential, start `npm run mock-api` in another terminal before launching the desktop client. When port 3000 is occupied, run `AMADEUS_MOCK_PORT=3100 npm run mock-api` and select that address in Connection settings. The mock binds to `127.0.0.1`; `AMADEUS_MOCK_HOST` can override the local bind address.
 
 The default endpoint is `http://127.0.0.1:3000`. Open the gear button or the error banner’s Settings action to test, save, reset, and reconnect to another HTTP or HTTPS endpoint. The saved value uses the local storage key `amadeus.apiUrl` and is resolved at request time.
 
