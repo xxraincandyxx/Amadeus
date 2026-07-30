@@ -73,7 +73,7 @@ fn profile_from_string(profile: &str) -> AgentProfile {
     }
 }
 
-fn bridge_event_to_sse(
+pub(crate) fn bridge_event_to_sse(
     bridge_event: BridgeEvent,
     context_window_size: u32,
 ) -> Option<Result<Event, Infallible>> {

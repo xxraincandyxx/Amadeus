@@ -11,6 +11,9 @@
 // - type: crate::bridge::BridgeSessionInfo
 // - type: crate::bridge::BridgeEvent
 // - type: crate::bridge::LocalSessionBridge
+// - fn: crate::bridge::LocalSessionBridge::history
+// - fn: crate::bridge::LocalSessionBridge::pending_approvals
+// - fn: crate::bridge::LocalSessionBridge::cancel
 // uses:
 // - module: crate::agent
 // - module: crate::client
@@ -246,6 +249,32 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         Some(info)
     }
 
+    /// Return a snapshot of the conversation history for a session.
+    pub async fn history(&self, session_id: &str) -> Result<Vec<crate::agent::Message>> {
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
+        let agent = session.lock().await.agent.clone();
+        let history = agent.history().read().await.clone();
+        Ok(history)
+    }
+
+    /// Return the pending approval requests for a session.
+    pub async fn pending_approvals(&self, session_id: &str) -> Result<Vec<ApprovalRequest>> {
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
+        let mut approvals: Vec<_> = session
+            .lock()
+            .await
+            .pending_approvals
+            .values()
+            .cloned()
+            .collect();
+        approvals.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(approvals)
+    }
+
     /// Return the active session identifier if one is selected.
     pub async fn active_session_id(&self) -> Option<String> {
         self.active_session_id.read().await.clone()
@@ -432,6 +461,25 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             .agent
             .restore_checkpoint(checkpoint)
             .await?;
+        self.emit_session_update(session_id).await
+    }
+
+    /// Cancel the active turn while keeping the session available for later input.
+    pub async fn cancel(&self, session_id: &str) -> Result<()> {
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
+        {
+            let mut session = session.lock().await;
+            if let Some(task) = session.task.take() {
+                task.abort();
+            }
+            session.pending_approvals.clear();
+            session.approval_tx = None;
+            if session.info.status != BridgeSessionStatus::Closed {
+                session.info.status = BridgeSessionStatus::Idle;
+            }
+        }
         self.emit_session_update(session_id).await
     }
 
@@ -690,5 +738,24 @@ mod tests {
         }
 
         assert!(saw_done);
+        let history = bridge.history(&session.id).await.expect("history");
+        assert!(!history.is_empty());
+        let checkpoint = bridge.checkpoint(&session.id).await.expect("checkpoint");
+        let encoded = serde_json::to_string(&checkpoint).expect("serialize checkpoint");
+        let decoded: SessionCheckpoint =
+            serde_json::from_str(&encoded).expect("deserialize checkpoint");
+        bridge
+            .restore_checkpoint(&session.id, &decoded)
+            .await
+            .expect("restore checkpoint");
+        bridge.cancel(&session.id).await.expect("cancel session");
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::Idle
+        );
     }
 }

@@ -12,7 +12,11 @@
 // - route: /health
 // - route: /chat
 // - route: /execute
-// - route: /stream
+// - route: /v1/sessions
+// - route: /v1/sessions/:id/messages
+// - route: /v1/sessions/:id/events
+// - route: /v1/sessions/:id/approvals/:approval_id
+// - route: /v1/sessions/:id/checkpoint
 // uses:
 // - module: crate::agent::config::Config
 // - module: crate::agent::orchestra
@@ -107,12 +111,15 @@ use crate::agent::config::Config;
 use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
 use crate::api::handlers::{
-    agent_chat, agent_stream, build_prompt, chat, create_agent, delete_entry, execute, get_agent,
-    get_compaction_config, get_compaction_triggers, get_config, get_history, get_session,
-    get_tool_catalog, handle_task, health, kill_agent, list_agents, list_memory_providers,
-    list_pending_approvals, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
-    rag_delete_document, rag_ingest, rag_list_documents, rag_query, restore_session, store_entry,
-    stream, submit_approval, summarize, switch_agent, update_compaction_config, update_config,
+    build_prompt, cancel_external_session, chat, close_external_session, create_external_session,
+    delete_entry, execute, external_session_checkpoint, external_session_events,
+    external_session_history, get_compaction_config, get_compaction_triggers, get_config,
+    get_external_session, get_session, get_tool_catalog, handle_task, health,
+    list_external_session_approvals, list_external_sessions, list_memory_providers,
+    list_prompt_sections, list_sessions, list_skills, load_memory_entries, rag_delete_document,
+    rag_ingest, rag_list_documents, rag_query, restore_external_session_checkpoint,
+    restore_session, store_entry, submit_external_approval, submit_external_message, summarize,
+    update_compaction_config, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
@@ -328,6 +335,30 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
 /// A configured `Router` ready to serve requests.
 pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) -> Router {
     Router::new()
+        .route(
+            "/v1/sessions",
+            get(list_external_sessions).post(create_external_session),
+        )
+        .route(
+            "/v1/sessions/:id",
+            get(get_external_session).delete(close_external_session),
+        )
+        .route("/v1/sessions/:id/messages", post(submit_external_message))
+        .route("/v1/sessions/:id/events", get(external_session_events))
+        .route("/v1/sessions/:id/history", get(external_session_history))
+        .route(
+            "/v1/sessions/:id/approvals",
+            get(list_external_session_approvals),
+        )
+        .route(
+            "/v1/sessions/:id/approvals/:approval_id",
+            post(submit_external_approval),
+        )
+        .route(
+            "/v1/sessions/:id/checkpoint",
+            get(external_session_checkpoint).put(restore_external_session_checkpoint),
+        )
+        .route("/v1/sessions/:id/cancel", post(cancel_external_session))
         // =====================================================================
         // CORE ENDPOINTS
         // =====================================================================
@@ -337,8 +368,6 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         .route("/chat", post(chat))
         // Execute endpoint (Direct tool access)
         .route("/execute", post(execute))
-        // Stream endpoint (SSE event stream)
-        .route("/stream", get(stream))
         // Tasks endpoint (Multi-agent orchestration)
         .route("/tasks", post(handle_task))
         // =====================================================================
@@ -360,8 +389,6 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         // =====================================================================
         // INFO ENDPOINTS
         // =====================================================================
-        // Get conversation history
-        .route("/history", get(get_history))
         // List available skills
         .route("/skills", get(list_skills))
         // Summarize arbitrary text for research workflows
@@ -391,27 +418,6 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
         // =====================================================================
         // MULTI-AGENT ENDPOINTS
         // =====================================================================
-        // List all agents
-        .route("/agents", get(list_agents))
-        // Create a new agent
-        .route("/agents", post(create_agent))
-        // Get info for a specific agent
-        .route("/agents/:id", get(get_agent))
-        // Delete (kill) an agent
-        .route("/agents/:id", delete(kill_agent))
-        // Switch to a different agent
-        .route("/agents/:id/switch", post(switch_agent))
-        // Chat with a specific agent
-        .route("/agents/:id/chat", post(agent_chat))
-        // Stream events from a specific agent
-        .route("/agents/:id/stream", get(agent_stream))
-        // =====================================================================
-        // APPROVAL FLOW
-        // =====================================================================
-        // List pending approvals
-        .route("/approvals", get(list_pending_approvals))
-        // Submit approval decision
-        .route("/approvals/:id", post(submit_approval))
         // Inject shared state into all handlers
         .with_state(state)
         // Add middleware layer

@@ -7,6 +7,7 @@
 // - module: crate::agent::loop_agent
 // - type: crate::agent::loop_agent::SessionLog
 // - type: crate::agent::loop_agent::SessionStats
+// - type: crate::agent::loop_agent::SessionCheckpoint
 // - type: crate::agent::loop_agent::AgentBuilder
 // - type: crate::agent::loop_agent::Agent
 // - type: crate::agent::loop_agent::ApprovalChannels
@@ -161,7 +162,7 @@ pub struct SessionStats {
     pub duration_ms: u64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionCheckpoint {
     pub history: Vec<Message>,
     pub todos: Vec<TodoItem>,

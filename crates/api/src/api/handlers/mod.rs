@@ -108,6 +108,7 @@ pub mod approvals;
 
 /// Agents handler for multi-agent management.
 pub mod agents;
+pub mod external_sessions;
 pub mod summarize;
 
 /// Compaction configuration handler.
@@ -140,6 +141,12 @@ pub use chat::chat;
 pub use compaction::{get_compaction_config, get_compaction_triggers, update_compaction_config};
 pub use config::{get_config, update_config};
 pub use execute::execute;
+pub use external_sessions::{
+    cancel_external_session, close_external_session, create_external_session,
+    external_session_checkpoint, external_session_events, external_session_history,
+    get_external_session, list_external_session_approvals, list_external_sessions,
+    restore_external_session_checkpoint, submit_external_approval, submit_external_message,
+};
 pub use health::health;
 pub use history::get_history;
 pub use memory::{delete_entry, list_memory_providers, load_memory_entries, store_entry};
