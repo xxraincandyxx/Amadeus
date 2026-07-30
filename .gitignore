@@ -54,6 +54,10 @@ benchmarks/.venv/
 .venv/
 python-sdk/.venv/
 
+# JavaScript dependencies and build output
+node_modules/
+dist/
+
 # Privacy / local-only (do not publish)
 audit.md
 .privacy-audit/
