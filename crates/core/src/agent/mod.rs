@@ -21,22 +21,10 @@ pub mod config;
 pub mod events;
 pub mod llm_trace;
 pub mod loop_agent;
-#[cfg(feature = "orchestra")]
-#[deprecated(note = "use crate::agent::orchestra::AgentOrchestrator")]
-pub mod manager;
 pub mod messages;
 #[cfg(feature = "orchestra")]
 pub mod orchestra;
-pub mod profile; // NEW: Agent profiles
-#[cfg(feature = "orchestra")]
-#[deprecated(
-    note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
-)]
-pub mod team;
-
-#[cfg(feature = "orchestra")]
-#[deprecated(note = "use crate::agent::orchestra::OrchestraRuntime")]
-pub mod supervisor;
+pub mod profile;
 
 #[cfg(feature = "orchestra")]
 pub mod worker;
@@ -51,12 +39,6 @@ pub use config::{
 pub use events::{AgentEvent, ApprovalDecision, ApprovalRequest, RunResult, ToolCall};
 pub use llm_trace::{LlmTraceRequest, LlmTraceResponse, LlmTraceSink, LlmTraceToolCall};
 pub use loop_agent::{Agent, SessionCheckpoint, SessionLog, SessionStats};
-#[cfg(feature = "orchestra")]
-#[deprecated(
-    note = "use crate::agent::orchestra::{AgentInfo, AgentOrchestrator, AgentStatus}"
-)]
-#[allow(deprecated)]
-pub use manager::AgentManager;
 pub use messages::{ContentBlock, Message};
 #[cfg(feature = "orchestra")]
 pub use orchestra::{
@@ -64,23 +46,7 @@ pub use orchestra::{
     MailboxEventKind, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraRuntime,
     OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
 };
-pub use profile::AgentProfile; // NEW
-#[cfg(feature = "orchestra")]
-#[deprecated(
-    note = "use crate::agent::orchestra::{AgentOrchestra, OrchestraLeader, OrchestraRegistry, OrchestraStatus, OrchestraTask, OrchestraTaskStatus}"
-)]
-pub use team::{
-    AgentTeam, ArtifactRecord as LegacyArtifactRecord, MailboxEvent as LegacyMailboxEvent,
-    MailboxEventKind as LegacyMailboxEventKind, TeamLeader, TeamRegistry, TeamStatus, TeamTask,
-    TeamTaskStatus,
-};
-
-#[cfg(feature = "orchestra")]
-#[deprecated(
-    note = "use crate::agent::orchestra::{OrchestraRuntime, OrchestraStrategy, OrchestraConfig}"
-)]
-#[allow(deprecated)]
-pub use supervisor::{DispatchStrategy, Supervisor, SupervisorConfig};
+pub use profile::AgentProfile;
 
 #[cfg(feature = "orchestra")]
 pub use worker::{Task, TaskResult, WorkerConfig, WorkerInfo, WorkerStatus};

@@ -526,9 +526,10 @@ impl Config {
     }
 
     pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
-        let base_prompt = amadeus_prompts::render_system_prompt(
+        let base_prompt = amadeus_prompts::build_system_prompt(
             &self.workdir.display().to_string(),
             include_sub_agent_tool,
+            &[],
         );
         let profile = self.prompt_profile();
         let custom_sections = self.render_prompt_profile_sections(profile);

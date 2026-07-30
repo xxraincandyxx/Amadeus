@@ -18,8 +18,7 @@
 
 //! Composable system prompt builder.
 //!
-//! The builder replaces the old monolithic `SYSTEM_PROMPT` const with
-//! prioritised, replaceable sections that can be extended at runtime.
+//! The builder joins prioritised, replaceable sections that can be extended at runtime.
 
 /// Marker inserted between static and dynamic prompt content.
 pub const DYNAMIC_BOUNDARY_MARKER: &str = "__SYSTEM_PROMPT_DYNAMIC_BOUNDARY__";

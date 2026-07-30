@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Default system prompt sections decomposed from the legacy monolithic template.
+// summary: Default sections used by the composable system prompt builder.
 // layer: core
 // status: active
 // feature_flags: none
@@ -8,8 +8,7 @@
 // uses:
 // - type: crate::builder::PromptSection
 // invariants:
-// - Default sections must produce identical output to the old render_system_prompt()
-//   when joined in the same order and passed the same placeholder values.
+// - Default sections preserve stable ordering and tool-availability behavior.
 // side_effects: none
 // tests:
 // - cmd: cargo test -p prompts
@@ -17,8 +16,7 @@
 
 //! Default system prompt sections.
 //!
-//! These decompose the old monolithic `SYSTEM_PROMPT` into individually
-//! replaceable sections. Each section has a stable id and priority.
+//! Each section is independently replaceable and has a stable id and priority.
 
 use crate::builder::PromptSection;
 

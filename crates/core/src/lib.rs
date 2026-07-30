@@ -87,16 +87,3 @@ pub use agent::{
     OrchestraStatus, OrchestraStrategy, OrchestraTask, OrchestraTaskStatus, Task, TaskResult,
     WorkerConfig, WorkerInfo, WorkerStatus,
 };
-
-#[cfg(feature = "orchestra")]
-#[deprecated(note = "use AgentOrchestrator and orchestra::* types instead")]
-#[allow(deprecated)]
-pub use agent::{
-    AgentInfo as LegacyAgentInfo, AgentManager, AgentStatus as LegacyAgentStatus, AgentTeam,
-    TeamLeader, TeamRegistry, TeamStatus, TeamTask, TeamTaskStatus,
-};
-
-#[cfg(feature = "orchestra")]
-#[deprecated(note = "use OrchestraRuntime and orchestra::* types instead")]
-#[allow(deprecated)]
-pub use agent::{DispatchStrategy, Supervisor, SupervisorConfig};
