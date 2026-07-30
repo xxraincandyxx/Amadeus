@@ -7,6 +7,8 @@ const histories = new Map([[sessions[0].id, [
   { role: "assistant", content: [{ type: "text", text: "I mapped the session protocol and prepared the workspace. The app now has live sessions, streaming events, tool activity, approvals, history hydration, and cancellation." }] },
 ]]]);
 const listeners = new Map();
+const host = process.env.AMADEUS_MOCK_HOST || "127.0.0.1";
+const port = Number(process.env.AMADEUS_MOCK_PORT || 3000);
 
 function json(response, status, payload) {
   response.writeHead(status, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS" });
@@ -27,7 +29,7 @@ function readBody(request) {
 
 const server = http.createServer(async (request, response) => {
   if (request.method === "OPTIONS") return json(response, 204, {});
-  const url = new URL(request.url, "http://localhost:3000");
+  const url = new URL(request.url, `http://${host}:${port}`);
   const parts = url.pathname.split("/").filter(Boolean);
   if (url.pathname === "/health") return json(response, 200, { status: "ok", version: "mock" });
   if (url.pathname === "/v1/sessions" && request.method === "GET") return json(response, 200, { sessions, active_session_id: sessions[0]?.id || null });
@@ -68,4 +70,4 @@ const server = http.createServer(async (request, response) => {
   json(response, 404, { error: "NotFound", message: "Route not found" });
 });
 
-server.listen(3000, () => console.log("Mock Amadeus API listening on http://localhost:3000"));
+server.listen(port, host, () => console.log(`Mock Amadeus API listening on http://${host}:${port}`));

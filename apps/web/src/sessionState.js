@@ -73,7 +73,7 @@ export function reduceEvent(state, eventName, payload) {
     status = "completed";
   }
   if (eventName === "error") {
-    timeline.push({ id: `error-${Date.now()}`, kind: "error", text: payload.message });
+    timeline.push({ id: `error-${Date.now()}`, kind: "error", text: payload.message || payload.error || "The agent reported an unknown error." });
     status = "failed";
   }
   if (eventName === "compaction") {

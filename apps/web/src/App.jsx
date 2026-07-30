@@ -162,6 +162,7 @@ function App() {
     streamRef.current = source;
     eventNames.forEach((eventName) => {
       source.addEventListener(eventName, (event) => {
+        if (eventName === "error" && typeof event.data !== "string") return;
         const payload = parseData(event);
         setRuntime(activeId, (previous) => reduceEvent(previous, eventName, payload));
         if (eventName === "session_state") {
@@ -172,9 +173,19 @@ function App() {
         }
       });
     });
-    source.onopen = () => setError("");
-    source.onerror = () => {
+    source.onopen = () => {
+      setServerOnline(true);
+      setError("");
+    };
+    source.onerror = (event) => {
+      if (typeof event.data === "string") return;
       setError("Live connection interrupted. Amadeus will retry automatically.");
+      api.health()
+        .then(() => setServerOnline(true))
+        .catch(() => {
+          setServerOnline(false);
+          setError("Amadeus API is unavailable. Start the server, then retry.");
+        });
       loadHistory(activeId).catch(() => undefined);
     };
 
