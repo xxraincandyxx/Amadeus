@@ -152,7 +152,7 @@ function App() {
     localStorage.setItem("amadeus.activeSession", activeId);
     loadHistory(activeId).catch((caught) => setError(caught.message));
     setSidebarOpen(false);
-  }, [activeId, loadHistory]);
+  }, [activeId, apiEpoch, loadHistory]);
 
   useEffect(() => {
     streamRef.current?.close();
