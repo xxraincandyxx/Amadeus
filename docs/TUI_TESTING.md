@@ -128,7 +128,7 @@ let client = ScenarioMockClient::scripted(vec![
 
 **C. Load a JSON fixture** — best for replaying recorded sessions:
 ```rust
-let json = std::fs::read_to_string("tests/tui/scenarios/text_turn.json").unwrap();
+let json = std::fs::read_to_string("tests/fixtures/scenarios/basic_query.json").unwrap();
 let client = ScenarioMockClient::from_json(&json).unwrap();
 ```
 
@@ -198,7 +198,7 @@ When a bug only reproduces with a real provider run, **record once, replay forev
 3. Convert it to a scenario:
    ```bash
    cargo run --example convert_session --features test-utils -- \
-       path/to/session.json > tests/tui/scenarios/my_bug.json
+       path/to/session.json > tests/fixtures/scenarios/my_bug.json
    ```
    (`examples/convert_session.rs`; converter logic in `crates/core/src/test_utils/replay.rs:30`, `session_log_to_scenario`.)
 4. Load it in a test via `ScenarioMockClient::from_json`.
@@ -262,7 +262,7 @@ cargo run --example convert_session --features test-utils -- path/to/session.jso
 
 ## Anti-patterns to avoid
 
-- **Don't use `tests/tui/` (the legacy snapshot harness).** `tests/tui/harness.rs` is explicitly deprecated — it captures blank frames and does not drive the real `App`. Use `HeadlessApp` instead.
+- **Use `HeadlessApp`, not a synthetic snapshot harness.** It drives the real `App` against ratatui's `TestBackend`.
 - **Don't assert message content via `capture()`.** Committed messages live in scrollback, not the frame buffer. Use `messages_text()`.
 - **Don't call `messages_text()` twice expecting old content.** It drains.
 - **Don't forget `--features full`.** The crate has no default features.

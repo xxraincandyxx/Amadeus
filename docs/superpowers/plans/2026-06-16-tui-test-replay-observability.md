@@ -1,5 +1,7 @@
 # TUI Test Replay & Observability Implementation Plan
 
+> Historical implementation plan. The non-functional `tests/tui/` snapshot harness and its fixtures described below have since been removed; current tests use `HeadlessApp` and `tests/fixtures/scenarios/`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the TUI testable and verifiable by an automated agent — a real headless driver that renders the actual `App`, a readable frame→text renderer, and a converter that turns a recorded `SessionLog` into a replayable `ScenarioMockClient` scenario.

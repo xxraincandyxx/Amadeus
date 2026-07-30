@@ -250,8 +250,6 @@ test-utils = ["amadeus_core/test-utils", "amadeus_tui?/test-utils", "tempfile", 
 
 concurrency = ["amadeus_core/concurrency"]
 orchestra = ["amadeus_core/orchestra", "concurrency"]
-team = ["orchestra"]       # legacy alias
-supervisor = ["orchestra"] # legacy alias
 context = ["amadeus_core/context"]
 
 full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
@@ -262,8 +260,7 @@ Important implications:
 - `api` implies `orchestra`
 - `tui` implies `concurrency`
 - `orchestra` implies `concurrency`
-- `team` and `supervisor` are compatibility aliases, not separate subsystems
-- there is no active `mesh` feature in the current manifest
+- removed legacy names (`team`, `supervisor`, and `mesh`) are not active features
 
 ## Testing Structure
 
@@ -290,7 +287,7 @@ The root `tests/` directory covers end-to-end behavior such as:
 Reusable testing infrastructure lives under:
 
 - `tests/scenarios/`
-- `tests/tui/`
+- `tests/fixtures/scenarios/`
 - `tests/mock_llm.rs`
 
 Feature gating is mixed:

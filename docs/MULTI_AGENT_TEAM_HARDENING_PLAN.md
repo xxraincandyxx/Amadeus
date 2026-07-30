@@ -1,5 +1,7 @@
 # Multi-Agent Team Hardening Plan
 
+> Historical design plan. The deprecated `Supervisor`, `Manager`, and public `team` compatibility surfaces described below have since been removed; use the canonical orchestra APIs.
+
 ## Goal
 
 Upgrade Amadeus multi-agent collaboration from capability-based delegation into a more robust team workflow with:

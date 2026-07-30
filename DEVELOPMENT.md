@@ -6,19 +6,19 @@ This document provides technical details, architectural insights, and contributi
 
 Amadeus is built on a modular, async architecture using **Tokio**. It follows the **ReAct (Reason + Act)** pattern for agent orchestration.
 
-### 1. The Agent Loop (`src/agent/loop_agent.rs`)
+### 1. The Agent Loop (`crates/core/src/agent/loop_agent.rs`)
 The heart of the SDK. It manages the conversation state and orchestrates the interaction between the LLM and available tools.
 - **Turn-based**: Each interaction is a "turn" that can include text response and tool calls.
 - **Internal History**: The `Agent` struct manages its own `Arc<RwLock<Vec<Message>>>` history.
 - **Streaming**: Supports real-time event streaming via `run_stream`.
 
-### 2. Multi-Agent Supervisor (`src/agent/supervisor.rs`)
+### 2. Multi-Agent Orchestra (`crates/core/src/agent/orchestra.rs`)
 Manages a pool of specialized worker agents.
 - **Concurrency**: Uses `tokio::task::JoinSet` for parallel task execution.
 - **Queueing**: Implements a `TaskQueue` with backpressure (`max_pending_tasks`).
 - **P2P Collaboration**: Routes `HelpRequest` events between workers via a central bus.
 
-### 3. LLM Clients (`src/client/`)
+### 3. LLM Clients (`crates/core/src/client/`)
 Provider-agnostic abstractions for Anthropic and OpenAI.
 - **Unified Interface**: Generic `LLMClient` trait ensures consistency.
 - **Event-Driven**: Streaming results are normalized into `StreamEvent` tokens.
@@ -29,7 +29,7 @@ Provider-agnostic abstractions for Anthropic and OpenAI.
 Amadeus is highly modular. Use feature flags to keep your build lean:
 - `tui`: Terminal User Interface components.
 - `api`: Axum-based HTTP server.
-- `supervisor`: Multi-agent orchestration system.
+- `orchestra`: Multi-agent orchestration system.
 - `full`: Enables all optional features.
 
 ### Commands
@@ -58,7 +58,7 @@ Amadeus prioritizes **Mock-First Testing** to ensure stability without API costs
 
 ## Design Patterns
 
-1. **Actor-like Workers**: Workers are spawned as persistent configurations and managed by the Supervisor.
+1. **Actor-like Workers**: Workers are spawned as persistent configurations and managed by the orchestra runtime.
 2. **Generic Clients**: The `Agent<C>` struct is generic over the LLM provider, allowing zero-cost provider switching.
 3. **Reactive UI**: The TUI consumes an `AgentEvent` stream, decoupling logic from presentation.
 

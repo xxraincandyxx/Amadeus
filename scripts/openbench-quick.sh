@@ -1,4 +1,23 @@
 #!/usr/bin/env bash
+# @amadeus-header
+# summary: Runs a configurable set of quick OpenBench smoke benchmarks against an LLM endpoint.
+# layer: benchmark
+# status: experimental
+# feature_flags: none
+# provides:
+# - cmd: scripts/openbench-quick.sh
+# uses:
+# - cmd: openbench
+# - protocol: OpenAI-compatible or Anthropic-compatible API
+# invariants:
+# - Explicit command-line values override environment-derived defaults.
+# side_effects:
+# - Performs network or HTTP operations.
+# - Runs external commands or subprocesses.
+# tests:
+# - cmd: bash -n scripts/openbench-quick.sh
+# @end-amadeus-header
+
 # openbench-quick — fast smoke tests against an OpenAI-compatible LLM API.
 #
 # Default benchmarks: mini_locomo, mini_mmlu

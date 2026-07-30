@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# @amadeus-header
+# summary: Launches an existing Amadeus binary from the repository build output.
+# layer: script
+# status: active
+# feature_flags:
+# - full
+# provides:
+# - cmd: scripts/amadeus-launch.sh
+# uses:
+# - artifact: target release or debug binary
+# invariants:
+# - The release binary is preferred when both build profiles exist.
+# side_effects:
+# - Runs an external process.
+# tests:
+# - cmd: bash -n scripts/amadeus-launch.sh
+# @end-amadeus-header
+
 # Amadeus system launcher
 # Install: ln -sf "$(pwd)/scripts/amadeus-launch.sh" /usr/local/bin/amadeus
 # Usage:  amadeus              (TUI mode)

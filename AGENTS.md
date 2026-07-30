@@ -36,10 +36,10 @@
 
 `api` (axum HTTP adapter, implies `orchestra`), `tui` (ratatui UI, implies `concurrency`),
 `concurrency` (lock primitives), `orchestra` (canonical multi-agent orchestration surface, implies `concurrency`),
-`team`/`supervisor` (legacy aliases for `orchestra`), `context` (context management),
+`context` (context management),
 `test-utils` (test helpers and recording), `full` (all features).
 
-Chains: `api` → `orchestra` → `concurrency`, `tui` → `concurrency`, `team`/`supervisor` → `orchestra`
+Chains: `api` → `orchestra` → `concurrency`, `tui` → `concurrency`
 
 ---
 

@@ -126,7 +126,7 @@ Hooks can return:
 ### Notable Features ⭐
 
 1. **Multi-Agent Support**
-   - Supervisor/worker pattern
+   - Orchestra/worker pattern
    - Peer-to-peer agent communication
    - Lock management for resource coordination
 

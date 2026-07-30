@@ -96,7 +96,7 @@ When testing a new build of the TUI, follow this progression from simple to comp
 5. Send `n` (without enter) to deny the request. 
 6. Capture and verify the agent gracefully handled the denial without crashing.
 
-### Level 3: Complex Multi-Agent (Supervisor/Worker)
+### Level 3: Complex Multi-Agent (Orchestra/Worker)
 **Goal:** Verify sub-agent spawning, context switching, and stream stability.
 1. Send: `tmux-cli send "Please create a Flappy Bird game in Python using pygame. Act as the supervisor, and delegate the task to a worker agent using the sub_agent tool. Tell it to write the code and run it to verify." --pane=remote-cli-session:1`
 2. Wait and capture repeatedly (`tmux-cli wait_idle` or `sleep 10 && tmux-cli capture`).

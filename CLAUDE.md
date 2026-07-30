@@ -32,7 +32,7 @@ cargo check -p runtime
 cargo test  -p core
 ```
 
-> `supervisor` and `team` are legacy feature aliases that still compile but resolve to `orchestra`. Prefer `orchestra`. There is **no** `mesh` feature.
+> `orchestra` is the only multi-agent feature flag. The removed `team`, `supervisor`, and `mesh` feature names are not supported.
 
 ### Running
 
@@ -109,7 +109,7 @@ Amadeus is highly modular. Canonical features (defined in the root `Cargo.toml`,
 - `test-utils` — Test utilities (session recording, fixtures, assertions)
 - `full` — All of the above
 
-Legacy aliases (kept for compatibility, prefer the canonical name): `team` and `supervisor` both enable `orchestra`. There is no `mesh` feature despite what older docs may suggest.
+The removed `team`, `supervisor`, and `mesh` feature names are not supported; use `orchestra`.
 
 ## Workspace Architecture
 
@@ -162,7 +162,7 @@ The heart of the SDK is `core/src/agent/loop_agent.rs`. It implements the ReAct 
 
 ### Multi-Agent System (Orchestra)
 
-Orchestration lives in `core/src/agent/orchestra.rs` and `core/src/agent/worker.rs`, with the reusable data models and selection logic in the `runtime` crate (`runtime/src/orchestra.rs`, `worker.rs`, `team.rs`, `scheduler.rs`). Note: `team.rs` and `supervisor.rs` still exist but are legacy; new work should target the `orchestra` types.
+Orchestration lives in `crates/core/src/agent/orchestra.rs` and `crates/core/src/agent/worker.rs`, with reusable data models and selection logic in the runtime crate (`crates/runtime/src/orchestra.rs`, `worker.rs`, `team.rs`, and `scheduler.rs`). The runtime `team.rs` file remains an internal data-model implementation; the public surface uses orchestra terminology.
 
 - **Orchestra**: manages a pool of specialized worker agents
 - **Concurrency**: uses `tokio::task::JoinSet` for parallel task execution
@@ -211,15 +211,15 @@ Two cooperating layers:
 Amadeus prioritizes **Mock-First Testing** to ensure stability without API costs.
 
 - **Unit tests** live alongside the code in each crate's `src/`.
-- **Integration tests** are in `tests/` (e.g. `p2p_test.rs`, `simulation_p2p.rs`, `e2e_product_flow.rs`, `agent_integration_test.rs`, `compaction_test.rs`, `tool_approval_test.rs`, `monitoring_harness_test.rs`, `tui_replay_test.rs`, plus the `tests/mocks/` and `tests/scenarios/` harnesses). Note: `tests/tui/harness.rs` is a deprecated non-functional stub — use `HeadlessApp` instead (see below).
+- **Integration tests** are in `tests/` (e.g. `p2p_test.rs`, `simulation_p2p.rs`, `e2e_product_flow.rs`, `agent_integration_test.rs`, `compaction_test.rs`, `tool_approval_test.rs`, `monitoring_harness_test.rs`, and `tui_replay_test.rs`, plus the `tests/mocks/` and `tests/scenarios/` harnesses).
 - **Mock utilities**: `mockito` / `wiremock` for HTTP, `tests/mock_llm.rs` for a mock LLM client, `tests/mocks/scenario_client.rs` (`ScenarioMockClient`) for scripted scenario-driven captures, `tests/scenarios/timeline.rs` for timestamped event timelines.
 
 ### TUI Testing (feature `test-utils`)
 
-Drive the **real** `App` headlessly against a ratatui `TestBackend` via `amadeus::ui::headless::HeadlessApp<C: LLMClient>` (in `crates/tui/src/ui/headless.rs`). Build it with any `LLMClient` — typically `ScenarioMockClient::from_json(...)` from a fixture in `tests/tui/scenarios/`. API: `type_text`, `submit().await` (runs a full agent turn headlessly), `capture() -> (TuiFrameSnapshot, String)` (real rendered frame + `render_frame_text` text), and `messages_text(width)` (committed conversation).
+Drive the **real** `App` headlessly against a ratatui `TestBackend` via `amadeus::ui::headless::HeadlessApp<C: LLMClient>` (in `crates/tui/src/ui/headless.rs`). Build it with any `LLMClient` — typically `ScenarioMockClient::from_json(...)` from a fixture in `tests/fixtures/scenarios/`. API: `type_text`, `submit().await` (runs a full agent turn headlessly), `capture() -> (TuiFrameSnapshot, String)` (real rendered frame + `render_frame_text` text), and `messages_text(width)` (committed conversation).
 
 ```rust
-let client = ScenarioMockClient::from_json(&std::fs::read_to_string("tests/tui/scenarios/text_turn.json")?)?;
+let client = ScenarioMockClient::from_json(&std::fs::read_to_string("tests/fixtures/scenarios/basic_query.json")?)?;
 let mut app = HeadlessApp::new(client, ".", "model", 80, 24); // use a realistic size so layout fits
 app.type_text("hi");
 app.submit().await;
@@ -297,7 +297,7 @@ The TUI supports two session types:
 - `src/lib.rs` — thin compatibility facade (re-exports `amadeus_core` + adapters)
 - `src/main.rs` — CLI entry point / mode switch (TUI, server, record, assess, export)
 - `crates/core/src/agent/loop_agent.rs` — core agent loop (ReAct)
-- `crates/core/src/agent/orchestra.rs` — multi-agent orchestration (canonical; `team.rs`/`supervisor.rs` are legacy)
+- `crates/core/src/agent/orchestra.rs` — canonical multi-agent orchestration
 - `crates/runtime/src/` — reusable orchestration models + selectors
 - `crates/core/src/client/` — LLM provider clients (`anthropic.rs`, `openai.rs`, trait in `mod.rs`)
 - `crates/core/src/tools/` — tool system + registry
@@ -307,7 +307,7 @@ The TUI supports two session types:
 - `crates/api/`, `crates/tui/` — HTTP and terminal adapters
 - `crates/tui/src/ui/headless.rs` — `HeadlessApp` headless TUI test driver (feature `test-utils`)
 - `crates/core/src/test_utils/` — `scenario.rs` (scenario types), `replay.rs` (`session_log_to_scenario`), `frame_text.rs` (`render_frame_text`), `testflow/` (`SessionRecorder`, frame snapshots)
-- `tests/tui/scenarios/` — replayable scenario JSON fixtures; `examples/convert_session.rs` — record→scenario CLI
+- `tests/fixtures/scenarios/` — replayable scenario JSON fixtures; `examples/convert_session.rs` — record→scenario CLI
 - `tests/` — integration tests directory
 - `Cargo.toml` — workspace definition, features, and the root facade package
 - `docs/ARCHITECTURE.md` — authoritative architecture deep-dive
