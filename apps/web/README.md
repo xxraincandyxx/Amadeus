@@ -1,6 +1,6 @@
 # Amadeus Web
 
-React MVP for the versioned Amadeus session API. The interface provides live-session navigation, history hydration, SSE streaming, tool activity, approvals, cancellation, context usage, and responsive desktop/mobile layouts.
+React and Tauri client for the versioned Amadeus session API. The interface provides live-session navigation, history hydration, SSE streaming, tool activity, approvals, cancellation, runtime connection settings, context usage, and responsive desktop/mobile layouts.
 
 ## Run with the Amadeus server
 
@@ -20,11 +20,13 @@ npm run dev
 
 Open `http://127.0.0.1:5173`.
 
-The default API address is `http://127.0.0.1:3000`. Override it when necessary:
+The default API address is `http://127.0.0.1:3000`. Set a development default when necessary:
 
 ```bash
 VITE_AMADEUS_API_URL=http://localhost:8080 npm run dev
 ```
+
+The gear button opens runtime Connection settings. The saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
 
 ## UI-only demo
 
@@ -35,12 +37,29 @@ npm run mock-api
 npm run dev
 ```
 
+## Native macOS app
+
+The same workspace runs in a Tauri 2 shell with native window controls:
+
+```bash
+npm run desktop:dev
+npm run desktop:build
+```
+
+The release bundle is generated at `src-tauri/target/release/bundle/macos/Amadeus.app`. It is a native HTTP client and currently requires a separately running Amadeus server. See [`../../docs/MACOS_APP.md`](../../docs/MACOS_APP.md) for architecture, signing, packaging, and security details.
+
+Use `npm run desktop:icon` after changing `src-tauri/app-icon.svg`.
+
 ## Verification
 
 ```bash
 npm run lint
 npm run build
 npm audit --omit=dev
+cargo check --manifest-path src-tauri/Cargo.toml
+npm run desktop:build
 ```
 
 The web app is intended for trusted local use. The Amadeus HTTP server currently has unrestricted CORS and no built-in authentication; see `docs/HTTP_API.md` before any remote deployment.
+
+Visual changes must follow [`../../docs/WEB_DESIGN_SYSTEM.md`](../../docs/WEB_DESIGN_SYSTEM.md) and the repository workflow in [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md).

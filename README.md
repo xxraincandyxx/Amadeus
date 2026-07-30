@@ -15,6 +15,7 @@ An AI agent framework in Rust with a ReAct-style agent loop, multi-provider LLM 
 - **Context Compaction** — Automatic context-window management with configurable thresholds, LLM-based summarization, and pluggable triggers.
 - **Interactive TUI** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, themed rendering, and conversation export.
 - **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more.
+- **Web and macOS App** — React agent workspace with live sessions, tools, approvals, runtime connection settings, and a native Tauri macOS bundle.
 - **Telemetry** — Structured event recording with pluggable sinks (JSONL file, in-memory) for runtime observability.
 - **Session Management** — Automatic session persistence, restore, checkpoints with code-state rewind, and conversation export to Markdown or JSON.
 
@@ -208,6 +209,8 @@ The policy system blocks dangerous patterns including `sudo`, `chmod 777`, `rm -
 Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends.
 
 The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
+
+The same interface is packaged as a native macOS client. See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds, [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for repository contribution standards.
 
 ```
 CLI / Library call
