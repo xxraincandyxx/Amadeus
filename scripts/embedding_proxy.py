@@ -1,4 +1,24 @@
 #!/usr/bin/env python3
+# @amadeus-header
+# summary: Serves local text embeddings through an OpenAI-compatible HTTP endpoint.
+# layer: script
+# status: experimental
+# feature_flags: none
+# provides:
+# - cmd: scripts/embedding_proxy.py
+# - route: /v1/embeddings
+# uses:
+# - runtime: fastembed model inference
+# - protocol: HTTP JSON API
+# invariants:
+# - Embedding responses preserve input order and include stable numeric indexes.
+# side_effects:
+# - Performs network or HTTP operations.
+# - Loads a local embedding model.
+# tests:
+# - cmd: python3 -m py_compile scripts/embedding_proxy.py
+# @end-amadeus-header
+
 """Lightweight OpenAI-compatible /v1/embeddings proxy using fastembed.
 
 Usage:
@@ -11,12 +31,10 @@ Then configure amadeus with:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import json
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-import numpy as np  # pyright: ignore[reportMissingImports]
 from fastembed import TextEmbedding  # pyright: ignore[reportMissingImports]
 
 

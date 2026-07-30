@@ -44,7 +44,7 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            run_server(port, client, sdk_config.clone()).await?;
+            run_server(port, client, sdk_config.clone(), None).await?;
         }
         Provider::OpenAI => {
             let client = OpenAIClient::new(
@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
                 config.base_url.clone(),
                 config.model.clone(),
             );
-            run_server(port, client, sdk_config.clone()).await?;
+            run_server(port, client, sdk_config.clone(), None).await?;
         }
     }
 

@@ -27,7 +27,6 @@ use amadeus::agent::config::Config;
 use amadeus::agent::llm_trace::LlmTraceSink;
 use amadeus::agent::loop_agent::Agent;
 use amadeus::client::StreamEvent;
-use futures::StreamExt;
 
 mod mock_llm;
 

@@ -44,8 +44,8 @@ const SUB_AGENT_MAX_TURNS: usize = 30;
 #[derive(Debug, Deserialize)]
 struct SubAgentInput {
     prompt: String,
-    #[allow(dead_code)]
-    description: Option<String>,
+    #[serde(rename = "description")]
+    _description: Option<String>,
 }
 
 pub struct SubAgentTool<C: LLMClient> {

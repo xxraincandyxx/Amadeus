@@ -55,12 +55,15 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+#[cfg(feature = "concurrency")]
 use std::time::SystemTime;
 
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
+#[cfg(feature = "concurrency")]
 use std::collections::hash_map::DefaultHasher;
+#[cfg(feature = "concurrency")]
 use std::hash::{Hash, Hasher};
 
 use crate::agent::config::Config;
@@ -96,7 +99,7 @@ pub struct EditFileInput {
     pub replace_all: bool,
 }
 
-/// Compute a simple hash of file content for cache validation.
+#[cfg(feature = "concurrency")]
 fn compute_content_hash(content: &str) -> u64 {
     let mut hasher = DefaultHasher::new();
     content.hash(&mut hasher);
@@ -107,9 +110,9 @@ fn compute_content_hash(content: &str) -> u64 {
 pub struct FileTools {
     path_policy: PathPolicy,
     max_output_bytes: usize,
-    /// Optional file lock manager for concurrent access control.
+    #[cfg(feature = "concurrency")]
     file_lock_manager: Option<Arc<FileLockManager>>,
-    /// Agent ID for this agent (used for file lock tracking).
+    #[cfg(feature = "concurrency")]
     agent_id: Option<AgentId>,
 }
 
@@ -121,7 +124,9 @@ impl FileTools {
                 config.permissions.additional_directories.clone(),
             ),
             max_output_bytes: config.max_output_bytes,
+            #[cfg(feature = "concurrency")]
             file_lock_manager: None,
+            #[cfg(feature = "concurrency")]
             agent_id: None,
         }
     }
@@ -132,13 +137,17 @@ impl FileTools {
         file_lock_manager: Option<Arc<FileLockManager>>,
         agent_id: Option<AgentId>,
     ) -> Self {
+        #[cfg(not(feature = "concurrency"))]
+        let _ = (file_lock_manager, agent_id);
         Self {
             path_policy: PathPolicy::new(
                 config.workdir.clone(),
                 config.permissions.additional_directories.clone(),
             ),
             max_output_bytes: config.max_output_bytes,
+            #[cfg(feature = "concurrency")]
             file_lock_manager,
+            #[cfg(feature = "concurrency")]
             agent_id,
         }
     }
@@ -147,7 +156,9 @@ impl FileTools {
         Self {
             path_policy: PathPolicy::new(workdir.clone(), Vec::new()),
             max_output_bytes,
+            #[cfg(feature = "concurrency")]
             file_lock_manager: None,
+            #[cfg(feature = "concurrency")]
             agent_id: None,
         }
     }
@@ -159,10 +170,14 @@ impl FileTools {
         file_lock_manager: Arc<FileLockManager>,
         agent_id: AgentId,
     ) -> Self {
+        #[cfg(not(feature = "concurrency"))]
+        let _ = (file_lock_manager, agent_id);
         Self {
             path_policy: PathPolicy::new(workdir.clone(), Vec::new()),
             max_output_bytes,
+            #[cfg(feature = "concurrency")]
             file_lock_manager: Some(file_lock_manager),
+            #[cfg(feature = "concurrency")]
             agent_id: Some(agent_id),
         }
     }
@@ -188,7 +203,7 @@ impl FileTools {
         }
     }
 
-    /// Get file modification time.
+    #[cfg(feature = "concurrency")]
     async fn get_modified_time(path: &PathBuf) -> Result<SystemTime> {
         tokio::fs::metadata(path)
             .await
