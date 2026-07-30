@@ -79,6 +79,8 @@ function App() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [creatingSession, setCreatingSession] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [newSessionName, setNewSessionName] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
@@ -200,8 +202,20 @@ function App() {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [runtime.timeline, runtime.streamingText, runtime.thinking, runtime.approvals]);
 
+  const openCreateDialog = useCallback(() => {
+    setNewSessionName("");
+    setCreateError("");
+    setCreating(true);
+  }, []);
+
   const createSession = async (event) => {
     event?.preventDefault();
+    if (!serverOnline || creatingSession) {
+      setCreateError("Connect to the Amadeus API before creating a session.");
+      return;
+    }
+    setCreatingSession(true);
+    setCreateError("");
     try {
       const name = newSessionName.trim() || `Session ${sessions.length + 1}`;
       const session = await api.createSession(name, "default");
@@ -211,7 +225,9 @@ function App() {
       setCreating(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (caught) {
-      setError(caught.message);
+      setCreateError(caught.message);
+    } finally {
+      setCreatingSession(false);
     }
   };
 
@@ -250,7 +266,7 @@ function App() {
       const remaining = sessions.filter((session) => session.id !== activeId);
       setSessions(remaining);
       setActiveId(remaining[0]?.id || null);
-      if (!remaining.length) setCreating(true);
+      if (!remaining.length) openCreateDialog();
     } catch (caught) {
       setError(caught.message);
     }
@@ -293,7 +309,7 @@ function App() {
         open={sidebarOpen}
         online={serverOnline}
         onSelect={setActiveId}
-        onCreate={() => setCreating(true)}
+        onCreate={openCreateDialog}
         onSettings={() => setShowSettings(true)}
         onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
@@ -319,7 +335,7 @@ function App() {
 
         <section className="conversation" aria-live="polite">
           {!activeSession ? (
-            <EmptyState onCreate={() => setCreating(true)} online={serverOnline} />
+            <EmptyState onCreate={openCreateDialog} online={serverOnline} />
           ) : (
             <div className="conversation-column">
               {!runtime.timeline.length && !runtime.streamingText && (
@@ -359,9 +375,16 @@ function App() {
       {creating && (
         <CreateDialog
           value={newSessionName}
+          online={serverOnline}
+          submitting={creatingSession}
+          error={createError}
           onChange={setNewSessionName}
           onSubmit={createSession}
           onClose={() => setCreating(false)}
+          onSettings={() => {
+            setCreating(false);
+            setShowSettings(true);
+          }}
         />
       )}
 
@@ -557,13 +580,16 @@ function DetailsPanel({ session, runtime, onClose }) {
   );
 }
 
-function CreateDialog({ value, onChange, onSubmit, onClose }) {
+function CreateDialog({ value, online, submitting, error, onChange, onSubmit, onClose, onSettings }) {
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <form className="dialog" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="dialog-icon"><Sparkle weight="fill" /></div><h2>New session</h2><p>Start with a clean conversation and an independent agent context.</p>
+      <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-session-title" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
+        <div className="dialog-icon"><Sparkle weight="fill" /></div><h2 id="create-session-title">New session</h2><p>Start with a clean conversation and an independent agent context.</p>
         <label htmlFor="session-name">Session name</label><input id="session-name" autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Feature implementation" />
-        <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Create session</button></div>
+        {(!online || error) && (
+          <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || "The Amadeus API is unavailable."}</span>{!online && <button type="button" onClick={onSettings}>Connection settings</button>}</div>
+        )}
+        <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!online || submitting}>{submitting ? "Creating…" : online ? "Create session" : "API unavailable"}</button></div>
       </form>
     </div>
   );
