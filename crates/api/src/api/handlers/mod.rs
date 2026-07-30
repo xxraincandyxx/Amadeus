@@ -44,7 +44,7 @@
 //! | `health` | GET `/health` | Health check |
 //! | `chat` | POST `/chat` | Send message to agent |
 //! | `execute` | POST `/execute` | Run bash command |
-//! | `stream` | GET `/stream` | SSE streaming chat |
+//! | `external_sessions` | `/v1/sessions/*` | Stable external session protocol |
 //! | `tasks` | POST `/tasks` | Multi-agent task execution |
 //! | `list_sessions` | GET `/sessions` | List saved sessions |
 //! | `get_session` | GET `/sessions/{id}` | Get session details |
@@ -53,7 +53,8 @@
 //! | `update_config` | PATCH `/config` | Update config settings |
 //! | `get_history` | GET `/history` | Get conversation history |
 //! | `list_skills` | GET `/skills` | List available skills |
-//! | `submit_approval` | POST `/approvals/{id}` | Submit approval decision |
+//! | `stream` | Unregistered | Historical stateless SSE handler |
+//! | `submit_approval` | Unregistered | Historical global approval handler |
 //!
 //! ## Error Handling
 //!

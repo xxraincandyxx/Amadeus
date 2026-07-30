@@ -97,7 +97,9 @@
 //! | `/health` | GET | Health check |
 //! | `/chat` | POST | Send message to agent |
 //! | `/execute` | POST | Execute bash command |
-//! | `/stream` | GET | SSE streaming chat |
+//! | `/v1/sessions` | GET/POST | List or create live sessions |
+//! | `/v1/sessions/{id}/messages` | POST | Start an asynchronous turn |
+//! | `/v1/sessions/{id}/events` | GET | Stream live session events |
 //!
 //! ## Example HTTP Requests
 //!

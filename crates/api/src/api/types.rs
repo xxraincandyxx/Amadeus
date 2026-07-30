@@ -104,7 +104,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// - `message`: The user's prompt/question
 /// - `timeout_secs`: Optional timeout for command execution (default: 300)
-/// - `stream`: Whether to use streaming (default: false, use `/stream` for SSE)
+/// - `stream`: Legacy request hint; external clients use `/v1/sessions/{id}/events`
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     /// The message to send to the agent.
@@ -137,7 +137,7 @@ pub struct ChatRequest {
     /// - `false`: Wait for complete response (use ChatResponse)
     /// - `true`: Use Server-Sent Events (SSE) for streaming
     ///
-    /// Note: For streaming, prefer the dedicated `/stream` endpoint.
+    /// External clients should use the versioned session event endpoint.
     #[serde(default)]
     pub stream: Option<bool>,
 }

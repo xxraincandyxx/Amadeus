@@ -345,17 +345,20 @@ The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start with `--
 | `GET` | `/health` | Health check |
 | `POST` | `/chat` | Stateless single-turn chat |
 | `POST` | `/execute` | Direct bash command execution |
-| `GET` | `/stream` | SSE streaming chat with event protocol |
+| `GET` | `/v1/sessions/:id/events` | Stable SSE stream for a live session |
+| `POST` | `/v1/sessions/:id/messages` | Start an asynchronous live-session turn |
 | `POST` | `/tasks` | Multi-agent task dispatch |
 
 ### Agent Management
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/agents` | List agents |
-| `POST` | `/agents` | Create agent with profile |
-| `POST` | `/agents/:id/chat` | Chat with specific agent |
-| `GET` | `/agents/:id/stream` | SSE stream from agent |
+| `GET` | `/v1/sessions` | List live sessions |
+| `POST` | `/v1/sessions` | Create a live session with a profile |
+| `GET` | `/v1/sessions/:id/history` | Read authoritative live history |
+| `POST` | `/v1/sessions/:id/approvals/:approval_id` | Resolve a session-scoped approval |
+| `GET/PUT` | `/v1/sessions/:id/checkpoint` | Capture or restore a checkpoint |
+| `POST` | `/v1/sessions/:id/cancel` | Stop a turn without closing the session |
 
 ### Sessions
 
@@ -363,7 +366,7 @@ The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start with `--
 |--------|------|-------------|
 | `GET` | `/sessions` | List saved sessions |
 | `GET` | `/sessions/:id` | Session detail with history |
-| `POST` | `/sessions/:id/restore` | Restore session history |
+| `POST` | `/sessions/:id/restore` | Validate a persisted archive; informational only |
 
 ### RAG
 

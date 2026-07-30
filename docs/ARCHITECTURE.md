@@ -179,16 +179,18 @@ Current ingress map:
 
 | Path | Actual runtime path |
 |---|---|
+| `/v1/sessions/*` | `LocalSessionBridge` stateful sessions, events, approvals, history, cancellation, and checkpoints |
 | `POST /chat` | request -> `Task` -> `AgentOrchestrator::execute_task` -> `Agent::run` |
 | `POST /tasks` | request -> `Task` -> `AgentOrchestrator::execute_task` |
 | `GET /stream` | build fresh `Agent` -> inject user message -> `run_stream()` |
 | `POST /execute` | instantiate `BashTool` directly and execute it |
-| `/agents/*` | mostly agent roster management; some task endpoints are still provisional |
 
 Two important details:
 
-- `/stream` bypasses the orchestrator and creates a fresh agent for SSE output.
+- The removed legacy `/stream` route bypassed the orchestrator and created a fresh agent for SSE output.
 - `/execute` is a direct tool endpoint, not a normal agent-turn path.
+
+The canonical external interactive interface is documented in `docs/HTTP_API.md`. It uses `/v1/sessions/*`; unversioned stateless and administrative routes are not a substitute for the live-session contract.
 
 ### TUI adapter
 

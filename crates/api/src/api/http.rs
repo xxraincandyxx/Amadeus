@@ -50,17 +50,14 @@
 //! │  ├── GET  /health         → health::health                  │
 //! │  ├── POST /chat           → chat::chat                      │
 //! │  ├── POST /execute        → execute::execute                │
-//! │  ├── GET  /stream         → stream::stream (SSE)            │
+//! │  ├── /v1/sessions/*       → stateful external protocol      │
 //! │  ├── POST /tasks          → tasks::handle_task              │
 //! │  ├── GET  /sessions       → sessions::list_sessions         │
 //! │  ├── GET  /sessions/:id   → sessions::get_session           │
 //! │  ├── POST /sessions/:id/restore → sessions::restore_session │
 //! │  ├── GET  /config         → config::get_config              │
 //! │  ├── PATCH /config        → config::update_config           │
-//! │  ├── GET  /history        → history::get_history            │
 //! │  ├── GET  /skills         → skills::list_skills             │
-//! │  ├── GET  /approvals      → approvals::list_pending         │
-//! │  └── POST /approvals/:id  → approvals::submit_approval      │
 //! └─────────────────────────────────────────────────────────────┘
 //! ```
 //!
@@ -192,7 +189,7 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
 /// | `/health` | GET | `health` | Health check |
 /// | `/chat` | POST | `chat` | Stateless chat via agent orchestra |
 /// | `/execute` | POST | `execute` | Direct bash command execution |
-/// | `/stream` | GET | `stream` | SSE event streaming |
+/// | `/v1/sessions/*` | Multiple | external sessions | Stateful external protocol |
 /// | `/tasks` | POST | `tasks` | Multi-agent task execution |
 /// | `/sessions` | GET | `list_sessions` | List saved sessions |
 /// | `/sessions/{id}` | GET | `get_session` | Get session details |
@@ -201,8 +198,6 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
 /// | `/config` | PATCH | `update_config` | Update config settings |
 /// | `/history` | GET | `get_history` | Get conversation history |
 /// | `/skills` | GET | `list_skills` | List available skills |
-/// | `/approvals` | GET | `list_pending_approvals` | List pending approvals |
-/// | `/approvals/{id}` | POST | `submit_approval` | Submit approval decision |
 pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
     client: C,
@@ -285,11 +280,20 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     // -------------------------------------------------------------------------
     println!("🚀 Amadeus Server running at http://{}", addr);
     println!();
-    println!("Core Endpoints:");
+    println!("External Session API:");
+    println!("  GET/POST /v1/sessions");
+    println!("  GET/DELETE /v1/sessions/:id");
+    println!("  POST /v1/sessions/:id/messages");
+    println!("  GET  /v1/sessions/:id/events");
+    println!("  GET  /v1/sessions/:id/history");
+    println!("  GET/POST /v1/sessions/:id/approvals[/approval_id]");
+    println!("  GET/PUT /v1/sessions/:id/checkpoint");
+    println!("  POST /v1/sessions/:id/cancel");
+    println!();
+    println!("Unversioned Utilities:");
     println!("  GET  /health   - Health check");
     println!("  POST /chat     - Send stateless message");
     println!("  POST /execute  - Execute bash command");
-    println!("  GET  /stream   - SSE streaming");
     println!("  POST /tasks    - Multi-agent task dispatch");
     println!();
     println!("Session Management:");
@@ -302,10 +306,6 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     println!("  PATCH /config  - Update configuration");
     println!("  GET  /history  - Get conversation history");
     println!("  GET  /skills   - List available skills");
-    println!();
-    println!("Approval Flow:");
-    println!("  GET  /approvals       - List pending approvals");
-    println!("  POST /approvals/:id   - Submit approval decision");
     println!();
     println!("Press Ctrl+C to stop");
 
