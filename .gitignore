@@ -60,6 +60,7 @@ dist/
 
 # Native desktop build output
 apps/web/src-tauri/target/
+apps/web/src-tauri/binaries/
 apps/web/src-tauri/gen/
 apps/web/src-tauri/icons/android/
 apps/web/src-tauri/icons/ios/

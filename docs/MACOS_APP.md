@@ -5,13 +5,15 @@ Amadeus includes a native macOS client built with Tauri 2. It hosts the React wo
 ## Architecture and current scope
 
 ```text
-Amadeus.app (Tauri + React)
-  -> configured HTTP base URL
+Amadeus.app (Tauri + React + bundled Amadeus server)
+  -> local HTTP base URL
   -> /health and /v1/sessions/*
   -> Rust agent runtime and provider
 ```
 
-The MVP desktop bundle does not embed or start the agent server. Start the Amadeus server separately, or point the client at another trusted deployment through Connection settings. This boundary keeps the native shell small and reuses the documented external API; a signed sidecar distribution can be considered as a separate packaging project.
+The desktop bundle starts and supervises an embedded Amadeus server on `127.0.0.1:3000`. If another server already owns that port, the app reuses it. Closing the desktop window stops only the server process that the app started. Connection settings can still point the client at another trusted deployment.
+
+The bundled server loads the standard Amadeus settings hierarchy. Locally built bundles use the repository workspace settings when the source checkout remains available; distributed bundles use the global `~/.amadeus/settings.json` layer. Provider credentials remain outside the application bundle.
 
 The client currently requests only Tauri core window capabilities. Agent tools run in the server process under Amadeus policy controls, not inside the webview.
 
@@ -32,20 +34,14 @@ npm install
 
 ## Development
 
-Start the real API from the repository root:
-
-```bash
-cargo run --features full -- --server 3000
-```
-
-Then run the native client:
+Run the native client; the preparation step builds the Rust server sidecar before Tauri starts:
 
 ```bash
 cd apps/web
 npm run desktop:dev
 ```
 
-For UI work without an LLM credential, start `npm run mock-api` in another terminal before launching the desktop client. When port 3000 is occupied, run `AMADEUS_MOCK_PORT=3100 npm run mock-api` and select that address in Connection settings. The mock binds to `127.0.0.1`; `AMADEUS_MOCK_HOST` can override the local bind address.
+For UI work against deterministic data, start `npm run mock-api` before launching the desktop client. The desktop app detects the occupied default port and reuses the mock instead of starting its sidecar. The mock binds to `127.0.0.1`; `AMADEUS_MOCK_HOST` can override the local bind address.
 
 The default endpoint is `http://127.0.0.1:3000`. Open the gear button or the error banner’s Settings action to test, save, reset, and reconnect to another HTTP or HTTPS endpoint. The saved value uses the local storage key `amadeus.apiUrl` and is resolved at request time.
 
@@ -56,7 +52,7 @@ cd apps/web
 npm run desktop:build
 ```
 
-The arm64 application is written to:
+The application and bundled server are written to:
 
 ```text
 apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
@@ -68,7 +64,7 @@ Launch it from Finder or with:
 open apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
 ```
 
-The build also emits the standalone executable under `apps/web/src-tauri/target/release/`. Native build artifacts and generated schemas are ignored by Git.
+The build also emits the standalone desktop executable under `apps/web/src-tauri/target/release/`. The root release server is staged under the ignored `apps/web/src-tauri/binaries/` directory with its Rust host target suffix before bundling. Native build artifacts and generated schemas are ignored by Git.
 
 ## Icon maintenance
 
@@ -97,7 +93,7 @@ Do not claim a local ad-hoc/linker signature is a distributable release signatur
 
 ## Security notes
 
-- The current server has unrestricted CORS and no built-in authentication. Keep it on a trusted local interface unless an authenticated reverse proxy and TLS boundary are provided.
+- The embedded server binds to the existing local API interface. Keep remote deployments behind an authenticated reverse proxy and TLS boundary because the API has unrestricted CORS and no built-in authentication.
 - Prefer HTTPS for remote endpoints.
 - Connection settings should never include API keys in the URL.
 - Expanding Tauri capabilities requires an explicit security review and documentation update.

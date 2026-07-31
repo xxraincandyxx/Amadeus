@@ -1,5 +1,6 @@
 const DEFAULT_API_BASE = (import.meta.env.VITE_AMADEUS_API_URL || "http://127.0.0.1:3000").replace(/\/$/, "");
 const API_STORAGE_KEY = "amadeus.apiUrl";
+const LEGACY_DESKTOP_API_BASES = new Set(["http://127.0.0.1:3100", "http://localhost:3100"]);
 
 function normalizeBaseUrl(value) {
   return value.trim().replace(/\/$/, "");
@@ -7,6 +8,10 @@ function normalizeBaseUrl(value) {
 
 export function getApiBaseUrl() {
   const stored = localStorage.getItem(API_STORAGE_KEY);
+  if (window.__TAURI_INTERNALS__ && LEGACY_DESKTOP_API_BASES.has(normalizeBaseUrl(stored || ""))) {
+    localStorage.removeItem(API_STORAGE_KEY);
+    return DEFAULT_API_BASE;
+  }
   return normalizeBaseUrl(stored || DEFAULT_API_BASE);
 }
 

@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "mock-api": "node mock-server.mjs",
     "lint": "eslint .",
-    "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:sidecar": "bash scripts/prepare-desktop-sidecar.sh",
+    "desktop:dev": "npm run desktop:sidecar && tauri dev",
+    "desktop:build": "npm run desktop:sidecar && tauri build",
     "desktop:icon": "tauri icon src-tauri/app-icon.svg"
   },
   "dependencies": {

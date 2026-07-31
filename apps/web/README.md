@@ -54,7 +54,7 @@ npm run desktop:dev
 npm run desktop:build
 ```
 
-The release bundle is generated at `src-tauri/target/release/bundle/macos/Amadeus.app`. It is a native HTTP client and currently requires a separately running Amadeus server. See [`../../docs/MACOS_APP.md`](../../docs/MACOS_APP.md) for architecture, signing, packaging, and security details.
+The release bundle is generated at `src-tauri/target/release/bundle/macos/Amadeus.app`. It contains the native HTTP client and a supervised Amadeus server sidecar, so a separately started server is not required. Provider settings and credentials remain external to the bundle. See [`../../docs/MACOS_APP.md`](../../docs/MACOS_APP.md) for architecture, configuration, signing, packaging, and security details.
 
 Use `npm run desktop:icon` after changing `src-tauri/app-icon.svg`.
 
