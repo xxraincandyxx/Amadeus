@@ -20,6 +20,7 @@
 // - protocol: JSON and server-sent events
 // invariants:
 // - External interactive operations are scoped by session identifier.
+// - Event streams send periodic keep-alives while sessions are idle.
 // side_effects:
 // - Starts and cancels agent turns.
 // - Sends approval decisions across async channels.
@@ -31,10 +32,11 @@ use std::collections::HashMap;
 use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::sse::{Event, Sse};
+use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::Json;
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
@@ -212,7 +214,12 @@ pub async fn external_session_events<C: LLMClient + Clone + 'static>(
             }
         }
     });
-    Ok(Sse::new(Box::pin(events)))
+    let events: BoxedSseStream = Box::pin(events);
+    Ok(Sse::new(events).keep_alive(
+        KeepAlive::new()
+            .interval(Duration::from_secs(1))
+            .text("keep-alive"),
+    ))
 }
 
 pub async fn external_session_history<C: LLMClient + Clone + 'static>(
