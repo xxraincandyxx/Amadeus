@@ -108,15 +108,15 @@ use crate::agent::config::Config;
 use crate::agent::orchestra::{AgentOrchestrator, OrchestraLeader};
 use crate::agent::profile::AgentProfile;
 use crate::api::handlers::{
-    build_prompt, cancel_external_session, chat, close_external_session, create_external_session,
-    delete_entry, execute, external_session_checkpoint, external_session_events,
-    external_session_history, get_compaction_config, get_compaction_triggers, get_config,
-    get_external_session, get_session, get_tool_catalog, handle_task, health,
-    list_external_session_approvals, list_external_sessions, list_memory_providers,
-    list_prompt_sections, list_sessions, list_skills, load_memory_entries, rag_delete_document,
-    rag_ingest, rag_list_documents, rag_query, restore_external_session_checkpoint,
-    restore_session, store_entry, submit_external_approval, submit_external_message, summarize,
-    update_compaction_config, update_config,
+    build_prompt, cancel_external_session, chat, close_external_session, compact_external_session,
+    create_external_session, delete_entry, execute, external_session_checkpoint,
+    external_session_events, external_session_history, get_compaction_config,
+    get_compaction_triggers, get_config, get_external_session, get_session, get_tool_catalog,
+    handle_task, health, list_external_session_approvals, list_external_sessions,
+    list_memory_providers, list_prompt_sections, list_sessions, list_skills, load_memory_entries,
+    rag_delete_document, rag_ingest, rag_list_documents, rag_query,
+    restore_external_session_checkpoint, restore_session, store_entry, submit_external_approval,
+    submit_external_message, summarize, update_compaction_config, update_config,
 };
 use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
@@ -358,6 +358,7 @@ pub fn create_router<C: LLMClient + Clone + 'static>(state: Arc<AppState<C>>) ->
             "/v1/sessions/:id/checkpoint",
             get(external_session_checkpoint).put(restore_external_session_checkpoint),
         )
+        .route("/v1/sessions/:id/compact", post(compact_external_session))
         .route("/v1/sessions/:id/cancel", post(cancel_external_session))
         // =====================================================================
         // CORE ENDPOINTS

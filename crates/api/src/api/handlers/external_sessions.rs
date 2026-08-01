@@ -13,6 +13,7 @@
 // - route: /v1/sessions/:id/history
 // - route: /v1/sessions/:id/approvals
 // - route: /v1/sessions/:id/checkpoint
+// - route: /v1/sessions/:id/compact
 // - route: /v1/sessions/:id/cancel
 // uses:
 // - module: crate::bridge
@@ -22,7 +23,7 @@
 // - External interactive operations are scoped by session identifier.
 // - Event streams send periodic keep-alives while sessions are idle.
 // side_effects:
-// - Starts and cancels agent turns.
+// - Starts, compacts, and cancels agent turns.
 // - Sends approval decisions across async channels.
 // tests:
 // - cmd: cargo test -p api --features full
@@ -92,6 +93,18 @@ pub struct OperationResponse {
     pub success: bool,
 }
 
+#[derive(Debug, Serialize)]
+/// Result of a manual external-session compaction operation.
+pub struct CompactionResponse {
+    pub original_count: usize,
+    pub compacted_count: usize,
+    pub original_tokens: usize,
+    pub new_tokens: usize,
+    pub tokens_saved: usize,
+    pub messages_summarized: usize,
+    pub status: String,
+}
+
 fn default_profile() -> String {
     "default".to_string()
 }
@@ -111,6 +124,17 @@ fn api_error(error: crate::error::AgentError) -> (StatusCode, Json<ErrorResponse
         StatusCode::BAD_REQUEST,
         Json(ErrorResponse::from_agent_error(&error)),
     )
+}
+
+fn compaction_status_label(status: crate::agent::CompressionStatus) -> String {
+    match status {
+        crate::agent::CompressionStatus::Compressed => "compressed",
+        crate::agent::CompressionStatus::Inflated => "inflated",
+        crate::agent::CompressionStatus::EmptySummary => "empty_summary",
+        crate::agent::CompressionStatus::Noop => "noop",
+        crate::agent::CompressionStatus::TruncatedOnly => "truncated_only",
+    }
+    .to_string()
 }
 
 pub async fn list_external_sessions<C: LLMClient + Clone + 'static>(
@@ -297,6 +321,27 @@ pub async fn restore_external_session_checkpoint<C: LLMClient + Clone + 'static>
         .await
         .map_err(api_error)?;
     Ok(Json(OperationResponse { success: true }))
+}
+
+/// Compact one idle external session and return the resulting history statistics.
+pub async fn compact_external_session<C: LLMClient + Clone + 'static>(
+    State(state): State<Arc<AppState<C>>>,
+    Path(session_id): Path<String>,
+) -> ApiResult<Json<CompactionResponse>> {
+    let result = state
+        .session_bridge
+        .compact(&session_id)
+        .await
+        .map_err(api_error)?;
+    Ok(Json(CompactionResponse {
+        original_count: result.original_count,
+        compacted_count: result.compacted_count,
+        original_tokens: result.original_tokens,
+        new_tokens: result.new_tokens,
+        tokens_saved: result.tokens_saved,
+        messages_summarized: result.messages_summarized,
+        status: compaction_status_label(result.status),
+    }))
 }
 
 pub async fn cancel_external_session<C: LLMClient + Clone + 'static>(

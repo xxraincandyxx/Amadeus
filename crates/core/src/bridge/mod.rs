@@ -13,6 +13,7 @@
 // - type: crate::bridge::LocalSessionBridge
 // - fn: crate::bridge::LocalSessionBridge::history
 // - fn: crate::bridge::LocalSessionBridge::pending_approvals
+// - fn: crate::bridge::LocalSessionBridge::compact
 // - fn: crate::bridge::LocalSessionBridge::cancel
 // uses:
 // - module: crate::agent
@@ -25,6 +26,7 @@
 // side_effects:
 // - Spawns asynchronous tasks.
 // - Sends or receives messages across async channels.
+// - Compacts mutable session histories.
 // tests:
 // - cmd: cargo test -p core bridge --features full
 // @end-amadeus-header
@@ -38,8 +40,8 @@ use tokio::task::JoinHandle;
 
 use crate::agent::loop_agent::create_approval_channels;
 use crate::agent::{
-    Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest, Config, RunResult,
-    SessionCheckpoint,
+    Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest, CompactionResult, Config,
+    ContextCompactor, RunResult, SessionCheckpoint,
 };
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
@@ -464,6 +466,70 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         self.emit_session_update(session_id).await
     }
 
+    /// Compact the conversation history of an idle session.
+    pub async fn compact(&self, session_id: &str) -> Result<CompactionResult> {
+        let session = self.session_handle(session_id).await.ok_or_else(|| {
+            AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
+        })?;
+        let (agent, events_tx) = {
+            let mut session = session.lock().await;
+            match session.info.status {
+                BridgeSessionStatus::Running | BridgeSessionStatus::AwaitingApproval => {
+                    return Err(AgentError::InvalidResponse(format!(
+                        "Session '{}' is already running",
+                        session_id
+                    )))
+                }
+                BridgeSessionStatus::Closed => {
+                    return Err(AgentError::InvalidResponse(format!(
+                        "Session '{}' is closed",
+                        session_id
+                    )))
+                }
+                _ => {}
+            }
+            session.info.status = BridgeSessionStatus::Running;
+            (session.agent.clone(), session.events_tx.clone())
+        };
+        self.emit_session_update(session_id).await?;
+
+        let compactor = ContextCompactor::from_config(self.config.to_compaction_config());
+        let history_handle = agent.history();
+        let mut history = history_handle.write().await;
+        let original_history = history.clone();
+        let result = compactor
+            .compact(&mut history, &self.client, self.config.context_window_size)
+            .await;
+
+        match result {
+            Ok(result) => {
+                if result.tokens_saved == 0 && result.compacted_count != result.original_count {
+                    *history = original_history;
+                }
+                drop(history);
+                let _ = events_tx.send(BridgeEvent::Agent {
+                    session_id: session_id.to_string(),
+                    event: AgentEvent::Compaction {
+                        original_count: result.original_count,
+                        compacted_count: result.compacted_count,
+                        tokens_saved: result.tokens_saved,
+                        messages_summarized: result.messages_summarized,
+                        status: result.status.clone(),
+                    },
+                });
+                self.finish_session(session_id, BridgeSessionStatus::Completed)
+                    .await;
+                Ok(result)
+            }
+            Err(error) => {
+                *history = original_history;
+                drop(history);
+                self.fail_session(session_id, error.to_string()).await;
+                Err(error)
+            }
+        }
+    }
+
     /// Cancel the active turn while keeping the session available for later input.
     pub async fn cancel(&self, session_id: &str) -> Result<()> {
         let session = self.session_handle(session_id).await.ok_or_else(|| {
@@ -756,6 +822,58 @@ mod tests {
                 .expect("session")
                 .status,
             BridgeSessionStatus::Idle
+        );
+    }
+
+    #[tokio::test]
+    async fn bridge_compacts_an_idle_session_and_emits_the_result() {
+        let mut config = Config::default();
+        config.compact_preserve_recent = 1;
+        config.compact_use_llm_summary = false;
+        let bridge = LocalSessionBridge::new(BridgeMockClient::default(), Arc::new(config));
+        let session = bridge
+            .create_session(Some("compact-demo".to_string()), AgentProfile::Default)
+            .await
+            .expect("create session");
+        let handle = bridge
+            .session_handle(&session.id)
+            .await
+            .expect("session handle");
+        let agent = handle.lock().await.agent.clone();
+        {
+            let history_handle = agent.history();
+            let mut history = history_handle.write().await;
+            history.push(crate::agent::Message::user(&"old context ".repeat(200)));
+            history.push(crate::agent::Message::user(&"older answer ".repeat(200)));
+            history.push(crate::agent::Message::user("recent request"));
+        }
+        let mut events = bridge.subscribe(&session.id).await.expect("subscribe");
+
+        let result = bridge.compact(&session.id).await.expect("compact session");
+
+        assert_eq!(result.original_count, 3);
+        assert!(result.tokens_saved > 0);
+        let mut saw_compaction = false;
+        for _ in 0..3 {
+            if matches!(
+                events.recv().await.expect("bridge event"),
+                BridgeEvent::Agent {
+                    event: AgentEvent::Compaction { .. },
+                    ..
+                }
+            ) {
+                saw_compaction = true;
+                break;
+            }
+        }
+        assert!(saw_compaction);
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::Completed
         );
     }
 }
