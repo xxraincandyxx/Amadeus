@@ -57,6 +57,8 @@ const emptyRuntime = {
   tools: {},
   streamingText: "",
   thinking: "",
+  rawStreamingText: "",
+  providerThinking: "",
   status: "idle",
   tokenUsage: null,
   approvals: [],
@@ -266,6 +268,8 @@ function App() {
       timeline: [...previous.timeline, { id: `user-${Date.now()}`, kind: "user", text: content }],
       streamingText: "",
       thinking: "",
+      rawStreamingText: "",
+      providerThinking: "",
     }));
     try {
       await api.submitMessage(activeId, content);
@@ -278,7 +282,15 @@ function App() {
   const cancel = async () => {
     try {
       await api.cancel(activeId);
-      setRuntime(activeId, (previous) => ({ ...previous, status: "idle", streamingText: "", thinking: "", approvals: [] }));
+      setRuntime(activeId, (previous) => ({
+        ...previous,
+        status: "idle",
+        streamingText: "",
+        thinking: "",
+        rawStreamingText: "",
+        providerThinking: "",
+        approvals: [],
+      }));
     } catch (caught) {
       setError(caught.message);
     }
@@ -481,7 +493,7 @@ function Header({ session, status, onMenu, onDetails, onClose }) {
 
 function TimelineItem({ item }) {
   if (item.kind === "tool") return <ToolCard tool={item} />;
-  if (item.kind === "thinking") return <ThinkingBlock text={item.text} />;
+  if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} />;
   if (item.kind === "assistant") return <AssistantMessage text={item.text} />;
   if (item.kind === "user") return <UserMessage text={item.text} />;
   if (item.kind === "error") return <div className="inline-notice error"><WarningCircle />{item.text}</div>;
@@ -501,8 +513,18 @@ function AssistantMessage({ text, streaming = false }) {
   );
 }
 
-function ThinkingBlock({ text, live = false }) {
+function ThinkingBlock({ text, live = false, available = true }) {
   const [expanded, setExpanded] = useState(live);
+  if (!available) {
+    return (
+      <section className="thinking-block unavailable" role="status">
+        <div className="thinking-summary static">
+          <span className="thinking-title"><WarningCircle /><strong>Reasoning unavailable</strong></span>
+        </div>
+        <p>{text}</p>
+      </section>
+    );
+  }
   return (
     <section className={`thinking-block ${live ? "live" : "complete"}`}>
       <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>

@@ -133,7 +133,9 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 
 .thinking-block { margin: 0 0 24px 40px; border-left: 1px solid #3a3a3a; padding-left: 14px; color: var(--muted); }
 .thinking-block.live { border-left-color: rgba(239,125,50,.42); }
+.thinking-block.unavailable { border-left-color: #343434; }
 .thinking-summary { width: 100%; border: 0; background: transparent; color: inherit; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0; cursor: pointer; text-align: left; }
+.thinking-summary.static { cursor: default; }
 .thinking-summary:hover { color: #c4c4c4; }
 .thinking-summary:focus-visible { outline: 2px solid rgba(239,125,50,.55); outline-offset: 4px; border-radius: 4px; }
 .thinking-title { min-width: 0; display: flex; align-items: center; gap: 7px; }
@@ -142,6 +144,7 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .thinking-title small { color: var(--quiet); font-size: 11px; font-weight: 500; }
 .thinking-summary > svg { width: 15px; flex: none; color: #777; }
 .thinking-block p { margin: 10px 0 0; max-height: 320px; overflow: auto; padding-right: 10px; color: #9d9d9d; font-size: 13px; line-height: 1.6; white-space: pre-wrap; scrollbar-color: #454545 transparent; }
+.thinking-block.unavailable p { margin-top: 7px; color: #747474; }
 
 .tool-card { margin: 0 0 18px 40px; border: 1px solid var(--border); background: #1e1e1e; border-radius: var(--radius); overflow: hidden; }
 .tool-card.running { border-color: rgba(239,125,50,.32); }

@@ -20,13 +20,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState.js";
+import { historyToTimeline, preserveThinkingTimeline, reduceEvent, splitTaggedThinking } from "./sessionState.js";
 
 const runtime = {
   timeline: [],
   tools: {},
   streamingText: "",
   thinking: "",
+  rawStreamingText: "",
+  providerThinking: "",
   status: "running",
   tokenUsage: null,
   approvals: [],
@@ -60,6 +62,34 @@ test("done commits streamed reasoning before the final answer", () => {
   ]);
   assert.equal(completed.thinking, "");
   assert.equal(completed.streamingText, "");
+});
+
+test("tagged thinking is separated from streamed answer text", () => {
+  const first = reduceEvent(runtime, "text", { content: "<think>Compare " });
+  const second = reduceEvent(first, "text", { content: "the terms.</think>Use **unity of opposites**." });
+  const completed = reduceEvent(second, "done", {});
+
+  assert.deepEqual(completed.timeline.map(({ kind, text, available }) => ({ kind, text, available })), [
+    { kind: "thinking", text: "Compare the terms.", available: true },
+    { kind: "assistant", text: "Use **unity of opposites**.", available: undefined },
+  ]);
+});
+
+test("missing model reasoning is represented explicitly", () => {
+  const withText = reduceEvent(runtime, "text", { content: "A direct answer." });
+  const completed = reduceEvent(withText, "done", {});
+
+  assert.equal(completed.timeline[0].kind, "thinking");
+  assert.equal(completed.timeline[0].available, false);
+  assert.match(completed.timeline[0].text, /did not expose a separate reasoning channel/);
+});
+
+test("tag parser keeps ordinary markdown untouched", () => {
+  assert.deepEqual(splitTaggedThinking("### Heading\n\n**Bold**"), {
+    answer: "### Heading\n\n**Bold**",
+    thinking: "",
+    tagged: false,
+  });
 });
 
 test("history refresh preserves reasoning captured only by the live stream", () => {

@@ -8,6 +8,7 @@
 // - fn: historyToTimeline
 // - fn: preserveThinkingTimeline
 // - fn: reduceEvent
+// - fn: splitTaggedThinking
 // uses:
 // - protocol: Amadeus session SSE events
 // - format: serialized message content blocks
@@ -72,19 +73,60 @@ export function preserveThinkingTimeline(hydrated = [], current = []) {
   return timeline;
 }
 
+export function splitTaggedThinking(text = "") {
+  const tagPattern = /<\/?think>/gi;
+  let answer = "";
+  let thinking = "";
+  let cursor = 0;
+  let insideThinking = false;
+  let tagged = false;
+
+  for (const match of text.matchAll(tagPattern)) {
+    const segment = text.slice(cursor, match.index);
+    if (insideThinking) thinking += segment;
+    else answer += segment;
+    insideThinking = !match[0].startsWith("</");
+    tagged = true;
+    cursor = match.index + match[0].length;
+  }
+
+  const remainder = text.slice(cursor);
+  if (insideThinking) thinking += remainder;
+  else answer += remainder;
+
+  return { answer, thinking, tagged };
+}
+
+function joinThinking(providerThinking, taggedThinking) {
+  return [providerThinking.trim(), taggedThinking.trim()].filter(Boolean).join("\n\n");
+}
+
 export function reduceEvent(state, eventName, payload) {
   const timeline = [...state.timeline];
   const tools = { ...state.tools };
   let streamingText = state.streamingText;
   let thinking = state.thinking;
+  let rawStreamingText = state.rawStreamingText || "";
+  let providerThinking = state.providerThinking || "";
   let status = state.status;
   let tokenUsage = state.tokenUsage;
   let approvals = state.approvals;
 
   if (eventName === "session_state") status = payload.status;
-  if (eventName === "text") streamingText += payload.content || "";
-  if (eventName === "thinking") thinking += payload.delta || "";
-  if (eventName === "thinking_complete") thinking = payload.thinking || thinking;
+  if (eventName === "text") {
+    rawStreamingText += payload.content || "";
+    const parsed = splitTaggedThinking(rawStreamingText);
+    streamingText = parsed.answer;
+    thinking = joinThinking(providerThinking, parsed.thinking);
+  }
+  if (eventName === "thinking") {
+    providerThinking += payload.delta || "";
+    thinking = joinThinking(providerThinking, splitTaggedThinking(rawStreamingText).thinking);
+  }
+  if (eventName === "thinking_complete") {
+    providerThinking = payload.thinking || providerThinking;
+    thinking = joinThinking(providerThinking, splitTaggedThinking(rawStreamingText).thinking);
+  }
   if (eventName === "tool_start") {
     tools[payload.id] = { ...payload, kind: "tool", status: "running", output: "", inputText: "" };
   }
@@ -107,10 +149,18 @@ export function reduceEvent(state, eventName, payload) {
   }
   if (eventName === "token_usage") tokenUsage = payload;
   if (eventName === "done") {
-    if (thinking.trim()) timeline.push({ id: `thinking-${Date.now()}`, kind: "thinking", text: thinking, complete: true });
+    timeline.push({
+      id: `thinking-${Date.now()}`,
+      kind: "thinking",
+      text: thinking.trim() || "The current model did not expose a separate reasoning channel for this response.",
+      complete: true,
+      available: Boolean(thinking.trim()),
+    });
     if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText });
     streamingText = "";
     thinking = "";
+    rawStreamingText = "";
+    providerThinking = "";
     status = "completed";
   }
   if (eventName === "error") {
@@ -121,5 +171,16 @@ export function reduceEvent(state, eventName, payload) {
     timeline.push({ id: `compaction-${Date.now()}`, kind: "notice", text: `Context compacted · ${payload.messages_summarized} messages summarized` });
   }
 
-  return { ...state, timeline, tools, streamingText, thinking, status, tokenUsage, approvals };
+  return {
+    ...state,
+    timeline,
+    tools,
+    streamingText,
+    thinking,
+    rawStreamingText,
+    providerThinking,
+    status,
+    tokenUsage,
+    approvals,
+  };
 }
