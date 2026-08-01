@@ -2,6 +2,8 @@
 
 React and Tauri client for the versioned Amadeus session API. The interface provides live-session navigation, history hydration, SSE streaming, tool activity, approvals, cancellation, runtime connection settings, context usage, and responsive desktop/mobile layouts.
 
+When a provider exposes a distinct reasoning stream, live thinking appears in an expanded inline disclosure. Completed reasoning collapses automatically and remains available through explicit Show and Hide controls. Ordinary answer content is never guessed or reclassified as reasoning.
+
 ## Run with the Amadeus server
 
 From the repository root:

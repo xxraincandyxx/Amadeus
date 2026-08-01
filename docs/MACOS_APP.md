@@ -115,3 +115,5 @@ file src-tauri/target/release/bundle/macos/Amadeus.app/Contents/MacOS/amadeus-de
 Launch the resulting bundle and verify offline recovery, Connection settings, session hydration, SSE events, approvals, and cancellation against the mock or real API.
 
 For provider streaming verification, use a response long enough to expose multiple deltas. The conversation should update progressively. OpenAI-compatible gateways that buffer an entire SSE response are detected through their `Content-Length` header and replayed progressively; their upstream time to first byte remains controlled by the gateway.
+
+When the provider supplies a separate reasoning channel, the app shows live thinking in an expanded inline disclosure. After the turn completes, the disclosure collapses and can be reopened or hidden with a keyboard-accessible control. Reasoning captured from the live stream remains visible through the session's in-process history refresh, but providers that return reasoning as ordinary answer text cannot be separated safely.

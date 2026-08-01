@@ -124,6 +124,8 @@ The event channel is live and bounded. It does not currently persist event IDs o
 
 Text and reasoning events are emitted at provider-delta granularity. OpenAI-compatible providers that use genuine chunked SSE preserve their native timing. If a compatibility gateway labels a fully buffered response as SSE and supplies `Content-Length`, Amadeus progressively replays the contained deltas at a short cadence so external clients still receive incremental updates instead of one final burst. This improves rendering behavior but cannot reduce the gateway's time to first byte.
 
+Reasoning availability is provider-dependent. OpenAI-compatible responses must expose `delta.reasoning_content`, and Anthropic-compatible responses must expose their thinking delta type, for Amadeus to emit `thinking` events. Clients must not infer private reasoning from ordinary `text` events. The configured `gemma-4-26b-a4b-it-fp8-25603` deployment currently emits answer `content` only, so it does not provide a separable reasoning stream.
+
 ### History
 
 `GET /v1/sessions/{id}/history` returns the core serialized message representation:
