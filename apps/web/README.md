@@ -2,7 +2,9 @@
 
 React and Tauri client for the versioned Amadeus session API. The interface provides live-session navigation, history hydration, SSE streaming, tool activity, approvals, cancellation, runtime connection settings, context usage, and responsive desktop/mobile layouts.
 
-When a provider exposes a distinct reasoning stream, live thinking appears in an expanded inline disclosure. Completed reasoning collapses automatically and remains available through explicit Show and Hide controls. Ordinary answer content is never guessed or reclassified as reasoning.
+When a provider exposes a distinct reasoning stream, live thinking appears in an expanded inline disclosure. Completed reasoning collapses automatically and remains available through explicit Show and Hide controls. OpenAI-compatible reasoning fields and streamed `<think>...</think>` sections are separated from the final answer. When a model supplies neither format, the timeline displays an explicit Reasoning unavailable status instead of silently omitting the disclosure. Ordinary untagged answer content is never guessed or reclassified as reasoning.
+
+Assistant answers render safe GitHub-flavored Markdown, including headings, emphasis, links, lists, task lists, blockquotes, tables, inline code, and fenced code blocks with copy actions. Raw HTML is escaped by default. Markdown is rendered during streaming as well as after history hydration.
 
 ## Run with the Amadeus server
 
@@ -32,7 +34,7 @@ The gear button opens runtime Connection settings. The saved endpoint overrides 
 
 ## UI-only demo
 
-The mock server exercises message submission, reasoning, tool execution, streaming text, completion, token usage, session creation, and cancellation without an LLM credential:
+The mock server exercises message submission, reasoning, tool execution, streaming GitHub-flavored Markdown, completion, token usage, session creation, and cancellation without an LLM credential:
 
 ```bash
 npm run mock-api
@@ -63,6 +65,7 @@ Use `npm run desktop:icon` after changing `src-tauri/app-icon.svg`.
 ## Verification
 
 ```bash
+npm test
 npm run lint
 npm run build
 npm audit --omit=dev

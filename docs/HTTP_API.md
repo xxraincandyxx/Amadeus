@@ -124,7 +124,11 @@ The event channel is live and bounded. It does not currently persist event IDs o
 
 Text and reasoning events are emitted at provider-delta granularity. OpenAI-compatible providers that use genuine chunked SSE preserve their native timing. If a compatibility gateway labels a fully buffered response as SSE and supplies `Content-Length`, Amadeus progressively replays the contained deltas at a short cadence so external clients still receive incremental updates instead of one final burst. This improves rendering behavior but cannot reduce the gateway's time to first byte.
 
-Reasoning availability is provider-dependent. OpenAI-compatible responses must expose `delta.reasoning_content`, and Anthropic-compatible responses must expose their thinking delta type, for Amadeus to emit `thinking` events. Clients must not infer private reasoning from ordinary `text` events. The configured `gemma-4-26b-a4b-it-fp8-25603` deployment currently emits answer `content` only, so it does not provide a separable reasoning stream.
+Reasoning availability is provider-dependent. OpenAI-compatible responses can expose `delta.reasoning_content`, `delta.reasoning`, `delta.analysis`, or textual entries under `delta.reasoning_details`; Anthropic-compatible responses can expose their thinking delta type. Amadeus normalizes those formats into `thinking` events. The React client also recognizes streamed `<think>...</think>` sections embedded in text and removes them from the final answer before display.
+
+Clients must not infer private reasoning from ordinary untagged `text` events. When a response contains no supported reasoning channel, the React client reports Reasoning unavailable for that turn. The configured `gemma-4-26b-a4b-it-fp8-25603` deployment currently emits answer `content` only in direct probes, so it may show that availability state unless the gateway begins emitting a supported reasoning field or tagged section.
+
+`text` event content can contain Markdown. The protocol transports text without prescribing a renderer. The Amadeus React client renders GitHub-flavored Markdown while streaming and after history hydration, escapes raw HTML by default, and opens rendered links with opener isolation. External clients should choose and document their own Markdown and sanitization policy.
 
 ### History
 

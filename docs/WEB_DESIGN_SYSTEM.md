@@ -52,6 +52,12 @@ The interface uses the local Geist/SF Pro/Segoe UI system stack and platform mon
 
 Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20 px and inherit semantic color from their control. Preserve the geometric sparkle as the Amadeus product mark. Do not introduce emoji, hand-drawn icon paths, or unrelated raster branding.
 
+## Rich response content
+
+Assistant Markdown belongs directly in the message flow rather than inside a generic card. Preserve the body measure and use typographic hierarchy for headings, paragraphs, lists, blockquotes, and emphasis. Inline code uses a restrained neutral surface with the orange accent reserved for text contrast. Fenced code uses the established 11 px radius, a quiet language header, a Phosphor copy action, and horizontal overflow. Tables use sparse row separators, a slightly raised header surface, and horizontal scrolling at narrow widths.
+
+Reasoning remains a separate inline inspector before the final answer. Available reasoning uses the existing Show and Hide disclosure. Missing provider reasoning uses a non-interactive Reasoning unavailable status so absence cannot be mistaken for a rendering failure.
+
 ## Component behavior
 
 Every interactive component must support the states that can occur in production.
