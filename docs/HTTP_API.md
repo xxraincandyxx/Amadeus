@@ -75,6 +75,25 @@ The response is `201 Created` with the session object. `GET /v1/sessions` return
 
 The active identifier is advisory server state. A GUI should keep its selected session in client state and should not depend on a global switch operation.
 
+### Client slash-command mapping
+
+Slash commands are a React and macOS client interaction layer, not an HTTP protocol. They execute locally or compose existing endpoints and must never be sent to `POST /v1/sessions/{id}/messages` as model prompts.
+
+| Client command | Implementation | API availability |
+| --- | --- | --- |
+| `/help` | Render the client command catalog | Local |
+| `/new-agent [name]` | `POST /v1/sessions` and select the response | Stable |
+| `/context` | Summarize client session state and latest `token_usage` | Local plus Stable SSE data |
+| `/tools` | `GET /tools/catalog` | Available, unversioned |
+| `/prompt` | `GET /config` | Available, unversioned |
+| `/export [markdown\|json]` | Serialize the visible client timeline and download it | Local |
+| `/settings` | Open the client connection dialog | Local |
+| `/contribute` | Open the client contribution dialog | Local |
+| `/cancel` | `POST /v1/sessions/{id}/cancel` when a turn is active | Stable |
+| `/close` | `DELETE /v1/sessions/{id}` | Stable |
+
+The client catalog intentionally omits core commands whose semantics depend on a TUI viewport, terminal process, or an unexposed orchestration operation. Adding such a command to an external client requires a suitable API contract first. A GUI should reject unknown commands locally and advertise only commands it can fully execute.
+
 ### Submit a message
 
 `POST /v1/sessions/{id}/messages` accepts:

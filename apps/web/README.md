@@ -6,6 +6,25 @@ When a provider exposes a distinct reasoning stream, live thinking appears in an
 
 Assistant answers render safe GitHub-flavored Markdown, including headings, emphasis, links, lists, task lists, blockquotes, tables, inline code, and fenced code blocks with copy actions. Raw HTML is escaped by default. Markdown is rendered during streaming as well as after history hydration.
 
+## Slash commands
+
+Type `/` as the first character in the composer to open the command palette. A slash elsewhere in a message, including after leading whitespace, remains ordinary prompt text. Completion matches command names and closes once an argument begins.
+
+| Command | Action |
+| --- | --- |
+| `/help` | Show the client command catalog |
+| `/new-agent [name]` | Create and switch to a session |
+| `/context` | Show current session and token usage |
+| `/tools` | Read the active tool catalog |
+| `/prompt` | Read the active model and prompt configuration |
+| `/export [markdown\|json]` | Download the visible conversation |
+| `/settings` | Open connection settings |
+| `/contribute` | Open contribution resources |
+| `/cancel` | Stop the active turn |
+| `/close` | Close the current session |
+
+Use Arrow Up and Arrow Down to move, Tab or Enter to select, and Escape to dismiss the palette without changing the draft. Selecting a command with an argument completes the command and returns focus to the composer. Commands execute in the client and are not submitted to the model. Unknown slash commands produce a local inline error. The palette intentionally excludes TUI-only commands that cannot be executed through the external session API.
+
 ## Run with the Amadeus server
 
 From the repository root:
@@ -34,7 +53,7 @@ The gear button opens runtime Connection settings. The saved endpoint overrides 
 
 ## UI-only demo
 
-The mock server exercises message submission, reasoning, tool execution, streaming GitHub-flavored Markdown, completion, token usage, session creation, and cancellation without an LLM credential:
+The mock server exercises message submission, reasoning, tool execution, streaming GitHub-flavored Markdown, slash-command information requests, completion, token usage, session creation, and cancellation without an LLM credential:
 
 ```bash
 npm run mock-api

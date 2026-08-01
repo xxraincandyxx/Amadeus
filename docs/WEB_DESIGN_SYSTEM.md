@@ -58,6 +58,14 @@ Assistant Markdown belongs directly in the message flow rather than inside a gen
 
 Reasoning remains a separate inline inspector before the final answer. Available reasoning uses the existing Show and Hide disclosure. Missing provider reasoning uses a non-interactive Reasoning unavailable status so absence cannot be mistaken for a rendering failure.
 
+## Composer command palette
+
+The slash-command palette is an elevated extension of the composer, not a detached dialog. It opens directly above the input only when `/` is character zero. The initial list preserves the intentional command catalog order; typed text filters command names without searching descriptive copy. Commands with arguments complete into the composer, while commands without arguments can execute immediately.
+
+Keep the palette bounded and vertically scrollable so it never pushes the composer outside the viewport. Each row uses a Phosphor icon, monospace command name, concise description, and an optional right-aligned argument hint. The selected row uses the established hover surface and must remain visually distinct without introducing a new accent treatment. Mobile layouts may hide the keyboard legend and stack row copy, but must retain the argument hint, scroll boundary, and zero horizontal overflow.
+
+The input owns `aria-expanded`, `aria-controls`, `aria-activedescendant`, and list autocomplete semantics. The palette uses listbox and option semantics with an explicit selected option. Arrow Up and Arrow Down wrap through results, Tab and unmodified Enter select, and Escape closes the palette without altering the draft. Changing the draft after dismissal may reopen matching suggestions.
+
 ## Component behavior
 
 Every interactive component must support the states that can occur in production.
@@ -66,7 +74,7 @@ Every interactive component must support the states that can occur in production
 | --- | --- |
 | Session list | empty, active, idle, running, awaiting approval, failed |
 | Conversation | welcome, hydrated history, streaming, tool execution, approval, error |
-| Composer | ready, empty, disabled/offline, busy/cancellable, keyboard focus |
+| Composer | ready, empty, disabled/offline, busy/cancellable, keyboard focus, command palette open/dismissed, command selected, no matches |
 | Connection | unknown/loading, connected, offline, testing, invalid URL, reconnecting |
 | Dialog | open, keyboard focus, validation error, submit-disabled where applicable |
 | External resource | hover, focus, clear destination indicator |

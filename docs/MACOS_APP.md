@@ -17,6 +17,8 @@ The bundled server loads the standard Amadeus settings hierarchy. Locally built 
 
 The client currently requests only Tauri core window capabilities. Agent tools run in the server process under Amadeus policy controls, not inside the webview.
 
+The browser and native bundle share the same composer command palette. Typing `/` at character zero exposes only commands the external client can execute. Arrow keys navigate, Tab or Enter selects, and Escape dismisses without deleting the draft. `/new-agent`, `/cancel`, and `/close` use the stable session API; `/tools` and `/prompt` inspect the available unversioned metadata endpoints; `/export`, `/settings`, `/contribute`, `/context`, and `/help` are local client operations. No slash command is forwarded to the model.
+
 ## Prerequisites
 
 - Apple silicon or another macOS target supported by the installed Rust toolchain;
@@ -112,7 +114,7 @@ npm run desktop:build
 file src-tauri/target/release/bundle/macos/Amadeus.app/Contents/MacOS/amadeus-desktop
 ```
 
-Launch the resulting bundle and verify offline recovery, Connection settings, session hydration, SSE events, approvals, and cancellation against the mock or real API.
+Launch the resulting bundle and verify offline recovery, Connection settings, session hydration, SSE events, approvals, cancellation, and slash-command keyboard behavior against the mock or real API. Confirm that `/` opens the palette, a slash later in a sentence does not, argument commands complete into the composer, and local command results do not create user or assistant messages.
 
 For provider streaming verification, use a response long enough to expose multiple deltas. The conversation should update progressively. OpenAI-compatible gateways that buffer an entire SSE response are detected through their `Content-Length` header and replayed progressively; their upstream time to first byte remains controlled by the gateway.
 
