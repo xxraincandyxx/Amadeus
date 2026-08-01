@@ -14,8 +14,10 @@
 // - format: JSON values
 // - runtime: tracing instrumentation
 // - runtime: futures streams
+// - runtime: tokio timers
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
+// - Buffered SSE responses are progressively replayed while genuine chunked streams remain unthrottled.
 // side_effects:
 // - Performs network or HTTP operations.
 // tests:
@@ -88,6 +90,7 @@ use std::pin::Pin;
 
 /// Default base URL for the OpenAI API.
 const DEFAULT_BASE_URL: &str = "https://api.openai.com";
+const BUFFERED_STREAM_EVENT_DELAY: Duration = Duration::from_millis(12);
 
 /*
  * ============================================================================
@@ -602,8 +605,12 @@ impl LLMClient for OpenAIClient {
             return Ok(Box::pin(futures::stream::iter(events.into_iter().map(Ok))));
         }
 
+        let event_delay = response
+            .headers()
+            .contains_key(reqwest::header::CONTENT_LENGTH)
+            .then_some(BUFFERED_STREAM_EVENT_DELAY);
         let byte_stream = response.bytes_stream();
-        Ok(Box::pin(Self::parse_sse_stream(byte_stream)))
+        Ok(Box::pin(Self::parse_sse_stream(byte_stream, event_delay)))
     }
 }
 
@@ -647,6 +654,7 @@ impl OpenAIClient {
     /// Parse the SSE byte stream into a stream of StreamEvents.
     fn parse_sse_stream(
         mut stream: impl Stream<Item = reqwest::Result<bytes::Bytes>> + Unpin + 'static,
+        event_delay: Option<Duration>,
     ) -> impl Stream<Item = Result<StreamEvent>> {
         use async_stream::stream;
 
@@ -672,7 +680,16 @@ impl OpenAIClient {
                             }
 
                             for event in Self::parse_sse_line(&line) {
+                                let should_delay = matches!(
+                                    event,
+                                    StreamEvent::TextDelta(_) | StreamEvent::ThinkingDelta(_)
+                                );
                                 yield Ok(event);
+                                if should_delay {
+                                    if let Some(delay) = event_delay {
+                                        tokio::time::sleep(delay).await;
+                                    }
+                                }
                             }
                         }
                     }
@@ -776,6 +793,8 @@ mod tests {
     use super::OpenAIClient;
     use crate::agent::messages::ContentBlock;
     use crate::client::StreamEvent;
+    use futures::StreamExt;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn blocks_to_stream_events_converts_json_fallback_response() {
@@ -828,5 +847,33 @@ mod tests {
             &events[0],
             StreamEvent::StopReason(reason) if reason == "end_turn"
         ));
+    }
+
+    #[tokio::test]
+    async fn parse_sse_stream_paces_buffered_text_deltas() {
+        let body = concat!(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n",
+            "data: {\"choices\":[{\"delta\":{\"content\":\"second\"}}]}\n"
+        );
+        let bytes = futures::stream::iter(vec![Ok(bytes::Bytes::from_static(body.as_bytes()))]);
+        let delay = Duration::from_millis(20);
+        let stream = OpenAIClient::parse_sse_stream(bytes, Some(delay));
+        futures::pin_mut!(stream);
+
+        let first = stream
+            .next()
+            .await
+            .expect("first event")
+            .expect("valid event");
+        let started = Instant::now();
+        let second = stream
+            .next()
+            .await
+            .expect("second event")
+            .expect("valid event");
+
+        assert!(matches!(first, StreamEvent::TextDelta(text) if text == "first"));
+        assert!(matches!(second, StreamEvent::TextDelta(text) if text == "second"));
+        assert!(started.elapsed() >= delay);
     }
 }
