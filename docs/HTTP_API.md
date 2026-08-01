@@ -122,6 +122,8 @@ The response is not the agent result. Subscribe to the session event stream befo
 
 The event channel is live and bounded. It does not currently persist event IDs or replay missed deltas. After reconnect or page refresh, clients must call the history and session metadata endpoints to reconcile authoritative state. A client should establish the SSE subscription before submitting a message.
 
+Text and reasoning events are emitted at provider-delta granularity. OpenAI-compatible providers that use genuine chunked SSE preserve their native timing. If a compatibility gateway labels a fully buffered response as SSE and supplies `Content-Length`, Amadeus progressively replays the contained deltas at a short cadence so external clients still receive incremental updates instead of one final burst. This improves rendering behavior but cannot reduce the gateway's time to first byte.
+
 ### History
 
 `GET /v1/sessions/{id}/history` returns the core serialized message representation:

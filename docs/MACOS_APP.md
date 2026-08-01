@@ -113,3 +113,5 @@ file src-tauri/target/release/bundle/macos/Amadeus.app/Contents/MacOS/amadeus-de
 ```
 
 Launch the resulting bundle and verify offline recovery, Connection settings, session hydration, SSE events, approvals, and cancellation against the mock or real API.
+
+For provider streaming verification, use a response long enough to expose multiple deltas. The conversation should update progressively. OpenAI-compatible gateways that buffer an entire SSE response are detected through their `Content-Length` header and replayed progressively; their upstream time to first byte remains controlled by the gateway.
