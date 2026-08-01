@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
+  ArrowsInLineVertical,
   ArrowSquareOut,
   ArrowUp,
   BookOpenText,
@@ -371,6 +372,19 @@ function App() {
           usage ? `- Context used: **${usage.context_percent}%**` : "- Context used: not reported yet",
         ];
         addCommandResult("Session context", lines.join("\n"));
+      }
+      if (command.name === "compact") {
+        const result = await api.compact(activeId);
+        await loadHistory(activeId);
+        const title = result.status === "compressed" ? "Context compacted" : "Compaction complete";
+        const lines = [
+          `- Status: **${result.status.replaceAll("_", " ")}**`,
+          `- Messages: **${result.original_count} → ${result.compacted_count}**`,
+          `- Messages summarized: **${result.messages_summarized}**`,
+          `- Estimated tokens: **${result.original_tokens.toLocaleString()} → ${result.new_tokens.toLocaleString()}**`,
+          `- Estimated tokens recovered: **${result.tokens_saved.toLocaleString()}**`,
+        ];
+        addCommandResult(title, lines.join("\n"));
       }
       if (command.name === "tools") {
         const data = await api.getToolCatalog();
@@ -724,6 +738,7 @@ function SlashCommandIcon({ name }) {
     help: BookOpenText,
     agent: UserPlus,
     context: Gauge,
+    compact: ArrowsInLineVertical,
     tools: Wrench,
     prompt: BracketsCurly,
     export: DownloadSimple,
@@ -803,7 +818,7 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
                   <span className="slash-command-icon"><SlashCommandIcon name={command.icon} /></span>
-                  <span className="slash-command-copy"><strong>/{command.name}</strong><small>{command.summary}</small></span>
+                  <span className="slash-command-copy"><strong>{command.name}</strong><small>{command.summary}</small></span>
                   {command.argumentHint && <code>{command.argumentHint}</code>}
                 </button>
               ))}

@@ -8,7 +8,7 @@
 // uses:
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
-// - Mock responses exercise reasoning, tools, streaming, and Markdown rendering.
+// - Mock responses exercise reasoning, tools, compaction, streaming, and Markdown rendering.
 // side_effects:
 // - Opens a local HTTP listener.
 // tests:
@@ -65,6 +65,16 @@ const server = http.createServer(async (request, response) => {
     if (parts.length === 3 && request.method === "DELETE") { session.status = "closed"; return json(response, 200, { success: true }); }
     if (parts[3] === "history") return json(response, 200, { messages: histories.get(sessionId) || [], total: histories.get(sessionId)?.length || 0 });
     if (parts[3] === "approvals") return json(response, 200, []);
+    if (parts[3] === "compact" && request.method === "POST") {
+      const history = histories.get(sessionId) || [];
+      const originalCount = history.length;
+      const compactedCount = Math.min(originalCount, 1);
+      const originalTokens = originalCount * 120;
+      const newTokens = compactedCount * 120;
+      if (originalCount > 1) histories.set(sessionId, history.slice(-1));
+      emit(sessionId, "compaction", { original_count: originalCount, compacted_count: compactedCount, tokens_saved: originalTokens - newTokens, messages_summarized: originalCount - compactedCount });
+      return json(response, 200, { original_count: originalCount, compacted_count: compactedCount, original_tokens: originalTokens, new_tokens: newTokens, tokens_saved: originalTokens - newTokens, messages_summarized: originalCount - compactedCount, status: originalCount > 1 ? "compressed" : "noop" });
+    }
     if (parts[3] === "cancel") { session.status = "idle"; emit(sessionId, "session_state", session); return json(response, 200, { success: true }); }
     if (parts[3] === "events") {
       response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*" });

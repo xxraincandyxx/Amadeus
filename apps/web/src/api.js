@@ -86,6 +86,7 @@ export const api = {
   getToolCatalog: () => request("/tools/catalog"),
   submitMessage: (id, content) =>
     request(`/v1/sessions/${id}/messages`, { method: "POST", body: JSON.stringify({ content }) }),
+  compact: (id) => request(`/v1/sessions/${id}/compact`, { method: "POST" }),
   cancel: (id) => request(`/v1/sessions/${id}/cancel`, { method: "POST" }),
   close: (id) => request(`/v1/sessions/${id}`, { method: "DELETE" }),
   approvals: (id) => request(`/v1/sessions/${id}/approvals`),

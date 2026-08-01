@@ -21,6 +21,7 @@ export const SLASH_COMMANDS = [
   { name: "help", summary: "Show commands available in this app", icon: "help" },
   { name: "new-agent", summary: "Create and switch to a new agent session", argumentHint: "[name]", icon: "agent" },
   { name: "context", summary: "Show current token and session usage", icon: "context" },
+  { name: "compact", summary: "Summarize older context and recover space", icon: "compact" },
   { name: "tools", summary: "Inspect the active tool catalog", icon: "tools" },
   { name: "prompt", summary: "Inspect the active model and prompt profile", icon: "prompt" },
   { name: "export", summary: "Download this conversation", argumentHint: "[markdown|json]", icon: "export" },
