@@ -49,6 +49,7 @@ Valid status values are `idle`, `running`, `awaiting_approval`, `completed`, `fa
 | POST | `/v1/sessions/{id}/approvals/{approval_id}` | Stable | Resolve one pending approval |
 | GET | `/v1/sessions/{id}/checkpoint` | Stable | Capture history and todo state |
 | PUT | `/v1/sessions/{id}/checkpoint` | Stable | Restore history and todo state |
+| POST | `/v1/sessions/{id}/compact` | Stable | Compact older conversation history and return before/after statistics |
 | POST | `/v1/sessions/{id}/cancel` | Stable | Stop the current turn and preserve the session |
 
 ### Create and list sessions
@@ -84,6 +85,7 @@ Slash commands are a React and macOS client interaction layer, not an HTTP proto
 | `/help` | Render the client command catalog | Local |
 | `/new-agent [name]` | `POST /v1/sessions` and select the response | Stable |
 | `/context` | Summarize client session state and latest `token_usage` | Local plus Stable SSE data |
+| `/compact` | `POST /v1/sessions/{id}/compact`, refresh history, and render statistics | Stable |
 | `/tools` | `GET /tools/catalog` | Available, unversioned |
 | `/prompt` | `GET /config` | Available, unversioned |
 | `/export [markdown\|json]` | Serialize the visible client timeline and download it | Local |
@@ -175,7 +177,23 @@ Content-Type: application/json
 
 Allowed decisions are `approve`, `always_approve`, and `deny`. Approval identifiers are scoped to their session; clients must retain both identifiers from the event.
 
-### Cancellation and close
+### Compaction, cancellation and close
+
+`POST /v1/sessions/{id}/compact` is valid only while the session is not running, awaiting approval, or closed. It summarizes older history according to the configured compaction policy, preserves recent messages, emits a `compaction` SSE event, and returns:
+
+```json
+{
+  "original_count": 18,
+  "compacted_count": 7,
+  "original_tokens": 12400,
+  "new_tokens": 5100,
+  "tokens_saved": 7300,
+  "messages_summarized": 12,
+  "status": "compressed"
+}
+```
+
+Possible status values are `compressed`, `inflated`, `empty_summary`, `noop`, and `truncated_only`. If the attempted compaction would not recover space after changing message structure, the session bridge restores the original history.
 
 `POST /v1/sessions/{id}/cancel` aborts only the active turn, clears pending approvals, and returns the session to `idle`. History accumulated before cancellation remains available.
 
@@ -255,7 +273,7 @@ Common status codes are `201` for session creation, `202` for accepted turns, `4
 5. Append deltas and tool activity from SSE.
 6. Resolve `approval_request` events through the session-scoped approval endpoint.
 7. On disconnect, reopen SSE and refresh metadata plus history.
-8. Use `cancel` for a Stop button and `DELETE` only for permanent close.
+8. Use `compact` for explicit context recovery, `cancel` for a Stop button, and `DELETE` only for permanent close.
 
 ## Known limitations
 

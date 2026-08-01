@@ -17,7 +17,7 @@ The bundled server loads the standard Amadeus settings hierarchy. Locally built 
 
 The client currently requests only Tauri core window capabilities. Agent tools run in the server process under Amadeus policy controls, not inside the webview.
 
-The browser and native bundle share the same composer command palette. Typing `/` at character zero exposes only commands the external client can execute. Arrow keys navigate, Tab or Enter selects, and Escape dismisses without deleting the draft. `/new-agent`, `/cancel`, and `/close` use the stable session API; `/tools` and `/prompt` inspect the available unversioned metadata endpoints; `/export`, `/settings`, `/contribute`, `/context`, and `/help` are local client operations. No slash command is forwarded to the model.
+The browser and native bundle share the same composer command palette. Typing `/` at character zero exposes only commands the external client can execute. Palette rows omit the leading slash for cleaner scanning, while selection still inserts or executes slash-command syntax. Arrow keys navigate, Tab or Enter selects, and Escape dismisses without deleting the draft. `/new-agent`, `/compact`, `/cancel`, and `/close` use the stable session API; `/tools` and `/prompt` inspect the available unversioned metadata endpoints; `/export`, `/settings`, `/contribute`, `/context`, and `/help` are local client operations. No slash command is forwarded to the model.
 
 ## Prerequisites
 

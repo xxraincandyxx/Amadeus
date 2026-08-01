@@ -15,6 +15,7 @@ Type `/` as the first character in the composer to open the command palette. A s
 | `/help` | Show the client command catalog |
 | `/new-agent [name]` | Create and switch to a session |
 | `/context` | Show current session and token usage |
+| `/compact` | Summarize older history and recover context space |
 | `/tools` | Read the active tool catalog |
 | `/prompt` | Read the active model and prompt configuration |
 | `/export [markdown\|json]` | Download the visible conversation |
@@ -23,7 +24,7 @@ Type `/` as the first character in the composer to open the command palette. A s
 | `/cancel` | Stop the active turn |
 | `/close` | Close the current session |
 
-Use Arrow Up and Arrow Down to move, Tab or Enter to select, and Escape to dismiss the palette without changing the draft. Selecting a command with an argument completes the command and returns focus to the composer. Commands execute in the client and are not submitted to the model. Unknown slash commands produce a local inline error. The palette intentionally excludes TUI-only commands that cannot be executed through the external session API.
+Use Arrow Up and Arrow Down to move, Tab or Enter to select, and Escape to dismiss the palette without changing the draft. Palette rows display command names without the triggering `/`; selecting a row still inserts or executes the corresponding slash command. Selecting a command with an argument completes the command and returns focus to the composer. Commands execute in the client and are not submitted to the model. Unknown slash commands produce a local inline error. The palette intentionally excludes TUI-only commands that cannot be executed through the external session API.
 
 ## Run with the Amadeus server
 
