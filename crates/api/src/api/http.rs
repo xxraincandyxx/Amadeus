@@ -288,6 +288,7 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     println!("  GET  /v1/sessions/:id/history");
     println!("  GET/POST /v1/sessions/:id/approvals[/approval_id]");
     println!("  GET/PUT /v1/sessions/:id/checkpoint");
+    println!("  POST /v1/sessions/:id/compact");
     println!("  POST /v1/sessions/:id/cancel");
     println!();
     println!("Unversioned Utilities:");
