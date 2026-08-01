@@ -18,6 +18,7 @@
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // - Buffered SSE responses are progressively replayed while genuine chunked streams remain unthrottled.
+// - Compatible reasoning fields are normalized into thinking stream events.
 // side_effects:
 // - Performs network or HTTP operations.
 // tests:
@@ -723,11 +724,26 @@ impl OpenAIClient {
                                 events.push(StreamEvent::TextDelta(content.to_string()));
                             }
 
-                            // Reasoning content delta (supported by some OpenAI-compatible APIs)
-                            if let Some(reasoning) =
-                                delta.get("reasoning_content").and_then(|v| v.as_str())
+                            for field in ["reasoning_content", "reasoning", "analysis"] {
+                                if let Some(reasoning) = delta.get(field).and_then(|v| v.as_str()) {
+                                    events.push(StreamEvent::ThinkingDelta(reasoning.to_string()));
+                                }
+                            }
+
+                            if let Some(details) =
+                                delta.get("reasoning_details").and_then(|v| v.as_array())
                             {
-                                events.push(StreamEvent::ThinkingDelta(reasoning.to_string()));
+                                for detail in details {
+                                    if let Some(reasoning) = detail
+                                        .get("text")
+                                        .or_else(|| detail.get("content"))
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        events.push(StreamEvent::ThinkingDelta(
+                                            reasoning.to_string(),
+                                        ));
+                                    }
+                                }
                             }
 
                             // Tool call details (can have start and delta in same chunk)
@@ -846,6 +862,38 @@ mod tests {
         assert!(matches!(
             &events[0],
             StreamEvent::StopReason(reason) if reason == "end_turn"
+        ));
+    }
+
+    #[test]
+    fn parse_sse_line_accepts_compatible_reasoning_fields() {
+        let cases = [
+            ("reasoning_content", "Compare the values."),
+            ("reasoning", "Check the translation."),
+            ("analysis", "Identify the context."),
+        ];
+
+        for (field, expected) in cases {
+            let line = format!(r#"data: {{"choices":[{{"delta":{{"{field}":"{expected}"}}}}]}}"#);
+            let events = OpenAIClient::parse_sse_line(&line);
+
+            assert!(matches!(
+                events.as_slice(),
+                [StreamEvent::ThinkingDelta(reasoning)] if reasoning == expected
+            ));
+        }
+    }
+
+    #[test]
+    fn parse_sse_line_accepts_structured_reasoning_details() {
+        let events = OpenAIClient::parse_sse_line(
+            r#"data: {"choices":[{"delta":{"reasoning_details":[{"type":"reasoning.text","text":"Inspect the request."},{"type":"reasoning.text","content":"Choose the wording."}]}}]}"#,
+        );
+
+        assert!(matches!(
+            events.as_slice(),
+            [StreamEvent::ThinkingDelta(first), StreamEvent::ThinkingDelta(second)]
+            if first == "Inspect the request." && second == "Choose the wording."
         ));
     }
 
