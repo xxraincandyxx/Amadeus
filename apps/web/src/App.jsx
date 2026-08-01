@@ -50,6 +50,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { MarkdownContent } from "./MarkdownContent";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
 
 const emptyRuntime = {
@@ -508,7 +509,11 @@ function AssistantMessage({ text, streaming = false }) {
   return (
     <article className="message assistant-message">
       <div className="assistant-rail"><div className="assistant-mark"><Sparkle weight="fill" /></div></div>
-      <div className="message-body"><div className="message-label">Amadeus</div><p>{text}<span className={streaming ? "stream-caret" : ""} /></p></div>
+      <div className="message-body">
+        <div className="message-label">Amadeus</div>
+        <MarkdownContent text={text} />
+        {streaming && <span className="stream-caret" aria-hidden="true" />}
+      </div>
     </article>
   );
 }

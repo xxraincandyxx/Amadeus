@@ -1,3 +1,20 @@
+// @amadeus-header
+// summary: Provides deterministic local API responses for web and native interface testing.
+// layer: test
+// status: test-only
+// feature_flags: none
+// provides:
+// - cmd: npm run mock-api
+// uses:
+// - protocol: Amadeus REST and SSE APIs
+// invariants:
+// - Mock responses exercise reasoning, tools, streaming, and Markdown rendering.
+// side_effects:
+// - Opens a local HTTP listener.
+// tests:
+// - cmd: npm run mock-api
+// @end-amadeus-header
+
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
@@ -61,8 +78,11 @@ const server = http.createServer(async (request, response) => {
       setTimeout(() => emit(sessionId, "tool_start", { id: "tool-demo", name: "bash", command: "cargo check --features full", parent_id: null }), 500);
       setTimeout(() => emit(sessionId, "tool_output", { id: "tool-demo", delta: "Checking amadeus v0.1.0\n", parent_id: null }), 900);
       setTimeout(() => emit(sessionId, "tool_done", { id: "tool-demo", name: "bash", output: "Finished dev profile", is_error: false, parent_id: null }), 1300);
-      const answer = "The implementation is verified. The React workspace is connected to the versioned Amadeus session API and ready for iterative product work.";
-      setTimeout(() => emit(sessionId, "text", { content: answer }), 1550);
+      const answer = "## Verification complete\n\nThe React workspace now renders **GitHub-flavored Markdown** safely.\n\n- Streaming content updates in place\n- Tables remain horizontally scrollable\n- Fenced code includes a copy action\n\n| Capability | Status |\n| --- | --- |\n| Reasoning disclosure | Available |\n| Markdown rendering | Available |\n\n```rust\ncargo check --features full\n```";
+      const answerChunks = [answer.slice(0, 72), answer.slice(72, 188), answer.slice(188)];
+      answerChunks.forEach((content, index) => {
+        setTimeout(() => emit(sessionId, "text", { content }), 1500 + index * 120);
+      });
       setTimeout(() => { history.push({ role: "assistant", content: [{ type: "text", text: answer }] }); session.status = "completed"; emit(sessionId, "token_usage", { input_tokens: 1834, output_tokens: 211, total_tokens: 2045, context_percent: 4 }); emit(sessionId, "done", { stop_reason: "end_turn", result: { text: answer, tool_calls: [] } }); emit(sessionId, "session_state", session); }, 1900);
       return;
     }
