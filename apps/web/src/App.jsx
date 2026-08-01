@@ -13,6 +13,7 @@
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
 // - Reasoning disclosures remain keyboard accessible and user-controlled.
+// - Slash commands advertised by the composer execute without model involvement.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -27,15 +28,19 @@ import {
   ArrowSquareOut,
   ArrowUp,
   BookOpenText,
+  BracketsCurly,
   CaretDown,
   Check,
   Code,
   Copy,
+  DownloadSimple,
   Eye,
   EyeSlash,
+  FileText,
   FolderSimple,
   GearSix,
   GithubLogo,
+  Gauge,
   List,
   Plus,
   PlugsConnected,
@@ -43,15 +48,20 @@ import {
   SidebarSimple,
   Sparkle,
   Stop,
+  StopCircle,
   TerminalWindow,
   Trash,
+  UserPlus,
   WarningCircle,
+  Wrench,
   X,
+  XCircle,
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
 import { MarkdownContent } from "./MarkdownContent";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
+import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
 
 const emptyRuntime = {
   timeline: [],
@@ -95,6 +105,39 @@ function parseData(event) {
 
 function statusLabel(status) {
   return status === "awaiting_approval" ? "Needs approval" : status?.replaceAll("_", " ") || "idle";
+}
+
+function exportConversation(session, timeline, format) {
+  const normalizedFormat = format === "json" ? "json" : "markdown";
+  const safeName = (session?.name || "amadeus-session").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  let content;
+  let type;
+  let extension;
+
+  if (normalizedFormat === "json") {
+    content = JSON.stringify({ session, timeline }, null, 2);
+    type = "application/json";
+    extension = "json";
+  } else {
+    content = timeline.map((item) => {
+      if (item.kind === "user") return `## You\n\n${item.text}`;
+      if (item.kind === "assistant") return `## Amadeus\n\n${item.text}`;
+      if (item.kind === "thinking") return `> Reasoning: ${item.text}`;
+      if (item.kind === "tool") return `### Tool: ${item.name || "Tool"}\n\n\`\`\`text\n${item.output || item.inputText || ""}\n\`\`\``;
+      if (item.kind === "command") return `### ${item.title}\n\n${item.text}`;
+      return item.text || "";
+    }).filter(Boolean).join("\n\n");
+    type = "text/markdown";
+    extension = "md";
+  }
+
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${safeName || "amadeus-session"}.${extension}`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+  return extension;
 }
 
 function App() {
@@ -259,27 +302,6 @@ function App() {
     }
   };
 
-  const submit = async () => {
-    const content = draft.trim();
-    if (!content || !activeId || busy) return;
-    setDraft("");
-    setRuntime(activeId, (previous) => ({
-      ...previous,
-      status: "running",
-      timeline: [...previous.timeline, { id: `user-${Date.now()}`, kind: "user", text: content }],
-      streamingText: "",
-      thinking: "",
-      rawStreamingText: "",
-      providerThinking: "",
-    }));
-    try {
-      await api.submitMessage(activeId, content);
-    } catch (caught) {
-      setError(caught.message);
-      setRuntime(activeId, (previous) => ({ ...previous, status: "failed" }));
-    }
-  };
-
   const cancel = async () => {
     try {
       await api.cancel(activeId);
@@ -307,6 +329,105 @@ function App() {
       if (!remaining.length) openCreateDialog();
     } catch (caught) {
       setError(caught.message);
+    }
+  };
+
+  const addCommandResult = (title, text, tone = "default") => {
+    if (!activeId) return;
+    setRuntime(activeId, (previous) => ({
+      ...previous,
+      timeline: [...previous.timeline, { id: `command-${Date.now()}`, kind: "command", title, text, tone }],
+    }));
+  };
+
+  const executeSlashCommand = async (input) => {
+    const parsed = parseSlashInput(input);
+    if (!parsed) return false;
+    const command = SLASH_COMMANDS.find((candidate) => candidate.name === parsed.name);
+    if (!command) {
+      addCommandResult("Unknown command", `No command named \`/${parsed.name || ""}\` is available. Type \`/\` to browse commands.`, "error");
+      return true;
+    }
+
+    try {
+      if (command.name === "help") {
+        const lines = SLASH_COMMANDS.map((item) => `- \`/${item.name}${item.argumentHint ? ` ${item.argumentHint}` : ""}\`: ${item.summary}`);
+        addCommandResult("Slash commands", lines.join("\n"));
+      }
+      if (command.name === "new-agent") {
+        const name = parsed.argument || `Session ${sessions.length + 1}`;
+        const session = await api.createSession(name, "default");
+        setSessions((current) => [...current, session]);
+        setActiveId(session.id);
+      }
+      if (command.name === "context") {
+        const usage = runtime.tokenUsage;
+        const lines = [
+          `- Status: **${statusLabel(runtime.status)}**`,
+          `- Timeline items: **${runtime.timeline.length}**`,
+          `- Pending approvals: **${runtime.approvals.length}**`,
+          usage ? `- Input tokens: **${usage.input_tokens.toLocaleString()}**` : "- Input tokens: not reported yet",
+          usage ? `- Output tokens: **${usage.output_tokens.toLocaleString()}**` : "- Output tokens: not reported yet",
+          usage ? `- Context used: **${usage.context_percent}%**` : "- Context used: not reported yet",
+        ];
+        addCommandResult("Session context", lines.join("\n"));
+      }
+      if (command.name === "tools") {
+        const data = await api.getToolCatalog();
+        const rows = (data.tools || []).map((tool) => `| \`${tool.name}\` | ${tool.level} | ${tool.permission_mode} |`);
+        addCommandResult("Active tool catalog", ["| Tool | Level | Permission |", "| --- | --- | --- |", ...rows].join("\n"));
+      }
+      if (command.name === "prompt") {
+        const config = await api.getConfig();
+        addCommandResult("Active prompt", [
+          `- Model: \`${config.model}\``,
+          `- Prompt profile: \`${config.prompt?.active_profile || "default"}\``,
+          `- Prompt sections: **${config.prompt?.section_count ?? 0}**`,
+          `- Tool profile: \`${config.tools?.active_profile || "default"}\``,
+          `- Context window: **${config.context_window_size.toLocaleString()} tokens**`,
+        ].join("\n"));
+      }
+      if (command.name === "export") {
+        const requested = parsed.argument.toLowerCase();
+        if (requested && !["markdown", "md", "json"].includes(requested)) {
+          addCommandResult("Export failed", "Use `/export markdown` or `/export json`.", "error");
+        } else {
+          const extension = exportConversation(activeSession, runtime.timeline, requested === "json" ? "json" : "markdown");
+          addCommandResult("Conversation exported", `Downloaded \`${activeSession?.name || "Amadeus session"}.${extension}\`.`);
+        }
+      }
+      if (command.name === "settings") setShowSettings(true);
+      if (command.name === "contribute") setShowContribute(true);
+      if (command.name === "cancel") {
+        if (busy) await cancel();
+        else addCommandResult("Nothing to cancel", "The current session has no active agent turn.");
+      }
+      if (command.name === "close") await closeSession();
+    } catch (caught) {
+      addCommandResult("Command failed", caught.message, "error");
+    }
+    return true;
+  };
+
+  const submit = async (contentOverride) => {
+    const content = (typeof contentOverride === "string" ? contentOverride : draft).trim();
+    if (!content || !activeId || busy) return;
+    setDraft("");
+    if (await executeSlashCommand(content)) return;
+    setRuntime(activeId, (previous) => ({
+      ...previous,
+      status: "running",
+      timeline: [...previous.timeline, { id: `user-${Date.now()}`, kind: "user", text: content }],
+      streamingText: "",
+      thinking: "",
+      rawStreamingText: "",
+      providerThinking: "",
+    }));
+    try {
+      await api.submitMessage(activeId, content);
+    } catch (caught) {
+      setError(caught.message);
+      setRuntime(activeId, (previous) => ({ ...previous, status: "failed" }));
     }
   };
 
@@ -401,6 +522,7 @@ function App() {
           tokenUsage={runtime.tokenUsage}
           onChange={setDraft}
           onSubmit={submit}
+          onCommand={submit}
           onCancel={cancel}
           textareaRef={textareaRef}
         />
@@ -497,6 +619,7 @@ function TimelineItem({ item }) {
   if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} />;
   if (item.kind === "assistant") return <AssistantMessage text={item.text} />;
   if (item.kind === "user") return <UserMessage text={item.text} />;
+  if (item.kind === "command") return <CommandResult item={item} />;
   if (item.kind === "error") return <div className="inline-notice error"><WarningCircle />{item.text}</div>;
   return <div className="inline-notice"><ArrowCounterClockwise />{item.text}</div>;
 }
@@ -513,6 +636,18 @@ function AssistantMessage({ text, streaming = false }) {
         <div className="message-label">Amadeus</div>
         <MarkdownContent text={text} />
         {streaming && <span className="stream-caret" aria-hidden="true" />}
+      </div>
+    </article>
+  );
+}
+
+function CommandResult({ item }) {
+  return (
+    <article className={`command-result ${item.tone || "default"}`}>
+      <div className="command-result-icon"><TerminalWindow /></div>
+      <div className="message-body">
+        <div className="message-label">{item.title}</div>
+        <MarkdownContent text={item.text} />
       </div>
     </article>
   );
@@ -584,8 +719,65 @@ function ApprovalCard({ approval, onDecision }) {
   );
 }
 
-function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCancel, textareaRef }) {
+function SlashCommandIcon({ name }) {
+  const icons = {
+    help: BookOpenText,
+    agent: UserPlus,
+    context: Gauge,
+    tools: Wrench,
+    prompt: BracketsCurly,
+    export: DownloadSimple,
+    settings: GearSix,
+    contribute: GithubLogo,
+    cancel: StopCircle,
+    close: XCircle,
+  };
+  const Icon = icons[name] || FileText;
+  return <Icon />;
+}
+
+function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCommand, onCancel, textareaRef }) {
+  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [dismissedDraft, setDismissedDraft] = useState("");
+  const matches = useMemo(() => filterSlashCommands(draft), [draft]);
+  const paletteVisible = matches.length > 0 && dismissedDraft !== draft && !disabled && !busy;
+
+  useEffect(() => {
+    setSelectedIndex(0);
+    if (dismissedDraft && dismissedDraft !== draft) setDismissedDraft("");
+  }, [draft, dismissedDraft]);
+
+  const selectCommand = (command) => {
+    if (command.argumentHint) {
+      onChange(commandDraft(command));
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      return;
+    }
+    onChange("");
+    onCommand(commandDraft(command));
+  };
+
   const onKeyDown = (event) => {
+    if (paletteVisible && event.key === "ArrowDown") {
+      event.preventDefault();
+      setSelectedIndex((index) => (index + 1) % matches.length);
+      return;
+    }
+    if (paletteVisible && event.key === "ArrowUp") {
+      event.preventDefault();
+      setSelectedIndex((index) => (index - 1 + matches.length) % matches.length);
+      return;
+    }
+    if (paletteVisible && event.key === "Escape") {
+      event.preventDefault();
+      setDismissedDraft(draft);
+      return;
+    }
+    if (paletteVisible && (event.key === "Tab" || (event.key === "Enter" && !event.shiftKey))) {
+      event.preventDefault();
+      selectCommand(matches[selectedIndex]);
+      return;
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       onSubmit();
@@ -593,24 +785,54 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCan
   };
   return (
     <div className="composer-wrap">
-      <div className={`composer ${disabled ? "disabled" : ""}`}>
-        <label htmlFor="agent-prompt">Message Amadeus</label>
-        <textarea
-          ref={textareaRef}
-          id="agent-prompt"
-          rows="2"
-          value={draft}
-          placeholder={disabled ? "Connect to the local Amadeus API to begin" : "Ask Amadeus to inspect, explain, or build anything"}
-          disabled={disabled || busy}
-          onChange={(event) => onChange(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        <div className="composer-footer">
-          <div className="composer-meta"><button aria-label="Add context"><Plus /></button><span className="access-label"><WarningCircle />Local full access</span></div>
-          <div className="composer-meta right">
-            {tokenUsage && <span>{tokenUsage.context_percent}% context</span>}
-            <span>Default agent</span>
-            {busy ? <button className="send-button stop" onClick={onCancel} aria-label="Stop generation"><Stop weight="fill" /></button> : <button className="send-button" onClick={onSubmit} disabled={!draft.trim() || disabled} aria-label="Send message"><ArrowUp weight="bold" /></button>}
+      <div className="composer-stack">
+        {paletteVisible && (
+          <div className="slash-palette" id="slash-command-palette" role="listbox" aria-label="Slash commands">
+            <div className="slash-palette-heading"><span>Commands</span><small>↑↓ navigate&nbsp;&nbsp;↵ select&nbsp;&nbsp;esc close</small></div>
+            <div className="slash-command-list">
+              {matches.map((command, index) => (
+                <button
+                  key={command.name}
+                  id={`slash-command-${command.name}`}
+                  className={index === selectedIndex ? "selected" : ""}
+                  type="button"
+                  role="option"
+                  aria-selected={index === selectedIndex}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => selectCommand(command)}
+                  onMouseEnter={() => setSelectedIndex(index)}
+                >
+                  <span className="slash-command-icon"><SlashCommandIcon name={command.icon} /></span>
+                  <span className="slash-command-copy"><strong>/{command.name}</strong><small>{command.summary}</small></span>
+                  {command.argumentHint && <code>{command.argumentHint}</code>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className={`composer ${disabled ? "disabled" : ""}`}>
+          <label htmlFor="agent-prompt">Message Amadeus</label>
+          <textarea
+            ref={textareaRef}
+            id="agent-prompt"
+            rows="2"
+            value={draft}
+            placeholder={disabled ? "Connect to the local Amadeus API to begin" : "Ask Amadeus to inspect, explain, or build anything"}
+            disabled={disabled || busy}
+            aria-autocomplete="list"
+            aria-controls={paletteVisible ? "slash-command-palette" : undefined}
+            aria-expanded={paletteVisible}
+            aria-activedescendant={paletteVisible ? `slash-command-${matches[selectedIndex]?.name}` : undefined}
+            onChange={(event) => onChange(event.target.value)}
+            onKeyDown={onKeyDown}
+          />
+          <div className="composer-footer">
+            <div className="composer-meta"><button aria-label="Add context"><Plus /></button><span className="access-label"><WarningCircle />Local full access</span></div>
+            <div className="composer-meta right">
+              {tokenUsage && <span>{tokenUsage.context_percent}% context</span>}
+              <span>Default agent</span>
+              {busy ? <button className="send-button stop" onClick={onCancel} aria-label="Stop generation"><Stop weight="fill" /></button> : <button className="send-button" onClick={onSubmit} disabled={!draft.trim() || disabled} aria-label="Send message"><ArrowUp weight="bold" /></button>}
+            </div>
           </div>
         </div>
       </div>

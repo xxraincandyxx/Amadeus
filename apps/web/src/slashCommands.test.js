@@ -26,9 +26,10 @@ test("slash completion activates only at the first character", () => {
   assert.equal(filterSlashCommands("/").length, SLASH_COMMANDS.length);
 });
 
-test("slash completion filters names and descriptions", () => {
+test("slash completion filters command names without description noise", () => {
   assert.deepEqual(filterSlashCommands("/new").map((command) => command.name), ["new-agent"]);
-  assert.deepEqual(filterSlashCommands("/token").map((command) => command.name), ["context"]);
+  assert.deepEqual(filterSlashCommands("/to").map((command) => command.name), ["tools"]);
+  assert.deepEqual(filterSlashCommands("/token"), []);
 });
 
 test("slash completion closes after an argument starts", () => {

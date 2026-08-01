@@ -43,13 +43,8 @@ export function filterSlashCommands(input = "", commands = SLASH_COMMANDS) {
   const parsed = parseSlashInput(input);
   if (!parsed || parsed.argument || /\s/.test(input.slice(1))) return [];
   const query = parsed.name;
-  return commands
-    .filter((command) => command.name.includes(query) || command.summary.toLowerCase().includes(query))
-    .sort((left, right) => {
-      const leftPrefix = left.name.startsWith(query) ? 0 : 1;
-      const rightPrefix = right.name.startsWith(query) ? 0 : 1;
-      return leftPrefix - rightPrefix || left.name.localeCompare(right.name);
-    });
+  if (!query) return commands;
+  return commands.filter((command) => command.name.includes(query));
 }
 
 export function commandDraft(command) {
