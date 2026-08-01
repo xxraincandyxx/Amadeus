@@ -1,7 +1,28 @@
+// @amadeus-header
+// summary: Reduces live session events and hydrates persisted history for the web timeline.
+// layer: ui
+// status: active
+// feature_flags: none
+// provides:
+// - fn: contentText
+// - fn: historyToTimeline
+// - fn: preserveThinkingTimeline
+// - fn: reduceEvent
+// uses:
+// - protocol: Amadeus session SSE events
+// - format: serialized message content blocks
+// invariants:
+// - Reasoning remains visually separate from final assistant text.
+// - Completed live reasoning survives authoritative history refreshes for the current runtime.
+// side_effects: none
+// tests:
+// - apps/web/src/sessionState.test.js
+// @end-amadeus-header
+
 export function contentText(content = []) {
   return content
-    .filter((block) => block.type === "text" || block.type === "thinking")
-    .map((block) => block.text || block.thinking || "")
+    .filter((block) => block.type === "text")
+    .map((block) => block.text || "")
     .join("\n")
     .trim();
 }
@@ -10,6 +31,14 @@ export function historyToTimeline(messages = []) {
   return messages.flatMap((message, messageIndex) => {
     const items = [];
     const text = contentText(message.content);
+    const thinking = (message.content || [])
+      .filter((block) => block.type === "thinking")
+      .map((block) => block.thinking || block.text || "")
+      .join("\n")
+      .trim();
+    if (thinking) {
+      items.push({ id: `history-thinking-${messageIndex}`, kind: "thinking", text: thinking, complete: true });
+    }
     if (text) {
       items.push({ id: `history-${messageIndex}`, kind: message.role, text });
     }
@@ -30,6 +59,17 @@ export function historyToTimeline(messages = []) {
     }
     return items;
   });
+}
+
+export function preserveThinkingTimeline(hydrated = [], current = []) {
+  const preserved = current.filter(
+    (item) => item.kind === "thinking" && !hydrated.some((entry) => entry.kind === "thinking" && entry.text === item.text),
+  );
+  if (!preserved.length) return hydrated;
+  const timeline = [...hydrated];
+  const lastAssistant = timeline.findLastIndex((item) => item.kind === "assistant");
+  timeline.splice(lastAssistant < 0 ? timeline.length : lastAssistant, 0, ...preserved);
+  return timeline;
 }
 
 export function reduceEvent(state, eventName, payload) {
@@ -67,6 +107,7 @@ export function reduceEvent(state, eventName, payload) {
   }
   if (eventName === "token_usage") tokenUsage = payload;
   if (eventName === "done") {
+    if (thinking.trim()) timeline.push({ id: `thinking-${Date.now()}`, kind: "thinking", text: thinking, complete: true });
     if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText });
     streamingText = "";
     thinking = "";

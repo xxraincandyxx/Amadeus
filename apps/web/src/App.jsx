@@ -1,3 +1,26 @@
+// @amadeus-header
+// summary: Renders and coordinates the Amadeus web and native agent workspace.
+// layer: ui
+// status: active
+// feature_flags: none
+// provides:
+// - fn: App
+// - runtime: React agent workspace
+// uses:
+// - module: apps/web/src/api.js
+// - module: apps/web/src/sessionState.js
+// - protocol: Amadeus REST and SSE APIs
+// invariants:
+// - Live reasoning is visually distinct from final assistant output.
+// - Reasoning disclosures remain keyboard accessible and user-controlled.
+// side_effects:
+// - Reads and writes browser local storage.
+// - Opens REST, SSE, and external-link connections.
+// tests:
+// - cmd: npm test
+// - cmd: npm run build
+// @end-amadeus-header
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
@@ -8,6 +31,8 @@ import {
   Check,
   Code,
   Copy,
+  Eye,
+  EyeSlash,
   FolderSimple,
   GearSix,
   GithubLogo,
@@ -25,7 +50,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
-import { historyToTimeline, reduceEvent } from "./sessionState";
+import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
 
 const emptyRuntime = {
   timeline: [],
@@ -118,7 +143,7 @@ function App() {
     const approvals = await api.approvals(sessionId);
     setRuntime(sessionId, (previous) => ({
       ...previous,
-      timeline: historyToTimeline(data.messages),
+      timeline: preserveThinkingTimeline(historyToTimeline(data.messages), previous.timeline),
       approvals,
     }));
   }, [setRuntime]);
@@ -342,7 +367,7 @@ function App() {
                 <Welcome session={activeSession} />
               )}
               {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-              {runtime.thinking && <ThinkingBlock text={runtime.thinking} />}
+              {runtime.thinking && <ThinkingBlock text={runtime.thinking} live />}
               {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
               {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
               {runtime.approvals.map((approval) => (
@@ -456,6 +481,7 @@ function Header({ session, status, onMenu, onDetails, onClose }) {
 
 function TimelineItem({ item }) {
   if (item.kind === "tool") return <ToolCard tool={item} />;
+  if (item.kind === "thinking") return <ThinkingBlock text={item.text} />;
   if (item.kind === "assistant") return <AssistantMessage text={item.text} />;
   if (item.kind === "user") return <UserMessage text={item.text} />;
   if (item.kind === "error") return <div className="inline-notice error"><WarningCircle />{item.text}</div>;
@@ -475,8 +501,17 @@ function AssistantMessage({ text, streaming = false }) {
   );
 }
 
-function ThinkingBlock({ text }) {
-  return <details className="thinking-block" open><summary><Sparkle />Reasoning<CaretDown /></summary><p>{text}</p></details>;
+function ThinkingBlock({ text, live = false }) {
+  const [expanded, setExpanded] = useState(live);
+  return (
+    <section className={`thinking-block ${live ? "live" : "complete"}`}>
+      <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
+        <span className="thinking-title"><Sparkle /><strong>{live ? "Thinking" : "Model reasoning"}</strong><small>{expanded ? "Hide" : "Show"}</small></span>
+        {expanded ? <EyeSlash aria-hidden="true" /> : <Eye aria-hidden="true" />}
+      </button>
+      {expanded && <p>{text}</p>}
+    </section>
+  );
 }
 
 function ToolCard({ tool, live = false }) {

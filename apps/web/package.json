@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "mock-api": "node mock-server.mjs",
+    "test": "node --test src/*.test.js",
     "lint": "eslint .",
     "desktop:sidecar": "bash scripts/prepare-desktop-sidecar.sh",
     "desktop:dev": "npm run desktop:sidecar && tauri dev",
