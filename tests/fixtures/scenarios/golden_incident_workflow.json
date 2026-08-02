@@ -1,0 +1,106 @@
+{
+  "name": "golden_incident_workflow",
+  "description": "Diagnose, fix, verify, and report a deterministic calculator incident",
+  "steps": [
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "thinking_delta",
+          "text": "I need to inspect the failing implementation before changing it."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "read_calculator",
+          "name": "read_file"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"path\":\"calculator.rs\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "read_calculator"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "The add function subtracts its second operand. I will apply the smallest correction."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "edit_calculator",
+          "name": "edit_file"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"path\":\"calculator.rs\",\"old_text\":\"a - b\",\"new_text\":\"a + b\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "edit_calculator"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "text_delta",
+          "text": "The fix is in place. I will run the focused test binary."
+        },
+        {
+          "type": "tool_call_start",
+          "id": "verify_calculator",
+          "name": "bash"
+        },
+        {
+          "type": "tool_call_delta",
+          "arguments": "{\"command\":\"rustc --test calculator.rs -o calculator_test && ./calculator_test\"}"
+        },
+        {
+          "type": "tool_call_done",
+          "id": "verify_calculator"
+        },
+        {
+          "type": "stop_reason",
+          "reason": "tool_use"
+        }
+      ],
+      "error": null
+    },
+    {
+      "delay_ms": null,
+      "events": [
+        {
+          "type": "token_usage",
+          "input_tokens": 640,
+          "output_tokens": 180
+        },
+        {
+          "type": "text_delta",
+          "text": "Incident resolved. Root cause: add used subtraction. Change: replaced a - b with a + b. Verification: the focused Rust test passed. Risk: low; the change is limited to one expression."
+        },
+        {
+          "type": "stop_reason",
+          "reason": "end_turn"
+        }
+      ],
+      "error": null
+    }
+  ]
+}

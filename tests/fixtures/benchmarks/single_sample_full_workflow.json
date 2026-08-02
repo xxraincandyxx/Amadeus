@@ -1,0 +1,91 @@
+{
+  "id": "single_sample_full_workflow",
+  "suite": "single-sample",
+  "description": "One deterministic incident workflow exercising forced compaction, streaming, search, planning, tools, approval denial, recovery, token accounting, and benchmark reporting",
+  "tags": ["single-sample", "compaction", "streaming", "tools", "approval", "recovery", "metrics"],
+  "prompt": "Investigate the Amadeus compaction implementation. Preserve the incident constraints from earlier turns, locate the relevant source and tests, track the work, run a read-only verification, safely handle any denied operation, and return a structured evidence report with FINDING, COMPACTION, VERIFICATION, SAFETY, and NEXT sections.",
+  "mode": "mock",
+  "config": {
+    "timeout_seconds": 20,
+    "approval_mode": "ask",
+    "context_window_size": 240,
+    "compact_threshold_percent": 20,
+    "compact_target_percent": 10,
+    "compact_preserve_recent": 2,
+    "compact_min_messages": 4,
+    "compact_use_llm_summary": false,
+    "seed_history": [
+      {"role":"user","content":"Incident INC-4242: context growth caused a session to exceed its intended budget. Constraint alpha: preserve recent tool evidence and never mutate production files during diagnosis. Evidence block A: threshold behavior must remain observable in emitted events. This historical detail is deliberately verbose to force deterministic compaction before work begins."},
+      {"role":"assistant","content":"Acknowledged INC-4242. I will preserve constraint alpha, inspect the compaction trigger and event emission, and avoid production mutations. Prior hypothesis: compaction should occur before an LLM turn when estimated context crosses the configured threshold."},
+      {"role":"user","content":"Constraint beta: verification must be read-only. The final response must explicitly mention INC-4242, constraint alpha, compaction evidence, approval denial, and a focused test command. Historical note B repeats enough context to exercise summary extraction and recent-message preservation."},
+      {"role":"assistant","content":"Acknowledged constraint beta. Planned evidence sources include crates/core/src/agent/loop_agent.rs, crates/core/src/agent/compaction.rs, and tests/compaction_test.rs. I will use search tools, maintain todos, and report safety outcomes."},
+      {"role":"user","content":"Additional historical payload C: telemetry consumers rely on AgentEvent::Compaction fields including original count, compacted count, tokens saved, messages summarized, and compression status. Do not lose the incident identifier or safety constraints."},
+      {"role":"assistant","content":"Recorded. Success means observable compaction, source discovery, test discovery, read-only verification, safe denial handling, token usage, and a structured final report."}
+    ]
+  },
+  "mock_script": {
+    "steps": [
+      {"events":[
+        {"type":"thinking_delta","text":"The compacted context preserves the incident objective. I will discover compaction sources first."},
+        {"type":"tool_call_start","id":"glob_compaction","name":"glob"},
+        {"type":"tool_call_delta","arguments":"{\"pattern\":\"**/*compaction*.rs\"}"},
+        {"type":"tool_call_done","id":"glob_compaction"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"text_delta","text":"I found the compaction modules and will locate event emission and threshold checks."},
+        {"type":"tool_call_start","id":"grep_compaction","name":"grep"},
+        {"type":"tool_call_delta","arguments":"{\"pattern\":\"AgentEvent::Compaction|needs_compaction\",\"path\":\"crates/core/src\",\"output_mode\":\"content\"}"},
+        {"type":"tool_call_done","id":"grep_compaction"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"tool_call_start","id":"todo_plan","name":"todo"},
+        {"type":"tool_call_delta","arguments":"{\"items\":[{\"id\":\"1\",\"text\":\"Trace compaction trigger and event\",\"status\":\"completed\"},{\"id\":\"2\",\"text\":\"Run focused read-only verification\",\"status\":\"in_progress\"},{\"id\":\"3\",\"text\":\"Validate safety denial and report\",\"status\":\"pending\"}]}"},
+        {"type":"tool_call_done","id":"todo_plan"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"text_delta","text":"The trigger and event path are present. I will run the focused compaction tests without modifying the workspace."},
+        {"type":"tool_call_start","id":"verify_compaction","name":"bash"},
+        {"type":"tool_call_delta","arguments":"{\"command\":\"cargo test --test compaction_test --features full\"}"},
+        {"type":"tool_call_done","id":"verify_compaction"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"thinking_delta","text":"Verification passed. I will probe the approval boundary with a write command; no approval handler means it must be denied safely."},
+        {"type":"tool_call_start","id":"denied_write","name":"bash"},
+        {"type":"tool_call_delta","arguments":"{\"command\":\"echo unsafe > benchmark_should_not_exist.txt\"}"},
+        {"type":"tool_call_done","id":"denied_write"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"tool_call_start","id":"todo_done","name":"todo"},
+        {"type":"tool_call_delta","arguments":"{\"items\":[{\"id\":\"1\",\"text\":\"Trace compaction trigger and event\",\"status\":\"completed\"},{\"id\":\"2\",\"text\":\"Run focused read-only verification\",\"status\":\"completed\"},{\"id\":\"3\",\"text\":\"Validate safety denial and report\",\"status\":\"completed\"}]}"},
+        {"type":"tool_call_done","id":"todo_done"},
+        {"type":"stop_reason","reason":"tool_use"}
+      ]},
+      {"events":[
+        {"type":"token_usage","input_tokens":1450,"output_tokens":410},
+        {"type":"text_delta","text":"FINDING: INC-4242 is covered by threshold evaluation before each LLM turn and AgentEvent::Compaction emission. COMPACTION: forced compaction occurred and preserved the recent objective plus constraint alpha. VERIFICATION: cargo test --test compaction_test --features full passed. SAFETY: the workspace-write probe required approval and was denied, so no file was created; read-only diagnosis continued successfully. NEXT: retain compaction event metrics and run this single-sample benchmark in the full verification gate."},
+        {"type":"stop_reason","reason":"end_turn"}
+      ]}
+    ]
+  },
+  "expectations": {
+    "required_substrings": ["FINDING:", "INC-4242", "COMPACTION:", "constraint alpha", "VERIFICATION:", "compaction_test", "SAFETY:", "denied", "NEXT:"],
+    "forbidden_substrings": ["write probe succeeded", "unable to verify"],
+    "required_regex": ["(?s)FINDING:.*COMPACTION:.*VERIFICATION:.*SAFETY:.*NEXT:"],
+    "required_tools": ["glob", "grep", "todo", "bash"],
+    "expect_error": false,
+    "expect_approval": true,
+    "expect_compaction": true,
+    "min_output_len": 300,
+    "max_output_len": 1200
+  },
+  "thresholds": {
+    "max_duration_ms": 30000,
+    "max_tool_calls": 6,
+    "max_errors": 0
+  }
+}

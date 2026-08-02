@@ -7,6 +7,8 @@
 // - module: crate::benchmark::case
 // - type: crate::benchmark::case::BenchmarkMode
 // - type: crate::benchmark::case::BenchmarkCaseConfig
+// - type: crate::benchmark::case::BenchmarkSeedRole
+// - type: crate::benchmark::case::BenchmarkSeedMessage
 // - type: crate::benchmark::case::BenchmarkExpectations
 // - type: crate::benchmark::case::BenchmarkThresholds
 // - type: crate::benchmark::case::BenchmarkCase
@@ -51,6 +53,33 @@ pub struct BenchmarkCaseConfig {
     pub approval_mode: Option<String>,
     #[serde(default)]
     pub session_log_dir: Option<String>,
+    #[serde(default)]
+    pub context_window_size: Option<u32>,
+    #[serde(default)]
+    pub compact_threshold_percent: Option<u8>,
+    #[serde(default)]
+    pub compact_target_percent: Option<u8>,
+    #[serde(default)]
+    pub compact_preserve_recent: Option<usize>,
+    #[serde(default)]
+    pub compact_min_messages: Option<usize>,
+    #[serde(default)]
+    pub compact_use_llm_summary: Option<bool>,
+    #[serde(default)]
+    pub seed_history: Vec<BenchmarkSeedMessage>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BenchmarkSeedRole {
+    User,
+    Assistant,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkSeedMessage {
+    pub role: BenchmarkSeedRole,
+    pub content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

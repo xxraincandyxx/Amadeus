@@ -35,8 +35,8 @@ use futures::StreamExt;
 use crate::agent::config::{Config, Provider};
 use crate::agent::events::AgentEvent;
 use crate::agent::loop_agent::Agent;
-use crate::agent::messages::Message;
-use crate::benchmark::case::{BenchmarkCase, BenchmarkMode};
+use crate::agent::messages::{ContentBlock, Message};
+use crate::benchmark::case::{BenchmarkCase, BenchmarkMode, BenchmarkSeedRole};
 use crate::benchmark::eval::BenchmarkEvaluation;
 use crate::benchmark::metrics::BenchmarkMetrics;
 use crate::benchmark::mock::BenchmarkMockClient;
@@ -198,6 +198,14 @@ impl BenchmarkRunner {
         {
             let history = agent.history();
             let mut history_guard = history.write().await;
+            for message in &case.config.seed_history {
+                history_guard.push(match message.role {
+                    BenchmarkSeedRole::User => Message::user(&message.content),
+                    BenchmarkSeedRole::Assistant => Message::assistant(vec![ContentBlock::Text {
+                        text: message.content.clone(),
+                    }]),
+                });
+            }
             history_guard.push(Message::user(&case.prompt));
         }
 
@@ -302,6 +310,25 @@ impl BenchmarkRunner {
 
         if let Some(session_log_dir) = &case.config.session_log_dir {
             config.session_log_dir = Some(PathBuf::from(session_log_dir));
+        }
+
+        if let Some(context_window_size) = case.config.context_window_size {
+            config.context_window_size = context_window_size;
+        }
+        if let Some(threshold) = case.config.compact_threshold_percent {
+            config.compact_threshold_percent = threshold;
+        }
+        if let Some(target) = case.config.compact_target_percent {
+            config.compact_target_percent = target;
+        }
+        if let Some(preserve_recent) = case.config.compact_preserve_recent {
+            config.compact_preserve_recent = preserve_recent;
+        }
+        if let Some(min_messages) = case.config.compact_min_messages {
+            config.compact_min_messages = min_messages;
+        }
+        if let Some(use_llm_summary) = case.config.compact_use_llm_summary {
+            config.compact_use_llm_summary = use_llm_summary;
         }
 
         if case.mode == BenchmarkMode::Live && config.api_key.is_empty() {
