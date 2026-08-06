@@ -36,6 +36,9 @@ runtime/rag_eval/results/
 # Test output files
 test_*.txt
 
+# Coverage instrumentation output
+*.profraw
+
 # Benchmark output directory
 /benchmark_runs
 
