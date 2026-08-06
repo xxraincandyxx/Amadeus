@@ -12,11 +12,11 @@
 // - module: crate::api::types
 // - module: crate::client::LLMClient
 // - module: crate::permissions
-// - module: crate::policy
 // - module: crate::tools::bash::BashTool
 // - protocol: axum HTTP handlers
 // invariants:
 // - Handler request and response handling stays aligned with route contracts.
+// - PermissionEnforcer is the only approval gate applied to this route.
 // side_effects:
 // - Performs network or HTTP operations.
 // tests:
@@ -34,7 +34,6 @@ use crate::api::http::AppState;
 use crate::api::types::{ErrorResponse, ExecuteRequest, ExecuteResponse};
 use crate::client::LLMClient;
 use crate::permissions::{PermissionDecision, PermissionEnforcer};
-use crate::policy::Policy;
 use crate::tools::bash::BashTool;
 
 /// Process a command execution request.
@@ -75,14 +74,6 @@ fn validate_execute_permissions(
         return Err(response);
     }
 
-    let policy = Policy::from_config(config);
-    if policy.needs_approval("bash", input) {
-        let mut response =
-            ErrorResponse::new("PermissionDenied", policy.approval_reason("bash", input));
-        response.tool = Some("bash".to_string());
-        return Err(response);
-    }
-
     Ok(())
 }
 
@@ -113,20 +104,6 @@ mod tests {
 
         let input = serde_json::json!({
             "command": "rm -rf /tmp/amadeus_test"
-        });
-
-        let err = validate_execute_permissions(&config, &input).unwrap_err();
-        assert_eq!(err.error, "PermissionDenied");
-        assert_eq!(err.tool, Some("bash".to_string()));
-    }
-
-    #[test]
-    fn validate_execute_permissions_denies_policy_gated_command() {
-        let mut config = crate::agent::config::Config::default();
-        config.permission_mode = PermissionMode::Allow;
-
-        let input = serde_json::json!({
-            "command": "echo hello > /tmp/amadeus_test.txt"
         });
 
         let err = validate_execute_permissions(&config, &input).unwrap_err();
