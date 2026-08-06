@@ -1993,6 +1993,7 @@ mod tests {
 
     #[test]
     fn hierarchy_loads_tui_language() {
+        let _env = env_lock();
         let temp = tempfile::tempdir().expect("tempdir");
         let config_root = temp.path().join(".amadeus");
         std::fs::create_dir_all(&config_root).expect("create config root");
@@ -2002,8 +2003,13 @@ mod tests {
         )
         .expect("write settings");
 
+        let home = env::var("HOME").ok();
+        env::set_var("HOME", temp.path());
+
         let config = Config::load_with_hierarchy_internal(temp.path(), false).expect("load config");
         assert_eq!(config.tui.language, Language::ChineseSimplified);
+
+        restore_env("HOME", home);
     }
 
     #[test]
