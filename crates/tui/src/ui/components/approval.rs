@@ -10,6 +10,7 @@
 // - type: crate::ui::components::approval::ApprovalDialog
 // uses:
 // - module: crate::ui::get_colors
+// - module: crate::ui::i18n
 // - runtime: ratatui terminal rendering
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
@@ -82,7 +83,11 @@ impl ApprovalDialog {
 
     /// Get the options available.
     pub fn options(&self) -> [&'static str; 3] {
-        ["Approve", "Deny", "Always Approve"]
+        [
+            crate::ui::i18n::text("approval.approve"),
+            crate::ui::i18n::text("approval.deny"),
+            crate::ui::i18n::text("approval.always"),
+        ]
     }
 
     /// Select the next option.
@@ -131,7 +136,7 @@ impl ApprovalDialog {
 
         // Title
         lines.push(Line::from(Span::styled(
-            " Approval Required ",
+            crate::ui::i18n::text("approval.title"),
             Style::default().fg(colors.status.warning),
         )));
 
@@ -139,7 +144,10 @@ impl ApprovalDialog {
 
         // Tool info
         lines.push(Line::from(vec![
-            Span::styled("Tool: ", Style::default().fg(colors.text.secondary)),
+            Span::styled(
+                crate::ui::i18n::text("approval.tool"),
+                Style::default().fg(colors.text.secondary),
+            ),
             Span::styled(&self.tool_name, Style::default().fg(colors.text.accent)),
         ]));
 
@@ -150,7 +158,10 @@ impl ApprovalDialog {
             self.reason.clone()
         };
         lines.push(Line::from(vec![
-            Span::styled("Reason: ", Style::default().fg(colors.text.secondary)),
+            Span::styled(
+                crate::ui::i18n::text("approval.reason"),
+                Style::default().fg(colors.text.secondary),
+            ),
             Span::styled(reason_text, Style::default().fg(colors.status.warning)),
         ]));
 
@@ -176,7 +187,7 @@ impl ApprovalDialog {
 
         // Help text
         lines.push(Line::from(Span::styled(
-            "↑/↓: Select  y: Yes  n: No  a: Always  Esc: Cancel",
+            crate::ui::i18n::text("approval.help"),
             Style::default().fg(colors.ui.comment),
         )));
 
@@ -198,12 +209,20 @@ impl ApprovalDialog {
     pub fn render_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
 
-        lines.push("=== Tool Execution Approval Required ===".to_string());
+        lines.push(crate::ui::i18n::text("approval.title").trim().to_string());
         lines.push(String::new());
-        lines.push(format!("Tool: {}", self.tool_name));
-        lines.push(format!("Reason: {}", self.reason));
+        lines.push(format!(
+            "{}{}",
+            crate::ui::i18n::text("approval.tool"),
+            self.tool_name
+        ));
+        lines.push(format!(
+            "{}{}",
+            crate::ui::i18n::text("approval.reason"),
+            self.reason
+        ));
         lines.push(String::new());
-        lines.push("Input:".to_string());
+        lines.push(crate::ui::i18n::text("approval.input").to_string());
 
         let input_str = serde_json::to_string_pretty(&self.input).unwrap_or_default();
         let truncated = if input_str.len() > 200 {
@@ -220,7 +239,7 @@ impl ApprovalDialog {
         }
 
         lines.push(String::new());
-        lines.push("↑/↓: Select  Enter: Confirm  Esc: Cancel".to_string());
+        lines.push(crate::ui::i18n::text("approval.help_confirm").to_string());
 
         lines
     }

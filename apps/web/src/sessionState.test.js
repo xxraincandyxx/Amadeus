@@ -11,7 +11,8 @@
 // - fn: reduceEvent
 // invariants:
 // - Reasoning never merges into final answer text.
-// - Completed live reasoning remains available after history refresh.
+// - Completed live reasoning remains attached to its assistant turn after history refresh.
+// - Responses without reasoning do not create duplicate placeholder entries.
 // side_effects: none
 // tests:
 // - cmd: npm test
@@ -29,6 +30,7 @@ const runtime = {
   thinking: "",
   rawStreamingText: "",
   providerThinking: "",
+  thinkingStartedAt: null,
   status: "running",
   tokenUsage: null,
   approvals: [],
@@ -62,6 +64,8 @@ test("done commits streamed reasoning before the final answer", () => {
   ]);
   assert.equal(completed.thinking, "");
   assert.equal(completed.streamingText, "");
+  assert.equal(completed.timeline[0].durationSeconds, 1);
+  assert.equal(completed.thinkingStartedAt, null);
 });
 
 test("tagged thinking is separated from streamed answer text", () => {
@@ -75,13 +79,13 @@ test("tagged thinking is separated from streamed answer text", () => {
   ]);
 });
 
-test("missing model reasoning is represented explicitly", () => {
+test("missing model reasoning does not create a placeholder timeline entry", () => {
   const withText = reduceEvent(runtime, "text", { content: "A direct answer." });
   const completed = reduceEvent(withText, "done", {});
 
-  assert.equal(completed.timeline[0].kind, "thinking");
-  assert.equal(completed.timeline[0].available, false);
-  assert.match(completed.timeline[0].text, /did not expose a separate reasoning channel/);
+  assert.deepEqual(completed.timeline.map(({ kind, text }) => ({ kind, text })), [
+    { kind: "assistant", text: "A direct answer." },
+  ]);
 });
 
 test("tag parser keeps ordinary markdown untouched", () => {
@@ -97,4 +101,49 @@ test("history refresh preserves reasoning captured only by the live stream", () 
   const current = [{ id: "reasoning", kind: "thinking", text: "Inspect the inputs." }];
 
   assert.deepEqual(preserveThinkingTimeline(hydrated, current), [current[0], hydrated[0]]);
+});
+
+test("two prompts keep reasoning attached to their corresponding answers", () => {
+  const hydrated = [
+    { id: "user-1", kind: "user", text: "First prompt" },
+    { id: "answer-1", kind: "assistant", text: "First answer" },
+    { id: "user-2", kind: "user", text: "Second prompt" },
+    { id: "answer-2", kind: "assistant", text: "Second answer" },
+  ];
+  const firstThinking = { id: "thinking-1", kind: "thinking", text: "First reasoning", available: true };
+  const secondThinking = { id: "thinking-2", kind: "thinking", text: "Second reasoning", available: true };
+  const current = [
+    hydrated[0],
+    firstThinking,
+    hydrated[1],
+    hydrated[2],
+    secondThinking,
+    hydrated[3],
+  ];
+
+  assert.deepEqual(preserveThinkingTimeline(hydrated, current), [
+    hydrated[0],
+    firstThinking,
+    hydrated[1],
+    hydrated[2],
+    secondThinking,
+    hydrated[3],
+  ]);
+});
+
+test("history refresh drops legacy unavailable-reasoning placeholders", () => {
+  const hydrated = [
+    { id: "user-1", kind: "user", text: "First prompt" },
+    { id: "answer-1", kind: "assistant", text: "First answer" },
+    { id: "user-2", kind: "user", text: "Second prompt" },
+    { id: "answer-2", kind: "assistant", text: "Second answer" },
+  ];
+  const unavailable = {
+    id: "thinking-unavailable",
+    kind: "thinking",
+    text: "The current model did not expose a separate reasoning channel for this response.",
+    available: false,
+  };
+
+  assert.deepEqual(preserveThinkingTimeline(hydrated, [unavailable, ...hydrated, unavailable]), hydrated);
 });

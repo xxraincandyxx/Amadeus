@@ -10,27 +10,31 @@
 // - type: crate::ui::components::messages::CompressionItem
 // - type: crate::ui::components::messages::HistoryItem
 // - type: crate::ui::components::messages::MessagesComponent
+// - fn: crate::ui::components::messages::MessagesComponent::startup_banner_pending
 // uses:
 // - module: crate::ui::components::compaction_animation::CompactionAnimator
 // - module: crate::ui::components::markdown::render_markdown
 // - module: crate::ui::components::tool_group
 // - module: crate::ui::get_colors
+// - module: crate::ui::i18n
 // - runtime: ratatui terminal rendering
 // - runtime: tracing instrumentation
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
+// - Thinking content starts collapsed and is rendered only in the active thought panel.
 // side_effects: none
 // tests:
+// - cmd: cargo test -p tui thinking
 // - tests/messages_test.rs
 // @end-amadeus-header
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Paragraph, Wrap},
     Frame,
 };
 use tracing::debug;
@@ -199,6 +203,10 @@ pub struct MessagesComponent {
     streaming_text: Option<String>,
     /// Streaming thinking content
     streaming_thinking: Option<String>,
+    streaming_thinking_started_at: Option<Instant>,
+    streaming_thinking_collapsed: bool,
+    active_thinking_index: Option<usize>,
+    active_thinking_duration: Duration,
     pending_tool_group: Option<ToolGroup>,
     /// Pending compression item with animated display
     pending_compression: Option<CompressionItem>,
@@ -224,6 +232,10 @@ impl MessagesComponent {
             items: Vec::new(),
             streaming_text: None,
             streaming_thinking: None,
+            streaming_thinking_started_at: None,
+            streaming_thinking_collapsed: true,
+            active_thinking_index: None,
+            active_thinking_duration: Duration::default(),
             pending_tool_group: None,
             pending_compression: None,
             compaction_animator: CompactionAnimator::new(),
@@ -258,6 +270,11 @@ impl MessagesComponent {
         self.current_turn
     }
 
+    /// Returns whether the startup dashboard still needs to be emitted into terminal scrollback.
+    pub fn startup_banner_pending(&self) -> bool {
+        self.startup_banner_pending
+    }
+
     pub fn take_unrendered_lines(&mut self, width: u16) -> Vec<Line<'static>> {
         let colors = get_colors();
         let mut lines = Vec::new();
@@ -274,6 +291,10 @@ impl MessagesComponent {
         }
 
         for item in self.items[self.last_rendered_index..].iter() {
+            if matches!(item, HistoryItem::Thinking { .. }) {
+                continue;
+            }
+
             let should_skip = !skipped_streamed_assistant
                 && self.skip_next_assistant_history_item
                 && matches!(item, HistoryItem::Assistant { .. });
@@ -396,7 +417,14 @@ impl MessagesComponent {
     pub fn clear_streaming_text(&mut self) {
         self.streaming_text = None;
         self.streaming_thinking = None;
+        self.streaming_thinking_started_at = None;
+        self.streaming_thinking_collapsed = true;
         self.pending_tool_group = None;
+    }
+
+    pub fn clear_active_thinking(&mut self) {
+        self.active_thinking_index = None;
+        self.active_thinking_duration = Duration::default();
     }
 
     pub fn replace_history_from_messages(&mut self, history: &[crate::agent::messages::Message]) {
@@ -535,6 +563,11 @@ impl MessagesComponent {
 
     /// Update streaming thinking content
     pub fn update_thinking(&mut self, thinking: &str) {
+        if self.streaming_thinking_started_at.is_none() {
+            self.streaming_thinking_started_at = Some(Instant::now());
+            self.streaming_thinking_collapsed = true;
+            self.active_thinking_index = None;
+        }
         if let Some(ref mut existing) = self.streaming_thinking {
             existing.push_str(thinking);
         } else {
@@ -547,14 +580,139 @@ impl MessagesComponent {
         if let Some(thinking) = self.streaming_thinking.take() {
             if !thinking.is_empty() {
                 let turn = self.current_turn;
+                let duration = self
+                    .streaming_thinking_started_at
+                    .take()
+                    .map(|started_at| started_at.elapsed())
+                    .unwrap_or_default();
+                let duration = Duration::from_secs(duration.as_secs().max(1));
                 self.items.push(HistoryItem::Thinking {
                     content: thinking,
                     timestamp: Instant::now(),
                     turn,
-                    is_collapsed: false,
+                    is_collapsed: true,
                 });
+                self.active_thinking_index = Some(self.items.len().saturating_sub(1));
+                self.active_thinking_duration = duration;
             }
         }
+        self.streaming_thinking_started_at = None;
+        self.streaming_thinking_collapsed = true;
+    }
+
+    fn active_thinking(&self) -> Option<(&str, Duration, bool)> {
+        if let Some(content) = self.streaming_thinking.as_deref() {
+            let duration = self
+                .streaming_thinking_started_at
+                .map(|started_at| started_at.elapsed())
+                .unwrap_or_default();
+            return Some((content, duration, self.streaming_thinking_collapsed));
+        }
+
+        let item = self.items.get(self.active_thinking_index?)?;
+        if let HistoryItem::Thinking {
+            content,
+            is_collapsed,
+            ..
+        } = item
+        {
+            Some((content, self.active_thinking_duration, *is_collapsed))
+        } else {
+            None
+        }
+    }
+
+    pub fn toggle_active_thinking(&mut self) -> bool {
+        if self.streaming_thinking.is_some() {
+            self.streaming_thinking_collapsed = !self.streaming_thinking_collapsed;
+            return true;
+        }
+
+        let Some(index) = self.active_thinking_index else {
+            return false;
+        };
+        let Some(HistoryItem::Thinking { is_collapsed, .. }) = self.items.get_mut(index) else {
+            return false;
+        };
+        *is_collapsed = !*is_collapsed;
+        true
+    }
+
+    pub fn thought_panel_height(&self, width: u16, max_height: u16) -> u16 {
+        let Some((content, _, is_collapsed)) = self.active_thinking() else {
+            return 0;
+        };
+        if width < 12 || max_height < 2 {
+            return 0;
+        }
+        if is_collapsed {
+            return 2;
+        }
+
+        let body_width = width.saturating_sub(5) as usize;
+        let body_height = render_markdown(content, body_width).len().max(1) as u16;
+        2u16.saturating_add(body_height).min(max_height)
+    }
+
+    pub fn render_thought_panel(&self, frame: &mut Frame, area: Rect) {
+        let Some((content, duration, is_collapsed)) = self.active_thinking() else {
+            return;
+        };
+        if area.width < 12 || area.height < 2 {
+            return;
+        }
+
+        let colors = get_colors();
+        let seconds = duration.as_secs().max(1);
+        let disclosure = if is_collapsed { "▸" } else { "▾" };
+        let separator = "─".repeat(area.width as usize);
+        let lines = vec![
+            Line::from(Span::styled(separator, Style::default().fg(colors.ui.dark))),
+            Line::from(vec![
+                Span::styled(
+                    format!(" {disclosure} ◇  "),
+                    Style::default().fg(colors.ui.comment),
+                ),
+                Span::styled(
+                    crate::ui::i18n::thought_summary(seconds),
+                    Style::default()
+                        .fg(colors.text.secondary)
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]),
+        ];
+        frame.render_widget(Paragraph::new(lines), Rect { height: 2, ..area });
+
+        if is_collapsed || area.height <= 2 {
+            return;
+        }
+
+        let body_area = Rect {
+            x: area.x.saturating_add(4),
+            y: area.y.saturating_add(2),
+            width: area.width.saturating_sub(4),
+            height: area.height.saturating_sub(2),
+        };
+        let body_lines = render_markdown(content, body_area.width as usize)
+            .into_iter()
+            .map(|line| {
+                Line::from(
+                    line.spans
+                        .into_iter()
+                        .map(|span| {
+                            Span::styled(
+                                span.content.to_string(),
+                                span.style.patch(Style::default().fg(colors.text.secondary)),
+                            )
+                        })
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        frame.render_widget(
+            Paragraph::new(body_lines).wrap(Wrap { trim: false }),
+            body_area,
+        );
     }
 
     /// Start a pending compression operation (shows animated display)
@@ -882,36 +1040,36 @@ impl MessagesComponent {
             lines.push(Line::from(""));
         }
 
-        // Render streaming thinking
         if let Some(ref thinking) = self.streaming_thinking {
+            let seconds = self
+                .streaming_thinking_started_at
+                .map(|started_at| started_at.elapsed().as_secs().max(1))
+                .unwrap_or(1);
+            let disclosure = if self.streaming_thinking_collapsed {
+                "▸"
+            } else {
+                "▾"
+            };
             lines.push(Line::from(vec![
-                Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
                 Span::styled(
-                    "thinking",
+                    format!("◇ {disclosure}  "),
+                    Style::default().fg(colors.ui.comment),
+                ),
+                Span::styled(
+                    crate::ui::i18n::thought_summary(seconds),
                     Style::default()
                         .fg(colors.text.secondary)
-                        .add_modifier(Modifier::ITALIC),
+                        .add_modifier(Modifier::BOLD),
                 ),
-                Span::styled(" ─", Style::default().fg(colors.text.secondary)),
-                Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
             ]));
 
-            for thinking_line in thinking.lines() {
-                lines.push(Line::from(vec![
-                    Span::styled("│ ", Style::default().fg(colors.ui.dark)),
-                    Span::styled(
-                        thinking_line.to_string(),
-                        Style::default()
-                            .fg(colors.text.secondary)
-                            .add_modifier(Modifier::ITALIC),
-                    ),
-                ]));
+            if !self.streaming_thinking_collapsed {
+                for thinking_line in render_markdown(thinking, content_width.saturating_sub(4)) {
+                    let mut spans = vec![Span::raw("    ")];
+                    spans.extend(thinking_line.spans);
+                    lines.push(Line::from(spans));
+                }
             }
-
-            lines.push(Line::from(vec![
-                Span::styled("└", Style::default().fg(colors.text.secondary)),
-                Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
-            ]));
             lines.push(Line::from(""));
         }
 
@@ -1097,40 +1255,33 @@ impl MessagesComponent {
                 is_collapsed,
                 ..
             } => {
-                let collapse_icon = if *is_collapsed { "+" } else { "-" };
+                let collapse_icon = if *is_collapsed { "▸" } else { "▾" };
                 lines.push(Line::from(vec![
-                    Span::styled("┌─ ", Style::default().fg(colors.text.secondary)),
-                    Span::styled("[", Style::default().fg(colors.ui.dark)),
-                    Span::styled(collapse_icon, Style::default().fg(colors.text.accent)),
-                    Span::styled("] ", Style::default().fg(colors.ui.dark)),
+                    Span::styled("◇ ", Style::default().fg(colors.ui.comment)),
                     Span::styled(
-                        "thinking",
+                        format!("{collapse_icon} "),
+                        Style::default().fg(colors.ui.comment),
+                    ),
+                    Span::styled(
+                        crate::ui::i18n::thought_label(),
                         Style::default()
                             .fg(colors.text.secondary)
-                            .add_modifier(Modifier::ITALIC),
+                            .add_modifier(Modifier::BOLD),
                     ),
-                    Span::styled(" ─", Style::default().fg(colors.text.secondary)),
-                    Span::styled("─".repeat(20), Style::default().fg(colors.ui.dark)),
                 ]));
 
                 if !is_collapsed {
-                    for thinking_line in content.lines() {
-                        lines.push(Line::from(vec![
-                            Span::styled("│ ", Style::default().fg(colors.ui.dark)),
+                    for thinking_line in render_markdown(content, content_width.saturating_sub(4)) {
+                        let mut spans = vec![Span::raw("    ")];
+                        spans.extend(thinking_line.spans.into_iter().map(|span| {
                             Span::styled(
-                                thinking_line.to_string(),
-                                Style::default()
-                                    .fg(colors.text.secondary)
-                                    .add_modifier(Modifier::ITALIC),
-                            ),
-                        ]));
+                                span.content.to_string(),
+                                span.style.patch(Style::default().fg(colors.text.secondary)),
+                            )
+                        }));
+                        lines.push(Line::from(spans));
                     }
                 }
-
-                lines.push(Line::from(vec![
-                    Span::styled("└", Style::default().fg(colors.text.secondary)),
-                    Span::styled("─".repeat(30), Style::default().fg(colors.ui.dark)),
-                ]));
                 lines.push(Line::from(""));
             }
         }
@@ -1653,7 +1804,68 @@ mod tests {
         messages.finalize_thinking();
 
         assert!(messages.streaming_thinking.is_none());
-        assert_eq!(messages.len(), 2); // User + Thinking
+        assert_eq!(messages.len(), 2);
+        assert!(matches!(
+            messages.items.last(),
+            Some(HistoryItem::Thinking {
+                is_collapsed: true,
+                ..
+            })
+        ));
+        assert_eq!(messages.active_thinking_duration, Duration::from_secs(1));
+    }
+
+    #[test]
+    fn thinking_summary_is_collapsed_and_reports_duration() {
+        let item = HistoryItem::Thinking {
+            content: "private reasoning".to_string(),
+            timestamp: Instant::now(),
+            turn: 1,
+            is_collapsed: true,
+        };
+
+        let mut messages = MessagesComponent::new();
+        messages.items.push(item);
+        messages.active_thinking_index = Some(0);
+        messages.active_thinking_duration = Duration::from_secs(17);
+
+        let backend = TestBackend::new(80, 4);
+        let mut terminal = Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|frame| messages.render_thought_panel(frame, frame.area()))
+            .expect("render should succeed");
+        let buffer = terminal.backend().buffer();
+        let rendered = (0..buffer.area.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
+            .collect::<String>();
+
+        assert!(rendered.contains("Thought for 17 seconds"));
+        assert!(!rendered.contains("private reasoning"));
+    }
+
+    #[test]
+    fn active_thinking_toggles_between_collapsed_and_expanded() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+        messages.update_thinking("private reasoning");
+        messages.finalize_thinking();
+
+        assert_eq!(messages.thought_panel_height(80, 12), 2);
+        assert!(messages.toggle_active_thinking());
+        assert!(messages.thought_panel_height(80, 12) > 2);
+        assert!(messages.toggle_active_thinking());
+        assert_eq!(messages.thought_panel_height(80, 12), 2);
+    }
+
+    #[test]
+    fn thinking_panel_is_not_duplicated_in_terminal_scrollback() {
+        let mut messages = MessagesComponent::new();
+        messages.add_user("Hello".to_string());
+        messages.take_unrendered_lines(80);
+        messages.update_thinking("private reasoning");
+        messages.finalize_thinking();
+
+        assert!(messages.take_unrendered_lines(80).is_empty());
     }
 
     #[test]

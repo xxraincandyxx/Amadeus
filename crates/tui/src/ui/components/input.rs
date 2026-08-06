@@ -12,6 +12,7 @@
 // - type: crate::commands::CitationCandidate
 // - module: crate::ui::components::completion
 // - module: crate::ui::get_colors
+// - module: crate::ui::i18n
 // - runtime: ratatui terminal rendering
 // invariants:
 // - The visible composer can render cite chips while the underlying buffer stores markdown links.
@@ -64,7 +65,11 @@ fn try_prompt_from_env() -> String {
 
 /// Claude Code–style placeholder: same line as `❯`, sample replaces when user types.
 fn composer_placeholder() -> String {
-    format!("Try \"{}\"", try_prompt_from_env())
+    if std::env::var(TRY_PROMPT_ENV).is_ok() {
+        format!("Try \"{}\"", try_prompt_from_env())
+    } else {
+        crate::ui::i18n::text("input.placeholder").to_string()
+    }
 }
 
 fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
@@ -460,6 +465,8 @@ impl InputComponent {
         let colors = get_colors();
         let rule_style = Style::default().fg(colors.ui.dark);
         let hint_height = u16::from(self.status_hint.is_some());
+        self.completion.sync_language();
+        self.setup_textarea();
         self.refresh_suggestions();
 
         let comp_rows = if self.citation_completion_is_visible() {
@@ -615,9 +622,9 @@ impl InputComponent {
 
         if comp_rows == 0 {
             let hint_text = if self.shell_mode {
-                "  ! for shell mode · backspace to exit"
+                crate::ui::i18n::text("input.shell_hint")
             } else {
-                "  ? for shortcuts"
+                crate::ui::i18n::text("input.shortcuts_hint")
             };
             frame.render_widget(
                 Paragraph::new(Line::from(Span::styled(

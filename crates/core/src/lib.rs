@@ -47,7 +47,7 @@ pub mod tools;
 pub mod transcript;
 
 pub use agent::config::{
-    Config, LiveViewportConfig, LiveViewportMode, PromptMergeMode, PromptProfileConfig,
+    Config, Language, LiveViewportConfig, LiveViewportMode, PromptMergeMode, PromptProfileConfig,
     PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig, ToolProfileConfig,
     ToolSettings, TuiSettings,
 };

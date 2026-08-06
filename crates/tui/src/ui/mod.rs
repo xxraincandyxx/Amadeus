@@ -43,6 +43,7 @@ pub mod event;
 pub mod export;
 #[cfg(feature = "test-utils")]
 pub mod headless;
+pub(crate) mod i18n;
 pub mod scroll;
 pub mod semantic_colors;
 pub mod theme_manager;

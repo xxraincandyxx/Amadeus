@@ -9,6 +9,7 @@
 // - type: crate::ui::components::status_bar::StatusBar
 // uses:
 // - module: crate::ui::get_colors
+// - module: crate::ui::i18n
 // - runtime: ratatui terminal rendering
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
@@ -139,9 +140,9 @@ impl StatusBar {
 
         // Status text (thinking / generating)
         let status = if self.thinking {
-            "thinking"
+            crate::ui::i18n::text("status.thinking")
         } else {
-            "generating"
+            crate::ui::i18n::text("status.generating")
         };
         spans.push(Span::styled(
             status,

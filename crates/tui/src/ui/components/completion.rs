@@ -11,6 +11,7 @@
 // - type: crate::ui::components::completion::CompletionState
 // - fn: crate::ui::components::completion::render_completion_lines
 // uses:
+// - module: crate::ui::i18n
 // - module: crate::ui::get_colors
 // - runtime: ratatui terminal rendering
 // invariants:
@@ -54,11 +55,12 @@ pub fn get_available_commands() -> Vec<Command> {
     crate::commands::SLASH_COMMAND_SPECS
         .iter()
         .flat_map(|spec| {
-            let mut commands = vec![Command::new(&format!("/{}", spec.name), spec.summary)];
+            let summary = crate::ui::i18n::command_summary(spec.name, spec.summary);
+            let mut commands = vec![Command::new(&format!("/{}", spec.name), summary)];
             commands.extend(
                 spec.aliases
                     .iter()
-                    .map(|alias| Command::new(&format!("/{}", alias), spec.summary)),
+                    .map(|alias| Command::new(&format!("/{}", alias), summary)),
             );
             commands
         })
@@ -70,6 +72,7 @@ pub struct CompletionState {
     matches: Vec<Command>,
     selected_index: usize,
     visible: bool,
+    language: crate::Language,
 }
 
 impl CompletionState {
@@ -80,6 +83,17 @@ impl CompletionState {
             commands,
             selected_index: 0,
             visible: false,
+            language: crate::ui::i18n::language(),
+        }
+    }
+
+    pub(super) fn sync_language(&mut self) {
+        let language = crate::ui::i18n::language();
+        if language != self.language {
+            self.commands = get_available_commands();
+            self.matches = self.commands.clone();
+            self.selected_index = 0;
+            self.language = language;
         }
     }
 

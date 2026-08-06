@@ -8,6 +8,7 @@
 // - type: crate::Provider
 // - type: crate::Config
 // - type: crate::ConfigError
+// - type: crate::Language
 // - type: crate::PromptSettings
 // - type: crate::ToolOverrideConfig
 // uses:
@@ -81,6 +82,41 @@ pub enum ConfigError {
 pub enum Provider {
     Anthropic,
     OpenAI,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Language {
+    #[default]
+    #[serde(rename = "en", alias = "english")]
+    English,
+    #[serde(
+        rename = "zh-CN",
+        alias = "zh-cn",
+        alias = "zh_Hans",
+        alias = "zh-hans",
+        alias = "chinese-simplified"
+    )]
+    ChineseSimplified,
+}
+
+impl Language {
+    /// Return the stable locale identifier used in settings and commands.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::ChineseSimplified => "zh-CN",
+        }
+    }
+
+    /// Parse a supported locale identifier or common language alias.
+    pub fn parse_str(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "en" | "en-us" | "en_us" | "english" => Some(Self::English),
+            "zh" | "zh-cn" | "zh_cn" | "zh-hans" | "zh_hans" | "chinese" | "chinese-simplified"
+            | "simplified-chinese" => Some(Self::ChineseSimplified),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -317,6 +353,8 @@ fn default_viewport_height_percent() -> u16 {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TuiSettings {
+    #[serde(default)]
+    pub language: Language,
     #[serde(default)]
     pub live_viewport: LiveViewportConfig,
 }
@@ -1265,6 +1303,29 @@ impl Config {
                 }
             }
         }
+
+        if let Some(tui) = json.get("tui").and_then(|v| v.as_object()) {
+            if let Some(language) = tui
+                .get("language")
+                .and_then(|v| v.as_str())
+                .and_then(Language::parse_str)
+            {
+                self.tui.language = language;
+            }
+            if let Some(viewport) = tui.get("live_viewport").and_then(|v| v.as_object()) {
+                if let Some(mode) = viewport
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .and_then(LiveViewportMode::parse_str)
+                {
+                    self.tui.live_viewport.mode = mode;
+                }
+                if let Some(height) = viewport.get("height_percent").and_then(|v| v.as_u64()) {
+                    self.tui.live_viewport.height_percent =
+                        LiveViewportConfig::clamp_height_percent(height as u16);
+                }
+            }
+        }
     }
 }
 
@@ -1344,9 +1405,16 @@ fn default_hook_timeout_seconds() -> u64 {
 
 fn merge_tui_settings(self_settings: TuiSettings, other: TuiSettings) -> TuiSettings {
     let default_cfg = LiveViewportConfig::default();
+    let self_language = self_settings.language;
+    let other_language = other.language;
     let self_cfg = self_settings.live_viewport;
     let other_cfg = other.live_viewport;
     TuiSettings {
+        language: if other_language != Language::default() {
+            other_language
+        } else {
+            self_language
+        },
         live_viewport: LiveViewportConfig {
             mode: if other_cfg.mode != default_cfg.mode {
                 other_cfg.mode
@@ -1909,6 +1977,36 @@ mod tests {
     }
 
     #[test]
+    fn language_parses_supported_names_and_defaults_to_english() {
+        assert_eq!(Config::default().tui.language, Language::English);
+        assert_eq!(Language::parse_str("en"), Some(Language::English));
+        assert_eq!(
+            Language::parse_str("zh-CN"),
+            Some(Language::ChineseSimplified)
+        );
+        assert_eq!(
+            Language::parse_str("simplified-chinese"),
+            Some(Language::ChineseSimplified)
+        );
+        assert!(Language::parse_str("fr").is_none());
+    }
+
+    #[test]
+    fn hierarchy_loads_tui_language() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let config_root = temp.path().join(".amadeus");
+        std::fs::create_dir_all(&config_root).expect("create config root");
+        std::fs::write(
+            config_root.join("settings.json"),
+            r#"{"tui":{"language":"zh-CN"}}"#,
+        )
+        .expect("write settings");
+
+        let config = Config::load_with_hierarchy_internal(temp.path(), false).expect("load config");
+        assert_eq!(config.tui.language, Language::ChineseSimplified);
+    }
+
+    #[test]
     fn live_viewport_parses_json_modes() {
         // Start from default (which has all required fields) and overlay only the tui block.
         let mut value = serde_json::to_value(Config::default()).expect("serialize default");
@@ -1975,6 +2073,7 @@ mod tests {
     fn merge_tui_settings_overrides_mode_and_height_independently() {
         let base = Config {
             tui: TuiSettings {
+                language: Language::English,
                 live_viewport: LiveViewportConfig {
                     mode: LiveViewportMode::Hidden,
                     height_percent: 32,
@@ -1985,6 +2084,7 @@ mod tests {
         // Only override mode, keep base height.
         let other = Config {
             tui: TuiSettings {
+                language: Language::English,
                 live_viewport: LiveViewportConfig {
                     mode: LiveViewportMode::Always,
                     height_percent: 32,
@@ -1999,6 +2099,7 @@ mod tests {
         // Now override only height in a higher layer; mode from previous merge survives.
         let layer = Config {
             tui: TuiSettings {
+                language: Language::English,
                 live_viewport: LiveViewportConfig {
                     mode: LiveViewportMode::Hidden, // default — should NOT clobber
                     height_percent: 60,

@@ -15,6 +15,7 @@
 // - type: crate::agent::config::TuiSettings
 // - type: crate::agent::config::LiveViewportConfig
 // - type: crate::agent::config::LiveViewportMode
+// - type: crate::agent::config::Language
 // uses:
 // - module: amadeus_config
 // invariants:
@@ -27,7 +28,7 @@
 //! Compatibility re-exports for configuration types.
 
 pub use amadeus_config::{
-    Config, ConfigError, HookSandboxMode, LiveViewportConfig, LiveViewportMode, PromptMergeMode,
-    PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig,
-    ToolProfileConfig, ToolSettings, TuiSettings,
+    Config, ConfigError, HookSandboxMode, Language, LiveViewportConfig, LiveViewportMode,
+    PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings, Provider,
+    ToolOverrideConfig, ToolProfileConfig, ToolSettings, TuiSettings,
 };

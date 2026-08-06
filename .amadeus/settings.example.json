@@ -47,6 +47,7 @@
     ]
   },
   "tui": {
+    "language": "en",
     "live_viewport": {
       "mode": "hidden",
       "height_percent": 32

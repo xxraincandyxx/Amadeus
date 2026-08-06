@@ -16,17 +16,21 @@
 // - module: crate::client::LLMClient
 // - module: crate::error::Result
 // - module: crate::ui::event
+// - module: crate::ui::i18n
 // - module: crate::ui
 // - cmd: git apply
 // - cmd: git diff
 // - runtime: tokio async runtime
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
+// - The thought hit area matches the most recently rendered thought panel header.
 // side_effects:
+// - Configures terminal keyboard and mouse input modes.
 // - Runs external commands or subprocesses.
 // - Spawns asynchronous tasks.
 // - Sends or receives messages across async channels.
 // tests:
+// - cmd: cargo test -p tui clicking_thought_header_reveals_hidden_content
 // - cmd: cargo test -p tui rewind --features test-utils
 // - tests/tool_approval_test.rs
 // @end-amadeus-header
@@ -39,8 +43,8 @@ use std::time::{Duration, Instant};
 
 use crossterm::{
     event::{
-        KeyCode, KeyModifiers, KeyboardEnhancementFlags, MouseButton, MouseEventKind,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableMouseCapture, EnableMouseCapture, KeyCode, KeyModifiers, KeyboardEnhancementFlags,
+        MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{disable_raw_mode, enable_raw_mode},
@@ -78,7 +82,7 @@ use crate::ui::export::{
     build_export as build_export_artifact, default_export_path, write_export, SessionHeader,
 };
 use crate::ui::{get_theme, next_theme, SidebarKind};
-use crate::{Config, LiveViewportConfig, LiveViewportMode};
+use crate::{Config, Language, LiveViewportConfig, LiveViewportMode};
 
 const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
 const STREAM_FLUSH_CHAR_THRESHOLD: usize = 32;
@@ -702,6 +706,7 @@ pub(crate) struct Session<C: LLMClient> {
     stream_abort: Option<tokio::task::JoinHandle<()>>,
     current_text: String,
     messages_area: Rect,
+    thought_area: Rect,
     sidebar_area: Rect,
     /// Approval dialog state
     approval_dialog: Option<ApprovalDialog>,
@@ -920,6 +925,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             stream_abort: None,
             current_text: String::new(),
             messages_area: Rect::default(),
+            thought_area: Rect::default(),
             sidebar_area: Rect::default(),
             approval_dialog: None,
             approval_dec_tx: None,
@@ -1553,7 +1559,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         // Idle (no streaming text, no tool activity, no pending compaction).
         let show_dashboard = match mode {
             LiveViewportMode::Always => true,
-            LiveViewportMode::Auto => self.messages.is_empty(),
+            LiveViewportMode::Auto => {
+                self.messages.is_empty() && self.messages.startup_banner_pending()
+            }
             LiveViewportMode::Hidden => false,
         };
 
@@ -1991,7 +1999,28 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
     fn handle_mouse(&mut self, event: crossterm::event::MouseEvent) {
         match event.kind {
-            MouseEventKind::Down(MouseButton::Left) | MouseEventKind::Drag(MouseButton::Left) => {
+            MouseEventKind::Down(MouseButton::Left) => {
+                if event.column >= self.thought_area.x
+                    && event.column < self.thought_area.x + self.thought_area.width
+                    && event.row >= self.thought_area.y
+                    && event.row < self.thought_area.y + self.thought_area.height.min(2)
+                {
+                    self.messages.toggle_active_thinking();
+                    return;
+                }
+
+                let scrollbar_x = self.messages_area.x + self.messages_area.width.saturating_sub(1);
+                if event.column == scrollbar_x
+                    && event.row >= self.messages_area.y
+                    && event.row < self.messages_area.y + self.messages_area.height
+                {
+                    let relative_y = event.row - self.messages_area.y;
+                    let height = self.messages_area.height.max(1);
+                    let ratio = relative_y as f32 / height as f32;
+                    self.messages.scroll_to_ratio(ratio);
+                }
+            }
+            MouseEventKind::Drag(MouseButton::Left) => {
                 let scrollbar_x = self.messages_area.x + self.messages_area.width.saturating_sub(1);
                 if event.column == scrollbar_x
                     && event.row >= self.messages_area.y
@@ -3252,31 +3281,40 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.pending_new_agent = true;
                     return Ok(());
                 }
+                SlashCommand::Language { language } => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    let note = if let Some(value) = language {
+                        if let Some(language) = Language::parse_str(&value) {
+                            crate::ui::i18n::set_language(language);
+                            format!(
+                                "{} {} ({})",
+                                crate::ui::i18n::text("language.changed"),
+                                crate::ui::i18n::language_name(language),
+                                language.as_str()
+                            )
+                        } else {
+                            crate::ui::i18n::text("language.invalid").to_string()
+                        }
+                    } else {
+                        let language = crate::ui::i18n::language();
+                        format!(
+                            "{}: {} ({})",
+                            crate::ui::i18n::text("language.current"),
+                            crate::ui::i18n::language_name(language),
+                            language.as_str()
+                        )
+                    };
+                    self.messages.add_local_command_result(note);
+                    return Ok(());
+                }
                 SlashCommand::Help => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
                     self.input.clear();
-                    let help_text = "\
-**Available Commands**
-- `/btw`: Show `/btw` usage
-- `/help`: Show this help message
-- `/compact` or `/compress`: Force context compaction
-- `/context`: Show current context usage
-- `/tools`: Inspect active tool catalog
-- `/prompt`: Inspect active prompt profile
-- `/hooks`: Inspect configured hook phases
-- `/new-agent`: Spawn new agent session
-- `/rewind`: Restore an earlier local checkpoint
-- `/export [path|json]`: Export the conversation (markdown by default, `.json` → JSON)
-- `/viewport [hidden|auto|always]`: Show or hide the live viewport
-- `/exit`: Quit
-- `!`: Shell mode — execute shell commands directly
-- `Ctrl+C` / `Esc`: Cancel active stream
-- `Tab` / `Shift+Tab`: Switch sessions
-- `Ctrl+]` / `Ctrl+[`: Switch to child / parent session
-- `Ctrl+Backspace`: Close active session";
                     self.messages
-                        .add_local_command_result(help_text.to_string());
+                        .add_local_command_result(crate::ui::i18n::help_text());
                     return Ok(());
                 }
                 SlashCommand::Hooks => {
@@ -3376,6 +3414,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
         self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
             .await?;
+        self.messages.clear_active_thinking();
         self.messages.add_user(trimmed.to_string());
 
         self.input.clear();
@@ -3457,10 +3496,19 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         };
 
         let main_width = size.width.saturating_sub(sidebar_width);
+        let fixed_chrome_height = input_height
+            .saturating_add(transient_slash_response_height)
+            .saturating_add(status_height)
+            .saturating_add(footer_height);
+        let thought_max_height = size.height.saturating_sub(fixed_chrome_height);
+        let thought_height = self
+            .messages
+            .thought_panel_height(main_width, thought_max_height);
         let live_available_height = size
             .height
             .saturating_sub(input_height)
             .saturating_sub(transient_slash_response_height)
+            .saturating_sub(thought_height)
             .saturating_sub(status_height)
             .saturating_sub(footer_height);
         let live_height = self.live_viewport_height(main_width, live_available_height);
@@ -3478,6 +3526,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(live_height),
+                    Constraint::Length(thought_height),
                     Constraint::Length(transient_slash_response_height),
                     Constraint::Length(input_height),
                     Constraint::Length(status_height),
@@ -3489,6 +3538,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 .direction(Direction::Vertical)
                 .constraints([
                     Constraint::Length(live_height),
+                    Constraint::Length(thought_height),
                     Constraint::Length(input_height),
                     Constraint::Length(status_height),
                     Constraint::Length(footer_height),
@@ -3497,16 +3547,19 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         };
 
         let live_area = layout[0];
+        let thought_area = layout[1];
         let (transient_slash_response_area, input_area, status_area, footer_area) =
             if transient_slash_response_height > 0 {
-                (layout[1], layout[2], layout[3], layout[4])
+                (layout[2], layout[3], layout[4], layout[5])
             } else {
-                (Rect::default(), layout[1], layout[2], layout[3])
+                (Rect::default(), layout[2], layout[3], layout[4])
             };
 
         self.messages_area = Rect::default();
 
         self.render_live_viewport(frame, live_area);
+        self.thought_area = thought_area;
+        self.messages.render_thought_panel(frame, thought_area);
         self.render_transient_slash_response(frame, transient_slash_response_area);
         self.input.render(frame, input_area);
         self.status_bar.render(frame, status_area);
@@ -3568,6 +3621,7 @@ pub struct App<C: LLMClient> {
 impl<C: LLMClient + Clone + 'static> App<C> {
     pub fn new(agent: Agent<C>, workdir: PathBuf, model_name: String) -> Self {
         let mut agent = agent;
+        crate::ui::i18n::set_language(agent.config().tui.language);
         agent.enable_subagent_delegate();
         let session = Session::new(
             agent,
@@ -3748,6 +3802,7 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let mut stdout = std::io::stdout();
         let _ = execute!(
             stdout,
+            EnableMouseCapture,
             PushKeyboardEnhancementFlags(
                 KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
                     | KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES
@@ -3757,7 +3812,11 @@ impl<C: LLMClient + Clone + 'static> App<C> {
 
         let res = self.run_loop().await;
 
-        let _ = execute!(std::io::stdout(), PopKeyboardEnhancementFlags);
+        let _ = execute!(
+            std::io::stdout(),
+            DisableMouseCapture,
+            PopKeyboardEnhancementFlags
+        );
         disable_raw_mode()?;
         let backend = CrosstermBackend::new(std::io::stdout());
         let mut terminal = Terminal::new(backend)?;
@@ -4680,7 +4739,9 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 mod tests {
     use super::{App, MonitorStatus, Session, SlashDialogState, ToolMonitorState};
     use crate::agent::messages::{ContentBlock, Message};
-    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
     use ratatui::{
         backend::{CrosstermBackend, TestBackend},
         Terminal,
@@ -5970,6 +6031,29 @@ diff --git a/src/main.rs b/src/main.rs
     }
 
     #[test]
+    fn clicking_thought_header_reveals_hidden_content() {
+        let mut app = test_app();
+        let session = active_session_mut(&mut app);
+        session.messages.add_user("Hello".to_string());
+        session.messages.update_thinking("private reasoning");
+        session.messages.finalize_thinking();
+
+        let collapsed = render_session_to_string(session, 90, 16);
+        assert!(collapsed.contains("Thought for 1 second"));
+        assert!(!collapsed.contains("private reasoning"));
+
+        session.handle_mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: session.thought_area.x.saturating_add(1),
+            row: session.thought_area.y.saturating_add(1),
+            modifiers: KeyModifiers::NONE,
+        });
+
+        let expanded = render_session_to_string(session, 90, 16);
+        assert!(expanded.contains("private reasoning"));
+    }
+
+    #[test]
     fn viewport_slash_command_toggles_modes() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
@@ -6001,18 +6085,16 @@ diff --git a/src/main.rs b/src/main.rs
     }
 
     #[test]
-    fn auto_mode_hides_idle_dashboard_once_messages_exist() {
+    fn auto_mode_hides_idle_dashboard_once_it_enters_scrollback() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
         session.live_viewport.mode = LiveViewportMode::Auto;
 
-        // Idle with no messages: dashboard shows.
+        // Before the first scrollback flush, the dashboard is available to direct renderers.
         assert!(session.live_viewport_height(80, 24) > 0);
 
-        // Once a committed message exists, the idle viewport collapses to zero height.
-        session
-            .messages
-            .add_local_command_result("hello".to_string());
+        // Once emitted into shared scrollback, the inline shelf must not draw a second copy.
+        session.messages.take_unrendered_lines(80);
         assert_eq!(session.live_viewport_height(80, 24), 0);
 
         // But streaming text still surfaces even in Auto mode.

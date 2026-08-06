@@ -8,12 +8,14 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/i18n.js
 // - module: apps/web/src/sessionState.js
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
-// - Reasoning disclosures remain keyboard accessible and user-controlled.
+// - Reasoning disclosures remain keyboard accessible, user-controlled, and collapsed by default.
 // - Slash commands advertised by the composer execute without model involvement.
+// - Interface language selection persists across web and native client launches.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -22,21 +24,20 @@
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
   ArrowsInLineVertical,
   ArrowSquareOut,
   ArrowUp,
   BookOpenText,
+  Brain,
   BracketsCurly,
   CaretDown,
   Check,
   Code,
   Copy,
   DownloadSimple,
-  Eye,
-  EyeSlash,
   FileText,
   FolderSimple,
   GearSix,
@@ -60,6 +61,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { normalizeLanguage, SUPPORTED_LANGUAGES, translate } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
@@ -71,6 +73,7 @@ const emptyRuntime = {
   thinking: "",
   rawStreamingText: "",
   providerThinking: "",
+  thinkingStartedAt: null,
   status: "idle",
   tokenUsage: null,
   approvals: [],
@@ -96,6 +99,12 @@ const eventNames = [
   "session_saved",
 ];
 
+const TranslationContext = createContext((key, variables) => translate("en", key, variables));
+
+function useTranslation() {
+  return useContext(TranslationContext);
+}
+
 function parseData(event) {
   try {
     return JSON.parse(event.data);
@@ -104,8 +113,9 @@ function parseData(event) {
   }
 }
 
-function statusLabel(status) {
-  return status === "awaiting_approval" ? "Needs approval" : status?.replaceAll("_", " ") || "idle";
+function statusLabel(status, t = translate.bind(null, "en")) {
+  if (status === "awaiting_approval") return t("Needs approval");
+  return t(status?.replaceAll("_", " ") || "idle");
 }
 
 function exportConversation(session, timeline, format) {
@@ -142,6 +152,7 @@ function exportConversation(session, timeline, format) {
 }
 
 function App() {
+  const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(localStorage.getItem("amadeus.activeSession"));
   const [runtimeBySession, setRuntimeBySession] = useState({});
@@ -161,6 +172,7 @@ function App() {
   const streamRef = useRef(null);
   const endRef = useRef(null);
   const textareaRef = useRef(null);
+  const t = useCallback((key, variables) => translate(language, key, variables), [language]);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
   const runtime = runtimeBySession[activeId] || { ...emptyRuntime, status: activeSession?.status || "idle" };
@@ -204,7 +216,7 @@ function App() {
         setServerOnline(true);
         const available = await refreshSessions();
         if (!available.length) {
-          const created = await api.createSession("Main Agent", "default");
+          const created = await api.createSession(t("Main Agent"), "default");
           setSessions([created]);
           setActiveId(created.id);
         }
@@ -219,7 +231,7 @@ function App() {
     }
     bootstrap();
     return () => { cancelled = true; };
-  }, [refreshSessions, apiEpoch]);
+  }, [refreshSessions, apiEpoch, t]);
 
   useEffect(() => {
     if (!activeId) return;
@@ -253,22 +265,27 @@ function App() {
     };
     source.onerror = (event) => {
       if (typeof event.data === "string") return;
-      setError("Live connection interrupted. Amadeus will retry automatically.");
+      setError(t("Live connection interrupted. Amadeus will retry automatically."));
       api.health()
         .then(() => setServerOnline(true))
         .catch(() => {
           setServerOnline(false);
-          setError("Amadeus API is unavailable. Start the server, then retry.");
+          setError(t("Amadeus API is unavailable. Start the server, then retry."));
         });
       loadHistory(activeId).catch(() => undefined);
     };
 
     return () => source.close();
-  }, [activeId, apiEpoch, loadHistory, serverOnline, setRuntime]);
+  }, [activeId, apiEpoch, loadHistory, serverOnline, setRuntime, t]);
 
   useEffect(() => {
     if (window.__TAURI_INTERNALS__) document.documentElement.classList.add("is-tauri");
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem("amadeus.language", language);
+    document.documentElement.lang = language;
+  }, [language]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -283,13 +300,13 @@ function App() {
   const createSession = async (event) => {
     event?.preventDefault();
     if (!serverOnline || creatingSession) {
-      setCreateError("Connect to the Amadeus API before creating a session.");
+      setCreateError(t("Connect to the Amadeus API before creating a session."));
       return;
     }
     setCreatingSession(true);
     setCreateError("");
     try {
-      const name = newSessionName.trim() || `Session ${sessions.length + 1}`;
+      const name = newSessionName.trim() || t("Session {number}", { number: sessions.length + 1 });
       const session = await api.createSession(name, "default");
       setSessions((current) => [...current, session]);
       setActiveId(session.id);
@@ -313,6 +330,7 @@ function App() {
         thinking: "",
         rawStreamingText: "",
         providerThinking: "",
+        thinkingStartedAt: null,
         approvals: [],
       }));
     } catch (caught) {
@@ -356,7 +374,7 @@ function App() {
         addCommandResult("Slash commands", lines.join("\n"));
       }
       if (command.name === "new-agent") {
-        const name = parsed.argument || `Session ${sessions.length + 1}`;
+        const name = parsed.argument || t("Session {number}", { number: sessions.length + 1 });
         const session = await api.createSession(name, "default");
         setSessions((current) => [...current, session]);
         setActiveId(session.id);
@@ -364,7 +382,7 @@ function App() {
       if (command.name === "context") {
         const usage = runtime.tokenUsage;
         const lines = [
-          `- Status: **${statusLabel(runtime.status)}**`,
+          `- Status: **${statusLabel(runtime.status, t)}**`,
           `- Timeline items: **${runtime.timeline.length}**`,
           `- Pending approvals: **${runtime.approvals.length}**`,
           usage ? `- Input tokens: **${usage.input_tokens.toLocaleString()}**` : "- Input tokens: not reported yet",
@@ -436,6 +454,7 @@ function App() {
       thinking: "",
       rawStreamingText: "",
       providerThinking: "",
+      thinkingStartedAt: null,
     }));
     try {
       await api.submitMessage(activeId, content);
@@ -475,6 +494,7 @@ function App() {
   if (loading) return <LoadingScreen />;
 
   return (
+    <TranslationContext.Provider value={t}>
     <div className="app-shell">
       <Sidebar
         sessions={sessions}
@@ -515,7 +535,7 @@ function App() {
                 <Welcome session={activeSession} />
               )}
               {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-              {runtime.thinking && <ThinkingBlock text={runtime.thinking} live />}
+              {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
               {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
               {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
               {runtime.approvals.map((approval) => (
@@ -565,6 +585,8 @@ function App() {
       {showSettings && (
         <SettingsDialog
           online={serverOnline}
+          language={language}
+          onLanguage={setLanguage}
           onReconnect={reconnect}
           onClose={() => setShowSettings(false)}
         />
@@ -572,23 +594,25 @@ function App() {
 
       {showContribute && <ContributionDialog onClose={() => setShowContribute(false)} />}
     </div>
+    </TranslationContext.Provider>
   );
 }
 
 function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSettings, onContribute, onClose }) {
+  const t = useTranslation();
   return (
     <>
-      <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label="Close sidebar" onClick={onClose} />
+      <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label={t("Close sidebar")} onClick={onClose} />
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
         <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
-        <nav className="primary-nav" aria-label="Primary">
-          <button onClick={onCreate}><Plus /><span>New session</span></button>
-          <button><Robot /><span>Agents</span><span className="nav-count">{sessions.length}</span></button>
-          <button><TerminalWindow /><span>Tools</span></button>
-          <button onClick={onContribute}><GithubLogo /><span>Contribute</span></button>
+        <nav className="primary-nav" aria-label={t("Primary")}>
+          <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
+          <button><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
+          <button><TerminalWindow /><span>{t("Tools")}</span></button>
+          <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
         </nav>
-        <div className="section-label">Workspace</div>
+        <div className="section-label">{t("Workspace")}</div>
         <div className="project-label"><FolderSimple /><span>amadeus</span></div>
         <div className="session-list">
           {sessions.map((session) => (
@@ -598,13 +622,13 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
               onClick={() => onSelect(session.id)}
             >
               <span>{session.name}</span>
-              <i className={`status-dot ${session.status}`} title={statusLabel(session.status)} />
+              <i className={`status-dot ${session.status}`} title={statusLabel(session.status, t)} />
             </button>
           ))}
         </div>
         <div className="sidebar-footer">
-          <div className="connection"><i className={online ? "online" : "offline"} /><span>{online ? "Local API connected" : "API unavailable"}</span></div>
-          <button onClick={onSettings} aria-label="Connection settings"><GearSix /></button>
+          <div className="connection"><i className={online ? "online" : "offline"} /><span>{online ? t("Local API connected") : t("API unavailable")}</span></div>
+          <button onClick={onSettings} aria-label={t("Connection settings")}><GearSix /></button>
         </div>
       </aside>
     </>
@@ -612,17 +636,18 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
 }
 
 function Header({ session, status, onMenu, onDetails, onClose }) {
+  const t = useTranslation();
   return (
     <header className="topbar">
-      <button className="mobile-menu" onClick={onMenu} aria-label="Open sidebar"><SidebarSimple /></button>
+      <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
         <FolderSimple />
-        <div><strong>{session?.name || "Amadeus"}</strong><span>{session ? session.profile : "agent workspace"}</span></div>
+        <div><strong>{session?.name || "Amadeus"}</strong><span>{session ? session.profile : t("agent workspace")}</span></div>
       </div>
       <div className="header-actions">
-        {session && <span className={`status-badge ${status}`}>{statusLabel(status)}</span>}
-        <button className="toolbar-button" onClick={onDetails}><List /><span>Details</span></button>
-        {session && <button className="icon-button danger-hover" onClick={onClose} aria-label="Close session"><Trash /></button>}
+        {session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
+        <button className="toolbar-button" onClick={onDetails}><List /><span>{t("Details")}</span></button>
+        {session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
       </div>
     </header>
   );
@@ -630,7 +655,7 @@ function Header({ session, status, onMenu, onDetails, onClose }) {
 
 function TimelineItem({ item }) {
   if (item.kind === "tool") return <ToolCard tool={item} />;
-  if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} />;
+  if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} durationSeconds={item.durationSeconds} />;
   if (item.kind === "assistant") return <AssistantMessage text={item.text} />;
   if (item.kind === "user") return <UserMessage text={item.text} />;
   if (item.kind === "command") return <CommandResult item={item} />;
@@ -639,7 +664,8 @@ function TimelineItem({ item }) {
 }
 
 function UserMessage({ text }) {
-  return <article className="message user-message"><div className="message-label">You</div><p>{text}</p></article>;
+  const t = useTranslation();
+  return <article className="message user-message"><div className="message-label">{t("You")}</div><p>{text}</p></article>;
 }
 
 function AssistantMessage({ text, streaming = false }) {
@@ -667,23 +693,40 @@ function CommandResult({ item }) {
   );
 }
 
-function ThinkingBlock({ text, live = false, available = true }) {
-  const [expanded, setExpanded] = useState(live);
+function ThinkingBlock({ text, live = false, available = true, durationSeconds = null, startedAt = null }) {
+  const t = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(durationSeconds);
+
+  useEffect(() => {
+    if (!live || !startedAt) {
+      setElapsedSeconds(durationSeconds);
+      return undefined;
+    }
+    const updateElapsed = () => setElapsedSeconds(Math.max(1, Math.ceil((Date.now() - startedAt) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [durationSeconds, live, startedAt]);
+
   if (!available) {
     return (
       <section className="thinking-block unavailable" role="status">
         <div className="thinking-summary static">
-          <span className="thinking-title"><WarningCircle /><strong>Reasoning unavailable</strong></span>
+          <span className="thinking-title"><WarningCircle /><strong>{t("Reasoning unavailable")}</strong></span>
         </div>
         <p>{text}</p>
       </section>
     );
   }
+  const thoughtLabel = elapsedSeconds
+    ? t(elapsedSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: elapsedSeconds })
+    : t("Thought");
   return (
     <section className={`thinking-block ${live ? "live" : "complete"}`}>
       <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-        <span className="thinking-title"><Sparkle /><strong>{live ? "Thinking" : "Model reasoning"}</strong><small>{expanded ? "Hide" : "Show"}</small></span>
-        {expanded ? <EyeSlash aria-hidden="true" /> : <Eye aria-hidden="true" />}
+        <span className="thinking-title"><Brain /><strong>{thoughtLabel}</strong></span>
+        <CaretDown className={expanded ? "expanded" : "collapsed"} aria-hidden="true" />
       </button>
       {expanded && <p>{text}</p>}
     </section>
@@ -691,20 +734,21 @@ function ThinkingBlock({ text, live = false, available = true }) {
 }
 
 function ToolCard({ tool, live = false }) {
+  const t = useTranslation();
   const [expanded, setExpanded] = useState(live);
   const detail = tool.command || tool.inputText || (tool.input ? JSON.stringify(tool.input, null, 2) : "");
   return (
     <article className={`tool-card ${tool.status || "complete"}`}>
       <button className="tool-summary" onClick={() => setExpanded((value) => !value)}>
         <span className="tool-icon"><Code /></span>
-        <span className="tool-heading"><strong>{tool.name || "Tool"}</strong><small>{tool.progress || (live ? "Running" : tool.is_error ? "Failed" : "Completed")}</small></span>
+        <span className="tool-heading"><strong>{tool.name || t("Tool")}</strong><small>{tool.progress || (live ? t("Running") : tool.is_error ? t("Failed") : t("Completed"))}</small></span>
         {typeof tool.percent === "number" && <span className="tool-percent">{tool.percent}%</span>}
         <CaretDown className={expanded ? "rotated" : ""} />
       </button>
       {expanded && (
         <div className="tool-content">
-          {detail && <CodeBlock label="input" text={detail} />}
-          {tool.output && <CodeBlock label="output" text={tool.output} />}
+          {detail && <CodeBlock label={t("input")} text={detail} />}
+          {tool.output && <CodeBlock label={t("output")} text={tool.output} />}
         </div>
       )}
     </article>
@@ -724,11 +768,12 @@ function CodeBlock({ label, text }) {
 }
 
 function ApprovalCard({ approval, onDecision }) {
+  const t = useTranslation();
   return (
     <article className="approval-card">
       <div className="approval-icon"><WarningCircle weight="fill" /></div>
-      <div className="approval-copy"><span>Permission required</span><strong>{approval.tool}</strong><p>{approval.action || approval.reason || "This tool needs your approval before it can continue."}</p><CodeBlock label="input" text={JSON.stringify(approval.input, null, 2)} /></div>
-      <div className="approval-actions"><button onClick={() => onDecision(approval.id, "deny")}>Deny</button><button onClick={() => onDecision(approval.id, "always_approve")}>Always allow</button><button className="primary" onClick={() => onDecision(approval.id, "approve")}>Allow once</button></div>
+      <div className="approval-copy"><span>{t("Permission required")}</span><strong>{approval.tool}</strong><p>{approval.action || approval.reason || t("This tool needs your approval before it can continue.")}</p><CodeBlock label={t("input")} text={JSON.stringify(approval.input, null, 2)} /></div>
+      <div className="approval-actions"><button onClick={() => onDecision(approval.id, "deny")}>{t("Deny")}</button><button onClick={() => onDecision(approval.id, "always_approve")}>{t("Always allow")}</button><button className="primary" onClick={() => onDecision(approval.id, "approve")}>{t("Allow once")}</button></div>
     </article>
   );
 }
@@ -752,6 +797,7 @@ function SlashCommandIcon({ name }) {
 }
 
 function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCommand, onCancel, textareaRef }) {
+  const t = useTranslation();
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [dismissedDraft, setDismissedDraft] = useState("");
   const matches = useMemo(() => filterSlashCommands(draft), [draft]);
@@ -802,8 +848,8 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
     <div className="composer-wrap">
       <div className="composer-stack">
         {paletteVisible && (
-          <div className="slash-palette" id="slash-command-palette" role="listbox" aria-label="Slash commands">
-            <div className="slash-palette-heading"><span>Commands</span><small>↑↓ navigate&nbsp;&nbsp;↵ select&nbsp;&nbsp;esc close</small></div>
+          <div className="slash-palette" id="slash-command-palette" role="listbox" aria-label={t("Slash commands")}>
+            <div className="slash-palette-heading"><span>{t("Commands")}</span><small>{t("Navigate, select, or close")}</small></div>
             <div className="slash-command-list">
               {matches.map((command, index) => (
                 <button
@@ -818,7 +864,7 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
                   onMouseEnter={() => setSelectedIndex(index)}
                 >
                   <span className="slash-command-icon"><SlashCommandIcon name={command.icon} /></span>
-                  <span className="slash-command-copy"><strong>{command.name}</strong><small>{command.summary}</small></span>
+                  <span className="slash-command-copy"><strong>{command.name}</strong><small>{t(command.summary)}</small></span>
                   {command.argumentHint && <code>{command.argumentHint}</code>}
                 </button>
               ))}
@@ -826,13 +872,13 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
           </div>
         )}
         <div className={`composer ${disabled ? "disabled" : ""}`}>
-          <label htmlFor="agent-prompt">Message Amadeus</label>
+          <label htmlFor="agent-prompt">{t("Message Amadeus")}</label>
           <textarea
             ref={textareaRef}
             id="agent-prompt"
             rows="2"
             value={draft}
-            placeholder={disabled ? "Connect to the local Amadeus API to begin" : "Ask Amadeus to inspect, explain, or build anything"}
+            placeholder={disabled ? t("Connect to the local Amadeus API to begin") : t("Ask Amadeus to inspect, explain, or build anything")}
             disabled={disabled || busy}
             aria-autocomplete="list"
             aria-controls={paletteVisible ? "slash-command-palette" : undefined}
@@ -842,59 +888,63 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
             onKeyDown={onKeyDown}
           />
           <div className="composer-footer">
-            <div className="composer-meta"><button aria-label="Add context"><Plus /></button><span className="access-label"><WarningCircle />Local full access</span></div>
+            <div className="composer-meta"><button aria-label={t("Add context")}><Plus /></button><span className="access-label"><WarningCircle />{t("Local full access")}</span></div>
             <div className="composer-meta right">
-              {tokenUsage && <span>{tokenUsage.context_percent}% context</span>}
-              <span>Default agent</span>
-              {busy ? <button className="send-button stop" onClick={onCancel} aria-label="Stop generation"><Stop weight="fill" /></button> : <button className="send-button" onClick={onSubmit} disabled={!draft.trim() || disabled} aria-label="Send message"><ArrowUp weight="bold" /></button>}
+              {tokenUsage && <span>{t("{percent}% context", { percent: tokenUsage.context_percent })}</span>}
+              <span>{t("Default agent")}</span>
+              {busy ? <button className="send-button stop" onClick={onCancel} aria-label={t("Stop generation")}><Stop weight="fill" /></button> : <button className="send-button" onClick={onSubmit} disabled={!draft.trim() || disabled} aria-label={t("Send message")}><ArrowUp weight="bold" /></button>}
             </div>
           </div>
         </div>
       </div>
-      <div className="composer-hint">Enter to send · Shift + Enter for a new line</div>
+      <div className="composer-hint">{t("Enter to send · Shift + Enter for a new line")}</div>
     </div>
   );
 }
 
 function Welcome({ session }) {
+  const t = useTranslation();
   return (
     <div className="welcome">
       <div className="welcome-mark"><Sparkle weight="fill" /></div>
-      <h1>What should we work on?</h1>
-      <p>{session.name} can inspect your project, execute tools, and keep the entire conversation in this session.</p>
+      <h1>{t("What should we work on?")}</h1>
+      <p>{t("{name} can inspect your project, execute tools, and keep the entire conversation in this session.", { name: session.name })}</p>
       <div className="starter-grid">
-        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><Code /><span><strong>Explore the codebase</strong><small>Map architecture and important flows</small></span></button>
-        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><TerminalWindow /><span><strong>Build a feature</strong><small>Plan, implement, test, and verify</small></span></button>
+        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><Code /><span><strong>{t("Explore the codebase")}</strong><small>{t("Map architecture and important flows")}</small></span></button>
+        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><TerminalWindow /><span><strong>{t("Build a feature")}</strong><small>{t("Plan, implement, test, and verify")}</small></span></button>
       </div>
     </div>
   );
 }
 
 function DetailsPanel({ session, runtime, onClose }) {
+  const t = useTranslation();
   return (
     <aside className="details-panel">
-      <div className="details-header"><strong>Session details</strong><button onClick={onClose}><X /></button></div>
-      <dl><div><dt>Status</dt><dd>{statusLabel(runtime.status)}</dd></div><div><dt>Profile</dt><dd>{session.profile}</dd></div><div><dt>Session ID</dt><dd className="mono">{session.id}</dd></div><div><dt>Messages</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>Tool calls</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>Input tokens</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>Output tokens</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
+      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose}><X /></button></div>
+      <dl><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
     </aside>
   );
 }
 
 function CreateDialog({ value, online, submitting, error, onChange, onSubmit, onClose, onSettings }) {
+  const t = useTranslation();
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-session-title" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="dialog-icon"><Sparkle weight="fill" /></div><h2 id="create-session-title">New session</h2><p>Start with a clean conversation and an independent agent context.</p>
-        <label htmlFor="session-name">Session name</label><input id="session-name" autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder="Feature implementation" />
+        <div className="dialog-icon"><Sparkle weight="fill" /></div><h2 id="create-session-title">{t("New session")}</h2><p>{t("Start with a clean conversation and an independent agent context.")}</p>
+        <label htmlFor="session-name">{t("Session name")}</label><input id="session-name" autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("Feature implementation")} />
         {(!online || error) && (
-          <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || "The Amadeus API is unavailable."}</span>{!online && <button type="button" onClick={onSettings}>Connection settings</button>}</div>
+          <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || t("The Amadeus API is unavailable.")}</span>{!online && <button type="button" onClick={onSettings}>{t("Connection settings")}</button>}</div>
         )}
-        <div className="dialog-actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!online || submitting}>{submitting ? "Creating…" : online ? "Create session" : "API unavailable"}</button></div>
+        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting}>{submitting ? t("Creating…") : online ? t("Create session") : t("API unavailable")}</button></div>
       </form>
     </div>
   );
 }
 
-function SettingsDialog({ online, onReconnect, onClose }) {
+function SettingsDialog({ online, language, onLanguage, onReconnect, onClose }) {
+  const t = useTranslation();
   const [value, setValue] = useState(getApiBaseUrl());
   const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
@@ -905,9 +955,9 @@ function SettingsDialog({ online, onReconnect, onClose }) {
     try {
       const normalized = value.trim().replace(/\/$/, "");
       const parsed = new URL(normalized);
-      if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error("Use an HTTP or HTTPS URL.");
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error(t("Use an HTTP or HTTPS URL."));
       await api.health(normalized);
-      setStatus("Connection successful.");
+      setStatus(t("Connection successful."));
     } catch (caught) {
       setStatus(caught.message);
     } finally {
@@ -929,7 +979,7 @@ function SettingsDialog({ online, onReconnect, onClose }) {
   const reset = () => {
     const defaultUrl = resetApiBaseUrl();
     setValue(defaultUrl);
-    setStatus("Restored the default local address. Save to reconnect.");
+    setStatus(t("Restored the default local address. Save to reconnect."));
   };
 
   return (
@@ -937,18 +987,22 @@ function SettingsDialog({ online, onReconnect, onClose }) {
       <form className="dialog settings-dialog" onSubmit={save} onMouseDown={(event) => event.stopPropagation()}>
         <div className="dialog-heading">
           <div className="dialog-icon"><PlugsConnected weight="fill" /></div>
-          <div><h2>Connection</h2><p>Choose the Amadeus HTTP server used by this client.</p></div>
+          <div><h2>{t("Connection")}</h2><p>{t("Choose the Amadeus HTTP server used by this client.")}</p></div>
         </div>
-        <div className="connection-summary"><i className={online ? "online" : "offline"} /><span>{online ? "Connected" : "Not connected"}</span><code>{getApiBaseUrl()}</code></div>
-        <label htmlFor="api-url">HTTP API URL</label>
+        <div className="connection-summary"><i className={online ? "online" : "offline"} /><span>{online ? t("Connected") : t("Not connected")}</span><code>{getApiBaseUrl()}</code></div>
+        <label htmlFor="api-url">{t("HTTP API URL")}</label>
         <input id="api-url" autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder="http://127.0.0.1:3000" />
-        <p className="field-help">Remote servers should use HTTPS and authentication at the network boundary.</p>
+        <p className="field-help">{t("Remote servers should use HTTPS and authentication at the network boundary.")}</p>
+        <label htmlFor="interface-language">{t("Interface language")}</label>
+        <select id="interface-language" value={language} onChange={(event) => onLanguage(normalizeLanguage(event.target.value))}>
+          {SUPPORTED_LANGUAGES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+        </select>
         {status && <div className="connection-test-result" role="status">{status}</div>}
         <div className="dialog-actions split-actions">
-          <button type="button" onClick={reset}>Reset default</button>
+          <button type="button" onClick={reset}>{t("Reset default")}</button>
           <span />
-          <button type="button" onClick={testConnection} disabled={testing}>{testing ? "Testing…" : "Test"}</button>
-          <button className="primary" type="submit">Save and reconnect</button>
+          <button type="button" onClick={testConnection} disabled={testing}>{testing ? t("Testing…") : t("Test")}</button>
+          <button className="primary" type="submit">{t("Save and reconnect")}</button>
         </div>
       </form>
     </div>
@@ -956,6 +1010,7 @@ function SettingsDialog({ online, onReconnect, onClose }) {
 }
 
 function ContributionDialog({ onClose }) {
+  const t = useTranslation();
   const repositoryUrl = "https://github.com/xxraincandyxx/Amadeus";
   const resources = [
     { icon: BookOpenText, label: "Contribution guide", detail: "Setup, change scope, checks, and pull requests", href: `${repositoryUrl}/blob/master/CONTRIBUTING.md` },
@@ -968,30 +1023,33 @@ function ContributionDialog({ onClose }) {
       <section className="dialog contribution-dialog" role="dialog" aria-modal="true" aria-labelledby="contribution-title" onMouseDown={(event) => event.stopPropagation()}>
         <div className="dialog-heading">
           <div className="dialog-icon"><GithubLogo weight="fill" /></div>
-          <div><h2 id="contribution-title">Build Amadeus with us</h2><p>Every contribution should leave the product clearer, more useful, and more coherent.</p></div>
+          <div><h2 id="contribution-title">{t("Build Amadeus with us")}</h2><p>{t("Every contribution should leave the product clearer, more useful, and more coherent.")}</p></div>
         </div>
-        <div className="contribution-principles"><span>Preserve one visual language</span><span>Ship every interaction state</span><span>Verify desktop and mobile</span></div>
+        <div className="contribution-principles"><span>{t("Preserve one visual language")}</span><span>{t("Ship every interaction state")}</span><span>{t("Verify desktop and mobile")}</span></div>
         <div className="resource-list">
           {resources.map(({ icon: Icon, label, detail, href }) => (
-            <a key={label} href={href} target="_blank" rel="noreferrer"><Icon /><span><strong>{label}</strong><small>{detail}</small></span><ArrowSquareOut /></a>
+            <a key={label} href={href} target="_blank" rel="noreferrer"><Icon /><span><strong>{t(label)}</strong><small>{t(detail)}</small></span><ArrowSquareOut /></a>
           ))}
         </div>
-        <div className="dialog-actions"><button type="button" onClick={onClose}>Close</button><a className="button-link primary" href={repositoryUrl} target="_blank" rel="noreferrer">Open repository<ArrowSquareOut /></a></div>
+        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Close")}</button><a className="button-link primary" href={repositoryUrl} target="_blank" rel="noreferrer">{t("Open repository")}<ArrowSquareOut /></a></div>
       </section>
     </div>
   );
 }
 
 function ErrorBanner({ message, onRetry, onSettings, onDismiss }) {
-  return <div className="error-banner"><WarningCircle /><span>{message}</span><button className="text-action" onClick={onRetry}>Retry</button><button className="text-action" onClick={onSettings}>Settings</button><button onClick={onDismiss} aria-label="Dismiss"><X /></button></div>;
+  const t = useTranslation();
+  return <div className="error-banner"><WarningCircle /><span>{message}</span><button className="text-action" onClick={onRetry}>{t("Retry")}</button><button className="text-action" onClick={onSettings}>{t("Settings")}</button><button onClick={onDismiss} aria-label={t("Dismiss")}><X /></button></div>;
 }
 
 function AgentWorking() {
-  return <div className="agent-working"><span /><span /><span /><em>Amadeus is working</em></div>;
+  const t = useTranslation();
+  return <div className="agent-working"><span /><span /><span /><em>{t("Amadeus is working")}</em></div>;
 }
 
 function EmptyState({ onCreate, online }) {
-  return <div className="empty-state"><Robot /><h1>{online ? "No open sessions" : "Amadeus API is offline"}</h1><p>{online ? "Create a session to begin working with an agent." : `Start the server at ${api.baseUrl}, then refresh this page.`}</p>{online && <button onClick={onCreate}><Plus />New session</button>}</div>;
+  const t = useTranslation();
+  return <div className="empty-state"><Robot /><h1>{online ? t("No open sessions") : t("Amadeus API is offline")}</h1><p>{online ? t("Create a session to begin working with an agent.") : t("Start the server at {url}, then refresh this page.", { url: api.baseUrl })}</p>{online && <button onClick={onCreate}><Plus />{t("New session")}</button>}</div>;
 }
 
 function LoadingScreen() {

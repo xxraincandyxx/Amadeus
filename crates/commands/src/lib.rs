@@ -61,6 +61,12 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec::new("hooks", &[], "Inspect configured hook phases", None),
     SlashCommandSpec::new("new-agent", &[], "Create a new agent session", None),
     SlashCommandSpec::new(
+        "language",
+        &["lang"],
+        "Show or change the interface language (en | zh-CN)",
+        Some("[en|zh-CN]"),
+    ),
+    SlashCommandSpec::new(
         "rewind",
         &[],
         "Restore the session to an earlier checkpoint",
@@ -91,6 +97,7 @@ pub enum SlashCommand {
     Prompt,
     Hooks,
     NewAgent,
+    Language { language: Option<String> },
     Rewind { steps: Option<usize> },
     Export { path: Option<String> },
     Viewport { mode: Option<String> },
@@ -125,6 +132,9 @@ impl SlashCommand {
             "prompt" => Self::Prompt,
             "hooks" => Self::Hooks,
             "new-agent" => Self::NewAgent,
+            "language" | "lang" => Self::Language {
+                language: remainder.map(String::from),
+            },
             "rewind" => Self::Rewind {
                 steps: remainder.and_then(|value| value.parse::<usize>().ok()),
             },
@@ -149,6 +159,7 @@ impl SlashCommand {
             Self::Prompt => "prompt",
             Self::Hooks => "hooks",
             Self::NewAgent => "new-agent",
+            Self::Language { .. } => "language",
             Self::Rewind { .. } => "rewind",
             Self::Export { .. } => "export",
             Self::Viewport { .. } => "viewport",
@@ -170,6 +181,9 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
+        assert!(SLASH_COMMAND_SPECS
+            .iter()
+            .any(|spec| spec.name == "language"));
         assert!(SLASH_COMMAND_SPECS
             .iter()
             .any(|spec| spec.name == "viewport"));
@@ -201,6 +215,12 @@ mod tests {
             Some(SlashCommand::Rewind { steps: Some(2) })
         );
         assert_eq!(SlashCommand::parse("/exit"), Some(SlashCommand::Exit));
+        assert_eq!(
+            SlashCommand::parse("/lang zh-CN"),
+            Some(SlashCommand::Language {
+                language: Some("zh-CN".to_string())
+            })
+        );
     }
 
     #[test]

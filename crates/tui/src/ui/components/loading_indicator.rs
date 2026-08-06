@@ -8,7 +8,8 @@
 // - module: crate::ui::components::loading_indicator
 // - type: crate::ui::components::loading_indicator::StreamingState
 // - type: crate::ui::components::loading_indicator::LoadingIndicator
-// uses: none
+// uses:
+// - module: crate::ui::i18n
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects: none
@@ -282,9 +283,9 @@ impl LoadingIndicator {
             StreamingState::Idle => None,
             StreamingState::WaitingForConfirmation => None,
             StreamingState::Responding => Some(if self.active_tool_count > 0 {
-                "working"
+                crate::ui::i18n::text("status.working")
             } else {
-                "responding"
+                crate::ui::i18n::text("status.responding")
             }),
         }
     }
@@ -295,7 +296,8 @@ impl LoadingIndicator {
                 self.scramble.clear();
             }
             StreamingState::WaitingForConfirmation => {
-                self.scramble.set_target("awaiting approval");
+                self.scramble
+                    .set_target(crate::ui::i18n::text("status.awaiting_approval"));
             }
             StreamingState::Responding => {
                 if let Some(label) = self.current_status_label() {
@@ -324,11 +326,15 @@ impl LoadingIndicator {
     pub fn viewport_loading_line(&self) -> Option<String> {
         match self.streaming_state {
             StreamingState::Idle => None,
-            StreamingState::WaitingForConfirmation => {
-                Some(format!("awaiting approval {}", self.dot_frame()))
-            }
+            StreamingState::WaitingForConfirmation => Some(format!(
+                "{} {}",
+                crate::ui::i18n::text("status.awaiting_approval"),
+                self.dot_frame()
+            )),
             StreamingState::Responding => {
-                let label = self.current_status_label().unwrap_or("responding");
+                let label = self
+                    .current_status_label()
+                    .unwrap_or_else(|| crate::ui::i18n::text("status.responding"));
                 Some(format!("{label} {}", self.dot_frame()))
             }
         }

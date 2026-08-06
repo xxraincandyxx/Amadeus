@@ -14,7 +14,9 @@
 // - format: serialized message content blocks
 // invariants:
 // - Reasoning remains visually separate from final assistant text.
-// - Completed live reasoning survives authoritative history refreshes for the current runtime.
+// - Completed live reasoning remains attached to its assistant turn across history refreshes.
+// - Completed live reasoning records at least one elapsed second when timing is available.
+// - Responses without exposed reasoning do not create placeholder timeline entries.
 // side_effects: none
 // tests:
 // - apps/web/src/sessionState.test.js
@@ -63,13 +65,35 @@ export function historyToTimeline(messages = []) {
 }
 
 export function preserveThinkingTimeline(hydrated = [], current = []) {
-  const preserved = current.filter(
-    (item) => item.kind === "thinking" && !hydrated.some((entry) => entry.kind === "thinking" && entry.text === item.text),
+  const hydratedThinking = new Set(
+    hydrated.filter((item) => item.kind === "thinking").map((item) => item.text),
   );
-  if (!preserved.length) return hydrated;
-  const timeline = [...hydrated];
-  const lastAssistant = timeline.findLastIndex((item) => item.kind === "assistant");
-  timeline.splice(lastAssistant < 0 ? timeline.length : lastAssistant, 0, ...preserved);
+  const reasoningByAssistant = new Map();
+  let assistantOrdinal = 0;
+  let pendingReasoning = [];
+
+  for (const item of current) {
+    if (item.kind === "thinking" && item.available !== false && !hydratedThinking.has(item.text)) {
+      pendingReasoning.push(item);
+    }
+    if (item.kind === "assistant") {
+      if (pendingReasoning.length) reasoningByAssistant.set(assistantOrdinal, pendingReasoning);
+      pendingReasoning = [];
+      assistantOrdinal += 1;
+    }
+  }
+  if (pendingReasoning.length) reasoningByAssistant.set(assistantOrdinal, pendingReasoning);
+
+  if (!reasoningByAssistant.size) return hydrated;
+  const timeline = [];
+  assistantOrdinal = 0;
+  for (const item of hydrated) {
+    if (item.kind === "assistant") {
+      timeline.push(...(reasoningByAssistant.get(assistantOrdinal) || []));
+      assistantOrdinal += 1;
+    }
+    timeline.push(item);
+  }
   return timeline;
 }
 
@@ -108,6 +132,7 @@ export function reduceEvent(state, eventName, payload) {
   let thinking = state.thinking;
   let rawStreamingText = state.rawStreamingText || "";
   let providerThinking = state.providerThinking || "";
+  let thinkingStartedAt = state.thinkingStartedAt || null;
   let status = state.status;
   let tokenUsage = state.tokenUsage;
   let approvals = state.approvals;
@@ -127,6 +152,7 @@ export function reduceEvent(state, eventName, payload) {
     providerThinking = payload.thinking || providerThinking;
     thinking = joinThinking(providerThinking, splitTaggedThinking(rawStreamingText).thinking);
   }
+  if (thinking.trim() && !thinkingStartedAt) thinkingStartedAt = Date.now();
   if (eventName === "tool_start") {
     tools[payload.id] = { ...payload, kind: "tool", status: "running", output: "", inputText: "" };
   }
@@ -149,18 +175,26 @@ export function reduceEvent(state, eventName, payload) {
   }
   if (eventName === "token_usage") tokenUsage = payload;
   if (eventName === "done") {
-    timeline.push({
-      id: `thinking-${Date.now()}`,
-      kind: "thinking",
-      text: thinking.trim() || "The current model did not expose a separate reasoning channel for this response.",
-      complete: true,
-      available: Boolean(thinking.trim()),
-    });
+    const hasThinking = Boolean(thinking.trim());
+    const durationSeconds = hasThinking && thinkingStartedAt
+      ? Math.max(1, Math.ceil((Date.now() - thinkingStartedAt) / 1000))
+      : null;
+    if (hasThinking) {
+      timeline.push({
+        id: `thinking-${Date.now()}`,
+        kind: "thinking",
+        text: thinking.trim(),
+        complete: true,
+        available: true,
+        durationSeconds,
+      });
+    }
     if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText });
     streamingText = "";
     thinking = "";
     rawStreamingText = "";
     providerThinking = "";
+    thinkingStartedAt = null;
     status = "completed";
   }
   if (eventName === "error") {
@@ -179,6 +213,7 @@ export function reduceEvent(state, eventName, payload) {
     thinking,
     rawStreamingText,
     providerThinking,
+    thinkingStartedAt,
     status,
     tokenUsage,
     approvals,

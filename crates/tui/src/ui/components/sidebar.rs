@@ -16,6 +16,7 @@
 // - type: crate::commands::ContextReport
 // - module: crate::skills::Skill
 // - module: crate::ui::get_colors
+// - module: crate::ui::i18n
 // - runtime: ratatui terminal rendering
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
@@ -190,7 +191,7 @@ impl FileSidebar {
 
         let list = List::new(items).block(
             Block::default()
-                .title(" EXPLORER ")
+                .title(crate::ui::i18n::text("sidebar.explorer"))
                 .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
@@ -219,44 +220,71 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("SHORTCUTS", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.shortcuts"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   Enter ", Style::default().fg(colors.text.link)),
-                Span::styled(" Send", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.send"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   A-Enter ", Style::default().fg(colors.text.link)),
-                Span::styled(" New Line", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.new_line"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   Up/Down ", Style::default().fg(colors.text.link)),
-                Span::styled(" History", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.history"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("SIDEBAR", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.sidebar"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   ^[Shift]B ", Style::default().fg(colors.text.link)),
-                Span::styled(" Files", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.files"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   !B ", Style::default().fg(colors.text.link)),
-                Span::styled(" Help", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.help"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("TOOLS", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.tools"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   ^O ", Style::default().fg(colors.text.link)),
-                Span::styled(" Expand Tools", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.expand_tools"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   ^X i/k ", Style::default().fg(colors.text.link)),
@@ -276,22 +304,34 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("THEMES", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.themes"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   ^T ", Style::default().fg(colors.text.link)),
-                Span::styled(" Switch Theme", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.switch_theme"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("CONTEXT", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.context"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   ^K ", Style::default().fg(colors.text.link)),
-                Span::styled(" Compact History", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.compact_history"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   /compact ", Style::default().fg(colors.text.link)),
@@ -310,7 +350,10 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("LIVE VIEWPORT", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.viewport"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -323,7 +366,10 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("SCROLLING", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.scrolling"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
@@ -341,22 +387,31 @@ impl HelpSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("SYSTEM", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.system"),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("   Esc ", Style::default().fg(colors.text.link)),
-                Span::styled(" Collapse", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.collapse"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
             Line::from(vec![
                 Span::styled("   ^C ", Style::default().fg(colors.text.link)),
-                Span::styled(" Exit", Style::default().fg(colors.ui.comment)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.exit"),
+                    Style::default().fg(colors.ui.comment),
+                ),
             ]),
         ];
 
         let paragraph = Paragraph::new(lines).block(
             Block::default()
-                .title(" COMMANDS ")
+                .title(crate::ui::i18n::text("sidebar.commands"))
                 .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
@@ -442,21 +497,24 @@ impl SkillSidebar {
             Line::from(""),
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled("SKILLS", Style::default().fg(colors.text.primary)),
+                Span::styled(
+                    crate::ui::i18n::text("sidebar.skills").trim(),
+                    Style::default().fg(colors.text.primary),
+                ),
             ]),
             Line::from(""),
         ];
 
         if self.skills.is_empty() {
             lines.push(Line::from(vec![Span::styled(
-                "   No skills available",
+                crate::ui::i18n::text("sidebar.no_skills"),
                 Style::default()
                     .fg(colors.ui.comment)
                     .add_modifier(Modifier::ITALIC),
             )]));
             lines.push(Line::from(""));
             lines.push(Line::from(vec![Span::styled(
-                "   Add .md files to",
+                crate::ui::i18n::text("sidebar.add_skills"),
                 Style::default().fg(colors.ui.comment),
             )]));
             lines.push(Line::from(vec![Span::styled(
@@ -507,7 +565,7 @@ impl SkillSidebar {
 
         let paragraph = Paragraph::new(lines).block(
             Block::default()
-                .title(" SKILLS ")
+                .title(crate::ui::i18n::text("sidebar.skills"))
                 .title_style(Style::default().fg(colors.ui.comment))
                 .borders(Borders::RIGHT)
                 .border_style(Style::default().fg(colors.border.default))
