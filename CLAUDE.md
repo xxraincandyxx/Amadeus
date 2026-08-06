@@ -49,6 +49,7 @@ cargo run --features full -- --record [DIR]                 # record session to 
 cargo run --features full -- --export PATH                  # export conversation to .md/.json on exit
 cargo run --features full -- --permission-mode MODE         # read-only|workspace-write|danger-full-access|prompt
 cargo run --features full -- --assess-features [DIR]        # read-only feature assessment + report
+cargo run --features full -- --llm-trace [DIR]              # log full LLM request/response payloads per turn
 
 # Run example programs
 cargo run --example tui --features tui
@@ -77,6 +78,53 @@ cargo test --test e2e_product_flow --features full   # requires the `orchestra` 
 cargo test --features full -- --nocapture
 ```
 
+Some integration targets declare `required-features` in the root `Cargo.toml` (e.g. `agent_integration_test` needs `test-utils`, `e2e_product_flow` needs `orchestra`). `--features full` satisfies all of them, which is why it is the default convention for new suites.
+
+### Full Verification Gate
+
+```bash
+./verify.sh
+```
+
+`verify.sh` is the canonical pre-PR gate and runs, in order: `scripts/check_source_headers.py`, `cargo fmt --all -- --check`, `cargo metadata`, `cargo clippy --all-features -- -D warnings`, a four-way feature matrix check (`--no-default-features`, `tui`, `api`, `full`), then `cargo test --features full`. Warnings are errors — fix them in the change that introduces them.
+
+### Web & Desktop Client
+
+The React/Tauri client lives in `apps/web` and talks to the versioned session HTTP API (`cargo run --features full -- --server 3000`).
+
+```bash
+cd apps/web
+npm install
+npm run dev              # Vite dev server on http://127.0.0.1:5173
+npm run test             # node --test src/*.test.js (no test framework dependency)
+npm run lint             # eslint
+npm run mock-api         # mock-server.mjs — drive the UI without a Rust server
+npm run desktop:dev      # Tauri desktop shell (builds the sidecar first)
+npm run desktop:build
+```
+
+`VITE_AMADEUS_API_URL` overrides the default API address (`http://127.0.0.1:3000`). See `apps/web/README.md` for the client slash-command catalog and `docs/WEB_DESIGN_SYSTEM.md` for visual conventions.
+
+### Benchmarks & Experiments
+
+```bash
+# In-repo offline benchmark runner (fixtures → run artifacts)
+cargo run --bin benchmark --features full -- --fixtures <dir> --output <dir> [--suite NAME] [--case ID] [--mode mock|live]
+```
+
+External harnesses are Python and live outside the Cargo workspace: `benchmarks/` (intercode/MBPP via Docker, `fs_bench`, `run_amadeus.py`) and `runtime/` (`locomo` conversational-memory eval, `rag_eval`). Each has its own README. `python-sdk/` holds the Python client package.
+
+### Housekeeping
+
+```bash
+make clean            # build output + generated logs/results + local caches
+make clean-build      # cargo clean (root + src-tauri), web dist, tauri gen/binaries
+make clean-generated  # logs, benchmark_runs, benchmarks/results, locomo/rag_eval results
+make clean-cache      # __pycache__, .pytest_cache
+```
+
+`make clean` never touches dependency installs (`node_modules`) or user configuration.
+
 ### TUI Capture
 
 When `test-utils` is enabled and session recording is on, the TUI writes rendered frame snapshots to `tui_capture.log` in the recording directory. The log is JSONL and includes visible cell content plus styling metadata, which makes it useful for visual regression debugging.
@@ -90,8 +138,8 @@ cargo check --features full
 # Format code
 cargo fmt
 
-# Run clippy
-cargo clippy --features full
+# Run clippy the way CI does (warnings are errors)
+cargo clippy --all-features -- -D warnings
 
 # Validate @amadeus-header blocks on source files (see Code Style)
 python scripts/check_source_headers.py
@@ -144,8 +192,16 @@ amadeus/
 │   └── rag/            # retrieval: vector store, embedding, chunker
 ├── tests/              # integration suites + shared harnesses
 ├── examples/           # adapter bootstraps
+├── apps/web/           # React + Tauri client (own npm project, not in the Cargo workspace)
+├── python-sdk/         # Python client package
+├── benchmarks/         # external Python harnesses (intercode/MBPP, fs_bench)
+├── runtime/            # live experiments + evals (locomo memory bench, rag_eval)
+├── scripts/            # header validation, launchers, benchmark drivers
+├── skills/             # skill definitions loaded by crates/skills
 └── docs/
 ```
+
+Only `crates/*` (plus the root facade) are Cargo workspace members. `apps/web/src-tauri` is a **separate** Cargo project with its own manifest — `cargo` commands at the root do not build it.
 
 **Mental model:** `CLI or library call → config + provider selection → crates/core runtime → TUI or HTTP adapter`.
 
@@ -193,10 +249,10 @@ Built-in tools live in `core/src/tools/` and are organized into composable **pro
 
 ### Policy & Permissions
 
-Two cooperating layers:
+Two layers, with distinct roles:
 
-- **Policy** (`core/src/policy/mod.rs`) — approval gating with three modes: **Auto** (execute all), **Ask** (default; ask only for dangerous ops), **Strict** (ask for all). Dangerous patterns are auto-blocked: `sudo`, `chmod 777`, `rm -rf /`, writes to `.env`/`.pem`/`.key`, shell pipes to `bash`/`sh`.
-- **Permissions** (`core/src/permissions.rs` + `crates/permissions`) — the `PermissionMode` enum (`read-only` | `workspace-write` | `danger-full-access` | `prompt`), enforced by `PermissionEnforcer` and selectable at the CLI with `--permission-mode`.
+- **Permissions** (`core/src/permissions.rs` + `crates/permissions`) — the **default and always-on** gate. The `PermissionMode` enum (`read-only` | `workspace-write` | `danger-full-access` | `prompt`) is enforced by `PermissionEnforcer`, selected at the CLI with `--permission-mode`, and is what gates `/execute` and the agent loop in every default path.
+- **Policy** (`core/src/policy/mod.rs`) — an **opt-in** secondary layer with three `ApprovalMode`s: `Auto` (execute all), `Ask` (ask only for dangerous ops), `Strict` (ask for all). It only applies when a caller explicitly builds the agent with `with_policy(...)` (e.g. the benchmark runner). The agent loop and `/execute` do **not** wire it in by default, and `Policy::from_config` is currently a stub (see `docs/plans/2026-08-05-structure-improvement-plan.md` F2c). Dangerous patterns it knows (`sudo`, `chmod 777`, `rm -rf /`, writes to `.env`/`.pem`/`.key`, shell pipes to `bash`/`sh`) therefore only fire when it is opted into.
 
 ### Other notable surfaces
 
@@ -205,6 +261,15 @@ Two cooperating layers:
 - `rag` (`crates/rag/`) — retrieval-augmented generation: chunker, embedding, vector store, tool.
 - `mcp` (`core/src/mcp/`) — Model Context Protocol client + tool adapter.
 - `transcript`, `audit`, `bridge`, `security` — supporting modules in `core/src/`.
+
+### Localization (TUI + web)
+
+Both UIs ship English (`en`, default) and Simplified Chinese (`zh-CN`) and there are two independent catalogs — adding a string to one does **not** cover the other:
+
+- **TUI** — `crates/tui/src/ui/i18n.rs`. Look up user-facing text through `i18n::text("key")` (plus `command_summary`, `thought_label`, `thought_summary`); locale is process-wide state set via `i18n::set_language`. English is the fallback for untranslated keys. Not every component is migrated yet — when you touch a component that still holds literal strings, route them through the catalog.
+- **Web** — `apps/web/src/i18n.js` (`translate(language, key, variables)` with ICU-like `{named}` placeholders). `App.jsx` exposes it as `t(...)` through a React context; English source strings are themselves the keys.
+
+Selection: `tui.language` in any settings layer (user-wide `~/.amadeus/settings.json` is the intended home), or `/language en` | `/language zh-CN` (`/lang` alias) at runtime. The command is declared in `crates/commands/src/lib.rs` (`SLASH_COMMAND_SPECS` + `SlashCommand::Language`) — new slash commands must be added in all three places: the spec table, the enum, and `parse`/`name`.
 
 ## Testing Strategy
 
@@ -234,16 +299,21 @@ Replay real sessions: record with `--record`, then convert a captured `session_*
 
 ## Code Style
 
-- **Indentation**: 4 spaces (default `rustfmt`; there is no `rustfmt.toml`)
-- **Naming**: `snake_case` for variables/functions, `PascalCase` for types
-- **Error handling**: use `crate::error::Result` and avoid `unwrap()`
-- **Async/await**: Tokio runtime throughout
-- **Documentation**: rustdoc comments on public APIs
+`CODING_STYLE.md` is the long-form house style; the load-bearing rules:
+
+- **Indentation**: 4 spaces (default `rustfmt`; there is no `rustfmt.toml` — do not add one)
+- **Naming**: `snake_case` for variables/functions, `PascalCase` for types, `SCREAMING_SNAKE_CASE` for consts; `#[serde(rename_all = "snake_case")]` on serialized enums
+- **Error handling**: return `crate::error::Result` (backed by `AgentError`/`thiserror`, foreign errors converted with `#[from]`). **No `unwrap()`/`expect()` outside tests** — `clippy.toml` allows them only under `#[cfg(test)]`
+- **Async/await**: Tokio runtime throughout; `Arc<RwLock<T>>` for read-heavy shared state, `tokio::sync` locks when held across `.await`
+- **Generics over `dyn`**: prefer `Agent<C: LLMClient>` monomorphization on hot paths
+- **Documentation**: rustdoc (`///`) on every public item, `//!` module docs directly under the file header
+- **No inline comments** unless the user asks for them; rationale belongs in doc comments or the commit message. Never leave commented-out code
+- **File size**: modules past ~600 lines are split into a subdirectory
 - **File headers (required):** hand-maintained source files (`src/**/*.rs`, `tests/**/*.rs`, `examples/**/*.rs`, `scripts/**/*.sh`) **must** start with an `@amadeus-header` … `@end-amadeus-header` block with the fields defined in `docs/SOURCE_FILE_HEADERS.md` (`summary`, `layer`, `status`, `feature_flags`, `provides`, `uses`, `invariants`, `side_effects`, `tests`). Match the existing headers when adding a file; validate with `python scripts/check_source_headers.py`.
 
 ## Configuration
 
-Create `.amadeus/settings.json` in the workspace, or `~/.amadeus/settings.json` for global defaults:
+Settings are layered, later layers overriding earlier ones: `~/.amadeus/settings.json` → `.amadeus/settings.json` → `.amadeus/settings.local.json`. Loading lives in `crates/config`; see `.amadeus/README.md` for the authoritative key list and `.amadeus/settings.example.json` for a full example.
 
 ```json
 {
@@ -255,9 +325,15 @@ Create `.amadeus/settings.json` in the workspace, or `~/.amadeus/settings.json` 
   "max_output_bytes": 50000,
   "session_log_dir": "./logs",
   "session_log_compress": true,
-  "blocked_commands": ["rm -rf /", "sudo"]
+  "blocked_commands": ["rm -rf /", "sudo"],
+  "tui": {
+    "language": "en",
+    "live_viewport": { "mode": "hidden", "height_percent": 32 }
+  }
 }
 ```
+
+User-wide preferences (`tui.language`, `tui.live_viewport`) belong in `~/.amadeus/settings.json`; provider/model/workspace runtime settings belong in the project file.
 
 ## Session Management
 
@@ -309,98 +385,48 @@ The TUI supports two session types:
 - `crates/core/src/test_utils/` — `scenario.rs` (scenario types), `replay.rs` (`session_log_to_scenario`), `frame_text.rs` (`render_frame_text`), `testflow/` (`SessionRecorder`, frame snapshots)
 - `tests/fixtures/scenarios/` — replayable scenario JSON fixtures; `examples/convert_session.rs` — record→scenario CLI
 - `tests/` — integration tests directory
+- `crates/commands/src/lib.rs` — slash-command specs + parsing (shared by TUI and web palette)
+- `crates/tui/src/ui/i18n.rs`, `apps/web/src/i18n.js` — the two translation catalogs
+- `apps/web/src/` — `App.jsx`, `api.js`, `sessionState.js`, `slashCommands.js`, `MarkdownContent.jsx` (+ colocated `*.test.js`)
+- `src/bin/benchmark.rs` — offline benchmark CLI (`cargo run --bin benchmark`)
 - `Cargo.toml` — workspace definition, features, and the root facade package
+- `verify.sh` — full verification pipeline; `Makefile` — clean targets
+- `CODING_STYLE.md` — long-form style guide (form); `AGENTS.md` — behavior rules
 - `docs/ARCHITECTURE.md` — authoritative architecture deep-dive
 - `docs/SOURCE_FILE_HEADERS.md` — mandatory file-header schema
+- Other docs worth knowing: `docs/TOOLS.md`, `docs/HTTP_API.md`, `docs/API_GUIDE.md`, `docs/COMPACTION.md`, `docs/TUI_TESTING.md`, `docs/WEB_DESIGN_SYSTEM.md`, `docs/MACOS_APP.md`
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **amadeus** (42534 symbols, 114089 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Amadeus** (7921 symbols, 19099 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
-> If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
+> Index stale? Run `node .gitnexus/run.cjs analyze` from the project root — it auto-selects an available runner. No `.gitnexus/run.cjs` yet? `npx gitnexus analyze` (npm 11 crash → `npm i -g gitnexus`; #1939).
 
 ## Always Do
 
-- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `gitnexus_impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
-- **MUST run `gitnexus_detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows.
+- **MUST run impact analysis before editing any symbol.** Before modifying a function, class, or method, run `impact({target: "symbolName", direction: "upstream"})` and report the blast radius (direct callers, affected processes, risk level) to the user.
+- **MUST run `detect_changes()` before committing** to verify your changes only affect expected symbols and execution flows. For regression review, compare against the default branch: `detect_changes({scope: "compare", base_ref: "master"})`.
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
-- When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
-- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
-
-## When Debugging
-
-1. `gitnexus_query({query: "<error or symptom>"})` — find execution flows related to the issue
-2. `gitnexus_context({name: "<suspect function>"})` — see all callers, callees, and process participation
-3. `READ gitnexus://repo/amadeus/process/{processName}` — trace the full execution flow step by step
-4. For regressions: `gitnexus_detect_changes({scope: "compare", base_ref: "main"})` — see what your branch changed
-
-## When Refactoring
-
-- **Renaming**: MUST use `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` first. Review the preview — graph edits are safe, text_search edits need manual review. Then run with `dry_run: false`.
-- **Extracting/Splitting**: MUST run `gitnexus_context({name: "target"})` to see all incoming/outgoing refs, then `gitnexus_impact({target: "target", direction: "upstream"})` to find all external callers before moving code.
-- After any refactor: run `gitnexus_detect_changes({scope: "all"})` to verify only expected files changed.
+- When exploring unfamiliar code, use `query({search_query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
+- When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `context({name: "symbolName"})`.
+- For security review, `explain({target: "fileOrSymbol"})` lists taint findings (source→sink flows; needs `analyze --pdg`).
 
 ## Never Do
 
-- NEVER edit a function, class, or method without first running `gitnexus_impact` on it.
+- NEVER edit a function, class, or method without first running `impact` on it.
 - NEVER ignore HIGH or CRITICAL risk warnings from impact analysis.
-- NEVER rename symbols with find-and-replace — use `gitnexus_rename` which understands the call graph.
-- NEVER commit changes without running `gitnexus_detect_changes()` to check affected scope.
-
-## Tools Quick Reference
-
-| Tool | When to use | Command |
-|------|-------------|---------|
-| `query` | Find code by concept | `gitnexus_query({query: "auth validation"})` |
-| `context` | 360-degree view of one symbol | `gitnexus_context({name: "validateUser"})` |
-| `impact` | Blast radius before editing | `gitnexus_impact({target: "X", direction: "upstream"})` |
-| `detect_changes` | Pre-commit scope check | `gitnexus_detect_changes({scope: "staged"})` |
-| `rename` | Safe multi-file rename | `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` |
-| `cypher` | Custom graph queries | `gitnexus_cypher({query: "MATCH ..."})` |
-
-## Impact Risk Levels
-
-| Depth | Meaning | Action |
-|-------|---------|--------|
-| d=1 | WILL BREAK — direct callers/importers | MUST update these |
-| d=2 | LIKELY AFFECTED — indirect deps | Should test |
-| d=3 | MAY NEED TESTING — transitive | Test if critical path |
+- NEVER rename symbols with find-and-replace — use `rename` which understands the call graph.
+- NEVER commit changes without running `detect_changes()` to check affected scope.
 
 ## Resources
 
 | Resource | Use for |
 |----------|---------|
-| `gitnexus://repo/amadeus/context` | Codebase overview, check index freshness |
-| `gitnexus://repo/amadeus/clusters` | All functional areas |
-| `gitnexus://repo/amadeus/processes` | All execution flows |
-| `gitnexus://repo/amadeus/process/{name}` | Step-by-step execution trace |
-
-## Self-Check Before Finishing
-
-Before completing any code modification task, verify:
-1. `gitnexus_impact` was run for all modified symbols
-2. No HIGH/CRITICAL risk warnings were ignored
-3. `gitnexus_detect_changes()` confirms changes match expected scope
-4. All d=1 (WILL BREAK) dependents were updated
-
-## Keeping the Index Fresh
-
-After committing code changes, the GitNexus index becomes stale. Re-run analyze to update it:
-
-```bash
-npx gitnexus analyze
-```
-
-If the index previously included embeddings, preserve them by adding `--embeddings`:
-
-```bash
-npx gitnexus analyze --embeddings
-```
-
-To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.embeddings` field shows the count (0 means no embeddings). **Running analyze without `--embeddings` will delete any previously generated embeddings.**
-
-> Claude Code users: A PostToolUse hook handles this automatically after `git commit` and `git merge`.
+| `gitnexus://repo/Amadeus/context` | Codebase overview, check index freshness |
+| `gitnexus://repo/Amadeus/clusters` | All functional areas |
+| `gitnexus://repo/Amadeus/processes` | All execution flows |
+| `gitnexus://repo/Amadeus/process/{name}` | Step-by-step execution trace |
 
 ## CLI
 

@@ -56,6 +56,15 @@ cargo run --features full -- --server
 cargo run --features full -- --server 8080
 ```
 
+### Clean Generated Output
+
+```bash
+make clean
+```
+
+This removes Rust, web, and desktop builds along with generated logs, benchmark results, test
+output, and local caches. Dependency installations and user configuration are preserved.
+
 ## Using as a Library
 
 Add to your `Cargo.toml`:
@@ -188,7 +197,7 @@ use std::sync::Arc;
 let mut policy = Policy::new();
 policy.set_mode(ApprovalMode::Auto);
 
-// Ask (default): only dangerous operations require approval
+// Ask: only dangerous operations require approval (opt-in — not the default path)
 let mut policy = Policy::new();
 policy.set_mode(ApprovalMode::Ask);
 
@@ -196,13 +205,16 @@ policy.set_mode(ApprovalMode::Ask);
 let mut policy = Policy::new();
 policy.set_mode(ApprovalMode::Strict);
 
+// Note: Policy is a secondary layer, only consulted when you explicitly attach
+// it via `.with_policy(policy)`. The always-on gate is PermissionMode, set with
+// `--permission-mode` (read-only | workspace-write | danger-full-access | prompt).
 let agent = Agent::builder(client, config)
     .with_default_tools()
     .with_policy(Arc::new(policy))
     .build();
 ```
 
-The policy system blocks dangerous patterns including `sudo`, `chmod 777`, `rm -rf /`, writing to `.env`/`.pem`/`.key` files, and shell pipes to `bash`/`sh`.
+When attached, the policy system blocks dangerous patterns including `sudo`, `chmod 777`, `rm -rf /`, writing to `.env`/`.pem`/`.key` files, and shell pipes to `bash`/`sh`. Without an explicit `with_policy`, the `PermissionMode` gate still blocks dangerous commands via `PermissionEnforcer`.
 
 ## Architecture
 
@@ -310,9 +322,16 @@ Structured settings in `.amadeus/settings.json`, with global defaults in `~/.ama
   "max_output_bytes": 50000,
   "session_log_dir": "./logs",
   "session_log_compress": true,
-  "blocked_commands": ["rm -rf /", "sudo"]
+  "blocked_commands": ["rm -rf /", "sudo"],
+  "tui": {
+    "language": "en"
+  }
 }
 ```
+
+The TUI supports English (`en`, the default) and Simplified Chinese (`zh-CN`). Set
+`tui.language` in any settings layer, or switch the current session with
+`/language en` and `/language zh-CN` (`/lang` is an alias).
 
 ### TUI: Live Viewport
 
@@ -321,6 +340,7 @@ The **live viewport** is the reserved region above the composer that shows in-pr
 ```json
 {
   "tui": {
+    "language": "en",
     "live_viewport": {
       "mode": "hidden",
       "height_percent": 32
@@ -413,7 +433,7 @@ The terminal UI is an inline-mode application that sits at the bottom of your te
 | `Ctrl+]` / `Ctrl+[` | Navigate sub-agent sessions |
 | `Tab` / `Shift+Tab` | Cycle agent sessions |
 
-**Slash commands:** `/compact`, `/context`, `/hooks`, `/rewind`
+**Slash commands:** `/compact`, `/context`, `/hooks`, `/language`, `/rewind`
 
 Conversation export to Markdown or JSON includes full session metadata, config snapshot, context report, and statistics.
 
