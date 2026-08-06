@@ -17,9 +17,11 @@
 // - module: crate::agent::profile::AgentProfile
 // - module: crate::api::http::AppState
 // - module: crate::client::LLMClient
+// - fn: crate::api::handlers::sse_event
 // - protocol: axum HTTP handlers
 // invariants:
 // - Handler request and response handling stays aligned with route contracts.
+// - SSE mapping never panics; serialization failures degrade to an `error` event.
 // side_effects:
 // - Performs network or HTTP operations.
 // tests:
@@ -40,6 +42,7 @@ use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use super::sse_event;
 use crate::agent::profile::AgentProfile;
 use crate::api::http::AppState;
 use crate::api::types::{
@@ -79,10 +82,7 @@ pub(crate) fn bridge_event_to_sse(
 ) -> Option<Result<Event, Infallible>> {
     match bridge_event {
         BridgeEvent::SessionCreated { session } | BridgeEvent::SessionUpdated { session } => {
-            Some(Ok(Event::default()
-                .event("session_state")
-                .json_data(session)
-                .unwrap()))
+            Some(Ok(sse_event("session_state", session)))
         }
         BridgeEvent::ChildSessionSpawned {
             parent_session_id,
@@ -90,67 +90,67 @@ pub(crate) fn bridge_event_to_sse(
             prompt,
             depth,
             session,
-        } => Some(Ok(Event::default()
-            .event("subagent_session")
-            .json_data(serde_json::json!({
+        } => Some(Ok(sse_event(
+            "subagent_session",
+            serde_json::json!({
                 "parent_session_id": parent_session_id,
                 "request_id": request_id,
                 "prompt": prompt,
                 "depth": depth,
                 "session": session
-            }))
-            .unwrap())),
+            }),
+        ))),
         BridgeEvent::Agent { event, .. } => match event {
-            crate::agent::AgentEvent::TextDelta { delta } => Some(Ok(Event::default()
-                .event("text")
-                .json_data(serde_json::json!({ "content": delta }))
-                .unwrap())),
-            crate::agent::AgentEvent::ThinkingDelta { delta } => Some(Ok(Event::default()
-                .event("thinking")
-                .json_data(serde_json::json!({ "delta": delta }))
-                .unwrap())),
-            crate::agent::AgentEvent::ThinkingComplete { thinking } => Some(Ok(Event::default()
-                .event("thinking_complete")
-                .json_data(serde_json::json!({ "thinking": thinking }))
-                .unwrap())),
+            crate::agent::AgentEvent::TextDelta { delta } => Some(Ok(sse_event(
+                "text",
+                serde_json::json!({ "content": delta }),
+            ))),
+            crate::agent::AgentEvent::ThinkingDelta { delta } => Some(Ok(sse_event(
+                "thinking",
+                serde_json::json!({ "delta": delta }),
+            ))),
+            crate::agent::AgentEvent::ThinkingComplete { thinking } => Some(Ok(sse_event(
+                "thinking_complete",
+                serde_json::json!({ "thinking": thinking }),
+            ))),
             crate::agent::AgentEvent::ToolStart {
                 id,
                 name,
                 command,
                 parent_id,
-            } => Some(Ok(Event::default()
-                .event("tool_start")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "tool_start",
+                serde_json::json!({
                     "id": id,
                     "name": name,
                     "command": command,
                     "parent_id": parent_id
-                }))
-                .unwrap())),
+                }),
+            ))),
             crate::agent::AgentEvent::ToolInputDelta {
                 id,
                 delta,
                 parent_id,
-            } => Some(Ok(Event::default()
-                .event("tool_input")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "tool_input",
+                serde_json::json!({
                     "id": id,
                     "delta": delta,
                     "parent_id": parent_id
-                }))
-                .unwrap())),
+                }),
+            ))),
             crate::agent::AgentEvent::ToolOutputDelta {
                 id,
                 delta,
                 parent_id,
-            } => Some(Ok(Event::default()
-                .event("tool_output")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "tool_output",
+                serde_json::json!({
                     "id": id,
                     "delta": delta,
                     "parent_id": parent_id
-                }))
-                .unwrap())),
+                }),
+            ))),
             crate::agent::AgentEvent::ToolComplete {
                 id,
                 name,
@@ -158,34 +158,34 @@ pub(crate) fn bridge_event_to_sse(
                 is_error,
                 parent_id,
                 ..
-            } => Some(Ok(Event::default()
-                .event("tool_done")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "tool_done",
+                serde_json::json!({
                     "id": id,
                     "name": name,
                     "output": output,
                     "is_error": is_error,
                     "parent_id": parent_id
-                }))
-                .unwrap())),
-            crate::agent::AgentEvent::ApprovalRequired { request } => Some(Ok(Event::default()
-                .event("approval_request")
-                .json_data(serde_json::json!({
+                }),
+            ))),
+            crate::agent::AgentEvent::ApprovalRequired { request } => Some(Ok(sse_event(
+                "approval_request",
+                serde_json::json!({
                     "id": request.id,
                     "tool": request.tool,
                     "action": request.reason,
                     "input": request.input
-                }))
-                .unwrap())),
+                }),
+            ))),
             crate::agent::AgentEvent::SubAgentRequested { id, prompt, depth } => {
-                Some(Ok(Event::default()
-                    .event("subagent_requested")
-                    .json_data(serde_json::json!({
+                Some(Ok(sse_event(
+                    "subagent_requested",
+                    serde_json::json!({
                         "id": id,
                         "prompt": prompt,
                         "depth": depth
-                    }))
-                    .unwrap()))
+                    }),
+                )))
             }
             crate::agent::AgentEvent::TokenUsage {
                 input_tokens,
@@ -197,60 +197,60 @@ pub(crate) fn bridge_event_to_sse(
                 } else {
                     0
                 };
-                Some(Ok(Event::default()
-                    .event("token_usage")
-                    .json_data(serde_json::json!({
+                Some(Ok(sse_event(
+                    "token_usage",
+                    serde_json::json!({
                         "input_tokens": input_tokens,
                         "output_tokens": output_tokens,
                         "total_tokens": total_tokens,
                         "context_percent": context_percent
-                    }))
-                    .unwrap()))
+                    }),
+                )))
             }
             crate::agent::AgentEvent::ToolProgress {
                 id,
                 message,
                 percent,
                 parent_id,
-            } => Some(Ok(Event::default()
-                .event("tool_progress")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "tool_progress",
+                serde_json::json!({
                     "id": id,
                     "message": message,
                     "percent": percent,
                     "parent_id": parent_id
-                }))
-                .unwrap())),
+                }),
+            ))),
             crate::agent::AgentEvent::Compaction {
                 original_count,
                 compacted_count,
                 tokens_saved,
                 messages_summarized,
                 ..
-            } => Some(Ok(Event::default()
-                .event("compaction")
-                .json_data(serde_json::json!({
+            } => Some(Ok(sse_event(
+                "compaction",
+                serde_json::json!({
                     "original_count": original_count,
                     "compacted_count": compacted_count,
                     "tokens_saved": tokens_saved,
                     "messages_summarized": messages_summarized
-                }))
-                .unwrap())),
-            crate::agent::AgentEvent::Done { result } => Some(Ok(Event::default()
-                .event("done")
-                .json_data(serde_json::json!({
+                }),
+            ))),
+            crate::agent::AgentEvent::Done { result } => Some(Ok(sse_event(
+                "done",
+                serde_json::json!({
                     "stop_reason": "end_turn",
                     "result": result
-                }))
-                .unwrap())),
-            crate::agent::AgentEvent::Error { message } => Some(Ok(Event::default()
-                .event("error")
-                .json_data(serde_json::json!({ "message": message }))
-                .unwrap())),
-            crate::agent::AgentEvent::SessionSaved { path } => Some(Ok(Event::default()
-                .event("session_saved")
-                .json_data(serde_json::json!({ "path": path }))
-                .unwrap())),
+                }),
+            ))),
+            crate::agent::AgentEvent::Error { message } => Some(Ok(sse_event(
+                "error",
+                serde_json::json!({ "message": message }),
+            ))),
+            crate::agent::AgentEvent::SessionSaved { path } => Some(Ok(sse_event(
+                "session_saved",
+                serde_json::json!({ "path": path }),
+            ))),
         },
     }
 }

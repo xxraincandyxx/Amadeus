@@ -6,12 +6,16 @@
 // - api
 // provides:
 // - module: crate::api::handlers
-// uses: none
+// - fn: crate::api::handlers::sse_event
+// uses:
+// - protocol: axum server-sent events
+// - protocol: serde serialization
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
+// - SSE construction never panics; serialization failures degrade to an `error` event.
 // side_effects: none
 // tests:
-// - tests/mod.rs
+// - cmd: cargo test -p api --all-features
 // @end-amadeus-header
 
 //! # HTTP Request Handlers
@@ -62,6 +66,27 @@
 //! Errors are converted to JSON error responses with:
 //! - `error`: Error type name
 //! - `message`: Human-readable description
+
+use axum::response::sse::Event;
+use serde::Serialize;
+
+/// Builds a named SSE event from a serializable payload.
+///
+/// Serialization of the API event payloads is expected to succeed, but a failure
+/// must not abort the stream: SSE mapping runs inside the response task, so a
+/// panic there drops the client connection mid-turn. On failure this degrades to
+/// the protocol's own `error` event, which every client already handles.
+pub(crate) fn sse_event(name: &str, payload: impl Serialize) -> Event {
+    match Event::default().event(name).json_data(payload) {
+        Ok(event) => event,
+        Err(error) => {
+            let fallback = serde_json::json!({
+                "message": format!("failed to serialize `{name}` event: {error}"),
+            });
+            Event::default().event("error").data(fallback.to_string())
+        }
+    }
+}
 
 /*
  * ============================================================================
@@ -160,3 +185,35 @@ pub use stream::stream;
 pub use summarize::summarize;
 pub use tasks::handle_task;
 pub use tools_catalog::get_tool_catalog;
+
+#[cfg(test)]
+mod tests {
+    use super::sse_event;
+    use serde::{Serialize, Serializer};
+
+    struct Unserializable;
+
+    impl Serialize for Unserializable {
+        fn serialize<S: Serializer>(&self, _serializer: S) -> Result<S::Ok, S::Error> {
+            Err(serde::ser::Error::custom("payload cannot be serialized"))
+        }
+    }
+
+    fn rendered(event: axum::response::sse::Event) -> String {
+        format!("{event:?}")
+    }
+
+    #[test]
+    fn serializable_payload_keeps_name_and_data() {
+        let output = rendered(sse_event("text", serde_json::json!({ "content": "hi" })));
+        assert!(output.contains("text"), "{output}");
+        assert!(output.contains("content"), "{output}");
+    }
+
+    #[test]
+    fn failed_serialization_degrades_to_error_event() {
+        let output = rendered(sse_event("token_usage", Unserializable));
+        assert!(output.contains("event: error"), "{output}");
+        assert!(output.contains("failed to serialize"), "{output}");
+    }
+}

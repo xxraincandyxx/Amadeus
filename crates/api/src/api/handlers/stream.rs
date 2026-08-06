@@ -18,11 +18,13 @@
 // - module: crate::agent::messages::Message
 // - module: crate::api::http::AppState
 // - module: crate::client::LLMClient
+// - fn: crate::api::handlers::sse_event
 // - protocol: axum HTTP handlers
 // - protocol: serde serialization
 // - runtime: futures streams
 // invariants:
 // - Handler request and response handling stays aligned with route contracts.
+// - SSE mapping never panics; serialization failures degrade to an `error` event.
 // side_effects:
 // - Performs network or HTTP operations.
 // tests:
@@ -76,6 +78,7 @@ use futures::stream::{Stream, StreamExt};
 use serde::Serialize;
 
 // Internal SDK components
+use super::sse_event;
 use crate::agent::events::AgentEvent;
 use crate::agent::messages::Message;
 use crate::api::http::AppState;
@@ -257,22 +260,21 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
         async move {
             match event {
                 // Text delta received from LLM
-                Ok(AgentEvent::TextDelta { delta }) => Some(Ok(Event::default()
-                    .event("text")
-                    .json_data(TextEvent { content: delta })
-                    .unwrap())),
+                Ok(AgentEvent::TextDelta { delta }) => {
+                    Some(Ok(sse_event("text", TextEvent { content: delta })))
+                }
 
                 // Thinking/reasoning delta from extended thinking
-                Ok(AgentEvent::ThinkingDelta { delta }) => Some(Ok(Event::default()
-                    .event("thinking")
-                    .json_data(serde_json::json!({ "delta": delta }))
-                    .unwrap())),
+                Ok(AgentEvent::ThinkingDelta { delta }) => Some(Ok(sse_event(
+                    "thinking",
+                    serde_json::json!({ "delta": delta }),
+                ))),
 
                 // Thinking complete
-                Ok(AgentEvent::ThinkingComplete { thinking }) => Some(Ok(Event::default()
-                    .event("thinking_complete")
-                    .json_data(serde_json::json!({ "thinking": thinking }))
-                    .unwrap())),
+                Ok(AgentEvent::ThinkingComplete { thinking }) => Some(Ok(sse_event(
+                    "thinking_complete",
+                    serde_json::json!({ "thinking": thinking }),
+                ))),
 
                 // Tool execution initiated
                 Ok(AgentEvent::ToolStart {
@@ -280,29 +282,29 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     name,
                     command,
                     parent_id,
-                }) => Some(Ok(Event::default()
-                    .event("tool_start")
-                    .json_data(ToolStartEvent {
+                }) => Some(Ok(sse_event(
+                    "tool_start",
+                    ToolStartEvent {
                         id,
                         name,
                         command,
                         parent_id,
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Tool execution output delta
                 Ok(AgentEvent::ToolOutputDelta {
                     id,
                     delta,
                     parent_id,
-                }) => Some(Ok(Event::default()
-                    .event("tool_output")
-                    .json_data(ToolOutputEvent {
+                }) => Some(Ok(sse_event(
+                    "tool_output",
+                    ToolOutputEvent {
                         id,
                         delta,
                         parent_id,
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Tool execution completed
                 Ok(AgentEvent::ToolComplete {
@@ -312,16 +314,16 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     is_error,
                     parent_id,
                     ..
-                }) => Some(Ok(Event::default()
-                    .event("tool_done")
-                    .json_data(ToolDoneEvent {
+                }) => Some(Ok(sse_event(
+                    "tool_done",
+                    ToolDoneEvent {
                         id,
                         name,
                         output,
                         is_error,
                         parent_id,
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Tool progress update
                 Ok(AgentEvent::ToolProgress {
@@ -329,15 +331,15 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     message,
                     percent,
                     parent_id,
-                }) => Some(Ok(Event::default()
-                    .event("tool_progress")
-                    .json_data(ToolProgressEvent {
+                }) => Some(Ok(sse_event(
+                    "tool_progress",
+                    ToolProgressEvent {
                         id,
                         message,
                         percent,
                         parent_id,
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Token usage update
                 Ok(AgentEvent::TokenUsage {
@@ -351,51 +353,50 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     } else {
                         0
                     };
-                    Some(Ok(Event::default()
-                        .event("token_usage")
-                        .json_data(TokenUsageEvent {
+                    Some(Ok(sse_event(
+                        "token_usage",
+                        TokenUsageEvent {
                             input_tokens,
                             output_tokens,
                             total_tokens,
                             context_percent,
-                        })
-                        .unwrap()))
+                        },
+                    )))
                 }
 
                 // Approval required
-                Ok(AgentEvent::ApprovalRequired { request }) => Some(Ok(Event::default()
-                    .event("approval_request")
-                    .json_data(ApprovalRequestEvent {
+                Ok(AgentEvent::ApprovalRequired { request }) => Some(Ok(sse_event(
+                    "approval_request",
+                    ApprovalRequestEvent {
                         id: request.id,
                         tool: request.tool,
                         action: request.reason,
                         input: request.input,
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Agent loop finished successfully
-                Ok(AgentEvent::Done { .. }) => Some(Ok(Event::default()
-                    .event("done")
-                    .json_data(DoneEvent {
+                Ok(AgentEvent::Done { .. }) => Some(Ok(sse_event(
+                    "done",
+                    DoneEvent {
                         stop_reason: "end_turn".to_string(),
-                    })
-                    .unwrap())),
+                    },
+                ))),
 
                 // Critical agent error
-                Ok(AgentEvent::Error { message }) => Some(Ok(Event::default()
-                    .event("error")
-                    .json_data(ErrorEvent { message })
-                    .unwrap())),
+                Ok(AgentEvent::Error { message }) => {
+                    Some(Ok(sse_event("error", ErrorEvent { message })))
+                }
 
                 // Intermediate deltas (e.g. tool arguments) are suppressed for public API
                 Ok(AgentEvent::ToolInputDelta { .. }) => None,
                 Ok(AgentEvent::SubAgentRequested { .. }) => None,
 
                 // Session saved event - informational only
-                Ok(AgentEvent::SessionSaved { path }) => Some(Ok(Event::default()
-                    .event("session_saved")
-                    .json_data(serde_json::json!({ "path": path }))
-                    .unwrap())),
+                Ok(AgentEvent::SessionSaved { path }) => Some(Ok(sse_event(
+                    "session_saved",
+                    serde_json::json!({ "path": path }),
+                ))),
 
                 // Context compaction event
                 Ok(AgentEvent::Compaction {
@@ -404,23 +405,23 @@ async fn create_sse_stream<C: LLMClient + Clone + 'static>(
                     tokens_saved,
                     messages_summarized,
                     status: _,
-                }) => Some(Ok(Event::default()
-                    .event("compaction")
-                    .json_data(serde_json::json!({
+                }) => Some(Ok(sse_event(
+                    "compaction",
+                    serde_json::json!({
                         "original_count": original_count,
                         "compacted_count": compacted_count,
                         "tokens_saved": tokens_saved,
                         "messages_summarized": messages_summarized
-                    }))
-                    .unwrap())),
+                    }),
+                ))),
 
                 // Stream processing error
-                Err(e) => Some(Ok(Event::default()
-                    .event("error")
-                    .json_data(ErrorEvent {
+                Err(e) => Some(Ok(sse_event(
+                    "error",
+                    ErrorEvent {
                         message: e.to_string(),
-                    })
-                    .unwrap())),
+                    },
+                ))),
             }
         }
     });
