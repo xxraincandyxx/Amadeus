@@ -52,7 +52,7 @@ echo "   [4/4] Full SDK..."
 cargo check --features full
 
 echo "🧪 Running Test Suite..."
-cargo test --features full
+cargo test --workspace --all-features --no-fail-fast
 
 echo -e "
 ✅ PROJECT IS HEALTHY"
