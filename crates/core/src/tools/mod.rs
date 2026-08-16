@@ -6,6 +6,7 @@
 // - orchestra
 // provides:
 // - module: crate::tools
+// - tool: kylin_memory
 // uses: none
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
@@ -22,6 +23,7 @@ pub mod bash;
 pub mod file;
 pub mod glob;
 pub mod grep;
+pub mod kylin_memory;
 pub mod memory_tool;
 pub mod peer;
 pub mod platform;
@@ -36,6 +38,7 @@ pub use bash::BashTool;
 pub use file::{EditFileTool, FileTools, ReadFileTool, WriteFileTool};
 pub use glob::GlobTool;
 pub use grep::GrepTool;
+pub use kylin_memory::KylinMemoryTool;
 pub use memory_tool::MemoryTool;
 #[cfg(feature = "orchestra")]
 pub use peer::PeerTool;

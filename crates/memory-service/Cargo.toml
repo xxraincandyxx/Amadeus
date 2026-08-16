@@ -1,0 +1,23 @@
+[package]
+name = "memory-service"
+version = "0.1.0"
+edition = "2021"
+description = "Structured, privacy-aware memory service for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_memory_service"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus_memory_domain = { package = "memory-domain", path = "../memory-domain" }
+amadeus_privacy = { package = "privacy", path = "../privacy" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+uuid = { version = "1.10", features = ["v4"] }
+
+[dev-dependencies]
+tempfile = "3.10"

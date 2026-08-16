@@ -1,0 +1,15 @@
+[package]
+name = "memory-domain"
+version = "0.1.0"
+edition = "2021"
+description = "Versioned domain memory models for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_memory_domain"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
