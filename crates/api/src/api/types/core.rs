@@ -1,0 +1,392 @@
+// @amadeus-header
+// summary: Core chat, command execution, orchestra task, health, and error API data types.
+// layer: api
+// status: active
+// feature_flags:
+// - api
+// provides:
+// - type: crate::api::types::ChatRequest
+// - type: crate::api::types::ChatResponse
+// - type: crate::api::types::ErrorResponse
+// - type: crate::api::types::ExecuteRequest
+// - type: crate::api::types::ExecuteResponse
+// - type: crate::api::types::HealthResponse
+// - type: crate::api::types::TaskRequest
+// - type: crate::api::types::TaskResponse
+// - type: crate::api::types::ToolCall
+// uses:
+// - protocol: serde serialization
+// invariants:
+// - Serialized fields retain the HTTP contract used by core handlers.
+// side_effects: none
+// tests:
+// - cmd: cargo test -p api --all-features
+// @end-amadeus-header
+
+use serde::{Deserialize, Serialize};
+
+/*
+ * ============================================================================
+ * CHAT ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request body for the `/chat` endpoint.
+///
+/// Sends a message to the agent and receives a response.
+/// The agent will use the configured LLM provider and tools.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "message": "What files are in the src directory?",
+///   "timeout_secs": 60,
+///   "stream": false
+/// }
+/// ```
+///
+/// # Fields
+///
+/// - `message`: The user's prompt/question
+/// - `timeout_secs`: Optional timeout for command execution (default: 300)
+/// - `stream`: Legacy request hint; external clients use `/v1/sessions/{id}/events`
+#[derive(Debug, Deserialize)]
+pub struct ChatRequest {
+    /// The message to send to the agent.
+    ///
+    /// This is the user's prompt or question.
+    /// The agent will process this and potentially execute tools.
+    ///
+    /// # Example
+    ///
+    /// "List all Rust files in the project"
+    pub message: String,
+
+    /// Timeout for tool execution in seconds.
+    ///
+    /// Optional. Defaults to 300 seconds (5 minutes) if not specified.
+    /// This timeout applies to bash command execution, not LLM API calls.
+    ///
+    /// # Example
+    ///
+    /// - `60` - 1 minute timeout
+    /// - `300` - 5 minute timeout (default)
+    /// - `3600` - 1 hour timeout
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+
+    /// Whether to stream the response.
+    ///
+    /// Optional. Defaults to `false`.
+    ///
+    /// - `false`: Wait for complete response (use ChatResponse)
+    /// - `true`: Use Server-Sent Events (SSE) for streaming
+    ///
+    /// External clients should use the versioned session event endpoint.
+    #[serde(default)]
+    pub stream: Option<bool>,
+}
+
+/// Response body for the `/chat` endpoint.
+///
+/// Contains the agent's response after processing the message.
+/// May include text content and/or tool call information.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "content": "I found 3 Rust files in the project:\n...",
+///   "tool_calls": [],
+///   "stop_reason": "end_turn"
+/// }
+/// ```
+#[derive(Debug, Serialize)]
+pub struct ChatResponse {
+    /// The text content of the agent's response.
+    ///
+    /// This is the main output from the agent.
+    /// May be empty if the agent only made tool calls.
+    pub content: String,
+
+    /// Tool calls made during processing.
+    ///
+    /// List of tools the agent executed.
+    /// Each entry includes the tool name, input, and output.
+    pub tool_calls: Vec<ToolCall>,
+
+    /// Why the agent stopped generating.
+    ///
+    /// Common values:
+    /// - `"end_turn"` - Agent finished its response
+    /// - `"tool_use"` - Agent is waiting for tool execution
+    /// - `"max_tokens"` - Agent hit token limit
+    pub stop_reason: String,
+}
+
+/// Information about a tool call in the response.
+///
+/// Represents a single tool invocation made by the agent.
+#[derive(Debug, Serialize)]
+pub struct ToolCall {
+    /// Name of the tool that was called.
+    pub name: String,
+
+    /// The input to the tool.
+    pub input: serde_json::Value,
+
+    /// The output from the tool execution.
+    pub output: String,
+}
+
+/*
+ * ============================================================================
+ * EXECUTE ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request body for the `/execute` endpoint.
+///
+/// Executes a bash command directly without LLM involvement.
+/// Useful for direct tool access.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "command": "ls -la",
+///   "timeout_secs": 30
+/// }
+/// ```
+#[derive(Debug, Deserialize)]
+pub struct ExecuteRequest {
+    /// The shell command to execute.
+    ///
+    /// Executed via `sh -c` in the working directory.
+    /// Supports full shell syntax (pipes, redirects, etc.).
+    ///
+    /// # Example
+    ///
+    /// - `"ls -la"` - List files
+    /// - `"cat file.txt | grep pattern"` - Pipeline
+    /// - `"mkdir -p dir/subdir"` - Create directories
+    pub command: String,
+
+    /// Timeout for command execution in seconds.
+    ///
+    /// Optional. Defaults to 30 seconds if not specified.
+    /// If the command runs longer, it will be killed and
+    /// `timed_out` will be `true` in the response.
+    #[serde(default)]
+    pub timeout_secs: Option<u64>,
+}
+
+/// Response body for the `/execute` endpoint.
+///
+/// Contains the result of the bash command execution.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "output": "total 24\ndrwxr-xr-x  5 user ...\n",
+///   "exit_code": 0,
+///   "timed_out": false
+/// }
+/// ```
+#[derive(Debug, Serialize)]
+pub struct ExecuteResponse {
+    /// Combined stdout and stderr from the command.
+    ///
+    /// This is the text output from the command execution.
+    /// May be empty if the command produced no output.
+    pub output: String,
+
+    /// Exit code from the command.
+    ///
+    /// - `0` - Success
+    /// - `1-255` - Error (command-specific meaning)
+    /// - `-1` - Command failed to start or was killed
+    pub exit_code: i32,
+
+    /// Whether the command timed out.
+    ///
+    /// `true` if the command exceeded `timeout_secs`.
+    /// When `true`, `output` may contain partial results.
+    pub timed_out: bool,
+}
+
+/*
+ * ============================================================================
+ * ORCHESTRA ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Request body for the `/tasks` endpoint.
+///
+/// Dispatches a task to the multi-agent orchestra runtime.
+#[derive(Debug, Deserialize)]
+pub struct TaskRequest {
+    /// Unique ID for the task.
+    pub id: String,
+    /// The prompt/instruction for the task.
+    pub prompt: String,
+    /// List of required capabilities for workers.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
+}
+
+/// Response body for the `/tasks` endpoint.
+///
+/// Contains the result of a multi-agent task execution.
+#[derive(Debug, Serialize)]
+pub struct TaskResponse {
+    pub task_id: String,
+    pub worker_id: String,
+    pub success: bool,
+    pub output: Option<String>,
+    pub error: Option<String>,
+    pub duration_ms: u64,
+}
+
+/*
+ * ============================================================================
+ * HEALTH ENDPOINT TYPES
+ * ============================================================================
+ */
+
+/// Response body for the `/health` endpoint.
+///
+/// Simple health check to verify the server is running.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "status": "ok",
+///   "version": "0.1.0"
+/// }
+/// ```
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HealthResponse {
+    /// Health status.
+    ///
+    /// Always "ok" when the server is healthy.
+    pub status: String,
+
+    /// Server version.
+    ///
+    /// The crate version from Cargo.toml.
+    pub version: String,
+}
+
+/*
+ * ============================================================================
+ * ERROR RESPONSE TYPES
+ * ============================================================================
+ */
+
+/// Error response for API errors.
+///
+/// Returned when a request fails.
+///
+/// # Example
+///
+/// ```json
+/// {
+///   "error": "Timeout",
+///   "message": "Operation timed out after 30s",
+///   "tool": "bash"
+/// }
+/// ```
+#[derive(Debug, Serialize)]
+pub struct ErrorResponse {
+    /// Error type name.
+    ///
+    /// Short identifier for the error type.
+    pub error: String,
+
+    /// Human-readable error message.
+    ///
+    /// Detailed description of what went wrong.
+    pub message: String,
+
+    /// Tool name if error is tool-related.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+
+    /// Seconds to wait before retrying (for rate limiting).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retry_after: Option<u64>,
+}
+
+impl ErrorResponse {
+    /// Create a new error response.
+    ///
+    /// # Arguments
+    ///
+    /// * `error` - Error type name
+    /// * `message` - Error description
+    pub fn new(error: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            error: error.into(),
+            message: message.into(),
+            tool: None,
+            retry_after: None,
+        }
+    }
+
+    /// Create from an AgentError.
+    ///
+    /// Converts the agent error into an API error response
+    /// with structured context information.
+    pub fn from_agent_error(err: &crate::error::AgentError) -> Self {
+        use crate::error::AgentError;
+
+        match err {
+            AgentError::ToolInput { tool, reason } => Self {
+                error: "ToolInputError".to_string(),
+                message: reason.clone(),
+                tool: Some(tool.clone()),
+                retry_after: None,
+            },
+            AgentError::Timeout(secs) => Self {
+                error: "Timeout".to_string(),
+                message: format!("Operation timed out after {}s", secs),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::CommandBlocked(cmd) => Self {
+                error: "CommandBlocked".to_string(),
+                message: format!("Command '{}' is blocked for security", cmd),
+                tool: Some("bash".to_string()),
+                retry_after: None,
+            },
+            AgentError::PathEscape(path) => Self {
+                error: "PathEscape".to_string(),
+                message: format!("Path '{}' escapes workspace", path.display()),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::TextNotFound { path, snippet } => Self {
+                error: "TextNotFound".to_string(),
+                message: format!("Text '{}' not found in {}", snippet, path),
+                tool: None,
+                retry_after: None,
+            },
+            AgentError::ToolNotFound(name) => Self {
+                error: "ToolNotFound".to_string(),
+                message: format!("Tool '{}' not found", name),
+                tool: Some(name.clone()),
+                retry_after: None,
+            },
+            _ => Self {
+                error: "AgentError".to_string(),
+                message: err.to_string(),
+                tool: None,
+                retry_after: None,
+            },
+        }
+    }
+}
