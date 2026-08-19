@@ -7,8 +7,7 @@ Current precedence:
 2. `.amadeus/settings.json`
 3. `.amadeus/settings.local.json`
 
-User-wide preferences, including the TUI language and layout choices such as the live viewport mode,
-belong in `~/.amadeus/settings.json` so they follow you across workspaces.
+User-wide preferences, including the TUI language, belong in `~/.amadeus/settings.json` so they follow you across workspaces.
 Keep provider, model, and workspace-specific runtime settings in the project
 `.amadeus/settings.json` files.
 
@@ -50,7 +49,6 @@ Current settings sections:
 - `permissions.rules`
 - `permissions.additionalDirectories`
 - `tui.language` (`en` or `zh-CN`)
-- `tui.live_viewport`
 
 Important current limitation:
 

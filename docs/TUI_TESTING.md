@@ -28,7 +28,7 @@ The TUI has **two render paths**, and mixing them up is the #1 source of flaky/b
 | Path | What it shows | How to read it in a test | Method |
 |------|---------------|--------------------------|--------|
 | **Scrollback** | Committed conversation messages (user + assistant + tool results) | `app.messages_text(width)` | drives `terminal.insert_before` (gemini-cli-style) |
-| **Frame buffer** | Chrome: footer, status bar, live viewport, tool monitor, dashboard, streaming buffer | `app.capture().1` (the `String`) | drives ratatui `TestBackend` |
+| **Frame buffer** | Chrome: footer, status bar, composer, dialogs, and sidebars | `app.capture().1` (the `String`) | drives ratatui `TestBackend` |
 
 **The scrollback queue is destructive (draining).** Each call to `messages_text(width)` returns only the lines committed *since the previous call*, then clears them. To assert across multiple turns, **accumulate** the returned strings — do not expect earlier turns to still be there on the next call.
 
@@ -173,17 +173,7 @@ assert!(reqs[0].messages.iter().any(|m| m.content_contains("hi")));
 
 ## The slash-command + UI-only path
 
-Slash commands like `/help`, `/viewport`, `/export` are **pure UI** — they must NOT consume a mock LLM step. Write these as inline unit tests in `crates/tui/src/ui/app.rs` using the `test_app()` helper and the `test_*` `pub(crate)` API, not via `HeadlessApp`:
-
-```rust
-#[test]
-fn slash_viewport_toggles_mode() {
-    let mut app = test_app();
-    let session = active_session_mut(&mut app);
-    let note = session.apply_viewport_command(Some("auto"));
-    assert!(note.contains("**hidden** → **auto**"));
-}
-```
+Slash commands like `/help` and `/export` are **pure UI** — they must NOT consume a mock LLM step. Write these as inline unit tests in `crates/tui/src/ui/app.rs` using the `test_app()` helper and the `test_*` `pub(crate)` API, not via `HeadlessApp`.
 
 Reference: the `mod tests` block at `crates/tui/src/ui/app.rs:4853` (~50 tests) and `crates/tui/src/ui/headless.rs:147`.
 

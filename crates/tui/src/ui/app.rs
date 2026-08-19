@@ -55,7 +55,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::Style,
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Paragraph, Widget},
     Terminal, TerminalOptions, Viewport,
 };
 use tokio::sync::mpsc;
@@ -73,62 +73,26 @@ use crate::commands::{
 use crate::error::Result;
 use crate::hooks::{HookDescriptor, HookEvent, HookRegistry};
 use crate::ui::components::{
-    render_markdown, ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar, Footer,
-    HelpSidebar, InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SlashDialog,
-    SlashDialogItem, StatusBar, StreamingState,
+    ApprovalDialog, ApprovalResponse, ContextInfo, FileSidebar, Footer, HelpSidebar,
+    InputComponent, LoadingIndicator, MessagesComponent, Sidebar, SlashDialog, SlashDialogItem,
+    StatusBar, StreamingState,
 };
 use crate::ui::event::{AppEvent, EventHandler};
 use crate::ui::export::{
     build_export as build_export_artifact, default_export_path, write_export, SessionHeader,
 };
 use crate::ui::{get_theme, next_theme, SidebarKind};
-use crate::{Config, Language, LiveViewportConfig, LiveViewportMode};
+use crate::Language;
 
 const STREAM_FLUSH_INTERVAL_MS: u64 = 150;
 const STREAM_FLUSH_CHAR_THRESHOLD: usize = 32;
-const MIN_VIEWPORT_HEIGHT_PERCENT: u16 = 5;
 const DEFAULT_SHELF_HEIGHT: u16 = 6;
-const MIN_LIVE_VIEWPORT_WIDTH: u16 = 4;
-const MIN_LIVE_VIEWPORT_HEIGHT: u16 = 3;
-const MIN_DASHBOARD_HEIGHT: u16 = 6;
 const TOOL_MONITOR_LINES_ENV: &str = "AMADEUS_TOOL_MONITOR_LINES";
-const LIVE_VIEWPORT_ENV: &str = "AMADEUS_LIVE_VIEWPORT";
 const DEFAULT_TOOL_MONITOR_LINES: u16 = 16;
 const MIN_TOOL_MONITOR_LINES: u16 = 6;
 const MONITOR_NAV_HINT: &str = "^X i prev  ^X k next  ^X j back  ^X l enter";
 const KEY_CHORD_SEPARATOR: &str = ", ";
 const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
-
-/// Runtime view of the live-viewport policy, derived from `Config::tui.live_viewport`
-/// at session start and overridable at runtime via the `/viewport` slash command.
-///
-/// - `mode`: visibility policy. `Hidden` reserves zero height; `Auto` shows the viewport
-///   only while there is live activity (streaming text, tool runs, pending compaction);
-///   `Always` keeps it on, including the idle dashboard.
-/// - `height_percent`: percentage of terminal height to allocate when visible, clamped by
-///   `LiveViewportConfig::clamp_height_percent`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct LiveViewportRuntime {
-    mode: LiveViewportMode,
-    height_percent: u16,
-}
-
-impl LiveViewportRuntime {
-    fn from_config(config: &Config) -> Self {
-        let cfg_mode = config.tui.live_viewport.mode;
-        let env_mode = std::env::var(LIVE_VIEWPORT_ENV)
-            .ok()
-            .and_then(|raw| LiveViewportMode::parse_str(&raw));
-        let mode = env_mode.unwrap_or(cfg_mode);
-        let height_percent =
-            LiveViewportConfig::clamp_height_percent(config.tui.live_viewport.height_percent)
-                .max(MIN_VIEWPORT_HEIGHT_PERCENT);
-        Self {
-            mode,
-            height_percent,
-        }
-    }
-}
 
 /// Convert a character with SHIFT modifier to its shifted counterpart.
 /// Handles letters (a-z -> A-Z) and US keyboard shifted punctuation/symbols.
@@ -731,9 +695,6 @@ pub(crate) struct Session<C: LLMClient> {
     flush_before_compaction: bool,
     /// Filter for removing internal tags
     tag_filter: TagFilter,
-    /// Live viewport runtime state: visibility mode (configurable, runtime-overridable)
-    /// plus the height percent to allocate when it is shown.
-    live_viewport: LiveViewportRuntime,
     current_shelf_height: u16,
     tool_monitor: ToolMonitorState,
     monitor_navigation_prefix: bool,
@@ -903,7 +864,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         session_id: usize,
     ) -> Self {
         let hooks = HookRegistry::load_for_config(agent.config().as_ref()).unwrap_or_default();
-        let live_viewport = LiveViewportRuntime::from_config(agent.config().as_ref());
         let mut footer = Footer::new(model_name.clone());
         // Set default agent name for multi-agent indicator
         footer.set_agent_name(Some("main".to_string()));
@@ -935,7 +895,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             streaming_buffer: StreamingBuffer::new(),
             flush_before_compaction: false,
             tag_filter: TagFilter::new(),
-            live_viewport,
             current_shelf_height: DEFAULT_SHELF_HEIGHT,
             tool_monitor: ToolMonitorState::new(Self::tool_monitor_line_count()),
             monitor_navigation_prefix: false,
@@ -1460,9 +1419,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
 
     fn max_shelf_height_for_terminal(&self, terminal_height: u16) -> u16 {
         let input_max = 12;
-        let available = terminal_height.saturating_sub(input_max).saturating_sub(2);
-        let live_max = ((available.saturating_mul(self.live_viewport.height_percent)) / 100).max(3);
-        (input_max + live_max).min(terminal_height.max(4))
+        let fixed_chrome = 2;
+        (input_max + fixed_chrome).min(terminal_height.max(4))
     }
 
     fn flush_streaming_buffer(
@@ -1486,6 +1444,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             self.streaming_buffer.text = remaining;
             self.messages
                 .update_streaming_text(&self.streaming_buffer.text);
+            self.sync_inline_viewport(terminal)?;
+        }
+
+        if !self.streaming_buffer.is_empty() {
+            let flushed = std::mem::take(&mut self.streaming_buffer.text);
+            self.insert_assistant_chunk_before(terminal, &flushed)?;
+            self.messages.update_streaming_text("");
             self.sync_inline_viewport(terminal)?;
         }
 
@@ -1522,54 +1487,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
         self.streaming_buffer.clear();
         self.messages.clear_streaming_text();
-    }
-
-    fn live_viewport_height(&self, width: u16, total_height: u16) -> u16 {
-        if width < MIN_LIVE_VIEWPORT_WIDTH {
-            return 0;
-        }
-
-        let mode = self.live_viewport.mode;
-        if matches!(mode, LiveViewportMode::Hidden) {
-            return 0;
-        }
-
-        let max_height = ((total_height.saturating_mul(self.live_viewport.height_percent)) / 100)
-            .max(MIN_LIVE_VIEWPORT_HEIGHT);
-        let is_streaming = self.stream_rx.is_some();
-        let has_tool_activity = self.tool_monitor.has_running_tools();
-        let has_pending_compaction = self.messages.is_compression_pending();
-        let has_stream_text = !self.streaming_buffer.is_empty();
-
-        if has_tool_activity || has_pending_compaction {
-            return 5.min(max_height).max(MIN_LIVE_VIEWPORT_HEIGHT);
-        }
-
-        if has_stream_text {
-            let inner_width = width.saturating_sub(4) as usize;
-            let lines = render_markdown(&self.streaming_buffer.text, inner_width).len() as u16;
-            let content_height = lines.max(1);
-            return (content_height + 2).min(max_height);
-        }
-
-        if is_streaming {
-            return max_height.max(MIN_LIVE_VIEWPORT_HEIGHT);
-        }
-
-        // Idle (no streaming text, no tool activity, no pending compaction).
-        let show_dashboard = match mode {
-            LiveViewportMode::Always => true,
-            LiveViewportMode::Auto => {
-                self.messages.is_empty() && self.messages.startup_banner_pending()
-            }
-            LiveViewportMode::Hidden => false,
-        };
-
-        if show_dashboard {
-            max_height.max(20)
-        } else {
-            0
-        }
     }
 
     fn handle_monitor_navigation(&mut self, key: crossterm::event::KeyEvent) -> bool {
@@ -1641,70 +1558,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         }
 
         self.sync_prompt_status_hint();
-    }
-
-    fn live_title(&self) -> Line<'static> {
-        let colors = crate::ui::get_colors();
-        Line::from(vec![Span::styled(
-            " Live ",
-            Style::default().fg(colors.text.accent),
-        )])
-    }
-
-    fn monitor_title(&self) -> Line<'static> {
-        let colors = crate::ui::get_colors();
-        Line::from(vec![Span::styled(
-            " Monitor ",
-            Style::default().fg(colors.text.accent),
-        )])
-    }
-
-    fn render_tool_activity_preview(&self, max_width: usize) -> Vec<Line<'static>> {
-        let colors = crate::ui::get_colors();
-        let summary = self
-            .tool_monitor
-            .active_snapshot()
-            .map(|snapshot| {
-                let dots = self.loading_indicator.loading_dot_suffix();
-                let status_tail = self
-                    .loading_indicator
-                    .viewport_loading_line()
-                    .unwrap_or_else(|| format!("working {dots}"));
-                let mut text = format!("{} {}", snapshot.tool_name, status_tail);
-                if let Some(progress) = snapshot.progress_percent {
-                    text.push_str(&format!(" • {progress}%"));
-                }
-                if let Some(message) = snapshot.progress_message {
-                    text.push_str(&format!(" • {message}"));
-                }
-                if snapshot.running_count > 1 {
-                    text.push_str(&format!(" • {} active", snapshot.running_count));
-                }
-                text
-            })
-            .unwrap_or_else(|| "working".to_string());
-
-        let truncated = if summary.chars().count() > max_width {
-            let keep = max_width.saturating_sub(1);
-            let trimmed: String = summary.chars().take(keep).collect();
-            format!("{trimmed}…")
-        } else {
-            summary
-        };
-
-        let mut lines = vec![Line::from(vec![Span::styled(
-            truncated,
-            Style::default().fg(colors.text.secondary),
-        )])];
-
-        if self.tool_monitor.has_content() && max_width > 20 {
-            lines.push(Line::from(vec![Span::styled(
-                "ctrl+x then i/k/j/l to navigate tool activity",
-                Style::default().fg(colors.ui.comment),
-            )]));
-        }
-
-        lines
     }
 
     fn sync_inline_viewport(
@@ -1863,102 +1716,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         self.insert_lines_before(terminal, lines)?;
         self.messages.note_stream_chunk_rendered();
         Ok(())
-    }
-
-    fn render_live_viewport(&mut self, frame: &mut ratatui::Frame, area: Rect) {
-        if area.width < MIN_LIVE_VIEWPORT_WIDTH || area.height < MIN_LIVE_VIEWPORT_HEIGHT {
-            return;
-        }
-
-        let colors = crate::ui::get_colors();
-        let is_streaming = self.stream_rx.is_some();
-        let has_stream_text = !self.streaming_buffer.is_empty();
-        let has_tool_activity = self.tool_monitor.has_running_tools();
-        let has_pending_compaction = self.messages.is_compression_pending();
-        let has_messages = !self.messages.is_empty();
-
-        if !has_stream_text && !has_pending_compaction && !has_tool_activity && !is_streaming {
-            if !has_messages && area.height >= MIN_DASHBOARD_HEIGHT {
-                let dashboard_lines = self.messages.render_dashboard_lines(area.width);
-                if !dashboard_lines.is_empty() {
-                    frame.render_widget(Paragraph::new(dashboard_lines), area);
-                }
-            }
-            return;
-        }
-
-        let block = Block::default()
-            .title(if has_tool_activity {
-                self.monitor_title()
-            } else {
-                self.live_title()
-            })
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(colors.border.focused));
-
-        let inner = block.inner(area);
-        frame.render_widget(block, area);
-
-        if inner.width < 1 || inner.height < 1 {
-            return;
-        }
-
-        if has_tool_activity && !has_stream_text && !has_pending_compaction {
-            let visible_lines: Vec<Line> = self
-                .render_tool_activity_preview(inner.width as usize)
-                .into_iter()
-                .take(inner.height as usize)
-                .collect();
-            frame.render_widget(
-                Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
-                inner,
-            );
-            return;
-        }
-
-        if has_pending_compaction && !has_stream_text {
-            let preview_lines = self
-                .messages
-                .render_pending_compaction_preview(inner.width as usize)
-                .unwrap_or_default();
-            let visible_lines: Vec<Line> = preview_lines
-                .into_iter()
-                .take(inner.height as usize)
-                .collect();
-            frame.render_widget(
-                Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
-                inner,
-            );
-            return;
-        }
-
-        if !has_stream_text {
-            let dots = self.loading_indicator.loading_dot_suffix();
-            let hint = self
-                .loading_indicator
-                .viewport_loading_line()
-                .unwrap_or_else(|| format!("responding {dots}"));
-            let line = Line::from(vec![Span::styled(
-                hint,
-                Style::default().fg(colors.text.secondary),
-            )]);
-            frame.render_widget(
-                Paragraph::new(vec![line]).style(Style::default().bg(colors.background.primary)),
-                inner,
-            );
-            return;
-        }
-
-        let rendered_lines = render_markdown(&self.streaming_buffer.text, inner.width as usize);
-        let total_lines = rendered_lines.len();
-        let max_lines = inner.height as usize;
-        let start = total_lines.saturating_sub(max_lines);
-        let visible_lines: Vec<Line> = rendered_lines.into_iter().skip(start).collect();
-
-        frame.render_widget(
-            Paragraph::new(visible_lines).style(Style::default().bg(colors.background.primary)),
-            inner,
-        );
     }
 
     async fn handle_event(
@@ -3066,40 +2823,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         build_context_report(&self.agent)
     }
 
-    /// Apply a `/viewport [mode]` slash command and return a status note for the
-    /// transcript. With no argument, reports the current mode without changing it.
-    fn apply_viewport_command(&mut self, requested: Option<&str>) -> String {
-        match requested {
-            None => {
-                let mode = self.live_viewport.mode;
-                format!(
-                    "Live viewport: **{}** (height: {}% of terminal).\n\
-                     Usage: `/viewport hidden|auto|always`.",
-                    mode.as_str(),
-                    self.live_viewport.height_percent,
-                )
-            }
-            Some(raw) => match LiveViewportMode::parse_str(raw) {
-                Some(new_mode) => {
-                    let prev = self.live_viewport.mode;
-                    self.live_viewport.mode = new_mode;
-                    if prev == new_mode {
-                        format!("Live viewport already **{}**.", new_mode.as_str())
-                    } else {
-                        format!(
-                            "Live viewport: **{}** → **{}**.",
-                            prev.as_str(),
-                            new_mode.as_str(),
-                        )
-                    }
-                }
-                None => {
-                    format!("Unknown viewport mode `{raw}`. Use `hidden`, `auto`, or `always`.")
-                }
-            },
-        }
-    }
-
     /// Build an export artifact for the current session and write it to `path`.
     /// When `path` is `None`, the conversation is written to
     /// `<workdir>/.amadeus/exports/conversation-<label>-<id>-<stamp>.md`.
@@ -3358,14 +3081,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     }
                     return Ok(());
                 }
-                SlashCommand::Viewport { mode } => {
-                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
-                        .await?;
-                    self.input.clear();
-                    let note = self.apply_viewport_command(mode.as_deref());
-                    self.messages.add_local_command_result(note);
-                    return Ok(());
-                }
                 SlashCommand::Exit => {
                     self.input.clear();
                     self.should_quit = true;
@@ -3504,19 +3219,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
         let thought_height = self
             .messages
             .thought_panel_height(main_width, thought_max_height);
-        let live_available_height = size
-            .height
-            .saturating_sub(input_height)
-            .saturating_sub(transient_slash_response_height)
-            .saturating_sub(thought_height)
-            .saturating_sub(status_height)
-            .saturating_sub(footer_height);
-        let live_height = self.live_viewport_height(main_width, live_available_height);
-        let live_height = if transient_slash_response_height > 0 {
-            live_height.min(live_available_height)
-        } else {
-            live_height
-        };
         let layout_area = Rect {
             width: main_width,
             ..size
@@ -3525,7 +3227,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(live_height),
                     Constraint::Length(thought_height),
                     Constraint::Length(transient_slash_response_height),
                     Constraint::Length(input_height),
@@ -3537,7 +3238,6 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(live_height),
                     Constraint::Length(thought_height),
                     Constraint::Length(input_height),
                     Constraint::Length(status_height),
@@ -3546,18 +3246,16 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 .split(layout_area)
         };
 
-        let live_area = layout[0];
-        let thought_area = layout[1];
+        let thought_area = layout[0];
         let (transient_slash_response_area, input_area, status_area, footer_area) =
             if transient_slash_response_height > 0 {
-                (layout[2], layout[3], layout[4], layout[5])
+                (layout[1], layout[2], layout[3], layout[4])
             } else {
-                (Rect::default(), layout[2], layout[3], layout[4])
+                (Rect::default(), layout[1], layout[2], layout[3])
             };
 
         self.messages_area = Rect::default();
 
-        self.render_live_viewport(frame, live_area);
         self.thought_area = thought_area;
         self.messages.render_thought_panel(frame, thought_area);
         self.render_transient_slash_response(frame, transient_slash_response_area);
@@ -4755,8 +4453,6 @@ mod tests {
     use crate::agent::loop_agent::Agent;
     use crate::benchmark::case::MockScript;
     use crate::benchmark::mock::BenchmarkMockClient;
-    use crate::ui::components::StreamingState;
-    use crate::LiveViewportMode;
 
     fn test_app() -> App<BenchmarkMockClient> {
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
@@ -5814,114 +5510,6 @@ diff --git a/src/main.rs b/src/main.rs
     }
 
     #[test]
-    fn render_startup_dashboard_matches_history_style_without_border() {
-        let backend = TestBackend::new(90, 20);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-
-        terminal
-            .draw(|frame| session.render(frame))
-            .expect("render should succeed");
-
-        let buffer = terminal.backend().buffer();
-        let first_row = (0..buffer.area.width)
-            .map(|x| buffer[(x, 0)].symbol().to_string())
-            .collect::<String>();
-        let rendered = (0..buffer.area.height)
-            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
-            .collect::<String>();
-
-        assert!(rendered.contains("Try \"how does src/main.rs work?\""));
-        assert!(rendered.contains("? for shortcuts"));
-        assert!(!first_row.contains("Welcome"));
-    }
-
-    #[test]
-    fn render_shows_pending_compaction_in_live_viewport() {
-        let backend = TestBackend::new(90, 12);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.live_viewport.mode = LiveViewportMode::Auto;
-        session.messages.start_compression();
-        session.messages.tick();
-
-        terminal
-            .draw(|frame| session.render(frame))
-            .expect("render should succeed");
-
-        let buffer = terminal.backend().buffer();
-        let rendered = (0..buffer.area.height)
-            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
-            .collect::<String>();
-
-        assert!(rendered.contains("Compacting") || rendered.contains("context"));
-    }
-
-    #[test]
-    fn render_shows_tool_monitor_preview_in_live_viewport() {
-        let backend = TestBackend::new(90, 12);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.live_viewport.mode = LiveViewportMode::Auto;
-        session
-            .tool_monitor
-            .start_tool("tool-1".to_string(), "bash".to_string(), None, None);
-        session
-            .tool_monitor
-            .update_progress("tool-1", "counting lines".to_string(), Some(42));
-        session
-            .loading_indicator
-            .set_streaming_state(StreamingState::Responding);
-        session.sync_activity_chrome();
-
-        terminal
-            .draw(|frame| session.render(frame))
-            .expect("render should succeed");
-
-        let buffer = terminal.backend().buffer();
-        let rendered = (0..buffer.area.height)
-            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
-            .collect::<String>();
-
-        assert!(rendered.contains("Monitor"));
-        assert!(rendered.contains("bash"));
-    }
-
-    #[test]
-    fn render_shows_bash_command_in_tool_monitor_preview_on_start() {
-        let backend = TestBackend::new(90, 12);
-        let mut terminal = Terminal::new(backend).expect("test terminal");
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.live_viewport.mode = LiveViewportMode::Auto;
-        session.tool_monitor.start_tool(
-            "tool-1".to_string(),
-            "bash".to_string(),
-            None,
-            Some("cargo test".to_string()),
-        );
-        session
-            .loading_indicator
-            .set_streaming_state(StreamingState::Responding);
-        session.sync_activity_chrome();
-
-        terminal
-            .draw(|frame| session.render(frame))
-            .expect("render should succeed");
-
-        let buffer = terminal.backend().buffer();
-        let rendered = (0..buffer.area.height)
-            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol().to_string()))
-            .collect::<String>();
-
-        assert!(rendered.contains("bash"));
-        assert!(rendered.contains("cargo test"));
-    }
-
-    #[test]
     fn render_keeps_composer_visible_when_citation_completion_is_open() {
         let backend = TestBackend::new(90, 12);
         let mut terminal = Terminal::new(backend).expect("test terminal");
@@ -6021,16 +5609,6 @@ diff --git a/src/main.rs b/src/main.rs
     }
 
     #[test]
-    fn live_viewport_defaults_to_hidden_and_reserves_zero_height() {
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        // Default mode is Hidden; height percent stays at the configured default but
-        // is irrelevant because the mode forces zero allocation.
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
-        assert_eq!(session.live_viewport_height(80, 24), 0);
-    }
-
-    #[test]
     fn clicking_thought_header_reveals_hidden_content() {
         let mut app = test_app();
         let session = active_session_mut(&mut app);
@@ -6051,88 +5629,5 @@ diff --git a/src/main.rs b/src/main.rs
 
         let expanded = render_session_to_string(session, 90, 16);
         assert!(expanded.contains("private reasoning"));
-    }
-
-    #[test]
-    fn viewport_slash_command_toggles_modes() {
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
-
-        // Status query without changing mode.
-        let note = session.apply_viewport_command(None);
-        assert!(note.contains("Live viewport: **hidden**"));
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Hidden);
-
-        // Switch to auto.
-        let note = session.apply_viewport_command(Some("auto"));
-        assert!(note.contains("**hidden** → **auto**"));
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Auto);
-
-        // Idempotent re-set.
-        let note = session.apply_viewport_command(Some("auto"));
-        assert!(note.contains("already **auto**"));
-
-        // Switch to always via an alias.
-        let note = session.apply_viewport_command(Some("on"));
-        assert!(note.contains("**auto** → **always**"));
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Always);
-
-        // Reject unknown mode.
-        let note = session.apply_viewport_command(Some("banana"));
-        assert!(note.contains("Unknown viewport mode"));
-        assert_eq!(session.live_viewport.mode, LiveViewportMode::Always);
-    }
-
-    #[test]
-    fn auto_mode_hides_idle_dashboard_once_it_enters_scrollback() {
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.live_viewport.mode = LiveViewportMode::Auto;
-
-        // Before the first scrollback flush, the dashboard is available to direct renderers.
-        assert!(session.live_viewport_height(80, 24) > 0);
-
-        // Once emitted into shared scrollback, the inline shelf must not draw a second copy.
-        session.messages.take_unrendered_lines(80);
-        assert_eq!(session.live_viewport_height(80, 24), 0);
-
-        // But streaming text still surfaces even in Auto mode.
-        session.streaming_buffer.push("partial response");
-        let height = session.live_viewport_height(80, 24);
-        assert!(height > 0, "streaming text should be visible in Auto mode");
-
-        // The rendered frame must contain the partial text.
-        let rendered = render_session_to_string(session, 90, 16);
-        assert!(
-            rendered.contains("partial response"),
-            "expected streaming text to render, got: {rendered}"
-        );
-    }
-
-    #[test]
-    fn always_mode_shows_dashboard_even_with_messages() {
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        session.live_viewport.mode = LiveViewportMode::Always;
-        session
-            .messages
-            .add_local_command_result("prior turn".to_string());
-
-        // Always mode keeps the idle dashboard visible despite prior messages.
-        assert!(
-            session.live_viewport_height(80, 24) > 0,
-            "Always mode should reserve height for the dashboard even with messages"
-        );
-    }
-
-    #[test]
-    fn hidden_mode_never_renders_live_activity_preview() {
-        let mut app = test_app();
-        let session = active_session_mut(&mut app);
-        // Hidden default stays hidden even when there is live activity.
-        session.messages.start_compression();
-        session.messages.tick();
-        assert_eq!(session.live_viewport_height(80, 24), 0);
     }
 }

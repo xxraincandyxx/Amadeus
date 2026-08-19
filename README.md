@@ -333,32 +333,6 @@ The TUI supports English (`en`, the default) and Simplified Chinese (`zh-CN`). S
 `tui.language` in any settings layer, or switch the current session with
 `/language en` and `/language zh-CN` (`/lang` is an alias).
 
-### TUI: Live Viewport
-
-The **live viewport** is the reserved region above the composer that shows in-progress streaming text, tool-monitor previews, and compaction previews (plus an idle dashboard when empty). It defaults to **hidden** so the terminal stays focused on the committed transcript.
-
-```json
-{
-  "tui": {
-    "language": "en",
-    "live_viewport": {
-      "mode": "hidden",
-      "height_percent": 32
-    }
-  }
-}
-```
-
-| `mode`     | Behavior                                                                                  |
-|------------|-------------------------------------------------------------------------------------------|
-| `hidden`   | Never render the viewport. **Default.**                                                   |
-| `auto`     | Render only during live activity (streaming / tool runs / pending compaction) or when empty. |
-| `always`   | Always reserve space, including the idle dashboard.                                       |
-
-- `height_percent` (5–95, default 32) controls how much terminal height the viewport claims when visible.
-- Override at launch without editing settings via `AMADEUS_LIVE_VIEWPORT=hidden|auto|always`.
-- Toggle at runtime with `/viewport` (no arg reports current mode): `/viewport auto`, `/viewport hidden`, `/viewport always`.
-
 ## HTTP API
 
 The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start with `--server [port]` (default 3000).

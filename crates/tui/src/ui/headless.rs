@@ -152,8 +152,6 @@ mod tests {
 
     #[tokio::test]
     async fn typing_then_capture_shows_typed_text() {
-        // Use a realistic terminal size: the live viewport + footer need room, so
-        // very small heights (e.g. 6) collapse the input box out of the layout.
         let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
         let mut app = HeadlessApp::new(client, ".", "m", 80, 24);
         app.type_text("hello");

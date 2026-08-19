@@ -57,9 +57,6 @@ const DEFAULT_RAG_ENABLED: bool = false;
 const DEFAULT_RAG_CHUNK_SIZE: usize = 1200;
 const DEFAULT_RAG_CHUNK_OVERLAP: usize = 200;
 const DEFAULT_RAG_TOP_K: usize = 5;
-const DEFAULT_VIEWPORT_HEIGHT_PERCENT: u16 = 32;
-const MIN_VIEWPORT_HEIGHT_PERCENT: u16 = 5;
-const MAX_VIEWPORT_HEIGHT_PERCENT: u16 = 95;
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -296,67 +293,10 @@ impl Default for PromptSettings {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum LiveViewportMode {
-    #[default]
-    Hidden,
-    Auto,
-    Always,
-}
-
-impl LiveViewportMode {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Hidden => "hidden",
-            Self::Auto => "auto",
-            Self::Always => "always",
-        }
-    }
-
-    pub fn parse_str(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "hidden" | "hide" | "off" | "none" => Some(Self::Hidden),
-            "auto" | "automatic" => Some(Self::Auto),
-            "always" | "on" | "visible" => Some(Self::Always),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct LiveViewportConfig {
-    #[serde(default)]
-    pub mode: LiveViewportMode,
-    #[serde(default = "default_viewport_height_percent")]
-    pub height_percent: u16,
-}
-
-impl Default for LiveViewportConfig {
-    fn default() -> Self {
-        Self {
-            mode: LiveViewportMode::Hidden,
-            height_percent: DEFAULT_VIEWPORT_HEIGHT_PERCENT,
-        }
-    }
-}
-
-impl LiveViewportConfig {
-    pub fn clamp_height_percent(value: u16) -> u16 {
-        value.clamp(MIN_VIEWPORT_HEIGHT_PERCENT, MAX_VIEWPORT_HEIGHT_PERCENT)
-    }
-}
-
-fn default_viewport_height_percent() -> u16 {
-    DEFAULT_VIEWPORT_HEIGHT_PERCENT
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TuiSettings {
     #[serde(default)]
     pub language: Language,
-    #[serde(default)]
-    pub live_viewport: LiveViewportConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1312,19 +1252,6 @@ impl Config {
             {
                 self.tui.language = language;
             }
-            if let Some(viewport) = tui.get("live_viewport").and_then(|v| v.as_object()) {
-                if let Some(mode) = viewport
-                    .get("mode")
-                    .and_then(|v| v.as_str())
-                    .and_then(LiveViewportMode::parse_str)
-                {
-                    self.tui.live_viewport.mode = mode;
-                }
-                if let Some(height) = viewport.get("height_percent").and_then(|v| v.as_u64()) {
-                    self.tui.live_viewport.height_percent =
-                        LiveViewportConfig::clamp_height_percent(height as u16);
-                }
-            }
         }
     }
 }
@@ -1404,28 +1331,13 @@ fn default_hook_timeout_seconds() -> u64 {
 }
 
 fn merge_tui_settings(self_settings: TuiSettings, other: TuiSettings) -> TuiSettings {
-    let default_cfg = LiveViewportConfig::default();
     let self_language = self_settings.language;
     let other_language = other.language;
-    let self_cfg = self_settings.live_viewport;
-    let other_cfg = other.live_viewport;
     TuiSettings {
         language: if other_language != Language::default() {
             other_language
         } else {
             self_language
-        },
-        live_viewport: LiveViewportConfig {
-            mode: if other_cfg.mode != default_cfg.mode {
-                other_cfg.mode
-            } else {
-                self_cfg.mode
-            },
-            height_percent: if other_cfg.height_percent != default_cfg.height_percent {
-                LiveViewportConfig::clamp_height_percent(other_cfg.height_percent)
-            } else {
-                self_cfg.height_percent
-            },
         },
     }
 }
@@ -1967,16 +1879,6 @@ mod tests {
     }
 
     #[test]
-    fn live_viewport_defaults_to_hidden() {
-        let config = Config::default();
-        assert_eq!(config.tui.live_viewport.mode, LiveViewportMode::Hidden);
-        assert_eq!(
-            config.tui.live_viewport.height_percent,
-            DEFAULT_VIEWPORT_HEIGHT_PERCENT
-        );
-    }
-
-    #[test]
     fn language_parses_supported_names_and_defaults_to_english() {
         assert_eq!(Config::default().tui.language, Language::English);
         assert_eq!(Language::parse_str("en"), Some(Language::English));
@@ -2010,111 +1912,5 @@ mod tests {
         assert_eq!(config.tui.language, Language::ChineseSimplified);
 
         restore_env("HOME", home);
-    }
-
-    #[test]
-    fn live_viewport_parses_json_modes() {
-        // Start from default (which has all required fields) and overlay only the tui block.
-        let mut value = serde_json::to_value(Config::default()).expect("serialize default");
-        let tui_patch = serde_json::json!({
-            "live_viewport": {
-                "mode": "auto",
-                "height_percent": 50
-            }
-        });
-        value
-            .as_object_mut()
-            .expect("object")
-            .insert("tui".to_string(), tui_patch);
-        let config: Config = serde_json::from_value(value).expect("parse");
-        assert_eq!(config.tui.live_viewport.mode, LiveViewportMode::Auto);
-        assert_eq!(config.tui.live_viewport.height_percent, 50);
-    }
-
-    #[test]
-    fn live_viewport_unknown_mode_string_falls_back_to_default_via_serde_error() {
-        let mut value = serde_json::to_value(Config::default()).expect("serialize default");
-        let tui_patch = serde_json::json!({
-            "live_viewport": {
-                "mode": "bogus"
-            }
-        });
-        value
-            .as_object_mut()
-            .expect("object")
-            .insert("tui".to_string(), tui_patch);
-        assert!(serde_json::from_value::<Config>(value).is_err());
-    }
-
-    #[test]
-    fn live_viewport_mode_parse_str_accepts_aliases() {
-        assert_eq!(
-            LiveViewportMode::parse_str("hidden"),
-            Some(LiveViewportMode::Hidden)
-        );
-        assert_eq!(
-            LiveViewportMode::parse_str("OFF"),
-            Some(LiveViewportMode::Hidden)
-        );
-        assert_eq!(
-            LiveViewportMode::parse_str("automatic"),
-            Some(LiveViewportMode::Auto)
-        );
-        assert_eq!(
-            LiveViewportMode::parse_str("visible"),
-            Some(LiveViewportMode::Always)
-        );
-        assert!(LiveViewportMode::parse_str("nonsense").is_none());
-    }
-
-    #[test]
-    fn live_viewport_clamps_height_percent() {
-        assert_eq!(LiveViewportConfig::clamp_height_percent(0), 5);
-        assert_eq!(LiveViewportConfig::clamp_height_percent(3), 5);
-        assert_eq!(LiveViewportConfig::clamp_height_percent(50), 50);
-        assert_eq!(LiveViewportConfig::clamp_height_percent(100), 95);
-    }
-
-    #[test]
-    fn merge_tui_settings_overrides_mode_and_height_independently() {
-        let base = Config {
-            tui: TuiSettings {
-                language: Language::English,
-                live_viewport: LiveViewportConfig {
-                    mode: LiveViewportMode::Hidden,
-                    height_percent: 32,
-                },
-            },
-            ..Config::default()
-        };
-        // Only override mode, keep base height.
-        let other = Config {
-            tui: TuiSettings {
-                language: Language::English,
-                live_viewport: LiveViewportConfig {
-                    mode: LiveViewportMode::Always,
-                    height_percent: 32,
-                },
-            },
-            ..Config::default()
-        };
-        let merged = base.merge(other);
-        assert_eq!(merged.tui.live_viewport.mode, LiveViewportMode::Always);
-        assert_eq!(merged.tui.live_viewport.height_percent, 32);
-
-        // Now override only height in a higher layer; mode from previous merge survives.
-        let layer = Config {
-            tui: TuiSettings {
-                language: Language::English,
-                live_viewport: LiveViewportConfig {
-                    mode: LiveViewportMode::Hidden, // default — should NOT clobber
-                    height_percent: 60,
-                },
-            },
-            ..Config::default()
-        };
-        let merged2 = merged.merge(layer);
-        assert_eq!(merged2.tui.live_viewport.mode, LiveViewportMode::Always);
-        assert_eq!(merged2.tui.live_viewport.height_percent, 60);
     }
 }

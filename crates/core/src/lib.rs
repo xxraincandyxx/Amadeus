@@ -47,9 +47,8 @@ pub mod tools;
 pub mod transcript;
 
 pub use agent::config::{
-    Config, Language, LiveViewportConfig, LiveViewportMode, PromptMergeMode, PromptProfileConfig,
-    PromptSectionConfig, PromptSettings, Provider, ToolOverrideConfig, ToolProfileConfig,
-    ToolSettings, TuiSettings,
+    Config, Language, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings,
+    Provider, ToolOverrideConfig, ToolProfileConfig, ToolSettings, TuiSettings,
 };
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,

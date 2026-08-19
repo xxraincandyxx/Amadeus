@@ -78,12 +78,6 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
         "Export the current conversation to a .md or .json file",
         Some("[path|json]"),
     ),
-    SlashCommandSpec::new(
-        "viewport",
-        &[],
-        "Show or hide the live viewport (hidden | auto | always | off)",
-        Some("[mode]"),
-    ),
     SlashCommandSpec::new("exit", &[], "Exit the current TUI session", None),
 ];
 
@@ -100,7 +94,6 @@ pub enum SlashCommand {
     Language { language: Option<String> },
     Rewind { steps: Option<usize> },
     Export { path: Option<String> },
-    Viewport { mode: Option<String> },
     Exit,
     Unknown(String),
 }
@@ -141,9 +134,6 @@ impl SlashCommand {
             "export" => Self::Export {
                 path: remainder.map(String::from),
             },
-            "viewport" => Self::Viewport {
-                mode: remainder.map(String::from),
-            },
             "exit" => Self::Exit,
             other => Self::Unknown(other.to_string()),
         })
@@ -162,7 +152,6 @@ impl SlashCommand {
             Self::Language { .. } => "language",
             Self::Rewind { .. } => "rewind",
             Self::Export { .. } => "export",
-            Self::Viewport { .. } => "viewport",
             Self::Exit => "exit",
             Self::Unknown(_) => "unknown",
         }
@@ -184,9 +173,6 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS
             .iter()
             .any(|spec| spec.name == "language"));
-        assert!(SLASH_COMMAND_SPECS
-            .iter()
-            .any(|spec| spec.name == "viewport"));
     }
 
     #[test]
@@ -244,27 +230,6 @@ mod tests {
         assert_eq!(
             SlashCommand::parse("/EXPORT").map(|c| c.primary_name()),
             Some("export")
-        );
-    }
-
-    #[test]
-    fn parse_viewport_command() {
-        assert_eq!(
-            SlashCommand::parse("/viewport"),
-            Some(SlashCommand::Viewport { mode: None })
-        );
-        assert_eq!(
-            SlashCommand::parse("/viewport auto"),
-            Some(SlashCommand::Viewport {
-                mode: Some("auto".to_string())
-            })
-        );
-        assert_eq!(
-            SlashCommand::parse("/VIEWPORT HIDDEN").map(|c| match c {
-                SlashCommand::Viewport { mode } => mode,
-                _ => Some("__wrong__".to_string()),
-            }),
-            Some(Some("HIDDEN".to_string()))
         );
     }
 

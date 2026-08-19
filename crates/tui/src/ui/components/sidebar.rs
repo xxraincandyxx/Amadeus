@@ -351,22 +351,6 @@ impl HelpSidebar {
             Line::from(vec![
                 Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
                 Span::styled(
-                    crate::ui::i18n::text("sidebar.viewport"),
-                    Style::default().fg(colors.text.primary),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("   /viewport ", Style::default().fg(colors.text.link)),
-                Span::styled(
-                    " hidden | auto | always",
-                    Style::default().fg(colors.ui.comment),
-                ),
-            ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled(" ❯ ", Style::default().fg(colors.text.accent)),
-                Span::styled(
                     crate::ui::i18n::text("sidebar.scrolling"),
                     Style::default().fg(colors.text.primary),
                 ),
