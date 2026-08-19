@@ -87,7 +87,7 @@ Layered settings loading, TUI settings, permission rules, and provider config al
 - `crates/tools/src/` — empty directory, not a workspace member.
 - `test_ratatui` — a stray Mach-O binary at the repo root (untracked and already gitignored; safe to delete). `*.profraw` is cleaned by `make clean` but was not gitignored.
 - `python-sdk/` declares `pytest`/`pytest-asyncio` dev deps and ships **zero** tests.
-- Tracked root docs `benchmarks.md` and `code_review.md` sit beside `README.md`; `docs/` mixes reference material (`ARCHITECTURE.md`, `HTTP_API.md`, `TOOLS.md`) with point-in-time artifacts (`CITE_AND_PASTE_PLAN.md`, `MULTI_AGENT_TEAM_HARDENING_PLAN.md`, `ROADMAP_PARITY.md`, `memory-agent-briefing-20260503T162117Z.md`, generated `header_map.html` / `header_mindmap.mmd`).
+- Tracked root docs `benchmarks.md` and `code_review.md` sit beside `README.md`; `docs/` mixes reference material with point-in-time plans and reports. Generated header visualizations were removed on 2026-08-19.
 
 ---
 
@@ -155,7 +155,7 @@ Then resolve the two violations: move the pure parts of `core/src/permissions.rs
 
 **P2.2 Give `python-sdk` the tests its manifest already promises.** A smoke suite against `apps/web/mock-server.mjs` or a live `--server` instance; wire into the CI `python` job from P0.2.
 
-**P2.3 Documentation topology.** Move `benchmarks.md`, `code_review.md`, and `audit.md` under `docs/`; split `docs/` into `docs/reference/` (architecture, HTTP API, tools, compaction, testing, design system) and `docs/plans/` (dated, archivable), and move generated header artifacts (`header_map.html`, `header_mindmap.mmd`, `HEADER_*.md`) under `docs/generated/`. The four instruction files now point into `docs/` by name, so do this as one commit and update those pointers in the same change.
+**P2.3 Documentation topology.** Generated header artifacts and their redundant generators were removed on 2026-08-19. Remaining work: move root reports under `docs/` and separate current reference material from dated plans.
 
 ---
 
