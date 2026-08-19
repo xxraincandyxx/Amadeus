@@ -2594,7 +2594,6 @@ dependencies = [
  "lazy_static",
  "rand 0.8.5",
  "ratatui",
- "reqwest",
  "serde",
  "serde_json",
  "tempfile",
@@ -2602,7 +2601,6 @@ dependencies = [
  "tracing",
  "tui-textarea",
  "unicode-width 0.2.2",
- "urlencoding",
  "uuid",
  "walkdir",
 ]

@@ -171,12 +171,12 @@ messages = UADebugRecorder.load_as_messages("ua_debug.json")
 - `POST /execute` — direct bash execution
 - `GET /config`, `PATCH /config` — configuration
 - `GET /sessions`, `GET /sessions/:id`, `POST /sessions/:id/restore` — sessions
-- `GET /history` — conversation history
+- `GET /v1/sessions/:id/history` — conversation history
 - `GET /skills` — available skills
 - `POST /summarize` — text summarization
 - `GET /compaction/config`, `PATCH /compaction/config`, `GET /compaction/triggers`
 - `GET /prompts/sections`, `POST /prompts/build`
 - `GET /memory/providers`, `GET /memory/entries`, `POST /memory/entries`, `DELETE /memory/entries/:key`
 - `GET /tools/catalog`
-- `GET /agents`, `POST /agents`, `GET /agents/:id`, `DELETE /agents/:id`, `POST /agents/:id/switch`, `POST /agents/:id/chat`
-- `GET /approvals`, `POST /approvals/:id`
+- `GET /v1/sessions`, `POST /v1/sessions`, `GET /v1/sessions/:id`, `DELETE /v1/sessions/:id`
+- `GET /v1/sessions/:id/approvals`, `POST /v1/sessions/:id/approvals/:approval_id`

@@ -182,7 +182,7 @@ Current ingress map:
 | `/v1/sessions/*` | `LocalSessionBridge` stateful sessions, events, approvals, history, cancellation, and checkpoints |
 | `POST /chat` | request -> `Task` -> `AgentOrchestrator::execute_task` -> `Agent::run` |
 | `POST /tasks` | request -> `Task` -> `AgentOrchestrator::execute_task` |
-| `GET /stream` | build fresh `Agent` -> inject user message -> `run_stream()` |
+| `GET /v1/sessions/:id/events` | subscribe to `LocalSessionBridge` session events |
 | `POST /execute` | instantiate `BashTool` directly and execute it |
 
 Two important details:

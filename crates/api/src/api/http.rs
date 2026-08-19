@@ -196,7 +196,6 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
 /// | `/sessions/{id}/restore` | POST | `restore_session` | Restore a session |
 /// | `/config` | GET | `get_config` | Get current config |
 /// | `/config` | PATCH | `update_config` | Update config settings |
-/// | `/history` | GET | `get_history` | Get conversation history |
 /// | `/skills` | GET | `list_skills` | List available skills |
 pub async fn run_server<C: LLMClient + Clone + 'static>(
     port: u16,
@@ -305,7 +304,6 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     println!("Configuration & Info:");
     println!("  GET  /config   - Get current configuration");
     println!("  PATCH /config  - Update configuration");
-    println!("  GET  /history  - Get conversation history");
     println!("  GET  /skills   - List available skills");
     println!();
     println!("Press Ctrl+C to stop");

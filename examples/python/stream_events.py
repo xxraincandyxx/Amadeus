@@ -27,7 +27,13 @@ def main() -> None:
     args = arg_parser.parse_args()
 
     client = AmadeusClient(args.base_url)
-    client.stream("/stream", {"message": args.message})
+    session = client.post(
+        "/v1/sessions",
+        {"name": "python-stream-example", "profile": "default"},
+    )
+    session_id = session["id"]
+    client.post(f"/v1/sessions/{session_id}/messages", {"content": args.message})
+    client.stream(f"/v1/sessions/{session_id}/events", {})
 
 
 if __name__ == "__main__":

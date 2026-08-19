@@ -43,7 +43,7 @@ use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 
 use crate::agent::{AgentProfile, ApprovalDecision, Message, SessionCheckpoint};
-use crate::api::handlers::agents::bridge_event_to_sse;
+use crate::api::handlers::events::bridge_event_to_sse;
 use crate::api::http::AppState;
 use crate::api::types::ErrorResponse;
 use crate::bridge::BridgeSessionInfo;

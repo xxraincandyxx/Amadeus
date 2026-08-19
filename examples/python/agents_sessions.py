@@ -1,5 +1,5 @@
 # @amadeus-header
-# summary: Python example for agent management, skills, sessions, history, and approvals endpoints.
+# summary: Python example for skills, saved sessions, and live session operations.
 # layer: example
 # status: experimental
 # feature_flags:
@@ -22,7 +22,7 @@ from amadeus_client import AmadeusClient, parser, print_json
 
 
 def main() -> None:
-    args = parser("Inspect Amadeus management endpoints from Python.").parse_args()
+    args = parser("Inspect Amadeus session endpoints from Python.").parse_args()
     client = AmadeusClient(args.base_url)
 
     print("# Skills")
@@ -31,27 +31,27 @@ def main() -> None:
     print("# Sessions")
     print_json(client.get("/sessions"))
 
-    print("# History")
-    print_json(client.get("/history"))
+    print("# Live sessions")
+    print_json(client.get("/v1/sessions"))
 
-    print("# Pending approvals")
-    print_json(client.get("/approvals"))
-
-    print("# Agents before create")
-    print_json(client.get("/agents"))
-
-    print("# Create docs agent")
-    created = client.post("/agents", {"name": "python-docs-example", "profile": "docs"})
+    print("# Create live session")
+    created = client.post(
+        "/v1/sessions",
+        {"name": "python-docs-example", "profile": "docs"},
+    )
     print_json(created)
 
-    agent_id = created["agent"]["id"]
-    print("# Chat with created agent")
+    session_id = created["id"]
+    print("# Submit message")
     print_json(
         client.post(
-            f"/agents/{agent_id}/chat",
-            {"message": "Say hello from the Python agent example."},
+            f"/v1/sessions/{session_id}/messages",
+            {"content": "Say hello from the Python session example."},
         )
     )
+
+    print("# Session history")
+    print_json(client.get(f"/v1/sessions/{session_id}/history"))
 
 
 if __name__ == "__main__":

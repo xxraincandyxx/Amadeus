@@ -55,10 +55,7 @@
 //! | `restore_session` | POST `/sessions/{id}/restore` | Restore a session |
 //! | `get_config` | GET `/config` | Get current config |
 //! | `update_config` | PATCH `/config` | Update config settings |
-//! | `get_history` | GET `/history` | Get conversation history |
 //! | `list_skills` | GET `/skills` | List available skills |
-//! | `stream` | Unregistered | Historical stateless SSE handler |
-//! | `submit_approval` | Unregistered | Historical global approval handler |
 //!
 //! ## Error Handling
 //!
@@ -109,11 +106,6 @@ pub mod chat;
 /// POST endpoint for direct bash command execution.
 pub mod execute;
 
-/// Stream handler.
-///
-/// GET endpoint for SSE streaming responses.
-pub mod stream;
-
 /// Tasks handler for orchestra task dispatch.
 pub mod tasks;
 
@@ -123,17 +115,10 @@ pub mod sessions;
 /// Config handler for configuration management.
 pub mod config;
 
-/// History handler for conversation history.
-pub mod history;
-
 /// Skills handler for listing available skills.
 pub mod skills;
 
-/// Approvals handler for tool approval flow.
-pub mod approvals;
-
-/// Agents handler for multi-agent management.
-pub mod agents;
+pub(crate) mod events;
 pub mod external_sessions;
 pub mod summarize;
 
@@ -159,10 +144,6 @@ pub mod rag;
  */
 
 // Re-export handlers for convenient access
-pub use agents::{
-    agent_chat, agent_stream, create_agent, get_agent, kill_agent, list_agents, switch_agent,
-};
-pub use approvals::{list_pending_approvals, register_approval_channel, submit_approval};
 pub use chat::chat;
 pub use compaction::{get_compaction_config, get_compaction_triggers, update_compaction_config};
 pub use config::{get_config, update_config};
@@ -175,13 +156,11 @@ pub use external_sessions::{
     submit_external_message,
 };
 pub use health::health;
-pub use history::get_history;
 pub use memory::{delete_entry, list_memory_providers, load_memory_entries, store_entry};
 pub use prompts::{build_prompt, list_prompt_sections};
 pub use rag::{rag_delete_document, rag_ingest, rag_list_documents, rag_query};
 pub use sessions::{get_session, list_sessions, restore_session};
 pub use skills::list_skills;
-pub use stream::stream;
 pub use summarize::summarize;
 pub use tasks::handle_task;
 pub use tools_catalog::get_tool_catalog;

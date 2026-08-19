@@ -34,7 +34,6 @@
 //! - **`event`**: Keyboard and mouse event handling
 //! - **`components`**: UI components (input, messages, sidebar, status)
 
-pub mod api_client;
 pub mod app;
 
 pub mod components;
@@ -49,7 +48,6 @@ pub mod semantic_colors;
 pub mod theme_manager;
 pub mod themes;
 
-pub use api_client::ApiClient;
 pub use app::App;
 pub use components::{
     ContextInfo, FileSidebar, Footer, FooterInfo, GeminiSpinner, HelpSidebar, InputComponent,
