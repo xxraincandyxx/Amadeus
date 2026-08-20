@@ -11,6 +11,7 @@
 // - type: crate::ui::components::diff::DiffView
 // uses:
 // - runtime: ratatui terminal rendering
+// - library: similar line diffing
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects: none
@@ -26,6 +27,7 @@ use ratatui::{
     style::{Color, Style},
     text::Span,
 };
+use similar::{ChangeTag, TextDiff};
 
 /// A single line in a diff.
 #[derive(Debug, Clone)]
@@ -61,61 +63,24 @@ pub struct DiffView {
 impl DiffView {
     /// Create a simple diff from two strings.
     pub fn diff(old: &str, new: &str) -> Self {
-        let old_lines: Vec<&str> = old.lines().collect();
-        let new_lines: Vec<&str> = new.lines().collect();
-
-        let mut diff_lines = Vec::new();
-
-        // Simple line-by-line diff
-        let max_len = old_lines.len().max(new_lines.len());
-        for i in 0..max_len {
-            let old_line = old_lines.get(i);
-            let new_line = new_lines.get(i);
-
-            match (old_line, new_line) {
-                (Some(o), Some(n)) if o == n => {
-                    diff_lines.push(DiffLine {
-                        old_line_num: Some(i + 1),
-                        new_line_num: Some(i + 1),
-                        content: o.to_string(),
-                        status: DiffStatus::Unchanged,
-                    });
+        let lines = TextDiff::from_lines(old, new)
+            .iter_all_changes()
+            .map(|change| {
+                let status = match change.tag() {
+                    ChangeTag::Equal => DiffStatus::Unchanged,
+                    ChangeTag::Insert => DiffStatus::Added,
+                    ChangeTag::Delete => DiffStatus::Removed,
+                };
+                DiffLine {
+                    old_line_num: change.old_index().map(|index| index + 1),
+                    new_line_num: change.new_index().map(|index| index + 1),
+                    content: change.value().trim_end_matches(['\r', '\n']).to_string(),
+                    status,
                 }
-                (Some(o), Some(n)) => {
-                    diff_lines.push(DiffLine {
-                        old_line_num: Some(i + 1),
-                        new_line_num: None,
-                        content: o.to_string(),
-                        status: DiffStatus::Removed,
-                    });
-                    diff_lines.push(DiffLine {
-                        old_line_num: None,
-                        new_line_num: Some(i + 1),
-                        content: n.to_string(),
-                        status: DiffStatus::Added,
-                    });
-                }
-                (Some(o), None) => {
-                    diff_lines.push(DiffLine {
-                        old_line_num: Some(i + 1),
-                        new_line_num: None,
-                        content: o.to_string(),
-                        status: DiffStatus::Removed,
-                    });
-                }
-                (None, Some(n)) => {
-                    diff_lines.push(DiffLine {
-                        old_line_num: None,
-                        new_line_num: Some(i + 1),
-                        content: n.to_string(),
-                        status: DiffStatus::Added,
-                    });
-                }
-                (None, None) => {}
-            }
-        }
+            })
+            .collect();
 
-        Self { lines: diff_lines }
+        Self { lines }
     }
 
     /// Render the diff as styled spans.
@@ -158,5 +123,30 @@ mod tests {
         // Should have: unchanged Hello, removed World, added Rust, unchanged Foo, added Bar
         assert!(diff.lines.iter().any(|l| l.status == DiffStatus::Removed));
         assert!(diff.lines.iter().any(|l| l.status == DiffStatus::Added));
+    }
+
+    #[test]
+    fn insertion_preserves_following_line_numbers() {
+        let diff = DiffView::diff("alpha\nbeta\n", "alpha\ninserted\nbeta\n");
+
+        assert_eq!(diff.lines.len(), 3);
+        assert_eq!(diff.lines[0].status, DiffStatus::Unchanged);
+        assert_eq!(diff.lines[1].status, DiffStatus::Added);
+        assert_eq!(diff.lines[1].new_line_num, Some(2));
+        assert_eq!(diff.lines[2].status, DiffStatus::Unchanged);
+        assert_eq!(diff.lines[2].old_line_num, Some(2));
+        assert_eq!(diff.lines[2].new_line_num, Some(3));
+    }
+
+    #[test]
+    fn deletion_preserves_following_line_numbers() {
+        let diff = DiffView::diff("alpha\nremoved\nbeta\n", "alpha\nbeta\n");
+
+        assert_eq!(diff.lines.len(), 3);
+        assert_eq!(diff.lines[1].status, DiffStatus::Removed);
+        assert_eq!(diff.lines[1].old_line_num, Some(2));
+        assert_eq!(diff.lines[2].status, DiffStatus::Unchanged);
+        assert_eq!(diff.lines[2].old_line_num, Some(3));
+        assert_eq!(diff.lines[2].new_line_num, Some(2));
     }
 }

@@ -2596,6 +2596,7 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
+ "similar",
  "tempfile",
  "tokio",
  "tracing",
