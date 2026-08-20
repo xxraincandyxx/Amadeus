@@ -4,6 +4,10 @@
 
 Accepted for incremental implementation on `codex/agent-architecture-runtime`.
 
+Phase 1 is complete: the typed workflow kernel, root facade exports, focused tests, and
+canonical architecture documentation are in place. Phase 2, extracting core operations
+from the existing ReAct loop, is next.
+
 ## Motivation
 
 Amadeus currently exposes a configurable ReAct agent. Callers can replace the model,

@@ -1,11 +1,12 @@
 # Amadeus
 
-An AI agent framework in Rust with a ReAct-style agent loop, multi-provider LLM support, an extensible tool system, policy-based safety controls, and both interactive TUI and REST API adapters over a shared core runtime.
+An AI agent architecture framework in Rust with a composable workflow runtime, a ReAct compatibility agent, multi-provider LLM support, extensible tools, policy-based safety controls, and interactive TUI and REST API adapters over a shared core runtime.
 
 ![Amadeus Preview](assets/amadeus_preview.jpg)
 
 ## Features
 
+- **Composable Agent Architectures** — Build typed asynchronous workflows with explicit transitions, validation, suspension and resume, and bounded execution; models and tools are injected resources rather than the owner of control flow.
 - **Multi-Provider LLM** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
 - **ReAct Agent Loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
 - **Extensible Tool System** — Built-in tools for shell, filesystem, search, and web; register custom tools via the `Tool` trait; MCP server integration.
@@ -66,6 +67,8 @@ This removes Rust, web, and desktop builds along with generated logs, benchmark 
 output, and local caches. Dependency installations and user configuration are preserved.
 
 ## Using as a Library
+
+The provider-independent workflow kernel is available from the root `amadeus` facade. The existing `Agent<C>` API remains the production ReAct path while it is incrementally rebuilt from workflow components. See the [architecture guide](docs/ARCHITECTURE.md#workflow-kernel) and [migration plan](docs/plans/2026-08-20-agent-architecture-runtime.md) for the current boundary.
 
 Add to your `Cargo.toml`:
 

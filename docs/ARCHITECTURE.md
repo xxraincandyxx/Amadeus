@@ -95,16 +95,47 @@ Important module groups:
 
 ### `crates/runtime`
 
-`crates/runtime` does not run the live agent loop. Instead, it provides reusable coordination types and algorithms used by the core orchestration layer.
+`crates/runtime` provides the provider-independent execution and coordination foundation used by higher layers. The current live ReAct agent has not migrated to the workflow kernel yet; it still runs in `crates/core` during the compatibility phase.
 
 It contains:
 
+- typed workflow nodes, transitions, validation, suspension, and bounded execution
 - team and orchestra state models
 - worker/task models
 - dispatch strategies and worker selection
 - transport-agnostic helpers for agent routing
 
-This split keeps the shared coordination semantics reusable while `crates/core` handles the live async execution with real agents.
+This split keeps workflow and coordination semantics reusable while `crates/core` supplies model clients, tools, policy, memory, and the current live agent implementation.
+
+### Workflow kernel
+
+`crates/runtime/src/workflow.rs` is the first migration slice toward architecture-defined agents. It models an agent architecture as typed state moving through asynchronous nodes:
+
+```text
+Agent = Architecture + State + Resources + Runtime
+```
+
+The kernel is intentionally unaware of LLM messages, provider clients, concrete tools, and frontends. A workflow node receives shared resources and mutable state, then returns one of four transitions:
+
+- continue at another node
+- suspend and return owned state
+- complete successfully
+- fail with an architecture-defined error
+
+Declared destinations are validated before execution, and the runner applies one transition limit across initial execution and resumed suspensions.
+
+```rust
+let workflow = Workflow::builder("plan")
+    .node("plan", plan_node)?
+    .node("act", act_node)?
+    .build()?;
+
+let status = WorkflowRunner::default()
+    .run(&workflow, &resources, initial_state)
+    .await?;
+```
+
+The existing `Agent<C>` API remains the compatibility surface. Its ReAct loop will be decomposed into reusable core nodes and then reimplemented as a workflow preset without changing public behavior. The staged design and compatibility gates are documented in [`plans/2026-08-20-agent-architecture-runtime.md`](plans/2026-08-20-agent-architecture-runtime.md).
 
 ## Request and Event Flows
 
