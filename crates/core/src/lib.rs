@@ -13,6 +13,7 @@
 // - module: crate
 // uses:
 // - module: amadeus_runtime::workflow
+// - module: amadeus_runtime::workflow_agent
 // invariants:
 // - Core modules remain frontend-agnostic and reusable across transports.
 // side_effects: none
@@ -54,6 +55,10 @@ pub use agent::config::{
 pub use amadeus_runtime::workflow::{
     Node, NodeContext, NodeError, NodeId, NodeResult, RunStatus, SuspendedRun, Suspension,
     Transition, Workflow, WorkflowBuilder, WorkflowError, WorkflowResult, WorkflowRunner,
+};
+pub use amadeus_runtime::workflow_agent::{
+    AgentRunId, WorkflowAgent, WorkflowAgentCheckpoint, WorkflowAgentError, WorkflowAgentIdentity,
+    WorkflowAgentRegistry, WorkflowAgentResult, WorkflowAgentRun, WorkflowAgentRunStatus,
 };
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,

@@ -11,6 +11,7 @@
 // - module: crate::team
 // - module: crate::worker
 // - module: crate::workflow
+// - module: crate::workflow_agent
 // - type: crate::RuntimeError
 // - type: crate::Result
 // uses:
@@ -32,6 +33,7 @@ pub mod scheduler;
 pub mod team;
 pub mod worker;
 pub mod workflow;
+pub mod workflow_agent;
 
 use thiserror::Error;
 
@@ -66,4 +68,8 @@ pub use worker::{
 pub use workflow::{
     Node, NodeContext, NodeError, NodeId, NodeResult, RunStatus, SuspendedRun, Suspension,
     Transition, Workflow, WorkflowBuilder, WorkflowError, WorkflowResult, WorkflowRunner,
+};
+pub use workflow_agent::{
+    AgentRunId, WorkflowAgent, WorkflowAgentCheckpoint, WorkflowAgentError, WorkflowAgentIdentity,
+    WorkflowAgentRegistry, WorkflowAgentResult, WorkflowAgentRun, WorkflowAgentRunStatus,
 };
