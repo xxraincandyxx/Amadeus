@@ -5,8 +5,10 @@
 Accepted for incremental implementation on `codex/agent-architecture-runtime`.
 
 Phase 1 is complete: the typed workflow kernel, root facade exports, focused tests, and
-canonical architecture documentation are in place. Phase 2, extracting core operations
-from the existing ReAct loop, is next.
+canonical architecture documentation are in place. The follow-up hierarchy layer is also
+complete: `WorkflowAgent` binds one workflow to identity and resources, agent runs own state,
+and `WorkflowAgentRegistry` holds multiple agents with different workflows. Phase 2,
+extracting core operations from the existing ReAct loop, is next.
 
 ## Motivation
 
@@ -96,6 +98,9 @@ The first implementation introduces these concepts in `amadeus_runtime`:
 - `Workflow<S, R>`: validated node collection with a single entry point.
 - `WorkflowRunner`: deterministic executor with a transition limit.
 - `RunStatus`: completed or suspended result carrying final state.
+- `WorkflowAgent`: configured identity, workflow, resources, and runner.
+- `WorkflowAgentRun`: one state-owning execution session.
+- `WorkflowAgentRegistry`: typed container and router for multiple workflow-backed agents.
 
 Nodes emit their next node explicitly. This keeps branching logic in architecture code
 and avoids requiring a configuration language before the Rust API has stabilized.

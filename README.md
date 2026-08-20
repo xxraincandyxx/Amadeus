@@ -6,7 +6,7 @@ An AI agent architecture framework in Rust with a composable workflow runtime, a
 
 ## Features
 
-- **Composable Agent Architectures** — Build typed asynchronous workflows with explicit transitions, validation, suspension and resume, and bounded execution; models and tools are injected resources rather than the owner of control flow.
+- **Composable Agent Architectures** — Build typed asynchronous workflows, bind each workflow to an agent identity and resource set, and hold multiple differently configured agents in one registry; models and tools are injected resources rather than the owner of control flow.
 - **Multi-Provider LLM** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
 - **ReAct Agent Loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
 - **Extensible Tool System** — Built-in tools for shell, filesystem, search, and web; register custom tools via the `Tool` trait; MCP server integration.
@@ -68,7 +68,7 @@ output, and local caches. Dependency installations and user configuration are pr
 
 ## Using as a Library
 
-The provider-independent workflow kernel is available from the root `amadeus` facade. The existing `Agent<C>` API remains the production ReAct path while it is incrementally rebuilt from workflow components. See the [architecture guide](docs/ARCHITECTURE.md#workflow-kernel) and [migration plan](docs/plans/2026-08-20-agent-architecture-runtime.md) for the current boundary.
+The provider-independent workflow kernel and workflow-backed agent registry are available from the root `amadeus` facade. The existing `Agent<C>` API remains the production ReAct path while it is incrementally rebuilt from workflow components. See [Agent Architectures](docs/AGENT_ARCHITECTURES.md), the [architecture guide](docs/ARCHITECTURE.md#workflow-kernel), and the [migration plan](docs/plans/2026-08-20-agent-architecture-runtime.md) for the current boundary.
 
 Add to your `Cargo.toml`:
 

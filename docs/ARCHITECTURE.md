@@ -137,6 +137,31 @@ let status = WorkflowRunner::default()
 
 The existing `Agent<C>` API remains the compatibility surface. Its ReAct loop will be decomposed into reusable core nodes and then reimplemented as a workflow preset without changing public behavior. The staged design and compatibility gates are documented in [`plans/2026-08-20-agent-architecture-runtime.md`](plans/2026-08-20-agent-architecture-runtime.md).
 
+### Workflow-backed agents
+
+The workflow kernel separates reusable architecture from configured agent identity and per-run state:
+
+```text
+Workflow<S, R>                         reusable architecture blueprint
+    ↓ bound with identity + resources
+WorkflowAgent<S, R>                    one configured agent instance
+    ↓ run(initial_state)
+WorkflowAgentRun<S>                    one execution session
+    ├── Completed(final_state)
+    └── Suspended(WorkflowAgentCheckpoint<S>)
+
+WorkflowAgentRegistry<S, R>
+    ├── Agent A → Workflow A + Resources A
+    ├── Agent B → Workflow B + Resources B
+    └── Agent C → shared Workflow A + Resources C
+```
+
+Each `WorkflowAgent` binds exactly one workflow for its lifetime. Several agents may share the same `Arc<Workflow<_, _>>`, or use different workflow graphs. Every run receives owned state, and suspended checkpoints record the owning agent so they cannot be resumed by another agent accidentally.
+
+`WorkflowAgentRegistry` provides typed registration, lookup, removal, execution routing, and checkpoint routing. Agents in one registry share Rust state and resource types `S` and `R`; applications that need heterogeneous implementations can use an enum state and trait-object resource bundle while preserving a common routing contract.
+
+The complete hierarchy and usage example are documented in [`AGENT_ARCHITECTURES.md`](AGENT_ARCHITECTURES.md).
+
 ## Request and Event Flows
 
 ### Agent loop
