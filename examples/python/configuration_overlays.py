@@ -30,6 +30,10 @@ EXAMPLE_SETTINGS = {
             "team": {
                 "mode": "append",
                 "include_project_context": True,
+                "builtin_sections": {
+                    "core_loop": "You are the implementation agent for this workspace. Act on concrete engineering tasks and verify every change.",
+                    "task_management": None,
+                },
                 "sections": [
                     {
                         "id": "team-style",

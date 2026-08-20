@@ -286,6 +286,70 @@ fn configured_system_prompt_preserves_default_and_supports_append() {
 }
 
 #[test]
+fn prompt_profile_can_replace_and_remove_builtin_sections() {
+    let mut config = Config {
+        workdir: PathBuf::from("/tmp/amadeus-prompt-profile"),
+        ..Config::default()
+    };
+    config.prompts.active_profile = "focused".to_string();
+    config.prompts.profiles.insert(
+        "focused".to_string(),
+        PromptProfileConfig {
+            builtin_sections: HashMap::from([
+                (
+                    "core_loop".to_string(),
+                    Some("Custom agent identity.".to_string()),
+                ),
+                ("task_management".to_string(), None),
+            ]),
+            ..PromptProfileConfig::default()
+        },
+    );
+
+    let prompt = config.system_prompt(false);
+
+    assert!(prompt.contains("Custom agent identity."));
+    assert!(!prompt.contains("You are a CLI agent"));
+    assert!(!prompt.contains("Use todo to track multi-step tasks"));
+    assert!(prompt.contains("Never commit secrets"));
+}
+
+#[test]
+fn builtin_section_settings_load_from_json() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "prompts": {
+                "active_profile": "focused",
+                "profiles": {
+                    "focused": {
+                        "builtin_sections": {
+                            "core_loop": "Custom identity.",
+                            "task_management": null
+                        }
+                    }
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_file(&path).unwrap();
+    let profile = config.prompt_profile().unwrap();
+
+    assert_eq!(
+        profile
+            .builtin_sections
+            .get("core_loop")
+            .and_then(Option::as_deref),
+        Some("Custom identity.")
+    );
+    assert_eq!(profile.builtin_sections.get("task_management"), Some(&None));
+}
+
+#[test]
 fn load_with_hierarchy_prefers_local_settings_layer() {
     let _guard = env_lock();
     let temp = tempdir().unwrap();

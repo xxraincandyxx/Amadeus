@@ -52,6 +52,28 @@ Current settings sections:
 - `permissions.additionalDirectories`
 - `tui.language` (`en` or `zh-CN`)
 
+Prompt profiles can customize the built-in system prompt through `builtin_sections`.
+Use a string value to replace a section and `null` to remove it. Stable section IDs
+are `core_loop`, `security`, `context_efficiency`, `engineering_standards`,
+`task_management`, and `tool_usage`. Custom `sections` and `files` are still merged
+according to the profile's `mode`.
+
+```json
+{
+  "prompts": {
+    "active_profile": "focused",
+    "profiles": {
+      "focused": {
+        "builtin_sections": {
+          "core_loop": "You are the implementation agent for this workspace.",
+          "task_management": null
+        }
+      }
+    }
+  }
+}
+```
+
 Important current limitation:
 
 - MCP support exists in core runtime code, but MCP server configuration is not yet loaded from `settings.json`. That integration is still part of the roadmap.
