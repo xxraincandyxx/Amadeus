@@ -8,6 +8,7 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/FileDiffView.jsx
 // - module: apps/web/src/i18n.js
 // - module: apps/web/src/sessionState.js
 // - protocol: Amadeus REST and SSE APIs
@@ -61,6 +62,8 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { FileDiffView } from "./FileDiffView";
+import { buildFileDiff } from "./fileDiff";
 import { normalizeLanguage, SUPPORTED_LANGUAGES, translate } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
@@ -737,6 +740,8 @@ function ToolCard({ tool, live = false }) {
   const t = useTranslation();
   const [expanded, setExpanded] = useState(live);
   const detail = tool.command || tool.inputText || (tool.input ? JSON.stringify(tool.input, null, 2) : "");
+  const fileInput = tool.input || tool.inputText;
+  const fileDiff = buildFileDiff(tool.name, fileInput);
   return (
     <article className={`tool-card ${tool.status || "complete"}`}>
       <button className="tool-summary" onClick={() => setExpanded((value) => !value)}>
@@ -747,7 +752,13 @@ function ToolCard({ tool, live = false }) {
       </button>
       {expanded && (
         <div className="tool-content">
-          {detail && <CodeBlock label={t("input")} text={detail} />}
+          {fileDiff && (
+            <FileDiffView
+              diff={fileDiff}
+              labels={{ changes: t("File changes"), additions: t("additions"), deletions: t("deletions") }}
+            />
+          )}
+          {!fileDiff && detail && <CodeBlock label={t("input")} text={detail} />}
           {tool.output && <CodeBlock label={t("output")} text={tool.output} />}
         </div>
       )}
