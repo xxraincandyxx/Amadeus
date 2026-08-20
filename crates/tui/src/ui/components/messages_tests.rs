@@ -16,6 +16,7 @@
 // @end-amadeus-header
 
 use super::*;
+use crate::ui::components::diff::DiffStatus;
 use crate::{ContextEntry, ContextSection, ContextSectionGroup};
 use ratatui::{backend::TestBackend, Terminal};
 
@@ -347,6 +348,57 @@ fn test_tool_tracking() {
     assert!(messages.pending_tool_group.is_some());
 
     messages.complete_tool("tool_1", "output".to_string(), false, None);
+}
+
+#[test]
+fn completed_edit_file_tracks_display_diff() {
+    let mut messages = MessagesComponent::new();
+    messages.start_tool("tool_1".to_string(), "edit_file".to_string(), None);
+    messages.complete_tool_with_input(
+        "tool_1",
+        "edit_file",
+        &serde_json::json!({
+            "path": "notes.txt",
+            "old_text": "before\n",
+            "new_text": "after\n"
+        }),
+        "Edited notes.txt".to_string(),
+        false,
+        None,
+    );
+
+    let tool = &messages
+        .pending_tool_group
+        .as_ref()
+        .expect("pending tool group")
+        .tools[0];
+    let diff = tool.diff.as_ref().expect("edit diff");
+
+    assert_eq!(diff.lines.len(), 2);
+    assert_eq!(diff.lines[0].status, DiffStatus::Removed);
+    assert_eq!(diff.lines[1].status, DiffStatus::Added);
+}
+
+#[test]
+fn failed_file_tool_has_no_display_diff() {
+    let mut messages = MessagesComponent::new();
+    messages.start_tool("tool_1".to_string(), "write_file".to_string(), None);
+    messages.complete_tool_with_input(
+        "tool_1",
+        "write_file",
+        &serde_json::json!({"path": "notes.txt", "content": "new\n"}),
+        "permission denied".to_string(),
+        true,
+        None,
+    );
+
+    let tool = &messages
+        .pending_tool_group
+        .as_ref()
+        .expect("pending tool group")
+        .tools[0];
+
+    assert!(tool.diff.is_none());
 }
 
 #[test]

@@ -1909,7 +1909,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     None
                 };
                 if parent_id.is_none() {
-                    self.messages.complete_tool(&id, output, is_error, command);
+                    self.messages
+                        .complete_tool_with_input(&id, &name, &input, output, is_error, command);
                     self.flush_completed_tool_group(terminal, render_to_terminal)?;
                 }
             }

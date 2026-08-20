@@ -13,6 +13,7 @@
 // - fn: crate::ui::components::messages::MessagesComponent::startup_banner_pending
 // uses:
 // - module: crate::ui::components::compaction_animation::CompactionAnimator
+// - module: crate::ui::components::diff::DiffView
 // - module: crate::ui::components::markdown::render_markdown
 // - module: crate::ui::components::tool_group
 // - module: crate::ui::get_colors
@@ -40,6 +41,7 @@ use ratatui::{
 use tracing::debug;
 
 use crate::ui::components::compaction_animation::CompactionAnimator;
+use crate::ui::components::diff::DiffView;
 use crate::ui::components::markdown::render_markdown;
 use crate::ui::components::tool_group::{render_tool_group_with_limit, ToolGroup};
 use crate::ui::get_colors;
@@ -872,6 +874,28 @@ impl MessagesComponent {
                 if let Some(tool) = group.tools.iter_mut().find(|t| t.id == tool_id) {
                     tool.command = Some(cmd);
                 }
+            }
+        }
+    }
+
+    pub(crate) fn complete_tool_with_input(
+        &mut self,
+        tool_id: &str,
+        tool_name: &str,
+        input: &serde_json::Value,
+        output: String,
+        is_error: bool,
+        command: Option<String>,
+    ) {
+        let diff = if is_error {
+            None
+        } else {
+            DiffView::from_tool_input(tool_name, input)
+        };
+        self.complete_tool(tool_id, output, is_error, command);
+        if let (Some(group), Some(diff)) = (&mut self.pending_tool_group, diff) {
+            if let Some(tool) = group.tools.iter_mut().find(|tool| tool.id == tool_id) {
+                tool.diff = Some(diff);
             }
         }
     }

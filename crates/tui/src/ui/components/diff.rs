@@ -12,6 +12,7 @@
 // uses:
 // - runtime: ratatui terminal rendering
 // - library: similar line diffing
+// - format: JSON tool input
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects: none
@@ -27,10 +28,11 @@ use ratatui::{
     style::{Color, Style},
     text::Span,
 };
+use serde_json::Value;
 use similar::{ChangeTag, TextDiff};
 
 /// A single line in a diff.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffLine {
     /// The line number in the old file (or None if new file).
     pub old_line_num: Option<usize>,
@@ -54,14 +56,14 @@ pub enum DiffStatus {
 }
 
 /// Renders a diff between old and new content.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiffView {
     /// The diff lines.
     pub lines: Vec<DiffLine>,
 }
 
 impl DiffView {
-    /// Create a simple diff from two strings.
+    /// Create a line diff from two strings.
     pub fn diff(old: &str, new: &str) -> Self {
         let lines = TextDiff::from_lines(old, new)
             .iter_all_changes()
@@ -81,6 +83,20 @@ impl DiffView {
             .collect();
 
         Self { lines }
+    }
+
+    /// Create a display diff from supported file-tool input.
+    pub fn from_tool_input(tool_name: &str, input: &Value) -> Option<Self> {
+        let (old, new) = match tool_name {
+            "write_file" => ("", input.get("content")?.as_str()?),
+            "edit_file" => (
+                input.get("old_text")?.as_str()?,
+                input.get("new_text")?.as_str()?,
+            ),
+            _ => return None,
+        };
+
+        Some(Self::diff(old, new))
     }
 
     /// Render the diff as styled spans.
@@ -148,5 +164,42 @@ mod tests {
         assert_eq!(diff.lines[2].status, DiffStatus::Unchanged);
         assert_eq!(diff.lines[2].old_line_num, Some(3));
         assert_eq!(diff.lines[2].new_line_num, Some(2));
+    }
+
+    #[test]
+    fn write_file_input_is_all_additions() {
+        let input = serde_json::json!({
+            "path": "notes.txt",
+            "content": "first\nsecond\n"
+        });
+
+        let diff = DiffView::from_tool_input("write_file", &input).expect("write diff");
+
+        assert_eq!(diff.lines.len(), 2);
+        assert!(diff
+            .lines
+            .iter()
+            .all(|line| line.status == DiffStatus::Added));
+    }
+
+    #[test]
+    fn edit_file_input_contains_removed_and_added_lines() {
+        let input = serde_json::json!({
+            "path": "notes.txt",
+            "old_text": "before\n",
+            "new_text": "after\n"
+        });
+
+        let diff = DiffView::from_tool_input("edit_file", &input).expect("edit diff");
+
+        assert_eq!(diff.lines.len(), 2);
+        assert_eq!(diff.lines[0].status, DiffStatus::Removed);
+        assert_eq!(diff.lines[1].status, DiffStatus::Added);
+    }
+
+    #[test]
+    fn unrelated_or_incomplete_tool_input_has_no_diff() {
+        assert!(DiffView::from_tool_input("bash", &serde_json::json!({})).is_none());
+        assert!(DiffView::from_tool_input("write_file", &serde_json::json!({})).is_none());
     }
 }

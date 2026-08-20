@@ -11,6 +11,7 @@
 // - type: crate::ui::components::tool_group::ToolGroup
 // - fn: crate::ui::components::tool_group::render_tool_group_with_limit
 // uses:
+// - module: crate::ui::components::diff
 // - runtime: ratatui terminal rendering
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
@@ -28,6 +29,8 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthChar;
 
+use crate::ui::components::diff::{DiffStatus, DiffView};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ToolStatus {
     Pending,
@@ -41,6 +44,8 @@ pub struct ToolCall {
     pub name: String,
     pub command: Option<String>,
     pub output: String,
+    /// File changes produced by a write or edit tool.
+    pub diff: Option<DiffView>,
     pub status: ToolStatus,
     pub is_collapsed: bool,
     /// Progress message for long-running operations.
@@ -56,6 +61,7 @@ impl ToolCall {
             name,
             command: None,
             output: String::new(),
+            diff: None,
             status: ToolStatus::Pending,
             is_collapsed: false,
             progress_message: None,
@@ -65,6 +71,12 @@ impl ToolCall {
 
     pub fn with_command(mut self, command: String) -> Self {
         self.command = Some(command);
+        self
+    }
+
+    /// Attach a file diff for display with this tool call.
+    pub fn with_diff(mut self, diff: DiffView) -> Self {
+        self.diff = Some(diff);
         self
     }
 
@@ -218,6 +230,65 @@ fn wrap_text(text: &str, max_width: usize) -> Vec<String> {
     lines
 }
 
+fn render_diff(diff: &DiffView, body_width: usize, max_lines: usize) -> Vec<Line<'static>> {
+    const MAX_DIFF_LINES: usize = 20;
+
+    let colors = crate::ui::theme_manager::get_colors();
+    let mut lines = Vec::new();
+    let content_width = body_width.saturating_sub(7).max(1);
+
+    for diff_line in diff.lines.iter().take(MAX_DIFF_LINES) {
+        if lines.len() >= max_lines {
+            break;
+        }
+
+        let (marker, line_number, color) = match diff_line.status {
+            DiffStatus::Added => ("+", diff_line.new_line_num, colors.background.diff.added),
+            DiffStatus::Removed => ("-", diff_line.old_line_num, colors.background.diff.removed),
+            DiffStatus::Unchanged => (" ", diff_line.new_line_num, colors.ui.comment),
+        };
+        let line_number = line_number
+            .map(|number| number.to_string())
+            .unwrap_or_default();
+
+        for (index, wrapped) in wrap_text(&diff_line.content, content_width)
+            .into_iter()
+            .enumerate()
+        {
+            if lines.len() >= max_lines {
+                break;
+            }
+            let prefix = if index == 0 {
+                format!("{marker} {line_number:>4} ")
+            } else {
+                "       ".to_string()
+            };
+            lines.push(Line::from(vec![
+                Span::styled("    │ ", Style::default().fg(colors.border.default)),
+                Span::styled(prefix, Style::default().fg(color)),
+                Span::styled(wrapped, Style::default().fg(color)),
+            ]));
+        }
+    }
+
+    if diff.lines.len() > MAX_DIFF_LINES && lines.len() < max_lines {
+        lines.push(Line::from(vec![
+            Span::styled("    │ ", Style::default().fg(colors.border.default)),
+            Span::styled(
+                format!(
+                    "... ({} more diff lines)",
+                    diff.lines.len() - MAX_DIFF_LINES
+                ),
+                Style::default()
+                    .fg(colors.ui.comment)
+                    .add_modifier(Modifier::DIM),
+            ),
+        ]));
+    }
+
+    lines
+}
+
 pub fn render_tool_group_with_limit(
     group: &ToolGroup,
     area: Rect,
@@ -327,6 +398,11 @@ pub fn render_tool_group_with_limit(
                         Span::styled(wrapped, Style::default().fg(colors.ui.symbol)),
                     ]));
                 }
+            }
+
+            if let Some(diff) = &tool.diff {
+                let remaining_lines = max_total_lines.saturating_sub(lines.len());
+                lines.extend(render_diff(diff, body_width, remaining_lines));
             }
 
             if !tool.output.is_empty() {
@@ -472,6 +548,7 @@ mod tests {
         assert!(!tool.is_collapsed);
         assert!(tool.command.is_none());
         assert!(tool.output.is_empty());
+        assert!(tool.diff.is_none());
     }
 
     #[test]
@@ -602,5 +679,31 @@ mod tests {
 
         assert!(lines.len() > 4);
         assert!(lines.iter().all(|line| line.width() <= area.width as usize));
+    }
+
+    #[test]
+    fn render_file_diff_uses_added_and_removed_theme_colors() {
+        let colors = crate::ui::theme_manager::get_colors();
+        let mut group = ToolGroup::new();
+        group.add_tool(
+            ToolCall::new("t1".to_string(), "edit_file".to_string())
+                .with_diff(DiffView::diff("before\n", "after\n"))
+                .complete("Edited notes.txt".to_string(), false),
+        );
+
+        let lines = render_tool_group_with_limit(&group, Rect::new(0, 0, 80, 20), 100);
+        let removed = lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .find(|span| span.content.starts_with("- "))
+            .expect("removed diff line");
+        let added = lines
+            .iter()
+            .flat_map(|line| &line.spans)
+            .find(|span| span.content.starts_with("+ "))
+            .expect("added diff line");
+
+        assert_eq!(removed.style.fg, Some(colors.background.diff.removed));
+        assert_eq!(added.style.fg, Some(colors.background.diff.added));
     }
 }
