@@ -43,6 +43,7 @@ Current settings sections:
 - `compact_prompt` for an inline automatic-compaction system prompt
 - `compact_prompt_file` for a prompt file resolved relative to the settings file; `compact_prompt` takes precedence when both are set
 - `hooks.files`
+- `hooks.enabled`, `hooks.timeout_seconds`, `hooks.max_output_bytes`, and `hooks.sandbox`
 - `telemetry.enabled` and `telemetry.jsonl_path`
 - `permissions.mode`
 - `permissions.allow`

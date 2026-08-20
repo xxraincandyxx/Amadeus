@@ -18,8 +18,12 @@
   "max_subagent_depth": 2,
   "permission_mode": "workspace-write",
   "hooks": {
+    "enabled": true,
+    "timeout_seconds": 10,
+    "max_output_bytes": 65536,
+    "sandbox": "workspace-write",
     "files": [
-      "hooks/local-hooks.json"
+      "hooks/local-hooks.example.json"
     ]
   },
   "telemetry": {

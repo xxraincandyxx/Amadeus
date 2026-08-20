@@ -156,10 +156,14 @@ impl HookRegistry {
     /// }
     /// ```
     pub fn load_from_file(path: &Path) -> Result<Self> {
-        Self::load_from_file_with_source(path, HookSource::Runtime)
+        Self::load_from_file_with_source(path, HookSource::Runtime, None)
     }
 
-    fn load_from_file_with_source(path: &Path, source: HookSource) -> Result<Self> {
+    fn load_from_file_with_source(
+        path: &Path,
+        source: HookSource,
+        config: Option<&Config>,
+    ) -> Result<Self> {
         let content = std::fs::read_to_string(path).map_err(|e| {
             crate::error::AgentError::Config(format!(
                 "Failed to read hooks file {}: {}",
@@ -183,7 +187,13 @@ impl HookRegistry {
                 if let Some(hook_type) = hook_config.get("type").and_then(|v| v.as_str()) {
                     match hook_type {
                         "shell" => {
-                            if let Ok(shell_hook) = shell::ShellHook::from_config(hook_config) {
+                            let shell_hook = match config {
+                                Some(config) => {
+                                    shell::ShellHook::from_config_for_runtime(hook_config, config)
+                                }
+                                None => shell::ShellHook::from_config(hook_config),
+                            };
+                            if let Ok(shell_hook) = shell_hook {
                                 registry.descriptors.push(HookDescriptor {
                                     name: shell_hook.name.clone(),
                                     event: shell_hook.event,
@@ -215,7 +225,11 @@ impl HookRegistry {
 
         for (path, source) in config.hook_paths() {
             if path.exists() {
-                registry.merge(Self::load_from_file_with_source(&path, source)?);
+                registry.merge(Self::load_from_file_with_source(
+                    &path,
+                    source,
+                    Some(config),
+                )?);
             }
         }
 
