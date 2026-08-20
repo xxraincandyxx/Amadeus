@@ -1842,6 +1842,7 @@ dependencies = [
 name = "runtime"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "events",
  "ids",
  "profiles",

@@ -10,6 +10,7 @@
 // - module: crate::scheduler
 // - module: crate::team
 // - module: crate::worker
+// - module: crate::workflow
 // - type: crate::RuntimeError
 // - type: crate::Result
 // uses:
@@ -30,6 +31,7 @@ pub mod orchestra;
 pub mod scheduler;
 pub mod team;
 pub mod worker;
+pub mod workflow;
 
 use thiserror::Error;
 
@@ -60,4 +62,8 @@ pub use team::{
 pub use worker::{
     finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome, Task, TaskResult,
     WorkerConfig, WorkerInfo, WorkerStatus,
+};
+pub use workflow::{
+    Node, NodeContext, NodeError, NodeId, NodeResult, RunStatus, SuspendedRun, Suspension,
+    Transition, Workflow, WorkflowBuilder, WorkflowError, WorkflowResult, WorkflowRunner,
 };
