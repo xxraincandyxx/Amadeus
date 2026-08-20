@@ -40,6 +40,8 @@ Example files in this repo:
 Current settings sections:
 
 - top-level runtime fields such as `provider`, `model`, `session_log_dir`, and compaction settings
+- `compact_prompt` for an inline automatic-compaction system prompt
+- `compact_prompt_file` for a prompt file resolved relative to the settings file; `compact_prompt` takes precedence when both are set
 - `hooks.files`
 - `telemetry.enabled` and `telemetry.jsonl_path`
 - `permissions.mode`

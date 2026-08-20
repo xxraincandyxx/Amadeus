@@ -320,6 +320,8 @@ pub struct Config {
     pub compact_max_summary_chars: usize,
     pub compact_min_messages: usize,
     pub compact_max_tool_result_chars: usize,
+    pub compact_prompt: Option<String>,
+    pub compact_prompt_file: Option<PathBuf>,
     pub max_subagent_depth: usize,
     pub rag_enabled: bool,
     pub embedding_model: Option<String>,
@@ -365,6 +367,8 @@ impl Default for Config {
             compact_max_summary_chars: DEFAULT_COMPACT_MAX_SUMMARY_CHARS,
             compact_min_messages: DEFAULT_COMPACT_MIN_MESSAGES,
             compact_max_tool_result_chars: DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS,
+            compact_prompt: None,
+            compact_prompt_file: None,
             max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
             rag_enabled: DEFAULT_RAG_ENABLED,
             embedding_model: None,
@@ -707,6 +711,8 @@ impl Config {
             } else {
                 self.compact_max_tool_result_chars
             },
+            compact_prompt: other.compact_prompt.or(self.compact_prompt),
+            compact_prompt_file: other.compact_prompt_file.or(self.compact_prompt_file),
             max_subagent_depth: if other.max_subagent_depth != DEFAULT_MAX_SUBAGENT_DEPTH {
                 other.max_subagent_depth
             } else {
@@ -813,6 +819,8 @@ impl Config {
             max_summary_chars: self.compact_max_summary_chars,
             min_messages: self.compact_min_messages,
             max_tool_result_chars: self.compact_max_tool_result_chars,
+            prompt: self.compact_prompt.clone(),
+            prompt_file: self.compact_prompt_file.clone(),
         }
     }
 
@@ -973,6 +981,20 @@ impl Config {
             .and_then(|v| v.as_u64())
         {
             self.compact_max_tool_result_chars = max_tr as usize;
+        }
+
+        if json.get("compact_prompt").is_some() {
+            self.compact_prompt = json
+                .get("compact_prompt")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+        }
+
+        if json.get("compact_prompt_file").is_some() {
+            self.compact_prompt_file = json
+                .get("compact_prompt_file")
+                .and_then(|v| v.as_str())
+                .map(|path| resolve_path(base_dir, path));
         }
 
         if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {

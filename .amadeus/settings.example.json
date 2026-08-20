@@ -14,6 +14,7 @@
   "auto_compact": true,
   "compact_threshold_percent": 75,
   "compact_preserve_recent": 6,
+  "compact_prompt_file": "prompts/compaction.example.md",
   "max_subagent_depth": 2,
   "permission_mode": "workspace-write",
   "hooks": {

@@ -29,6 +29,33 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         .expect("env test lock poisoned")
 }
 
+#[test]
+fn compaction_prompt_settings_support_inline_and_relative_file_values() {
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    let path = settings_dir.join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{"compact_prompt":"inline prompt","compact_prompt_file":"prompts/compact.md"}"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_file(&path).unwrap();
+
+    assert_eq!(config.compact_prompt.as_deref(), Some("inline prompt"));
+    assert_eq!(
+        config.compact_prompt_file,
+        Some(settings_dir.join("prompts/compact.md"))
+    );
+    let compaction = config.to_compaction_config();
+    assert_eq!(compaction.prompt.as_deref(), Some("inline prompt"));
+    assert_eq!(
+        compaction.prompt_file,
+        Some(settings_dir.join("prompts/compact.md"))
+    );
+}
+
 fn restore_env(key: &str, value: Option<String>) {
     match value {
         Some(value) => env::set_var(key, value),
