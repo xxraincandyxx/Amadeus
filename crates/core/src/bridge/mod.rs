@@ -138,6 +138,16 @@ impl<C: LLMClient> BridgeSession<C> {
 type BridgeSessionHandle<C> = Arc<Mutex<BridgeSession<C>>>;
 type BridgeSessionMap<C> = HashMap<String, BridgeSessionHandle<C>>;
 
+struct BridgeSessionSpec<C: LLMClient> {
+    id: Option<String>,
+    parent_session_id: Option<String>,
+    name: Option<String>,
+    profile: AgentProfile,
+    parent_request_id: Option<String>,
+    agent: Option<Agent<C>>,
+    architecture: Option<AgentArchitectureManifest>,
+}
+
 #[derive(Clone)]
 pub struct LocalSessionBridge<C: LLMClient + Clone + 'static> {
     client: C,
@@ -182,8 +192,16 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         name: Option<String>,
         profile: AgentProfile,
     ) -> Result<BridgeSessionInfo> {
-        self.create_session_with_agent(None, None, name, profile, None, None, None)
-            .await
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
+            name,
+            profile,
+            parent_request_id: None,
+            agent: None,
+            architecture: None,
+        })
+        .await
     }
 
     /// Create a root session with a request-scoped tool profile.
@@ -203,8 +221,16 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         if let Some(ref trace) = self.llm_trace {
             builder = builder.with_llm_trace(Some(Arc::clone(trace)));
         }
-        self.create_session_with_agent(None, None, name, profile, None, Some(builder.build()), None)
-            .await
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
+            name,
+            profile,
+            parent_request_id: None,
+            agent: Some(builder.build()),
+            architecture: None,
+        })
+        .await
     }
 
     /// Create a root session backed by a serialized workflow architecture.
@@ -227,42 +253,36 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         if let Some(ref trace) = self.llm_trace {
             builder = builder.with_llm_trace(Some(Arc::clone(trace)));
         }
-        self.create_session_with_agent(
-            None,
-            None,
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
             name,
             profile,
-            None,
-            Some(builder.build()),
-            Some(architecture),
-        )
+            parent_request_id: None,
+            agent: Some(builder.build()),
+            architecture: Some(architecture),
+        })
         .await
     }
 
     async fn create_session_with_agent(
         &self,
-        id: Option<String>,
-        parent_session_id: Option<String>,
-        name: Option<String>,
-        profile: AgentProfile,
-        parent_request_id: Option<String>,
-        agent: Option<Agent<C>>,
-        architecture: Option<AgentArchitectureManifest>,
+        spec: BridgeSessionSpec<C>,
     ) -> Result<BridgeSessionInfo> {
-        let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let name = name.unwrap_or_else(|| format!("session-{}", &id[..8]));
+        let id = spec.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let name = spec.name.unwrap_or_else(|| format!("session-{}", &id[..8]));
         let info = BridgeSessionInfo {
             id: id.clone(),
             name,
-            profile: profile.to_string(),
+            profile: spec.profile.to_string(),
             status: BridgeSessionStatus::Idle,
-            parent_session_id,
-            architecture_id: architecture.as_ref().map(|value| value.id.clone()),
-            architecture_name: architecture.as_ref().map(|value| value.name.clone()),
-            architecture_preset: architecture.as_ref().map(|value| value.preset.clone()),
+            parent_session_id: spec.parent_session_id,
+            architecture_id: spec.architecture.as_ref().map(|value| value.id.clone()),
+            architecture_name: spec.architecture.as_ref().map(|value| value.name.clone()),
+            architecture_preset: spec.architecture.as_ref().map(|value| value.preset.clone()),
         };
 
-        let agent = match agent {
+        let agent = match spec.agent {
             Some(agent) => agent,
             None => {
                 let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
@@ -278,8 +298,12 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             }
         };
 
-        let (session, mut events_rx) =
-            BridgeSession::new(info.clone(), agent, parent_request_id, architecture);
+        let (session, mut events_rx) = BridgeSession::new(
+            info.clone(),
+            agent,
+            spec.parent_request_id,
+            spec.architecture,
+        );
         let session = Arc::new(Mutex::new(session));
         {
             let mut sessions = self.sessions.write().await;
@@ -807,15 +831,15 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             prompt_label
         };
         let session = self
-            .create_session_with_agent(
-                None,
-                Some(parent_session_id.to_string()),
-                Some(name),
-                AgentProfile::Default,
-                Some(request_id.to_string()),
-                Some(child_agent),
-                None,
-            )
+            .create_session_with_agent(BridgeSessionSpec {
+                id: None,
+                parent_session_id: Some(parent_session_id.to_string()),
+                name: Some(name),
+                profile: AgentProfile::Default,
+                parent_request_id: Some(request_id.to_string()),
+                agent: Some(child_agent),
+                architecture: None,
+            })
             .await?;
 
         let _ = parent_events_tx.send(BridgeEvent::ChildSessionSpawned {
