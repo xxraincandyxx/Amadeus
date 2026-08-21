@@ -8,9 +8,14 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/AgentWorkspace.jsx
+// - module: apps/web/src/agentSessions.js
 // - module: apps/web/src/FileDiffView.jsx
+// - module: apps/web/src/GuideWorkspace.jsx
 // - module: apps/web/src/i18n.js
+// - module: apps/web/src/panelResize.js
 // - module: apps/web/src/sessionState.js
+// - module: apps/web/src/ToolsWorkspace.jsx
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
@@ -62,12 +67,17 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { AgentWorkspace } from "./AgentWorkspace";
+import { agentSessionRows, sessionRelations, upsertSession } from "./agentSessions";
 import { FileDiffView } from "./FileDiffView";
 import { buildFileDiff } from "./fileDiff";
+import { GuideWorkspace } from "./GuideWorkspace";
 import { normalizeLanguage, SUPPORTED_LANGUAGES, translate } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
+import { useResizablePanel } from "./panelResize";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
+import { ToolsWorkspace } from "./ToolsWorkspace";
 
 const emptyRuntime = {
   timeline: [],
@@ -155,9 +165,18 @@ function exportConversation(session, timeline, format) {
 }
 
 function App() {
+  const mainSidebarResize = useResizablePanel({
+    storageKey: "amadeus.sidebarWidth",
+    defaultWidth: 292,
+    minimum: 220,
+    maximum: 440,
+  });
   const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(localStorage.getItem("amadeus.activeSession"));
+  const [view, setView] = useState("conversation");
+  const [guideChapter, setGuideChapter] = useState("getting-started");
+  const [subagentMetadata, setSubagentMetadata] = useState({});
   const [runtimeBySession, setRuntimeBySession] = useState({});
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -178,6 +197,7 @@ function App() {
   const t = useCallback((key, variables) => translate(language, key, variables), [language]);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const activeRelations = sessionRelations(sessions, activeId);
   const runtime = runtimeBySession[activeId] || { ...emptyRuntime, status: activeSession?.status || "idle" };
   const busy = runtime.status === "running" || runtime.status === "awaiting_approval";
 
@@ -237,6 +257,14 @@ function App() {
   }, [refreshSessions, apiEpoch, t]);
 
   useEffect(() => {
+    if (!serverOnline) return undefined;
+    const timer = window.setInterval(() => {
+      refreshSessions().catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [refreshSessions, serverOnline]);
+
+  useEffect(() => {
     if (!activeId) return;
     localStorage.setItem("amadeus.activeSession", activeId);
     loadHistory(activeId).catch((caught) => setError(caught.message));
@@ -255,10 +283,22 @@ function App() {
         const payload = parseData(event);
         setRuntime(activeId, (previous) => reduceEvent(previous, eventName, payload));
         if (eventName === "session_state") {
-          setSessions((current) => current.map((session) => session.id === payload.id ? payload : session));
+          setSessions((current) => upsertSession(current, payload));
+        }
+        if (eventName === "subagent_session" && payload.session) {
+          setSessions((current) => upsertSession(current, payload.session));
+          setSubagentMetadata((current) => ({
+            ...current,
+            [payload.session.id]: {
+              prompt: payload.prompt,
+              depth: payload.depth,
+              requestId: payload.request_id,
+            },
+          }));
         }
         if (eventName === "done" || eventName === "error") {
           loadHistory(activeId).catch(() => undefined);
+          refreshSessions().catch(() => undefined);
         }
       });
     });
@@ -279,7 +319,7 @@ function App() {
     };
 
     return () => source.close();
-  }, [activeId, apiEpoch, loadHistory, serverOnline, setRuntime, t]);
+  }, [activeId, apiEpoch, loadHistory, refreshSessions, serverOnline, setRuntime, t]);
 
   useEffect(() => {
     if (window.__TAURI_INTERNALS__) document.documentElement.classList.add("is-tauri");
@@ -313,6 +353,7 @@ function App() {
       const session = await api.createSession(name, "default");
       setSessions((current) => [...current, session]);
       setActiveId(session.id);
+      setView("conversation");
       setNewSessionName("");
       setCreating(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -373,14 +414,16 @@ function App() {
 
     try {
       if (command.name === "help") {
-        const lines = SLASH_COMMANDS.map((item) => `- \`/${item.name}${item.argumentHint ? ` ${item.argumentHint}` : ""}\`: ${item.summary}`);
-        addCommandResult("Slash commands", lines.join("\n"));
+        setGuideChapter("commands");
+        setView("guide");
+        setShowDetails(false);
       }
       if (command.name === "new-agent") {
         const name = parsed.argument || t("Session {number}", { number: sessions.length + 1 });
         const session = await api.createSession(name, "default");
         setSessions((current) => [...current, session]);
         setActiveId(session.id);
+        setView("conversation");
       }
       if (command.name === "context") {
         const usage = runtime.tokenUsage;
@@ -408,9 +451,8 @@ function App() {
         addCommandResult(title, lines.join("\n"));
       }
       if (command.name === "tools") {
-        const data = await api.getToolCatalog();
-        const rows = (data.tools || []).map((tool) => `| \`${tool.name}\` | ${tool.level} | ${tool.permission_mode} |`);
-        addCommandResult("Active tool catalog", ["| Tool | Level | Permission |", "| --- | --- | --- |", ...rows].join("\n"));
+        setView("tools");
+        setShowDetails(false);
       }
       if (command.name === "prompt") {
         const config = await api.getConfig();
@@ -494,27 +536,59 @@ function App() {
     setApiEpoch((value) => value + 1);
   }, []);
 
+  const selectSession = useCallback((sessionId) => {
+    setActiveId(sessionId);
+    setView("conversation");
+  }, []);
+
+  const openAgentWorkspace = useCallback(() => {
+    setView("agents");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openGuide = useCallback((chapter = "getting-started") => {
+    setGuideChapter(chapter);
+    setView("guide");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openTools = useCallback(() => {
+    setView("tools");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
     <TranslationContext.Provider value={t}>
-    <div className="app-shell">
+    <div className="app-shell" ref={mainSidebarResize.containerRef} style={mainSidebarResize.containerStyle}>
       <Sidebar
         sessions={sessions}
         activeId={activeId}
+        view={view}
         open={sidebarOpen}
         online={serverOnline}
-        onSelect={setActiveId}
+        onSelect={selectSession}
+        onAgents={openAgentWorkspace}
+        onGuide={() => openGuide(guideChapter)}
+        onTools={openTools}
         onCreate={openCreateDialog}
         onSettings={() => setShowSettings(true)}
         onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
+        resizeHandle={mainSidebarResize.handleProps}
       />
 
       <main className="workspace">
         <Header
           session={activeSession}
           status={runtime.status}
+          view={view}
+          sessionCount={sessions.length}
+          parentSession={activeRelations.parent}
           onMenu={() => setSidebarOpen(true)}
           onDetails={() => setShowDetails((value) => !value)}
           onClose={closeSession}
@@ -529,44 +603,73 @@ function App() {
           />
         )}
 
-        <section className="conversation" aria-live="polite">
-          {!activeSession ? (
-            <EmptyState onCreate={openCreateDialog} online={serverOnline} />
-          ) : (
-            <div className="conversation-column">
-              {!runtime.timeline.length && !runtime.streamingText && (
-                <Welcome session={activeSession} />
+        {view === "agents" ? (
+          <AgentWorkspace
+            sessions={sessions}
+            activeId={activeId}
+            metadata={subagentMetadata}
+            onSelect={selectSession}
+            onCreate={openCreateDialog}
+            statusLabel={(status) => statusLabel(status, t)}
+            t={t}
+          />
+        ) : view === "guide" ? (
+          <GuideWorkspace
+            language={language}
+            initialChapter={guideChapter}
+            onChapterChange={setGuideChapter}
+            t={t}
+          />
+        ) : view === "tools" ? (
+          <ToolsWorkspace online={serverOnline} t={t} />
+        ) : (
+          <>
+            <section className="conversation" aria-live="polite">
+              {!activeSession ? (
+                <EmptyState onCreate={openCreateDialog} online={serverOnline} />
+              ) : (
+                <div className="conversation-column">
+                  {!runtime.timeline.length && !runtime.streamingText && (
+                    <Welcome session={activeSession} />
+                  )}
+                  {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
+                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
+                  {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
+                  {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
+                  {runtime.approvals.map((approval) => (
+                    <ApprovalCard key={approval.id} approval={approval} onDecision={decideApproval} />
+                  ))}
+                  {busy && !runtime.streamingText && !runtime.thinking && !visibleTools.length && !runtime.approvals.length && (
+                    <AgentWorking />
+                  )}
+                  <div ref={endRef} />
+                </div>
               )}
-              {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-              {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
-              {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
-              {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
-              {runtime.approvals.map((approval) => (
-                <ApprovalCard key={approval.id} approval={approval} onDecision={decideApproval} />
-              ))}
-              {busy && !runtime.streamingText && !runtime.thinking && !visibleTools.length && !runtime.approvals.length && (
-                <AgentWorking />
-              )}
-              <div ref={endRef} />
-            </div>
-          )}
-        </section>
+            </section>
 
-        <Composer
-          draft={draft}
-          disabled={!activeSession || !serverOnline}
-          busy={busy}
-          tokenUsage={runtime.tokenUsage}
-          onChange={setDraft}
-          onSubmit={submit}
-          onCommand={submit}
-          onCancel={cancel}
-          textareaRef={textareaRef}
-        />
+            <Composer
+              draft={draft}
+              disabled={!activeSession || !serverOnline}
+              busy={busy}
+              tokenUsage={runtime.tokenUsage}
+              onChange={setDraft}
+              onSubmit={submit}
+              onCommand={submit}
+              onCancel={cancel}
+              textareaRef={textareaRef}
+            />
+          </>
+        )}
       </main>
 
       {showDetails && activeSession && (
-        <DetailsPanel session={activeSession} runtime={runtime} onClose={() => setShowDetails(false)} />
+        <DetailsPanel
+          session={activeSession}
+          runtime={runtime}
+          parentSession={activeRelations.parent}
+          children={activeRelations.children}
+          onClose={() => setShowDetails(false)}
+        />
       )}
 
       {creating && (
@@ -601,8 +704,9 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSettings, onContribute, onClose }) {
+function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
   const t = useTranslation();
+  const rows = agentSessionRows(sessions);
   return (
     <>
       <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label={t("Close sidebar")} onClick={onClose} />
@@ -611,19 +715,22 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
         <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
           <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
-          <button><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
-          <button><TerminalWindow /><span>{t("Tools")}</span></button>
+          <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
+          <button className={view === "guide" ? "active" : ""} onClick={onGuide}><BookOpenText /><span>{t("Guide")}</span></button>
+          <button className={view === "tools" ? "active" : ""} onClick={onTools}><TerminalWindow /><span>{t("Tools")}</span></button>
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
         </nav>
         <div className="section-label">{t("Workspace")}</div>
         <div className="project-label"><FolderSimple /><span>amadeus</span></div>
         <div className="session-list">
-          {sessions.map((session) => (
+          {rows.map(({ session, depth }) => (
             <button
               key={session.id}
               className={`session-button ${session.id === activeId ? "active" : ""}`}
+              style={{ "--session-depth": depth }}
               onClick={() => onSelect(session.id)}
             >
+              {depth > 0 && <span className="session-branch" aria-hidden="true" />}
               <span>{session.name}</span>
               <i className={`status-dot ${session.status}`} title={statusLabel(session.status, t)} />
             </button>
@@ -633,24 +740,32 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
           <div className="connection"><i className={online ? "online" : "offline"} /><span>{online ? t("Local API connected") : t("API unavailable")}</span></div>
           <button onClick={onSettings} aria-label={t("Connection settings")}><GearSix /></button>
         </div>
+        <div className="resize-handle app-sidebar-resize" aria-label={t("Resize main sidebar")} title={t("Drag to resize sidebar")} {...resizeHandle} />
       </aside>
     </>
   );
 }
 
-function Header({ session, status, onMenu, onDetails, onClose }) {
+function Header({ session, status, view, sessionCount, parentSession, onMenu, onDetails, onClose }) {
   const t = useTranslation();
+  const agentsView = view === "agents";
+  const guideView = view === "guide";
+  const toolsView = view === "tools";
+  const standaloneView = agentsView || guideView || toolsView;
   return (
     <header className="topbar">
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
-        <FolderSimple />
-        <div><strong>{session?.name || "Amadeus"}</strong><span>{session ? session.profile : t("agent workspace")}</span></div>
+        {agentsView ? <Robot /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
+        <div>
+          <strong>{agentsView ? t("Agent workspace") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
+          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
+        </div>
       </div>
       <div className="header-actions">
-        {session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
-        <button className="toolbar-button" onClick={onDetails}><List /><span>{t("Details")}</span></button>
-        {session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
+        {!standaloneView && session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
+        {!standaloneView && <button className="toolbar-button" onClick={onDetails} aria-label={t("Details")}><List /><span>{t("Details")}</span></button>}
+        {!standaloneView && session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
       </div>
     </header>
   );
@@ -928,12 +1043,12 @@ function Welcome({ session }) {
   );
 }
 
-function DetailsPanel({ session, runtime, onClose }) {
+function DetailsPanel({ session, runtime, parentSession, children, onClose }) {
   const t = useTranslation();
   return (
     <aside className="details-panel">
-      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose}><X /></button></div>
-      <dl><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
+      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose} aria-label={t("Close")}><X /></button></div>
+      <dl><div><dt>{t("Role")}</dt><dd>{parentSession ? t("Sub-agent") : t("Coordinator")}</dd></div>{parentSession && <div><dt>{t("Parent agent")}</dt><dd>{parentSession.name}</dd></div>}<div><dt>{t("Child agents")}</dt><dd>{children.length}</dd></div><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
     </aside>
   );
 }

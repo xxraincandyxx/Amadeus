@@ -18,7 +18,7 @@
 // @end-amadeus-header
 
 export const SLASH_COMMANDS = [
-  { name: "help", summary: "Show commands available in this app", icon: "help" },
+  { name: "help", summary: "Open the product guide and command reference", icon: "help" },
   { name: "new-agent", summary: "Create and switch to a new agent session", argumentHint: "[name]", icon: "agent" },
   { name: "context", summary: "Show current token and session usage", icon: "context" },
   { name: "compact", summary: "Summarize older context and recover space", icon: "compact" },
