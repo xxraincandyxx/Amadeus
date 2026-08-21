@@ -429,6 +429,36 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .architecture-node.kind-output .workflow-node-icon { color: #8fbc9c; }
 .architecture-runtime-summary { display: grid; gap: 7px; border-bottom: 1px solid #303030; padding: 14px; }
 .architecture-runtime-summary p { margin: 0; color: #858585; font-size: 9px; line-height: 1.5; }
+.workflow-toolbar-actions .toolbar-button.active { border-color: #6b4d3c; background: rgba(239,125,50,.09); color: #d7a180; }
+.workflow-toolbar-actions .toolbar-button small { min-width: 15px; color: #777; font: 8px ui-monospace,SFMono-Regular,Menlo,monospace; text-align: right; }
+.tool-access-count { color: #888; font: 9px ui-monospace,SFMono-Regular,Menlo,monospace; }
+.tool-profile-controls { display: grid; gap: 12px; border-bottom: 1px solid #303030; padding: 12px 14px; }
+.tool-profile-controls > label { display: grid; gap: 6px; color: #858585; font-size: 9px; font-weight: 650; }
+.tool-profile-controls > label input, .tool-profile-controls > label select { width: 100%; height: 32px; border: 1px solid #393939; border-radius: 7px; outline: 0; background: #222; padding: 0 8px; color: #dedede; font-size: 10px; }
+.tool-selection-mode { height: 31px; display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #393939; border-radius: 7px; padding: 2px; background: #171717; }
+.tool-selection-mode button { border: 0; border-radius: 5px; background: transparent; color: #777; cursor: pointer; font-size: 9px; }
+.tool-selection-mode button.active { background: #303030; color: #ddd; }
+.tool-selection-mode button:disabled { opacity: .4; cursor: not-allowed; }
+.tool-profile-toggles { display: grid; gap: 7px; }
+.tool-profile-toggles label { display: flex; align-items: center; gap: 8px; color: #999; cursor: pointer; font-size: 9px; }
+.tool-profile-toggles input, .tool-access-row > input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
+.tool-access-toolbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid #303030; padding: 10px 12px; }
+.tool-access-toolbar svg { position: absolute; left: 20px; width: 13px; height: 13px; color: #6f6f6f; pointer-events: none; }
+.tool-access-toolbar input { width: 100%; height: 31px; border: 1px solid #373737; border-radius: 7px; outline: 0; background: #202020; padding: 0 9px 0 28px; color: #d5d5d5; font-size: 9px; }
+.tool-access-toolbar input:focus { border-color: #5a5a5a; }
+.tool-access-list { min-height: 120px; display: grid; align-content: start; overflow: auto; }
+.tool-access-row { min-width: 0; display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: start; gap: 8px; border-bottom: 1px solid #292929; padding: 9px 13px; cursor: pointer; }
+.tool-access-row:hover { background: #202020; }
+.tool-access-row > input { margin-top: 2px; }
+.tool-access-row > span { min-width: 0; display: grid; gap: 4px; }
+.tool-access-row strong { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tool-access-row code { overflow: hidden; color: #ccc; font-size: 9px; text-overflow: ellipsis; }
+.tool-access-row i { color: #777; font-size: 7px; font-style: normal; font-weight: 500; white-space: nowrap; }
+.tool-access-row small { overflow: hidden; color: #707070; font-size: 8px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+.tool-access-state { padding: 24px 14px; color: #777; font-size: 9px; line-height: 1.5; text-align: center; }
+.tool-access-state.error { color: #c98d8d; }
+.tool-profile-runtime-note { display: grid; grid-template-columns: 15px minmax(0,1fr); align-items: start; gap: 8px; margin-top: auto; border-top: 1px solid #303030; padding: 11px 13px; color: #7c7c7c; font-size: 8px; line-height: 1.45; }
+.tool-profile-runtime-note svg { width: 14px; height: 14px; color: #bb8d69; }
 .workflow-runtime-note button { width: fit-content; min-height: 27px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #444; border-radius: 6px; padding: 0 8px; background: #292929; color: #cfcfcf; cursor: pointer; font-size: 9px; }
 .workflow-runtime-note button svg { width: 11px; height: 11px; }
 .workflow-runtime-note button.text-only { border: 0; padding: 0; background: transparent; color: #888; }

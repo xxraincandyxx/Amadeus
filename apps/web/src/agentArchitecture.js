@@ -9,6 +9,7 @@
 // - fn: createAgentArchitecture
 // - fn: createArchitectureNode
 // - fn: createArchitectureLibrary
+// - fn: createToolProfile
 // - fn: loadArchitectureLibrary
 // - fn: parseArchitectureFile
 // - fn: validateAgentArchitecture
@@ -25,6 +26,8 @@
 
 export const AGENT_ARCHITECTURE_SCHEMA_VERSION = 2;
 export const AGENT_ARCHITECTURE_STORAGE_KEY = "amadeus.agentArchitectureLibrary.v2";
+
+export const AGENT_TOOL_PERMISSION_MODES = ["read-only", "workspace-write", "danger-full-access"];
 
 export const AGENT_ARCHITECTURE_PRESETS = [
   { id: "react", label: "ReAct", description: "Reason, act with tools, observe results, and repeat until complete.", runtimeStatus: "production" },
@@ -68,6 +71,24 @@ function serializableData(data = {}) {
   return Object.fromEntries(Object.entries(data).filter(([, value]) => typeof value === "string" || typeof value === "boolean" || Number.isFinite(value)));
 }
 
+function uniqueStrings(value) {
+  return Array.isArray(value) ? [...new Set(value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim()))] : [];
+}
+
+export function createToolProfile(value = {}) {
+  const permissionMode = AGENT_TOOL_PERMISSION_MODES.includes(value.modelPermissionMode) ? value.modelPermissionMode : "danger-full-access";
+  return {
+    name: text(value.name, "default"),
+    selectionMode: value.selectionMode === "selected" ? "selected" : "all",
+    enabledTools: uniqueStrings(value.enabledTools),
+    disabledTools: uniqueStrings(value.disabledTools),
+    allowAliases: typeof value.allowAliases === "boolean" ? value.allowAliases : true,
+    includeMcp: typeof value.includeMcp === "boolean" ? value.includeMcp : true,
+    includeControlPlane: typeof value.includeControlPlane === "boolean" ? value.includeControlPlane : true,
+    modelPermissionMode: permissionMode,
+  };
+}
+
 export function nodeDefinition(type) { return AGENT_NODE_TYPES.find((candidate) => candidate.type === type); }
 export function presetDefinition(preset) { return AGENT_ARCHITECTURE_PRESETS.find(({ id }) => id === preset) || AGENT_ARCHITECTURE_PRESETS[0]; }
 
@@ -102,7 +123,7 @@ export function createAgentArchitecture(name, options = {}) {
   const preset = presetDefinition(options.preset || "react");
   const id = options.id || uniqueId("architecture");
   const graph = options.blank ? { entryNodeId: "", nodes: [], edges: [] } : graphForPreset(id, preset.id);
-  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id, name: name || preset.label, description: preset.description, preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: 1024, ...graph };
+  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id, name: name || preset.label, description: preset.description, preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: 1024, toolProfile: createToolProfile(options.toolProfile), ...graph };
 }
 
 export function createArchitectureLibrary() {
@@ -138,7 +159,7 @@ export function normalizeAgentArchitecture(value) {
   if (!value || typeof value !== "object") throw new Error("Architecture file must contain a JSON object.");
   const preset = presetDefinition(value.preset);
   const nodes = Array.isArray(value.nodes) ? value.nodes.map(normalizeNode).filter(Boolean) : [];
-  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id: text(value.id, uniqueId("architecture")), name: text(value.name, "Imported agent"), description: text(value.description, preset.description), preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: Number.isInteger(value.maxTransitions) && value.maxTransitions > 0 ? value.maxTransitions : 1024, entryNodeId: text(value.entryNodeId, nodes[0]?.id || ""), nodes, edges: Array.isArray(value.edges) ? value.edges.map(normalizeEdge).filter(Boolean) : [] };
+  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id: text(value.id, uniqueId("architecture")), name: text(value.name, "Imported agent"), description: text(value.description, preset.description), preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: Number.isInteger(value.maxTransitions) && value.maxTransitions > 0 ? value.maxTransitions : 1024, toolProfile: createToolProfile(value.toolProfile), entryNodeId: text(value.entryNodeId, nodes[0]?.id || ""), nodes, edges: Array.isArray(value.edges) ? value.edges.map(normalizeEdge).filter(Boolean) : [] };
 }
 
 export function parseArchitectureFile(contents) {

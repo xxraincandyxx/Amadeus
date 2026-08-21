@@ -16,7 +16,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, parseArchitectureFile, validateAgentArchitecture } from "./agentArchitecture.js";
+import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, createToolProfile, parseArchitectureFile, validateAgentArchitecture } from "./agentArchitecture.js";
 
 test("every architecture preset is a valid control-flow graph", () => {
   const library = createArchitectureLibrary();
@@ -64,4 +64,40 @@ test("export strips editor-only node properties", () => {
   assert.equal(exported.nodes[0].selected, undefined);
   assert.equal(exported.nodes[0].width, undefined);
   assert.equal(exported.schemaVersion, 2);
+});
+
+test("tool profiles normalize selections and runtime policy", () => {
+  const profile = createToolProfile({
+    name: "restricted",
+    selectionMode: "selected",
+    enabledTools: ["read_file", "read_file", ""],
+    disabledTools: ["bash"],
+    allowAliases: false,
+    includeMcp: false,
+    includeControlPlane: false,
+    modelPermissionMode: "read-only",
+  });
+  assert.deepEqual(profile.enabledTools, ["read_file"]);
+  assert.equal(profile.selectionMode, "selected");
+  assert.deepEqual(profile.disabledTools, ["bash"]);
+  assert.equal(profile.allowAliases, false);
+  assert.equal(profile.includeMcp, false);
+  assert.equal(profile.modelPermissionMode, "read-only");
+});
+
+test("architecture export retains editable tool configuration", () => {
+  const architecture = createAgentArchitecture("Restricted", { preset: "react" });
+  architecture.toolProfile.enabledTools = ["read_file", "grep"];
+  architecture.toolProfile.selectionMode = "selected";
+  architecture.toolProfile.includeMcp = false;
+  const exported = architectureForExport(architecture);
+  assert.deepEqual(exported.toolProfile.enabledTools, ["read_file", "grep"]);
+  assert.equal(exported.toolProfile.selectionMode, "selected");
+  assert.equal(exported.toolProfile.includeMcp, false);
+});
+
+test("an explicit tool allowlist can intentionally be empty", () => {
+  const profile = createToolProfile({ selectionMode: "selected", enabledTools: [] });
+  assert.equal(profile.selectionMode, "selected");
+  assert.deepEqual(profile.enabledTools, []);
 });

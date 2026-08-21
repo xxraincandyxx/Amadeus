@@ -7,6 +7,7 @@
 // - fn: AgentDesignerWorkspace
 // uses:
 // - module: apps/web/src/agentArchitecture.js
+// - module: apps/web/src/api.js
 // - library: @xyflow/react
 // - library: Phosphor Icons
 // invariants:
@@ -14,12 +15,13 @@
 // - Only production-backed presets offer agent session creation.
 // side_effects:
 // - Imports and downloads agent architecture JSON files.
+// - Fetches the live tool catalog from the Amadeus API.
 // tests:
 // - cmd: npm test
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addEdge,
   applyEdgeChanges,
@@ -70,6 +72,7 @@ import {
   presetDefinition,
   validateAgentArchitecture,
 } from "./agentArchitecture";
+import { api } from "./api";
 
 const nodeIcons = {
   input: SignIn,
@@ -125,9 +128,13 @@ function diagnosticText(item, t) {
   return messages[item.code] || item.code;
 }
 
-function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenAgentWorkspace }) {
+function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture, onOpenAgentWorkspace }) {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+  const [inspectorMode, setInspectorMode] = useState("overview");
+  const [toolCatalog, setToolCatalog] = useState([]);
+  const [toolQuery, setToolQuery] = useState("");
+  const [toolCatalogState, setToolCatalogState] = useState("loading");
   const [importError, setImportError] = useState("");
   const fileInputRef = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
@@ -138,6 +145,32 @@ function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenA
   const selectedEdge = architecture.edges.find(({ id }) => id === selectedEdgeId) || null;
   const selectedDefinition = selectedNode ? nodeDefinition(selectedNode.data.kind) : null;
   const preset = presetDefinition(architecture.preset);
+  const toolProfile = architecture.toolProfile;
+  const usesToolAllowlist = toolProfile.selectionMode === "selected";
+  const filteredTools = useMemo(() => {
+    const query = toolQuery.trim().toLocaleLowerCase();
+    if (!query) return toolCatalog;
+    return toolCatalog.filter((tool) => `${tool.name} ${tool.description} ${tool.level} ${tool.permission_mode}`.toLocaleLowerCase().includes(query));
+  }, [toolCatalog, toolQuery]);
+  const enabledToolCount = toolCatalog.filter((tool) => usesToolAllowlist ? toolProfile.enabledTools.includes(tool.name) : !toolProfile.disabledTools.includes(tool.name)).length;
+
+  useEffect(() => {
+    let active = true;
+    if (!online) {
+      setToolCatalog([]);
+      setToolCatalogState("offline");
+      return () => { active = false; };
+    }
+    setToolCatalogState("loading");
+    api.getToolCatalog().then((catalog) => {
+      if (!active) return;
+      setToolCatalog(catalog.tools || []);
+      setToolCatalogState("ready");
+    }).catch(() => {
+      if (active) setToolCatalogState("error");
+    });
+    return () => { active = false; };
+  }, [online]);
 
   const decoratedNodes = useMemo(() => architecture.nodes.map((node) => {
     const definition = nodeDefinition(node.data.kind);
@@ -153,8 +186,31 @@ function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenA
     onLibraryChange({ ...library, activeArchitectureId: id });
     setSelectedNodeId(null);
     setSelectedEdgeId(null);
+    setInspectorMode("overview");
     window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220, maxZoom: 1 }));
   }, [fitView, library, onLibraryChange]);
+
+  const updateToolProfile = useCallback((changes) => {
+    updateArchitecture({ ...architecture, toolProfile: { ...architecture.toolProfile, ...changes } });
+  }, [architecture, updateArchitecture]);
+
+  const setToolSelectionMode = useCallback((mode) => {
+    if (mode === "all") {
+      updateToolProfile({ selectionMode: "all", enabledTools: [], disabledTools: [] });
+      return;
+    }
+    updateToolProfile({ selectionMode: "selected", enabledTools: toolCatalog.filter((tool) => !toolProfile.disabledTools.includes(tool.name)).map((tool) => tool.name), disabledTools: [] });
+  }, [toolCatalog, toolProfile.disabledTools, updateToolProfile]);
+
+  const toggleTool = useCallback((name) => {
+    if (usesToolAllowlist) {
+      const enabled = toolProfile.enabledTools.includes(name);
+      updateToolProfile({ enabledTools: enabled ? toolProfile.enabledTools.filter((tool) => tool !== name) : [...toolProfile.enabledTools, name] });
+      return;
+    }
+    const disabled = toolProfile.disabledTools.includes(name);
+    updateToolProfile({ disabledTools: disabled ? toolProfile.disabledTools.filter((tool) => tool !== name) : [...toolProfile.disabledTools, name] });
+  }, [toolProfile.disabledTools, toolProfile.enabledTools, updateToolProfile, usesToolAllowlist]);
 
   const onNodesChange = useCallback((changes) => updateArchitecture({ ...architecture, nodes: applyNodeChanges(changes, architecture.nodes) }), [architecture, updateArchitecture]);
   const onEdgesChange = useCallback((changes) => updateArchitecture({ ...architecture, edges: applyEdgeChanges(changes, architecture.edges) }), [architecture, updateArchitecture]);
@@ -245,6 +301,7 @@ function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenA
           <button type="button" className="icon-button" title={t("Duplicate from this pattern")} aria-label={t("Duplicate from this pattern")} onClick={() => createFromPreset()}><Plus /></button>
           <button type="button" className="icon-button danger-hover" title={t("Delete agent design")} aria-label={t("Delete agent design")} disabled={library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length} onClick={deleteArchitecture}><Trash /></button>
           <button type="button" className="toolbar-button" onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
+          <button type="button" className={`toolbar-button ${inspectorMode === "tools" ? "active" : ""}`} onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("tools"); }}><Wrench /><span>{t("Tools")}</span><small>{enabledToolCount || 0}</small></button>
           <button type="button" className="toolbar-button" onClick={exportArchitecture}><DownloadSimple /><span>{t("Export")}</span></button>
           <button type="button" className="workflow-use-button" disabled={runtimeStatus !== "production"} title={runtimeStatus === "production" ? t("Create a session with the production ReAct runtime") : t("This architecture preset is not executable yet")} onClick={() => onUseArchitecture(architecture.id)}><Robot />{t("Create agent")}</button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={importArchitecture} />
@@ -272,7 +329,7 @@ function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenA
         </aside>
 
         <div className="workflow-canvas" onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
-          <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "smoothstep" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
+          <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); setInspectorMode("selection"); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); setInspectorMode("selection"); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("overview"); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "smoothstep" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#3a3a3a" />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? "#ef7d32" : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />
@@ -281,7 +338,27 @@ function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenA
         </div>
 
         <aside className="workflow-inspector">
-          {selectedNode ? <>
+          {inspectorMode === "tools" ? <>
+            <div className="workflow-panel-heading"><div><strong>{t("Tool access")}</strong><span>{t("Configure model-visible capabilities")}</span></div><span className="tool-access-count">{enabledToolCount}/{toolCatalog.length}</span></div>
+            <div className="tool-profile-controls">
+              <div className="tool-selection-mode" role="group" aria-label={t("Tool selection mode")}><button className={!usesToolAllowlist ? "active" : ""} onClick={() => setToolSelectionMode("all")}>{t("All tools")}</button><button className={usesToolAllowlist ? "active" : ""} disabled={!toolCatalog.length} onClick={() => setToolSelectionMode("selected")}>{t("Selected tools")}</button></div>
+              <label>{t("Tool profile name")}<input value={toolProfile.name} onChange={(event) => updateToolProfile({ name: event.target.value })} /></label>
+              <label>{t("Maximum model permission")}<select value={toolProfile.modelPermissionMode} onChange={(event) => updateToolProfile({ modelPermissionMode: event.target.value })}><option value="read-only">{t("Read only")}</option><option value="workspace-write">{t("Workspace write")}</option><option value="danger-full-access">{t("Full access")}</option></select></label>
+              <div className="tool-profile-toggles">
+                <label><input type="checkbox" checked={toolProfile.includeMcp} onChange={(event) => updateToolProfile({ includeMcp: event.target.checked })} /><span>{t("Include MCP tools")}</span></label>
+                <label><input type="checkbox" checked={toolProfile.includeControlPlane} onChange={(event) => updateToolProfile({ includeControlPlane: event.target.checked })} /><span>{t("Include agent controls")}</span></label>
+                <label><input type="checkbox" checked={toolProfile.allowAliases} onChange={(event) => updateToolProfile({ allowAliases: event.target.checked })} /><span>{t("Allow tool aliases")}</span></label>
+              </div>
+            </div>
+            <div className="tool-access-toolbar"><MagnifyingGlass /><input type="search" aria-label={t("Search available tools")} placeholder={t("Search available tools")} value={toolQuery} onChange={(event) => setToolQuery(event.target.value)} /></div>
+            <div className="tool-access-list">
+              {toolCatalogState === "loading" ? <div className="tool-access-state">{t("Loading tool catalog")}</div> : toolCatalogState === "offline" ? <div className="tool-access-state">{t("Connect to the Amadeus API to configure tools.")}</div> : toolCatalogState === "error" ? <div className="tool-access-state error">{t("Tool catalog unavailable")}</div> : filteredTools.length ? filteredTools.map((tool) => {
+                const enabled = usesToolAllowlist ? toolProfile.enabledTools.includes(tool.name) : !toolProfile.disabledTools.includes(tool.name);
+                return <label className="tool-access-row" key={tool.name}><input type="checkbox" checked={enabled} onChange={() => toggleTool(tool.name)} /><span><strong><code>{tool.name}</code><i>{t(tool.permission_mode === "read-only" ? "Read only" : tool.permission_mode === "workspace-write" ? "Workspace write" : "Full access")}</i></strong><small>{tool.description || t("No description provided.")}</small></span></label>;
+              }) : <div className="tool-access-state">{t("No tools found")}</div>}
+            </div>
+            <div className="tool-profile-runtime-note"><CheckCircle /><span>{t("Tool choices are saved with this design and applied to new ReAct agents created from it.")}</span></div>
+          </> : selectedNode ? <>
             <div className="workflow-panel-heading"><div><strong>{t("Node inspector")}</strong><span>{t(selectedDefinition?.description || "Architecture node")}</span></div></div>
             <div className="workflow-inspector-form">
               <label>{t("Label")}<input value={selectedNode.data.label} onChange={(event) => updateNodeData("label", event.target.value)} /></label>
