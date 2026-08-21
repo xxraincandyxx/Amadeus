@@ -15,6 +15,7 @@
 // - route: /v1/sessions/:id/checkpoint
 // - route: /v1/sessions/:id/compact
 // - route: /v1/sessions/:id/cancel
+// - type: crate::api::handlers::external_sessions::CreateToolProfileRequest
 // uses:
 // - module: crate::bridge
 // - module: crate::api::http
@@ -48,6 +49,8 @@ use crate::api::http::AppState;
 use crate::api::types::ErrorResponse;
 use crate::bridge::BridgeSessionInfo;
 use crate::client::LLMClient;
+use crate::permissions::PermissionMode;
+use crate::tools::{ToolProfile, ToolRegistry};
 
 type ApiResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;
 type BoxedSseStream = Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>;
@@ -58,6 +61,38 @@ pub struct CreateSessionRequest {
     pub name: Option<String>,
     #[serde(default = "default_profile")]
     pub profile: String,
+    /// Optional request-scoped model-visible tool profile.
+    #[serde(default)]
+    pub tool_profile: Option<CreateToolProfileRequest>,
+}
+
+/// Request-scoped tool selection and permission policy for a new session.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateToolProfileRequest {
+    /// User-visible profile name retained with the session request.
+    pub name: String,
+    /// Selection strategy: `all` with exclusions or an explicit `selected` allowlist.
+    #[serde(default)]
+    pub selection_mode: String,
+    /// Canonical tools included by an explicit allowlist.
+    #[serde(default)]
+    pub enabled_tools: Vec<String>,
+    /// Canonical tools excluded from the runtime catalog.
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
+    /// Whether registered aliases are model-visible.
+    #[serde(default = "default_true")]
+    pub allow_aliases: bool,
+    /// Whether MCP-provided tools are included.
+    #[serde(default = "default_true")]
+    pub include_mcp: bool,
+    /// Whether orchestration and planning controls are included.
+    #[serde(default = "default_true")]
+    pub include_control_plane: bool,
+    /// Maximum permission mode visible to the model.
+    #[serde(default)]
+    pub model_permission_mode: PermissionMode,
 }
 
 #[derive(Debug, Serialize)]
@@ -109,6 +144,32 @@ fn default_profile() -> String {
     "default".to_string()
 }
 
+fn default_true() -> bool {
+    true
+}
+
+fn resolve_tool_profile(
+    config: &crate::agent::Config,
+    request: CreateToolProfileRequest,
+) -> ToolProfile {
+    let mut disabled_tools = request.disabled_tools;
+    if request.selection_mode == "selected" && request.enabled_tools.is_empty() {
+        disabled_tools = ToolRegistry::with_defaults(config)
+            .catalog()
+            .names()
+            .to_vec();
+    }
+    let mut profile = ToolProfile::default_root();
+    profile.name = request.name;
+    profile.enabled_tools = request.enabled_tools;
+    profile.disabled_tools = disabled_tools;
+    profile.allow_aliases = request.allow_aliases;
+    profile.include_mcp = request.include_mcp;
+    profile.include_control_plane = request.include_control_plane;
+    profile.model_permission_mode = request.model_permission_mode;
+    profile
+}
+
 fn profile_from_string(profile: &str) -> AgentProfile {
     match profile {
         "default" => AgentProfile::Default,
@@ -150,11 +211,23 @@ pub async fn create_external_session<C: LLMClient + Clone + 'static>(
     State(state): State<Arc<AppState<C>>>,
     Json(request): Json<CreateSessionRequest>,
 ) -> ApiResult<(StatusCode, Json<BridgeSessionInfo>)> {
-    let session = state
-        .session_bridge
-        .create_session(request.name, profile_from_string(&request.profile))
-        .await
-        .map_err(api_error)?;
+    let profile = profile_from_string(&request.profile);
+    let session = if let Some(tool_profile) = request.tool_profile {
+        state
+            .session_bridge
+            .create_session_with_tool_profile(
+                request.name,
+                profile,
+                resolve_tool_profile(&state.config, tool_profile),
+            )
+            .await
+    } else {
+        state
+            .session_bridge
+            .create_session(request.name, profile)
+            .await
+    }
+    .map_err(api_error)?;
     Ok((StatusCode::CREATED, Json(session)))
 }
 
@@ -354,4 +427,43 @@ pub async fn cancel_external_session<C: LLMClient + Clone + 'static>(
         .await
         .map_err(api_error)?;
     Ok(Json(OperationResponse { success: true }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request(selection_mode: &str, enabled_tools: Vec<String>) -> CreateToolProfileRequest {
+        CreateToolProfileRequest {
+            name: "designer".to_string(),
+            selection_mode: selection_mode.to_string(),
+            enabled_tools,
+            disabled_tools: Vec::new(),
+            allow_aliases: false,
+            include_mcp: false,
+            include_control_plane: false,
+            model_permission_mode: PermissionMode::ReadOnly,
+        }
+    }
+
+    #[test]
+    fn selected_empty_profile_disables_the_runtime_catalog() {
+        let config = crate::agent::Config::default();
+        let profile = resolve_tool_profile(&config, request("selected", Vec::new()));
+        assert!(profile.enabled_tools.is_empty());
+        assert!(profile.disabled_tools.contains(&"bash".to_string()));
+        assert!(!profile.disabled_tools.is_empty());
+    }
+
+    #[test]
+    fn selected_profile_maps_request_policy() {
+        let config = crate::agent::Config::default();
+        let profile =
+            resolve_tool_profile(&config, request("selected", vec!["read_file".to_string()]));
+        assert_eq!(profile.enabled_tools, vec!["read_file"]);
+        assert_eq!(profile.model_permission_mode, PermissionMode::ReadOnly);
+        assert!(!profile.allow_aliases);
+        assert!(!profile.include_mcp);
+        assert!(!profile.include_control_plane);
+    }
 }

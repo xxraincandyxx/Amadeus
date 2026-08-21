@@ -12,6 +12,7 @@
 // - type: crate::bridge::BridgeEvent
 // - type: crate::bridge::LocalSessionBridge
 // - fn: crate::bridge::LocalSessionBridge::history
+// - fn: crate::bridge::LocalSessionBridge::create_session_with_tool_profile
 // - fn: crate::bridge::LocalSessionBridge::pending_approvals
 // - fn: crate::bridge::LocalSessionBridge::compact
 // - fn: crate::bridge::LocalSessionBridge::cancel
@@ -45,6 +46,7 @@ use crate::agent::{
 };
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
+use crate::tools::ToolProfile;
 
 const SESSION_EVENT_BUFFER: usize = 256;
 
@@ -170,6 +172,27 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         profile: AgentProfile,
     ) -> Result<BridgeSessionInfo> {
         self.create_session_with_agent(None, None, name, profile, None, None)
+            .await
+    }
+
+    /// Create a root session with a request-scoped tool profile.
+    pub async fn create_session_with_tool_profile(
+        &self,
+        name: Option<String>,
+        profile: AgentProfile,
+        tool_profile: ToolProfile,
+    ) -> Result<BridgeSessionInfo> {
+        let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
+            .with_default_tools()
+            .with_inline_tool_profile(tool_profile)
+            .with_subagent_delegate();
+        if let Some(ref memory) = self.memory_registry {
+            builder = builder.with_memory_registry(memory.clone());
+        }
+        if let Some(ref trace) = self.llm_trace {
+            builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+        }
+        self.create_session_with_agent(None, None, name, profile, None, Some(builder.build()))
             .await
     }
 

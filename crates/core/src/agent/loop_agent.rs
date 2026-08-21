@@ -13,6 +13,7 @@
 // - type: crate::agent::loop_agent::ApprovalChannels
 // - type: crate::agent::loop_agent::ApprovalHandle
 // - type: crate::agent::loop_agent::SubAgentResult
+// - fn: crate::agent::loop_agent::AgentBuilder::with_inline_tool_profile
 // uses:
 // - module: crate::agent::compaction::ContextCompactor
 // - module: crate::agent::config::Config
@@ -63,7 +64,7 @@ use crate::policy::Policy;
 use crate::telemetry::{TelemetryEvent, TelemetryRecorder};
 use crate::tools::registry::ToolRegistry;
 use crate::tools::SubAgentTool;
-use crate::tools::{TodoItem, TodoManager};
+use crate::tools::{TodoItem, TodoManager, ToolProfile};
 
 const SUB_AGENT_TOOL_NAME: &str = "sub_agent";
 const TOOL_HEARTBEAT_INTERVAL_MS: u64 = 1200;
@@ -246,6 +247,24 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
         let resolved =
             ToolRegistry::configured_profile(&self.config, false, Some(profile.as_str()));
         self.tools = self.tools.with_profile(resolved);
+        self
+    }
+
+    /// Apply an inline tool profile to this agent without mutating shared configuration.
+    pub fn with_inline_tool_profile(mut self, profile: ToolProfile) -> Self {
+        let subagent_enabled = profile.include_control_plane
+            && !profile
+                .disabled_tools
+                .iter()
+                .any(|tool| tool == SUB_AGENT_TOOL_NAME)
+            && (profile.enabled_tools.is_empty()
+                || profile
+                    .enabled_tools
+                    .iter()
+                    .any(|tool| tool == SUB_AGENT_TOOL_NAME));
+        self.include_sub_agent_tool = self.include_sub_agent_tool && subagent_enabled;
+        self.tool_profile_override = Some(profile.name.clone());
+        self.tools = self.tools.with_profile(profile);
         self
     }
 

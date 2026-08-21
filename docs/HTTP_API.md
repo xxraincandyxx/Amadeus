@@ -59,11 +59,23 @@ Valid status values are `idle`, `running`, `awaiting_approval`, `completed`, `fa
 ```json
 {
   "name": "Research",
-  "profile": "default"
+  "profile": "default",
+  "tool_profile": {
+    "name": "research-readonly",
+    "selectionMode": "selected",
+    "enabledTools": ["read_file", "glob", "grep", "web_fetch"],
+    "disabledTools": [],
+    "allowAliases": true,
+    "includeMcp": false,
+    "includeControlPlane": false,
+    "modelPermissionMode": "read-only"
+  }
 }
 ```
 
 `name` is optional. `profile` defaults to `default`; recognized built-in values are `default`, `debug`, `docs`, `review`, and `code_review`. Other values create a custom profile.
+
+`tool_profile` is optional. When omitted, the session uses the server's configured default tool profile. `selectionMode` accepts `all`, which applies `disabledTools` as exclusions, or `selected`, which treats `enabledTools` as an explicit allowlist. An empty `selected` allowlist creates an agent with no model-visible tools. Permission modes use `read-only`, `workspace-write`, or `danger-full-access`.
 
 The response is `201 Created` with the session object. `GET /v1/sessions` returns:
 
