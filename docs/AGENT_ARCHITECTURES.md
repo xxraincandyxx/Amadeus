@@ -25,13 +25,41 @@ runtime dependencies. Starting an agent creates a run; it does not mutate the wo
 
 | API | Use it when |
 | --- | --- |
-| `Agent<C>` | You want the current production ReAct agent with built-in model, tool, approval, compaction, and event behavior. |
+| `Agent<C>` | You want the low-level production model/tool loop or a legacy ReAct session without a manifest. |
 | `Workflow<S, R>` | You are defining reusable control flow over typed state and resources. |
 | `WorkflowAgent<S, R>` | You want to bind one workflow to a stable identity, capabilities, resources, and runner settings. |
 | `WorkflowAgentRegistry<S, R>` | You need to hold and explicitly address multiple workflow-backed agents. |
+| `AgentArchitectureManifest` | You want to serialize, edit, validate, and execute an agent architecture through the HTTP session API. |
 
-`WorkflowAgent` is additive during the migration. It does not replace or wrap the existing
-`Agent<C>` yet.
+The HTTP bridge compiles an `AgentArchitectureManifest` into a `WorkflowAgent`. Its executable
+nodes adapt to `Agent<C>` for provider calls, tools, and delegation, so manifests reuse the
+production capabilities instead of implementing a parallel model stack.
+
+## Executable Manifests
+
+The web designer exports manifest schema version 2. Pass that object as `architecture` when
+creating a session. The server validates node identifiers, the entry node, edge targets, the
+output node, and the positive transition limit before creating the session.
+
+Built-in node behavior is:
+
+| Node | Runtime behavior |
+| --- | --- |
+| `input`, `observe` | Pass state to the next declared node without a model call. |
+| `reason`, `plan`, `critique`, `revise`, `review`, `synthesize` | Run a focused model phase using the node's editable instruction or criteria. |
+| `act`, `execute` | Run a tool-capable model phase under the session tool profile. |
+| `route` | Ask the model to select exactly one outgoing edge label. |
+| `delegate` | Run a phase with the production sub-agent delegation tool available. |
+| `approval` | Suspend the typed workflow. External-session resume support is not implemented yet. |
+| `output` | Complete the run with the most recent semantic node output. |
+
+The compiler does not special-case the four bundled presets. ReAct, Plan and Execute,
+Reflection, Supervisor Team, and user-edited variants all use the graph they submit. This means
+node instructions and edge labels are runtime inputs, not design-only metadata.
+
+During a workflow turn, intermediate node text remains in agent history and workflow state.
+Thinking, token, tool, and sub-agent events continue through the existing `AgentEvent` bridge.
+Only the final workflow output is emitted as the turn's `text` and `done` result.
 
 ## Sharing And Variation
 
@@ -212,13 +240,19 @@ architecture failures use `WorkflowError::ArchitectureFailure`.
 - The registry requires one common `S` and `R` type.
 - Registry routing is explicit by `AgentId`; capability selection is not implemented here.
 - Checkpoints are owned in memory and are not yet a durable serialized format.
-- Fork, join, supervisor, model-call, tool-call, approval, memory, and compaction nodes are not
-  yet provided as built-in components.
-- `WorkflowAgent` does not yet emit the legacy `AgentEvent` stream.
+- Fork and join nodes are not built in.
+- An `approval` manifest node can suspend the typed runner, but the external-session bridge does
+  not yet retain and resume that workflow checkpoint. A suspended external run currently ends in
+  an error.
+- Tool approvals inside a manifest phase use the non-interactive agent path. Tools that require an
+  interactive decision are denied; configure an appropriate session tool profile.
+- Session checkpoints preserve the underlying conversation and todo state, not the current graph
+  node of an in-flight workflow.
 
 ## Current Compatibility Boundary
 
-The existing `amadeus::Agent<C>` remains the production ReAct implementation. It is not yet an
-alias for `WorkflowAgent`. The migration will extract model calls, tools, approvals, memory,
-compaction, and event streaming into reusable nodes, then express the existing agent as a ReAct
-workflow preset without changing its public behavior.
+The existing `amadeus::Agent<C>` remains the production model/tool engine and the fallback for
+sessions created without an architecture. Manifest-backed sessions compile to `WorkflowAgent`
+and call that engine from built-in semantic nodes. This preserves existing provider and tool
+behavior while moving control flow into the editable graph. Interactive approval resume and
+durable workflow checkpoints remain the next compatibility work.

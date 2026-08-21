@@ -69,6 +69,24 @@ Valid status values are `idle`, `running`, `awaiting_approval`, `completed`, `fa
     "includeMcp": false,
     "includeControlPlane": false,
     "modelPermissionMode": "read-only"
+  },
+  "architecture": {
+    "schemaVersion": 2,
+    "kind": "agent-architecture",
+    "id": "planner",
+    "name": "Plan and execute",
+    "preset": "plan-execute",
+    "entryNodeId": "planner-input",
+    "maxTransitions": 1024,
+    "nodes": [
+      { "id": "planner-input", "data": { "kind": "input", "label": "Input" } },
+      { "id": "planner-plan", "data": { "kind": "plan", "label": "Plan", "instruction": "Create an ordered plan." } },
+      { "id": "planner-output", "data": { "kind": "output", "label": "Complete" } }
+    ],
+    "edges": [
+      { "id": "e1", "source": "planner-input", "target": "planner-plan", "label": "next" },
+      { "id": "e2", "source": "planner-plan", "target": "planner-output", "label": "next" }
+    ]
   }
 }
 ```
@@ -77,7 +95,9 @@ Valid status values are `idle`, `running`, `awaiting_approval`, `completed`, `fa
 
 `tool_profile` is optional. When omitted, the session uses the server's configured default tool profile. `selectionMode` accepts `all`, which applies `disabledTools` as exclusions, or `selected`, which treats `enabledTools` as an explicit allowlist. An empty `selected` allowlist creates an agent with no model-visible tools. Permission modes use `read-only`, `workspace-write`, or `danger-full-access`.
 
-The response is `201 Created` with the session object. `GET /v1/sessions` returns:
+`architecture` is optional. When present, it must be an Agent Architecture manifest using schema version 2. The server validates and compiles the graph at session creation. Model, tool, routing, and delegation nodes execute through the existing agent runtime; graph transitions are bounded by `maxTransitions`. When omitted, the session uses the legacy ReAct loop.
+
+The response is `201 Created` with the session object. Manifest-backed session objects also include `architecture_id`, `architecture_name`, and `architecture_preset`. `GET /v1/sessions` returns:
 
 ```json
 {
@@ -128,6 +148,11 @@ The server returns `202 Accepted` after starting the turn:
 ```
 
 The response is not the agent result. Subscribe to the session event stream before submitting the message, then consume events until `done` or `error`. A session rejects a new message while its status is `running` or `awaiting_approval`.
+
+Manifest-backed sessions use the same event contract. Intermediate node text is retained in
+history but is not emitted as final answer text. Tool, reasoning, token, compaction, and sub-agent
+events are forwarded as they occur; the workflow emits one final `text` event and one `done`
+event after reaching an `output` node.
 
 ### Event stream
 

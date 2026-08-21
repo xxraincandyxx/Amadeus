@@ -68,7 +68,7 @@ output, and local caches. Dependency installations and user configuration are pr
 
 ## Using as a Library
 
-The provider-independent workflow kernel and workflow-backed agent registry are available from the root `amadeus` facade. The existing `Agent<C>` API remains the production ReAct path while it is incrementally rebuilt from workflow components. See [Agent Architectures](docs/AGENT_ARCHITECTURES.md), the [architecture guide](docs/ARCHITECTURE.md#workflow-kernel), and the [migration plan](docs/plans/2026-08-20-agent-architecture-runtime.md) for the current boundary.
+The provider-independent workflow kernel, workflow-backed agent registry, and schema-v2 architecture compiler are available from the root `amadeus` facade. HTTP sessions can execute ReAct, Plan and Execute, Reflection, Supervisor Team, or user-edited architecture manifests while reusing the production model, tool, delegation, and event infrastructure. See [Agent Architectures](docs/AGENT_ARCHITECTURES.md), the [architecture guide](docs/ARCHITECTURE.md#workflow-kernel), and the [migration plan](docs/plans/2026-08-20-agent-architecture-runtime.md) for the current boundary.
 
 Add to your `Cargo.toml`:
 
