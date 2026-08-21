@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Renders the node-based editor for authoring and exporting agent workflow graphs.
+// summary: Renders the node-based editor for authoring and exporting task control-flow graphs.
 // layer: ui
 // status: active
 // feature_flags: none
@@ -10,7 +10,7 @@
 // - library: @xyflow/react
 // - library: Phosphor Icons
 // invariants:
-// - Workflow edits persist locally as schema-versioned JSON.
+// - Task workflow edits persist locally as schema-versioned JSON.
 // - Runtime execution stays unavailable until the HTTP API accepts serialized workflows.
 // side_effects:
 // - Reads and writes browser local storage.

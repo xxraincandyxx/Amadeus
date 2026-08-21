@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Defines the persisted graph schema and validation rules for user-authored agent workflows.
+// summary: Defines the persisted graph schema and validation rules for user-authored task workflows.
 // layer: ui
 // status: active
 // feature_flags: none
@@ -13,7 +13,7 @@
 // uses:
 // - format: Amadeus workflow JSON schema version 1
 // invariants:
-// - Persisted workflow graphs contain only serializable node and edge data.
+// - Persisted task workflow graphs contain only serializable node and edge data.
 // - Imported graphs are normalized before they enter editor state.
 // side_effects: none
 // tests:

@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Verifies workflow graph creation, import normalization, and validation behavior.
+// summary: Verifies task workflow graph creation, import normalization, and validation behavior.
 // layer: test
 // status: test-only
 // feature_flags: none

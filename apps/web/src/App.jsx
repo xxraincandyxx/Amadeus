@@ -8,6 +8,7 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/AgentDesignerWorkspace.jsx
 // - module: apps/web/src/AgentWorkspace.jsx
 // - module: apps/web/src/agentSessions.js
 // - module: apps/web/src/FileDiffView.jsx
@@ -60,6 +61,7 @@ import {
   Stop,
   StopCircle,
   TerminalWindow,
+  TreeStructure,
   Trash,
   UserPlus,
   WarningCircle,
@@ -115,6 +117,7 @@ const eventNames = [
 ];
 
 const TranslationContext = createContext((key, variables) => translate("en", key, variables));
+const AgentDesignerWorkspace = lazy(() => import("./AgentDesignerWorkspace").then((module) => ({ default: module.AgentDesignerWorkspace })));
 const WorkflowWorkspace = lazy(() => import("./WorkflowWorkspace").then((module) => ({ default: module.WorkflowWorkspace })));
 
 function useTranslation() {
@@ -461,6 +464,10 @@ function App() {
         setView("workflows");
         setShowDetails(false);
       }
+      if (command.name === "agent-designer") {
+        setView("agent-designer");
+        setShowDetails(false);
+      }
       if (command.name === "prompt") {
         const config = await api.getConfig();
         addCommandResult("Active prompt", [
@@ -573,6 +580,12 @@ function App() {
     setSidebarOpen(false);
   }, []);
 
+  const openAgentDesigner = useCallback(() => {
+    setView("agent-designer");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -589,6 +602,7 @@ function App() {
         onGuide={() => openGuide(guideChapter)}
         onTools={openTools}
         onWorkflows={openWorkflows}
+        onAgentDesigner={openAgentDesigner}
         onCreate={openCreateDialog}
         onSettings={() => setShowSettings(true)}
         onContribute={() => setShowContribute(true)}
@@ -636,6 +650,10 @@ function App() {
           />
         ) : view === "tools" ? (
           <ToolsWorkspace online={serverOnline} t={t} />
+        ) : view === "agent-designer" ? (
+          <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading agent designer")}</div>}>
+            <AgentDesignerWorkspace t={t} />
+          </Suspense>
         ) : view === "workflows" ? (
           <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading workflow designer")}</div>}>
             <WorkflowWorkspace t={t} />
@@ -722,7 +740,7 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onWorkflows, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
+function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
   const t = useTranslation();
   const rows = agentSessionRows(sessions);
   return (
@@ -734,7 +752,8 @@ function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, o
         <nav className="primary-nav" aria-label={t("Primary")}>
           <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
           <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
-          <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Workflows")}</span></button>
+          <button className={view === "agent-designer" ? "active" : ""} onClick={onAgentDesigner}><TreeStructure /><span>{t("Agent designer")}</span></button>
+          <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Task workflows")}</span></button>
           <button className={view === "guide" ? "active" : ""} onClick={onGuide}><BookOpenText /><span>{t("Guide")}</span></button>
           <button className={view === "tools" ? "active" : ""} onClick={onTools}><TerminalWindow /><span>{t("Tools")}</span></button>
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
@@ -771,15 +790,16 @@ function Header({ session, status, view, sessionCount, parentSession, onMenu, on
   const guideView = view === "guide";
   const toolsView = view === "tools";
   const workflowsView = view === "workflows";
-  const standaloneView = agentsView || guideView || toolsView || workflowsView;
+  const agentDesignerView = view === "agent-designer";
+  const standaloneView = agentsView || guideView || toolsView || workflowsView || agentDesignerView;
   return (
     <header className="topbar">
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
-        {agentsView ? <Robot /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
+        {agentsView ? <Robot /> : agentDesignerView ? <TreeStructure /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
         <div>
-          <strong>{agentsView ? t("Agent workspace") : workflowsView ? t("Workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
-          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : workflowsView ? t("Visual agent architecture") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
+          <strong>{agentsView ? t("Agent workspace") : agentDesignerView ? t("Agent designer") : workflowsView ? t("Task workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
+          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : agentDesignerView ? t("Agent architecture manifest") : workflowsView ? t("Task control flow") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
         </div>
       </div>
       <div className="header-actions">

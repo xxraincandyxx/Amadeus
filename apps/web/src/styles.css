@@ -305,6 +305,8 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .workflow-palette-list > button { min-width: 0; min-height: 58px; display: grid; grid-template-columns: 32px minmax(0,1fr) 14px; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 7px; padding: 7px 8px; background: transparent; color: #c6c6c6; cursor: grab; text-align: left; }
 .workflow-palette-list > button:hover { border-color: #393939; background: #232323; }
 .workflow-palette-list > button:active { cursor: grabbing; }
+.workflow-palette-list > button:disabled { opacity: .45; cursor: default; }
+.workflow-palette-list > button:disabled:hover { border-color: transparent; background: transparent; }
 .workflow-palette-list > button > span:nth-child(2) { min-width: 0; display: grid; gap: 3px; }
 .workflow-palette-list strong { font-size: 11px; }
 .workflow-palette-list small { color: #757575; font-size: 9px; line-height: 1.3; }
@@ -376,6 +378,21 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .workflow-runtime-note > div { display: grid; gap: 4px; }
 .workflow-runtime-note strong { font-size: 10px; }
 .workflow-runtime-note span { color: #777; font-size: 9px; line-height: 1.45; }
+.architecture-component.kind-runtime { min-height: 98px; border-left: 2px solid var(--accent); background: #24211f; }
+.architecture-component.kind-runtime .workflow-node-icon { color: #e09a6a; border-color: #503b2e; background: #2d251f; }
+.architecture-component.kind-model { border-left: 2px solid #7b91ae; }
+.architecture-component.kind-policy, .architecture-component.kind-hooks { border-left: 2px solid #9c816f; }
+.architecture-palette .workflow-palette-list { padding-bottom: 12px; }
+.architecture-legend { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; margin-top: auto; border-top: 1px solid #303030; padding: 12px 8px 2px; color: #777; font-size: 9px; line-height: 1.45; }
+.architecture-legend svg { width: 15px; height: 15px; color: var(--accent); }
+.architecture-checkbox { min-height: 34px; display: flex; align-items: center; gap: 8px; border: 1px solid #393939; border-radius: 7px; padding: 0 9px; background: #222; color: #aaa; font-size: 10px; font-weight: 400; }
+.workflow-inspector-form .architecture-checkbox input { width: 14px; height: 14px; accent-color: var(--accent); }
+.workflow-inspector-actions button:disabled { opacity: .4; cursor: default; }
+.architecture-build-preview { display: grid; gap: 9px; border-top: 1px solid #303030; padding: 14px; }
+.architecture-build-preview > strong { display: flex; align-items: center; gap: 6px; font-size: 10px; }
+.architecture-build-preview > strong svg { width: 14px; height: 14px; color: #888; }
+.architecture-build-preview ol { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: #777; }
+.architecture-build-preview code { color: #999; font: 8px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
 
 .error-banner { margin: 12px 20px 0; min-height: 40px; padding: 8px 12px; border: 1px solid rgba(236,107,107,.3); background: rgba(118,34,34,.2); color: #ffb6b6; display: flex; align-items: center; gap: 9px; border-radius: 10px; font-size: 13px; }
 .error-banner span { flex: 1; }
