@@ -8,7 +8,7 @@
 // uses:
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
-// - Mock responses exercise reasoning, tools, compaction, streaming, and Markdown rendering.
+// - Mock responses exercise multi-agent sessions, reasoning, tools, compaction, streaming, and Markdown rendering.
 // side_effects:
 // - Opens a local HTTP listener.
 // tests:
@@ -18,10 +18,22 @@
 import http from "node:http";
 import { randomUUID } from "node:crypto";
 
-const sessions = [{ id: randomUUID(), name: "Build the React MVP", profile: "default", status: "idle", parent_session_id: null }];
-const histories = new Map([[sessions[0].id, [
+const coordinatorId = randomUUID();
+const implementationId = randomUUID();
+const verificationId = randomUUID();
+const sessions = [
+  { id: coordinatorId, name: "Ship multi-agent workspace", profile: "default", status: "idle", parent_session_id: null },
+  { id: implementationId, name: "Implement session bridge", profile: "default", status: "running", parent_session_id: coordinatorId },
+  { id: verificationId, name: "Verify interface states", profile: "default", status: "completed", parent_session_id: implementationId },
+];
+const histories = new Map([[coordinatorId, [
   { role: "user", content: [{ type: "text", text: "Inspect the Amadeus HTTP APIs and build a polished React MVP." }] },
   { role: "assistant", content: [{ type: "text", text: "I mapped the session protocol and prepared the workspace. The app now has live sessions, streaming events, tool activity, approvals, history hydration, and cancellation." }] },
+]], [implementationId, [
+  { role: "user", content: [{ type: "text", text: "Wire delegated agent sessions through the HTTP bridge." }] },
+]], [verificationId, [
+  { role: "user", content: [{ type: "text", text: "Verify hierarchy, status, and responsive interface states." }] },
+  { role: "assistant", content: [{ type: "text", text: "The multi-agent workspace is verified across desktop and mobile layouts." }] },
 ]]]);
 const listeners = new Map();
 const host = process.env.AMADEUS_MOCK_HOST || "127.0.0.1";
@@ -80,6 +92,9 @@ const server = http.createServer(async (request, response) => {
       response.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive", "Access-Control-Allow-Origin": "*" });
       const current = listeners.get(sessionId) || new Set(); current.add(response); listeners.set(sessionId, current);
       response.write(`event: session_state\ndata: ${JSON.stringify(session)}\n\n`);
+      if (sessionId === coordinatorId) {
+        response.write(`event: subagent_session\ndata: ${JSON.stringify({ parent_session_id: coordinatorId, request_id: "mock-implementation", prompt: "Wire delegated agent sessions through the HTTP bridge.", depth: 1, session: sessions[1] })}\n\n`);
+      }
       request.on("close", () => current.delete(response)); return;
     }
     if (parts[3] === "messages" && request.method === "POST") {

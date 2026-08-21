@@ -196,7 +196,8 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             Some(agent) => agent,
             None => {
                 let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
-                    .with_default_tools();
+                    .with_default_tools()
+                    .with_subagent_delegate();
                 if let Some(ref mem) = self.memory_registry {
                     builder = builder.with_memory_registry(mem.clone());
                 }
@@ -662,9 +663,91 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                     .await;
                 }
             }
-            AgentEvent::SubAgentRequested { .. } => {}
+            AgentEvent::SubAgentRequested { id, prompt, depth } => {
+                if let Err(error) = self
+                    .spawn_subagent_session(session_id, id, prompt, *depth)
+                    .await
+                {
+                    let _ = agent
+                        .complete_subagent(
+                            id,
+                            crate::agent::loop_agent::SubAgentResult {
+                                output: format!("Error: {error}"),
+                                is_error: true,
+                            },
+                        )
+                        .await;
+                }
+            }
             _ => {}
         }
+    }
+
+    async fn spawn_subagent_session(
+        &self,
+        parent_session_id: &str,
+        request_id: &str,
+        prompt: &str,
+        depth: usize,
+    ) -> Result<BridgeSessionInfo> {
+        let parent = self
+            .session_handle(parent_session_id)
+            .await
+            .ok_or_else(|| {
+                AgentError::InvalidResponse(format!(
+                    "Parent session '{}' not found",
+                    parent_session_id
+                ))
+            })?;
+        let (parent_agent, parent_events_tx) = {
+            let parent = parent.lock().await;
+            (parent.agent.clone(), parent.events_tx.clone())
+        };
+        let mut child_agent = parent_agent.spawn_child_agent(depth);
+        child_agent.enable_subagent_delegate();
+
+        let prompt_label: String = prompt
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(42)
+            .collect();
+        let name = if prompt_label.is_empty() {
+            let request_label: String = request_id.chars().take(8).collect();
+            format!("subagent-{request_label}")
+        } else {
+            prompt_label
+        };
+        let session = self
+            .create_session_with_agent(
+                None,
+                Some(parent_session_id.to_string()),
+                Some(name),
+                AgentProfile::Default,
+                Some(request_id.to_string()),
+                Some(child_agent),
+            )
+            .await?;
+
+        let _ = parent_events_tx.send(BridgeEvent::ChildSessionSpawned {
+            parent_session_id: parent_session_id.to_string(),
+            request_id: request_id.to_string(),
+            prompt: prompt.to_string(),
+            depth,
+            session: session.clone(),
+        });
+
+        recursive_submit::spawn(
+            self.clone(),
+            session.clone(),
+            parent_session_id.to_string(),
+            request_id.to_string(),
+            prompt.to_string(),
+        );
+
+        Ok(session)
     }
 
     async fn finish_session(&self, session_id: &str, status: BridgeSessionStatus) {
@@ -725,6 +808,36 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                 )
                 .await;
         }
+    }
+}
+
+mod recursive_submit {
+    use super::*;
+
+    pub(super) fn spawn<C: LLMClient + Clone + 'static>(
+        bridge: LocalSessionBridge<C>,
+        child: BridgeSessionInfo,
+        parent_session_id: String,
+        request_id: String,
+        prompt: String,
+    ) {
+        let _task = tokio::spawn(async move {
+            if let Err(error) = bridge.submit_input(&child.id, prompt).await {
+                bridge.fail_session(&child.id, error.to_string()).await;
+                if let Some(parent) = bridge.session_handle(&parent_session_id).await {
+                    let parent_agent = parent.lock().await.agent.clone();
+                    let _ = parent_agent
+                        .complete_subagent(
+                            &request_id,
+                            crate::agent::loop_agent::SubAgentResult {
+                                output: format!("Error: {error}"),
+                                is_error: true,
+                            },
+                        )
+                        .await;
+                }
+            }
+        });
     }
 }
 
@@ -875,5 +988,45 @@ mod tests {
                 .status,
             BridgeSessionStatus::Completed
         );
+    }
+
+    #[tokio::test]
+    async fn bridge_spawns_child_session_and_emits_parent_event() {
+        let bridge = LocalSessionBridge::new(
+            BridgeMockClient {
+                events: vec![StreamEvent::StopReason("end_turn".to_string())],
+            },
+            Arc::new(Config::default()),
+        );
+        let parent = bridge
+            .create_session(Some("coordinator".to_string()), AgentProfile::Default)
+            .await
+            .expect("create parent session");
+        let mut events = bridge.subscribe(&parent.id).await.expect("subscribe");
+
+        let child = bridge
+            .spawn_subagent_session(
+                &parent.id,
+                "request-12345678",
+                "Inspect the bridge implementation",
+                1,
+            )
+            .await
+            .expect("spawn child session");
+
+        assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(child.name, "Inspect the bridge implementation");
+        let event = events.recv().await.expect("child session event");
+        assert!(matches!(
+            event,
+            BridgeEvent::ChildSessionSpawned {
+                parent_session_id,
+                request_id,
+                session,
+                ..
+            } if parent_session_id == parent.id
+                && request_id == "request-12345678"
+                && session.id == child.id
+        ));
     }
 }
