@@ -632,6 +632,55 @@ async fn slash_hooks_opens_dialog() {
 }
 
 #[tokio::test]
+async fn slash_agents_switches_to_selected_existing_session() {
+    let mut app = test_app();
+    let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
+    let agent = Agent::builder(client, Arc::new(Config::default())).build();
+    app.sessions.push(Session::new(
+        agent,
+        PathBuf::from("."),
+        "test-model".to_string(),
+        1,
+        "child".to_string(),
+        1,
+    ));
+    app.active_idx = 1;
+
+    for ch in "/agents".chars() {
+        active_session_mut(&mut app).input.handle_char(ch);
+    }
+    active_session_mut(&mut app)
+        .submit_input()
+        .await
+        .expect("agents command");
+
+    assert_eq!(
+        active_session_mut(&mut app).pending_agent_dialog,
+        Some(super::AgentDialogAction::Open)
+    );
+    assert!(!app.process_pending_agent_dialog());
+    match active_session_mut(&mut app).slash_dialog.as_ref() {
+        Some(SlashDialogState::Agents(state)) => {
+            assert_eq!(state.session_ids, vec![1, 0]);
+            assert_eq!(state.dialog.selected(), Some(0));
+        }
+        other => panic!("expected agents dialog, got {other:?}"),
+    }
+
+    active_session_mut(&mut app)
+        .handle_slash_dialog_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE))
+        .await
+        .expect("select root agent");
+    active_session_mut(&mut app)
+        .handle_slash_dialog_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE))
+        .await
+        .expect("switch agent");
+
+    assert!(app.process_pending_agent_dialog());
+    assert_eq!(app.active_idx, 0);
+}
+
+#[tokio::test]
 async fn slash_btw_uses_input_dropup_without_transcript_history() {
     let mut app = test_app();
     let session = active_session_mut(&mut app);

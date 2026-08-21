@@ -28,6 +28,8 @@ use ratatui::{
 
 use crate::ui::get_colors;
 
+const MAX_VISIBLE_ITEMS: usize = 8;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SlashDialogItem {
     pub label: String,
@@ -95,12 +97,18 @@ impl SlashDialog {
         }
     }
 
+    fn visible_start(&self) -> usize {
+        self.selected
+            .saturating_add(1)
+            .saturating_sub(MAX_VISIBLE_ITEMS)
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect) {
         let colors = get_colors();
         let dialog_width = area.width.saturating_sub(4).clamp(40, 76);
         let content_height = 8u16
             .saturating_add(self.details.len() as u16)
-            .saturating_add((self.items.len().min(8) * 2) as u16);
+            .saturating_add((self.items.len().min(MAX_VISIBLE_ITEMS) * 2) as u16);
         let dialog_height = content_height.clamp(10, area.height.saturating_sub(2).max(10));
         let dialog_x = area.x + (area.width.saturating_sub(dialog_width)) / 2;
         let dialog_y = area.y + (area.height.saturating_sub(dialog_height)) / 2;
@@ -135,7 +143,13 @@ impl SlashDialog {
 
         if !self.items.is_empty() {
             lines.push(Line::from(""));
-            for (index, item) in self.items.iter().enumerate().take(8) {
+            for (index, item) in self
+                .items
+                .iter()
+                .enumerate()
+                .skip(self.visible_start())
+                .take(MAX_VISIBLE_ITEMS)
+            {
                 let selected = self.selected == index;
                 let prefix = if selected { "❯ " } else { "  " };
                 let line_style = if selected {
@@ -165,5 +179,25 @@ impl SlashDialog {
         )));
 
         frame.render_widget(Paragraph::new(lines), dialog_area);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SlashDialog, SlashDialogItem};
+
+    #[test]
+    fn visible_window_follows_selection_beyond_first_page() {
+        let items = (0..10)
+            .map(|index| SlashDialogItem::new(format!("agent-{index}"), None))
+            .collect();
+        let mut dialog = SlashDialog::new("Agents", None, Vec::new(), "footer", items);
+
+        for _ in 0..9 {
+            dialog.select_next();
+        }
+
+        assert_eq!(dialog.selected(), Some(9));
+        assert_eq!(dialog.visible_start(), 2);
     }
 }
