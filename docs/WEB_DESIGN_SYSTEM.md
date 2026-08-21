@@ -6,7 +6,7 @@ This document is the visual and interaction contract for the React web workspace
 
 Amadeus is a dense developer workspace, not a marketing dashboard. Its interface should feel calm, native, and operational:
 
-- dark neutral surfaces with one burnt-orange operational accent;
+- dark neutral surfaces with one user-configurable operational accent;
 - a persistent project/session sidebar;
 - a narrow readable conversation column;
 - a fixed composer that remains the primary action;
@@ -30,12 +30,12 @@ The canonical runtime tokens live in `apps/web/src/styles.css` under `:root`.
 | Text | `--text` | `#f0f0f0` | Primary copy |
 | Muted text | `--muted` | `#a7a7a7` | Secondary information |
 | Quiet text | `--quiet` | `#757575` | Metadata |
-| Accent | `--accent` | `#ef7d32` | Active work and approvals |
+| Accent | `--accent` | `#a72f42` (dark-red default) | Active work and approvals; configurable in Settings |
 | Success | `--green` | `#55c97a` | Connected/completed status |
 | Failure | `--red` | `#ec6b6b` | Errors and destructive affordances |
 | Component radius | `--radius` | `14px` | Event and tool surfaces |
 
-Do not add a second accent color. Green and red are semantic status colors, not decorative accents. Prefer existing tokens over literal values when a color carries the same role across components.
+Do not add a second accent color. The selected accent and its derived alpha token must update every active-state treatment together. Green and failure red are semantic status colors, not decorative accents. Prefer existing tokens over literal values when a color carries the same role across components.
 
 ## Shape and spacing
 

@@ -139,7 +139,7 @@ function diagnosticText(item, t) {
   return messages[item.code] || item.code;
 }
 
-function WorkflowEditor({ t }) {
+function WorkflowEditor({ t, themeColor }) {
   const [library, setLibrary] = useState(loadLibrary);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
@@ -447,7 +447,7 @@ function WorkflowEditor({ t }) {
           >
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#3a3a3a" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(node) => node.id === workflow.entryNodeId ? "#ef7d32" : "#676767"} maskColor="rgba(15,15,15,.72)" />
+            <MiniMap pannable zoomable nodeColor={(node) => node.id === workflow.entryNodeId ? themeColor : "#676767"} maskColor="rgba(15,15,15,.72)" />
           </ReactFlow>
           <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>
             {validation.isValid ? validation.warnings.length ? <WarningCircle /> : <CheckCircle /> : <WarningCircle />}
@@ -511,6 +511,6 @@ function WorkflowEditor({ t }) {
   );
 }
 
-export function WorkflowWorkspace({ t }) {
-  return <ReactFlowProvider><WorkflowEditor t={t} /></ReactFlowProvider>;
+export function WorkflowWorkspace({ t, themeColor }) {
+  return <ReactFlowProvider><WorkflowEditor t={t} themeColor={themeColor} /></ReactFlowProvider>;
 }

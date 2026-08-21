@@ -17,6 +17,8 @@
 // - module: apps/web/src/i18n.js
 // - module: apps/web/src/panelResize.js
 // - module: apps/web/src/sessionState.js
+// - module: apps/web/src/SettingsWorkspace.jsx
+// - module: apps/web/src/theme.js
 // - module: apps/web/src/ToolsWorkspace.jsx
 // - module: apps/web/src/WorkflowWorkspace.jsx
 // - protocol: Amadeus REST and SSE APIs
@@ -25,6 +27,7 @@
 // - Reasoning disclosures remain keyboard accessible, user-controlled, and collapsed by default.
 // - Slash commands advertised by the composer execute without model involvement.
 // - Interface language selection persists across web and native client launches.
+// - The selected theme accent persists and applies to every workspace.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -71,18 +74,20 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 
-import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { api } from "./api";
 import { AGENT_ARCHITECTURE_STORAGE_KEY, architectureForExport, architectureRuntimeStatus, loadArchitectureLibrary } from "./agentArchitecture";
 import { AgentWorkspace } from "./AgentWorkspace";
 import { agentSessionRows, sessionRelations, upsertSession } from "./agentSessions";
 import { FileDiffView } from "./FileDiffView";
 import { buildFileDiff } from "./fileDiff";
 import { GuideWorkspace } from "./GuideWorkspace";
-import { normalizeLanguage, SUPPORTED_LANGUAGES, translate } from "./i18n";
+import { normalizeLanguage, translate } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
 import { useResizablePanel } from "./panelResize";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
+import { SettingsWorkspace } from "./SettingsWorkspace";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
+import { applyThemeColor, loadThemeColor } from "./theme";
 import { ToolsWorkspace } from "./ToolsWorkspace";
 
 const emptyRuntime = {
@@ -180,6 +185,7 @@ function App() {
     maximum: 440,
   });
   const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
+  const [themeColor, setThemeColor] = useState(() => loadThemeColor(localStorage));
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(localStorage.getItem("amadeus.activeSession"));
   const [view, setView] = useState("conversation");
@@ -201,7 +207,6 @@ function App() {
     try { return JSON.parse(localStorage.getItem("amadeus.sessionArchitectures.v1")) || {}; } catch { return {}; }
   });
   const [showDetails, setShowDetails] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showContribute, setShowContribute] = useState(false);
   const [apiEpoch, setApiEpoch] = useState(0);
   const streamRef = useRef(null);
@@ -342,6 +347,10 @@ function App() {
     localStorage.setItem("amadeus.language", language);
     document.documentElement.lang = language;
   }, [language]);
+
+  useEffect(() => {
+    applyThemeColor(themeColor, localStorage);
+  }, [themeColor]);
 
   useEffect(() => {
     localStorage.setItem(AGENT_ARCHITECTURE_STORAGE_KEY, JSON.stringify({ ...architectureLibrary, architectures: architectureLibrary.architectures.map(architectureForExport) }));
@@ -509,7 +518,10 @@ function App() {
           addCommandResult("Conversation exported", `Downloaded \`${activeSession?.name || "Amadeus session"}.${extension}\`.`);
         }
       }
-      if (command.name === "settings") setShowSettings(true);
+      if (command.name === "settings") {
+        setView("settings");
+        setShowDetails(false);
+      }
       if (command.name === "contribute") setShowContribute(true);
       if (command.name === "cancel") {
         if (busy) await cancel();
@@ -608,6 +620,12 @@ function App() {
     setSidebarOpen(false);
   }, []);
 
+  const openSettings = useCallback(() => {
+    setView("settings");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -626,7 +644,7 @@ function App() {
         onWorkflows={openWorkflows}
         onAgentDesigner={openAgentDesigner}
         onCreate={openCreateDialog}
-        onSettings={() => setShowSettings(true)}
+        onSettings={openSettings}
         onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
         resizeHandle={mainSidebarResize.handleProps}
@@ -648,7 +666,7 @@ function App() {
           <ErrorBanner
             message={error}
             onRetry={reconnect}
-            onSettings={() => setShowSettings(true)}
+            onSettings={openSettings}
             onDismiss={() => setError("")}
           />
         )}
@@ -684,6 +702,7 @@ function App() {
               t={t}
               library={architectureLibrary}
               online={serverOnline}
+              themeColor={themeColor}
               onLibraryChange={setArchitectureLibrary}
               onUseArchitecture={openCreateDialog}
               onOpenAgentWorkspace={() => setView("agents")}
@@ -691,8 +710,18 @@ function App() {
           </Suspense>
         ) : view === "workflows" ? (
           <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading workflow designer")}</div>}>
-            <WorkflowWorkspace t={t} />
+            <WorkflowWorkspace t={t} themeColor={themeColor} />
           </Suspense>
+        ) : view === "settings" ? (
+          <SettingsWorkspace
+            online={serverOnline}
+            language={language}
+            themeColor={themeColor}
+            onLanguage={setLanguage}
+            onThemeColor={setThemeColor}
+            onReconnect={reconnect}
+            t={t}
+          />
         ) : (
           <>
             <section className="conversation" aria-live="polite">
@@ -757,18 +786,8 @@ function App() {
           onClose={() => setCreating(false)}
           onSettings={() => {
             setCreating(false);
-            setShowSettings(true);
+            openSettings();
           }}
-        />
-      )}
-
-      {showSettings && (
-        <SettingsDialog
-          online={serverOnline}
-          language={language}
-          onLanguage={setLanguage}
-          onReconnect={reconnect}
-          onClose={() => setShowSettings(false)}
         />
       )}
 
@@ -794,6 +813,7 @@ function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, o
           <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Task workflows")}</span></button>
           <button className={view === "guide" ? "active" : ""} onClick={onGuide}><BookOpenText /><span>{t("Guide")}</span></button>
           <button className={view === "tools" ? "active" : ""} onClick={onTools}><TerminalWindow /><span>{t("Tools")}</span></button>
+          <button className={view === "settings" ? "active" : ""} onClick={onSettings}><GearSix /><span>{t("Settings")}</span></button>
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
         </nav>
         <div className="section-label">{t("Workspace")}</div>
@@ -829,15 +849,16 @@ function Header({ session, status, view, sessionCount, parentSession, onMenu, on
   const toolsView = view === "tools";
   const workflowsView = view === "workflows";
   const agentDesignerView = view === "agent-designer";
-  const standaloneView = agentsView || guideView || toolsView || workflowsView || agentDesignerView;
+  const settingsView = view === "settings";
+  const standaloneView = agentsView || guideView || toolsView || workflowsView || agentDesignerView || settingsView;
   return (
     <header className="topbar">
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
-        {agentsView ? <Robot /> : agentDesignerView ? <TreeStructure /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
+        {agentsView ? <Robot /> : agentDesignerView ? <TreeStructure /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : settingsView ? <GearSix /> : <FolderSimple />}
         <div>
-          <strong>{agentsView ? t("Agent workspace") : agentDesignerView ? t("Agent designer") : workflowsView ? t("Task workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
-          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : agentDesignerView ? t("Agent architecture manifest") : workflowsView ? t("Task control flow") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
+          <strong>{agentsView ? t("Agent workspace") : agentDesignerView ? t("Agent designer") : workflowsView ? t("Task workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : settingsView ? t("Settings") : session?.name || "Amadeus"}</strong>
+          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : agentDesignerView ? t("Agent architecture manifest") : workflowsView ? t("Task control flow") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : settingsView ? t("Preferences and connection") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
         </div>
       </div>
       <div className="header-actions">
@@ -1149,72 +1170,6 @@ function CreateDialog({ value, online, submitting, error, architectures, archite
           <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || t("The Amadeus API is unavailable.")}</span>{!online && <button type="button" onClick={onSettings}>{t("Connection settings")}</button>}</div>
         )}
         <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting || runtimeStatus !== "production"}>{submitting ? t("Creating…") : online ? t("Create agent") : t("API unavailable")}</button></div>
-      </form>
-    </div>
-  );
-}
-
-function SettingsDialog({ online, language, onLanguage, onReconnect, onClose }) {
-  const t = useTranslation();
-  const [value, setValue] = useState(getApiBaseUrl());
-  const [status, setStatus] = useState("");
-  const [testing, setTesting] = useState(false);
-
-  const testConnection = async () => {
-    setTesting(true);
-    setStatus("");
-    try {
-      const normalized = value.trim().replace(/\/$/, "");
-      const parsed = new URL(normalized);
-      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error(t("Use an HTTP or HTTPS URL."));
-      await api.health(normalized);
-      setStatus(t("Connection successful."));
-    } catch (caught) {
-      setStatus(caught.message);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const save = (event) => {
-    event.preventDefault();
-    try {
-      setApiBaseUrl(value);
-      onClose();
-      onReconnect();
-    } catch (caught) {
-      setStatus(caught.message);
-    }
-  };
-
-  const reset = () => {
-    const defaultUrl = resetApiBaseUrl();
-    setValue(defaultUrl);
-    setStatus(t("Restored the default local address. Save to reconnect."));
-  };
-
-  return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <form className="dialog settings-dialog" onSubmit={save} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="dialog-heading">
-          <div className="dialog-icon"><PlugsConnected weight="fill" /></div>
-          <div><h2>{t("Connection")}</h2><p>{t("Choose the Amadeus HTTP server used by this client.")}</p></div>
-        </div>
-        <div className="connection-summary"><i className={online ? "online" : "offline"} /><span>{online ? t("Connected") : t("Not connected")}</span><code>{getApiBaseUrl()}</code></div>
-        <label htmlFor="api-url">{t("HTTP API URL")}</label>
-        <input id="api-url" autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder="http://127.0.0.1:3000" />
-        <p className="field-help">{t("Remote servers should use HTTPS and authentication at the network boundary.")}</p>
-        <label htmlFor="interface-language">{t("Interface language")}</label>
-        <select id="interface-language" value={language} onChange={(event) => onLanguage(normalizeLanguage(event.target.value))}>
-          {SUPPORTED_LANGUAGES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-        {status && <div className="connection-test-result" role="status">{status}</div>}
-        <div className="dialog-actions split-actions">
-          <button type="button" onClick={reset}>{t("Reset default")}</button>
-          <span />
-          <button type="button" onClick={testConnection} disabled={testing}>{testing ? t("Testing…") : t("Test")}</button>
-          <button className="primary" type="submit">{t("Save and reconnect")}</button>
-        </div>
       </form>
     </div>
   );

@@ -26,7 +26,7 @@ Type `/` as the first character in the composer to open the command palette. A s
 | `/workflow` | Open the visual workflow designer |
 | `/prompt` | Read the active model and prompt configuration |
 | `/export [markdown\|json]` | Download the visible conversation |
-| `/settings` | Open connection settings |
+| `/settings` | Open the settings workspace |
 | `/contribute` | Open contribution resources |
 | `/cancel` | Stop the active turn |
 | `/close` | Close the current session |
@@ -57,7 +57,7 @@ The default API address is `http://127.0.0.1:3000`. Set a development default wh
 VITE_AMADEUS_API_URL=http://localhost:8080 npm run dev
 ```
 
-The gear button opens runtime Connection settings. The saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
+The Settings page includes interface language, a configurable theme accent, and runtime Connection settings. Dark red is the default accent. The selected color is stored under `amadeus.themeColor`; the saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
 
 ## UI-only demo
 

@@ -128,7 +128,7 @@ function diagnosticText(item, t) {
   return messages[item.code] || item.code;
 }
 
-function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture, onOpenAgentWorkspace }) {
+function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseArchitecture, onOpenAgentWorkspace }) {
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [inspectorMode, setInspectorMode] = useState("overview");
@@ -332,7 +332,7 @@ function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture,
           <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); setInspectorMode("selection"); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); setInspectorMode("selection"); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("overview"); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "smoothstep" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#3a3a3a" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? "#ef7d32" : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />
+            <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? themeColor : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />
           </ReactFlow>
           <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>{validation.isValid && !validation.warnings.length ? <CheckCircle /> : <WarningCircle />}<span>{validation.isValid ? validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Architecture valid") : t("{count} validation errors", { count: validation.errors.length })}</span></div>
         </div>
