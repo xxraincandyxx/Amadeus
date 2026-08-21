@@ -6,13 +6,17 @@ When a provider exposes a distinct reasoning stream, live thinking appears in an
 
 Assistant answers render safe GitHub-flavored Markdown, including headings, emphasis, links, lists, task lists, blockquotes, tables, inline code, and fenced code blocks with copy actions. Raw HTML is escaped by default. Markdown is rendered during streaming as well as after history hydration.
 
+## In-app guide
+
+The Guide workspace provides a searchable, offline product handbook in English and Simplified Chinese. Its source manuscripts live in [`../../docs/user-guide/`](../../docs/user-guide/) and are bundled with the client at build time. Keep user-facing workflow documentation there so the web and native apps always ship the same guide.
+
 ## Slash commands
 
 Type `/` as the first character in the composer to open the command palette. A slash elsewhere in a message, including after leading whitespace, remains ordinary prompt text. Completion matches command names and closes once an argument begins.
 
 | Command | Action |
 | --- | --- |
-| `/help` | Show the client command catalog |
+| `/help` | Open the product guide at the command reference |
 | `/new-agent [name]` | Create and switch to a session |
 | `/context` | Show current session and token usage |
 | `/compact` | Summarize older history and recover context space |
