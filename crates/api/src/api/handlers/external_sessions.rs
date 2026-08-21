@@ -16,6 +16,7 @@
 // - route: /v1/sessions/:id/compact
 // - route: /v1/sessions/:id/cancel
 // - type: crate::api::handlers::external_sessions::CreateToolProfileRequest
+// - type: amadeus_runtime::AgentArchitectureManifest
 // uses:
 // - module: crate::bridge
 // - module: crate::api::http
@@ -51,6 +52,7 @@ use crate::bridge::BridgeSessionInfo;
 use crate::client::LLMClient;
 use crate::permissions::PermissionMode;
 use crate::tools::{ToolProfile, ToolRegistry};
+use crate::AgentArchitectureManifest;
 
 type ApiResult<T> = Result<T, (StatusCode, Json<ErrorResponse>)>;
 type BoxedSseStream = Pin<Box<dyn Stream<Item = Result<Event, Infallible>> + Send>>;
@@ -64,6 +66,9 @@ pub struct CreateSessionRequest {
     /// Optional request-scoped model-visible tool profile.
     #[serde(default)]
     pub tool_profile: Option<CreateToolProfileRequest>,
+    /// Optional executable control-flow architecture for the new session.
+    #[serde(default)]
+    pub architecture: Option<AgentArchitectureManifest>,
 }
 
 /// Request-scoped tool selection and permission policy for a new session.
@@ -212,14 +217,23 @@ pub async fn create_external_session<C: LLMClient + Clone + 'static>(
     Json(request): Json<CreateSessionRequest>,
 ) -> ApiResult<(StatusCode, Json<BridgeSessionInfo>)> {
     let profile = profile_from_string(&request.profile);
-    let session = if let Some(tool_profile) = request.tool_profile {
+    let tool_profile = request
+        .tool_profile
+        .map(|tool_profile| resolve_tool_profile(&state.config, tool_profile));
+    let session = if let Some(architecture) = request.architecture {
         state
             .session_bridge
-            .create_session_with_tool_profile(
+            .create_session_with_architecture(
                 request.name,
                 profile,
-                resolve_tool_profile(&state.config, tool_profile),
+                tool_profile.unwrap_or_else(ToolProfile::default_root),
+                architecture,
             )
+            .await
+    } else if let Some(tool_profile) = tool_profile {
+        state
+            .session_bridge
+            .create_session_with_tool_profile(request.name, profile, tool_profile)
             .await
     } else {
         state
@@ -465,5 +479,38 @@ mod tests {
         assert!(!profile.allow_aliases);
         assert!(!profile.include_mcp);
         assert!(!profile.include_control_plane);
+    }
+
+    #[test]
+    fn create_request_accepts_an_architecture_manifest() {
+        let request: CreateSessionRequest = serde_json::from_value(serde_json::json!({
+            "name": "planner",
+            "profile": "default",
+            "architecture": {
+                "schemaVersion": 2,
+                "kind": "agent-architecture",
+                "id": "planner",
+                "name": "Planner",
+                "preset": "plan-execute",
+                "entryNodeId": "input",
+                "maxTransitions": 8,
+                "nodes": [
+                    { "id": "input", "data": { "kind": "input" } },
+                    { "id": "output", "data": { "kind": "output" } }
+                ],
+                "edges": [
+                    { "id": "e1", "source": "input", "target": "output", "label": "next" }
+                ]
+            }
+        }))
+        .expect("create session request");
+
+        assert_eq!(
+            request
+                .architecture
+                .as_ref()
+                .map(|value| value.preset.as_str()),
+            Some("plan-execute")
+        );
     }
 }
