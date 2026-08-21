@@ -6,6 +6,7 @@
 // provides:
 // - module: crate
 // - module: crate::agent
+// - module: crate::architecture
 // - module: crate::orchestra
 // - module: crate::scheduler
 // - module: crate::team
@@ -28,6 +29,7 @@
 //! Runtime coordination primitives for Amadeus.
 
 pub mod agent;
+pub mod architecture;
 pub mod orchestra;
 pub mod scheduler;
 pub mod team;
@@ -49,6 +51,12 @@ pub use agent::{
     find_agent_index, get_agent_info, list_agent_info, next_agent_index,
     normalize_active_index_after_removal, previous_agent_index, select_agent, AgentInfo,
     AgentRouteCandidate, AgentStatus,
+};
+pub use architecture::{
+    compile_architecture, setting as architecture_setting, validate_architecture,
+    AgentArchitectureManifest, ArchitectureCompileError, ArchitectureEdge, ArchitectureNode,
+    ArchitectureNodeData, ArchitectureNodeExecutor, ArchitectureNodeKind, ArchitectureNodeOutput,
+    ArchitectureResources, ArchitectureRunState,
 };
 pub use orchestra::{
     AgentOrchestra, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraStatus,
