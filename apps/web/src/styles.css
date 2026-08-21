@@ -176,6 +176,27 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .agent-roster-empty > svg { width: 28px; height: 28px; margin-bottom: 4px; }
 .agent-roster-empty strong { color: #c4c4c4; font-size: 13px; }
 .agent-roster-empty span { font-size: 11px; }
+.agent-architecture-library { max-width: 1240px; margin: 0 auto 22px; border: 1px solid #343434; border-radius: 8px; background: #1b1b1b; overflow: hidden; }
+.agent-architecture-heading { min-height: 48px; display: grid; grid-template-columns: minmax(0,1fr) 112px; align-items: center; gap: 18px; border-bottom: 1px solid #343434; padding: 0 18px; color: #777; font-size: 10px; text-transform: uppercase; }
+.agent-architecture-heading > div { min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.agent-architecture-heading strong { color: #cfcfcf; font-size: 12px; text-transform: none; }
+.agent-architecture-heading div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
+.agent-architecture-rows { display: grid; }
+.agent-architecture-row { min-height: 68px; display: grid; grid-template-columns: 34px minmax(180px,.8fr) minmax(110px,.45fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid #2f2f2f; padding: 8px 14px; }
+.agent-architecture-row:last-child { border-bottom: 0; }
+.agent-architecture-row:hover { background: #202020; }
+.agent-architecture-icon { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid #3b3b3b; border-radius: 7px; background: #252525; color: #aaa; }
+.agent-architecture-icon svg { width: 15px; height: 15px; }
+.agent-architecture-copy { min-width: 0; display: grid; gap: 3px; }
+.agent-architecture-copy strong { font-size: 11px; }
+.agent-architecture-copy small { overflow: hidden; color: #777; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.agent-architecture-status { display: flex; align-items: center; gap: 6px; font-size: 9px; white-space: nowrap; }
+.agent-architecture-actions { display: flex; align-items: center; gap: 5px; }
+.agent-architecture-actions button { min-height: 30px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #3d3d3d; border-radius: 7px; padding: 0 8px; background: #252525; color: #aaa; cursor: pointer; font-size: 9px; white-space: nowrap; }
+.agent-architecture-actions button:hover { background: #2d2d2d; color: #e0e0e0; }
+.agent-architecture-actions button.primary { border-color: #d9d9d9; background: #d9d9d9; color: #171717; }
+.agent-architecture-actions button:disabled { opacity: .35; cursor: not-allowed; }
+.agent-architecture-actions svg { width: 12px; height: 12px; }
 
 .guide-workspace { position: relative; min-width: 0; min-height: 0; height: 100%; display: grid; grid-template-columns: var(--panel-width, 292px) minmax(0,1fr); background: #171717; }
 .guide-navigation { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid #303030; background: #1b1b1b; padding: 20px 13px 14px; overflow-y: auto; scrollbar-color: #454545 transparent; }
@@ -378,21 +399,40 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .workflow-runtime-note > div { display: grid; gap: 4px; }
 .workflow-runtime-note strong { font-size: 10px; }
 .workflow-runtime-note span { color: #777; font-size: 9px; line-height: 1.45; }
-.architecture-component.kind-runtime { min-height: 98px; border-left: 2px solid var(--accent); background: #24211f; }
-.architecture-component.kind-runtime .workflow-node-icon { color: #e09a6a; border-color: #503b2e; background: #2d251f; }
-.architecture-component.kind-model { border-left: 2px solid #7b91ae; }
-.architecture-component.kind-policy, .architecture-component.kind-hooks { border-left: 2px solid #9c816f; }
-.architecture-palette .workflow-palette-list { padding-bottom: 12px; }
-.architecture-legend { display: grid; grid-template-columns: 18px minmax(0,1fr); gap: 8px; margin-top: auto; border-top: 1px solid #303030; padding: 12px 8px 2px; color: #777; font-size: 9px; line-height: 1.45; }
-.architecture-legend svg { width: 15px; height: 15px; color: var(--accent); }
-.architecture-checkbox { min-height: 34px; display: flex; align-items: center; gap: 8px; border: 1px solid #393939; border-radius: 7px; padding: 0 9px; background: #222; color: #aaa; font-size: 10px; font-weight: 400; }
-.workflow-inspector-form .architecture-checkbox input { width: 14px; height: 14px; accent-color: var(--accent); }
+.architecture-runtime-status { min-height: 24px; display: inline-flex; align-items: center; gap: 6px; color: #999; font-size: 9px; white-space: nowrap; }
+.architecture-runtime-status i, .agent-architecture-status i { width: 6px; height: 6px; border-radius: 50%; background: #777; }
+.architecture-runtime-status.production, .agent-architecture-status.production { color: #91b69a; }
+.architecture-runtime-status.production i, .agent-architecture-status.production i { background: var(--green); }
+.architecture-runtime-status.planned, .agent-architecture-status.planned { color: #c9a17f; }
+.architecture-runtime-status.planned i, .agent-architecture-status.planned i { background: #ca956c; }
+.architecture-runtime-status.invalid { color: #d99a9a; }
+.architecture-runtime-status.invalid i { background: var(--red); }
+.workflow-use-button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #e5e5e5; border-radius: 7px; padding: 0 11px; background: #e5e5e5; color: #171717; cursor: pointer; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.workflow-use-button svg { width: 14px; height: 14px; }
+.workflow-use-button:disabled { border-color: #3d3d3d; background: #242424; color: #686868; cursor: not-allowed; }
+.architecture-pattern-list { display: grid; gap: 3px; padding-bottom: 12px; border-bottom: 1px solid #303030; }
+.architecture-pattern-list button { min-width: 0; min-height: 58px; display: grid; grid-template-columns: 27px minmax(0,1fr) 8px; align-items: center; gap: 8px; border: 0; border-radius: 7px; padding: 7px 8px; background: transparent; color: #aaa; cursor: pointer; text-align: left; }
+.architecture-pattern-list button:hover, .architecture-pattern-list button.active { background: #242424; color: #e0e0e0; }
+.architecture-pattern-list button.active { box-shadow: inset 2px 0 var(--accent); }
+.architecture-pattern-list button > svg { width: 17px; height: 17px; color: #888; }
+.architecture-pattern-list button > span { min-width: 0; display: grid; gap: 3px; }
+.architecture-pattern-list strong { font-size: 10px; }
+.architecture-pattern-list small { overflow: hidden; color: #747474; font-size: 8px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.architecture-pattern-list button > i { width: 6px; height: 6px; border-radius: 50%; background: #876a54; }
+.architecture-pattern-list button > i.production { background: var(--green); }
+.architecture-node-heading { min-height: 44px; padding-top: 12px; }
+.architecture-node-library { padding-bottom: 12px; }
+.architecture-node { min-height: 82px; }
+.architecture-node.kind-input, .architecture-node.kind-output { border-left: 2px solid #7f9b86; }
+.architecture-node.kind-route, .architecture-node.kind-approval { border-left: 2px solid var(--accent); }
+.architecture-node.kind-delegate, .architecture-node.kind-review { border-left: 2px solid #7b91ae; }
+.architecture-node.kind-output .workflow-node-icon { color: #8fbc9c; }
+.architecture-runtime-summary { display: grid; gap: 7px; border-bottom: 1px solid #303030; padding: 14px; }
+.architecture-runtime-summary p { margin: 0; color: #858585; font-size: 9px; line-height: 1.5; }
+.workflow-runtime-note button { width: fit-content; min-height: 27px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #444; border-radius: 6px; padding: 0 8px; background: #292929; color: #cfcfcf; cursor: pointer; font-size: 9px; }
+.workflow-runtime-note button svg { width: 11px; height: 11px; }
+.workflow-runtime-note button.text-only { border: 0; padding: 0; background: transparent; color: #888; }
 .workflow-inspector-actions button:disabled { opacity: .4; cursor: default; }
-.architecture-build-preview { display: grid; gap: 9px; border-top: 1px solid #303030; padding: 14px; }
-.architecture-build-preview > strong { display: flex; align-items: center; gap: 6px; font-size: 10px; }
-.architecture-build-preview > strong svg { width: 14px; height: 14px; color: #888; }
-.architecture-build-preview ol { display: grid; gap: 6px; margin: 0; padding-left: 18px; color: #777; }
-.architecture-build-preview code { color: #999; font: 8px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap: anywhere; }
 
 .error-banner { margin: 12px 20px 0; min-height: 40px; padding: 8px 12px; border: 1px solid rgba(236,107,107,.3); background: rgba(118,34,34,.2); color: #ffb6b6; display: flex; align-items: center; gap: 9px; border-radius: 10px; font-size: 13px; }
 .error-banner span { flex: 1; }
@@ -573,6 +613,13 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .dialog label { display: block; color: #bfbfbf; font-size: 12px; margin-bottom: 7px; }
 .dialog input, .dialog select { width: 100%; height: 42px; border: 1px solid #494949; border-radius: 9px; background: #1b1b1b; color: #eee; padding: 0 11px; }
 .dialog input::placeholder { color: #737373; }
+.dialog input + label, .dialog select + label { margin-top: 16px; }
+.create-architecture-summary { display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: start; gap: 9px; margin-top: 9px; border: 1px solid #3b3b3b; border-radius: 8px; padding: 10px; background: #1e1e1e; }
+.create-architecture-summary > svg { width: 17px; height: 17px; color: #8fbc9c; }
+.create-architecture-summary > span { min-width: 0; display: grid; gap: 4px; }
+.create-architecture-summary strong { font-size: 10px; }
+.create-architecture-summary small { color: #7f7f7f; font-size: 9px; line-height: 1.45; }
+.create-architecture-summary.planned > svg, .create-architecture-summary.invalid > svg { color: #c79570; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .dialog-actions button:disabled { opacity: .48; cursor: not-allowed; transform: none; }
 .button-link { display: inline-flex; align-items: center; justify-content: center; gap: 7px; text-decoration: none; }
@@ -656,6 +703,11 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
   .workflow-description-field textarea { max-height: 56px; }
   .workflow-diagnostics { display: none; }
   .workflow-runtime-note { margin: 8px 12px; }
+  .architecture-runtime-status { display: none; }
+  .architecture-palette .workflow-panel-heading, .architecture-node-heading, .architecture-node-library { display: none; }
+  .architecture-pattern-list { display: flex; gap: 5px; overflow-x: auto; border: 0; padding: 0; }
+  .architecture-pattern-list button { min-width: 176px; min-height: 82px; }
+  .agent-architecture-row { grid-template-columns: 32px minmax(140px,1fr) 100px auto; }
 }
 
 @media (max-width: 560px) {
@@ -725,6 +777,15 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
   .workflow-inspector-form { grid-template-columns: 1fr; }
   .workflow-inspector-form label:has(textarea) { grid-column: auto; }
   .workflow-runtime-note { display: none; }
+  .workflow-use-button { width: 34px; padding: 0; justify-content: center; font-size: 0; }
+  .architecture-pattern-list button { min-width: 160px; min-height: 68px; }
+  .architecture-pattern-list small { white-space: normal; }
+  .agent-architecture-heading { grid-template-columns: 1fr; }
+  .agent-architecture-heading > span { display: none; }
+  .agent-architecture-row { grid-template-columns: 30px minmax(0,1fr) auto; gap: 9px; padding: 9px 10px; }
+  .agent-architecture-status { display: none; }
+  .agent-architecture-actions button:first-child { display: none; }
+  .agent-architecture-actions button.primary { width: 30px; padding: 0; justify-content: center; font-size: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

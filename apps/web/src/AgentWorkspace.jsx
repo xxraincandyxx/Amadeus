@@ -6,6 +6,7 @@
 // provides:
 // - fn: AgentWorkspace
 // uses:
+// - module: apps/web/src/agentArchitecture.js
 // - module: apps/web/src/agentSessions.js
 // - library: Phosphor Icons
 // invariants:
@@ -19,6 +20,7 @@
 
 import {
   ArrowRight,
+  Brain,
   CheckCircle,
   ClockCountdown,
   Plus,
@@ -29,6 +31,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { agentSessionRows, agentSessionSummary } from "./agentSessions";
+import { architectureRuntimeStatus } from "./agentArchitecture";
 
 function WorkloadMetric({ icon: Icon, label, value, tone = "default" }) {
   return (
@@ -40,7 +43,7 @@ function WorkloadMetric({ icon: Icon, label, value, tone = "default" }) {
   );
 }
 
-export function AgentWorkspace({ sessions, activeId, metadata, onSelect, onCreate, statusLabel, t }) {
+export function AgentWorkspace({ sessions, activeId, metadata, architectures, sessionArchitectures, onSelect, onCreate, onEditArchitecture, statusLabel, t }) {
   const rows = agentSessionRows(sessions);
   const summary = agentSessionSummary(sessions);
 
@@ -52,7 +55,7 @@ export function AgentWorkspace({ sessions, activeId, metadata, onSelect, onCreat
           <h1 id="agent-workspace-title">{t("Agent workspace")}</h1>
           <p>{t("Track coordinators, delegated work, and sessions that need attention.")}</p>
         </div>
-        <button className="agent-new-button" type="button" onClick={onCreate}><Plus />{t("New coordinator")}</button>
+        <button className="agent-new-button" type="button" onClick={() => onCreate()}><Plus />{t("New coordinator")}</button>
       </div>
 
       <div className="agent-metrics" aria-label={t("Agent workload summary")}>
@@ -61,6 +64,21 @@ export function AgentWorkspace({ sessions, activeId, metadata, onSelect, onCreat
         <WorkloadMetric icon={CheckCircle} label={t("Completed")} value={summary.completed} tone="completed" />
         <WorkloadMetric icon={WarningCircle} label={t("Failed")} value={summary.failed} tone="failed" />
       </div>
+
+      <section className="agent-architecture-library" aria-labelledby="agent-architecture-library-title">
+        <div className="agent-architecture-heading"><div><strong id="agent-architecture-library-title">{t("Agent architectures")}</strong><span>{t("Choose the control algorithm used to construct a new agent.")}</span></div><span>{t("Runtime")}</span></div>
+        <div className="agent-architecture-rows">
+          {architectures.map((architecture) => {
+            const production = architectureRuntimeStatus(architecture) === "production";
+            return <div className="agent-architecture-row" key={architecture.id}>
+              <span className="agent-architecture-icon"><Brain /></span>
+              <span className="agent-architecture-copy"><strong>{architecture.name}</strong><small>{t(architecture.description)}</small></span>
+              <span className={`agent-architecture-status ${production ? "production" : "planned"}`}><i />{production ? t("Runnable now") : t("Runtime planned")}</span>
+              <span className="agent-architecture-actions"><button type="button" onClick={() => onEditArchitecture(architecture.id)}>{t("Edit design")}</button><button type="button" className="primary" disabled={!production} title={!production ? t("This architecture preset is not executable yet") : t("Create agent")} onClick={() => onCreate(architecture.id)}><Plus />{t("Create agent")}</button></span>
+            </div>;
+          })}
+        </div>
+      </section>
 
       <div className="agent-roster">
         <div className="agent-roster-heading">
@@ -89,7 +107,7 @@ export function AgentWorkspace({ sessions, activeId, metadata, onSelect, onCreat
                   </span>
                   <span className="agent-task-cell">
                     <strong>{task || (isRoot ? t("Coordinates this session and delegates focused work.") : t("Delegated task details are available in the conversation."))}</strong>
-                    <small>{childCount ? t(childCount === 1 ? "1 child agent" : "{count} child agents", { count: childCount }) : session.profile}</small>
+                    <small>{childCount ? t(childCount === 1 ? "1 child agent" : "{count} child agents", { count: childCount }) : architectures.find(({ id }) => id === sessionArchitectures[session.id])?.name || t("Production ReAct")}</small>
                   </span>
                   <span className={`agent-row-status ${session.status}`}><i />{statusLabel(session.status)}</span>
                   <span className="agent-open-icon" aria-hidden="true"><ArrowRight /></span>

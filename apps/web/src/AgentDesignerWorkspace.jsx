@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Renders the visual editor for composing agents from core runtime components.
+// summary: Renders a visual editor for agent reasoning architectures and control transitions.
 // layer: ui
 // status: active
 // feature_flags: none
@@ -10,17 +10,16 @@
 // - library: @xyflow/react
 // - library: Phosphor Icons
 // invariants:
-// - Canvas bindings configure an Agent Runtime and never represent task execution order.
-// - Architecture edits persist locally as schema-versioned manifests.
+// - Edges represent declared workflow transitions, including loops and branches.
+// - Only production-backed presets offer agent session creation.
 // side_effects:
-// - Reads and writes browser local storage.
 // - Imports and downloads agent architecture JSON files.
 // tests:
 // - cmd: npm test
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   addEdge,
   applyEdgeChanges,
@@ -37,256 +36,175 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  ArrowsClockwise,
-  BracketsCurly,
-  ChatText,
+  ArrowClockwise,
+  ArrowRight,
+  Brain,
   CheckCircle,
-  Cpu,
-  Database,
   DownloadSimple,
   FlowArrow,
-  Gauge,
   GitBranch,
+  ListChecks,
   MagnifyingGlass,
   Plus,
-  Pulse,
   Robot,
   ShieldCheck,
+  SignIn,
+  SignOut,
+  Sparkle,
   Trash,
   UploadSimple,
+  UsersThree,
   WarningCircle,
   Wrench,
 } from "@phosphor-icons/react";
 
 import {
-  AGENT_ARCHITECTURE_SCHEMA_VERSION,
-  AGENT_COMPONENT_TYPES,
-  architectureBuilderSteps,
+  AGENT_ARCHITECTURE_PRESETS,
+  AGENT_NODE_TYPES,
   architectureForExport,
-  componentDefinition,
+  architectureRuntimeStatus,
   createAgentArchitecture,
-  createArchitectureComponent,
-  createArchitectureLibrary,
-  normalizeAgentArchitecture,
+  createArchitectureNode,
+  nodeDefinition,
   parseArchitectureFile,
+  presetDefinition,
   validateAgentArchitecture,
 } from "./agentArchitecture";
 
-const STORAGE_KEY = "amadeus.agentArchitectureLibrary.v1";
-const componentIcons = {
-  runtime: Robot,
-  model: Cpu,
-  prompt: ChatText,
-  tools: Wrench,
-  policy: ShieldCheck,
-  memory: Database,
-  rag: MagnifyingGlass,
-  delegation: GitBranch,
-  hooks: BracketsCurly,
-  compaction: ArrowsClockwise,
-  telemetry: Pulse,
+const nodeIcons = {
+  input: SignIn,
+  observe: MagnifyingGlass,
+  reason: Brain,
+  act: Wrench,
+  plan: ListChecks,
+  execute: Wrench,
+  route: GitBranch,
+  critique: ShieldCheck,
+  revise: ArrowClockwise,
+  delegate: UsersThree,
+  review: ShieldCheck,
+  approval: ShieldCheck,
+  synthesize: Sparkle,
+  output: SignOut,
 };
 
-function loadLibrary() {
-  try {
-    const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    if (stored?.schemaVersion !== AGENT_ARCHITECTURE_SCHEMA_VERSION || !Array.isArray(stored.architectures) || !stored.architectures.length) {
-      return createArchitectureLibrary();
-    }
-    const architectures = stored.architectures.map(normalizeAgentArchitecture);
-    const activeArchitectureId = architectures.some(({ id }) => id === stored.activeArchitectureId)
-      ? stored.activeArchitectureId
-      : architectures[0].id;
-    return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, activeArchitectureId, architectures };
-  } catch {
-    return createArchitectureLibrary();
-  }
-}
+const presetIcons = { react: Brain, "plan-execute": ListChecks, reflection: ArrowClockwise, "supervisor-team": UsersThree };
 
-function componentDetail(data, t) {
-  if (data.kind === "model") return `${data.provider} / ${data.model}`;
-  if (data.kind === "prompt" || data.kind === "tools") return data.profile;
-  if (data.kind === "policy") return data.mode;
-  if (data.kind === "memory") return data.providers;
-  if (data.kind === "rag") return data.embeddingModel;
-  if (data.kind === "delegation") return t("Depth {depth}", { depth: data.maxDepth });
-  if (data.kind === "hooks") return data.enabled ? data.sandbox : t("Disabled");
-  if (data.kind === "compaction") return t("{percent}% threshold", { percent: data.thresholdPercent });
-  if (data.kind === "telemetry") return data.telemetry || data.llmTrace ? t("Recording enabled") : t("Disabled");
-  return data.runtime;
-}
-
-function AgentComponent({ data, selected }) {
-  const Icon = componentIcons[data.kind] || Robot;
-  const runtime = data.kind === "runtime";
+function ArchitectureNode({ data, selected }) {
+  const Icon = nodeIcons[data.kind] || Brain;
+  const isInput = data.kind === "input";
+  const isOutput = data.kind === "output";
+  const detail = data.instruction || data.criteria || data.condition || data.toolProfile || data.source || data.capability || data.reason || data.emptyDetail;
   return (
-    <article className={`workflow-node architecture-component kind-${data.kind} ${selected ? "selected" : ""}`}>
-      {runtime && <Handle type="target" position={Position.Left} />}
+    <article className={`workflow-node architecture-node kind-${data.kind} ${selected ? "selected" : ""}`}>
+      {!isInput && <Handle type="target" position={Position.Left} />}
       <div className="workflow-node-icon"><Icon aria-hidden="true" /></div>
       <div className="workflow-node-copy">
         <span>{data.groupLabel}</span>
         <strong>{data.label}</strong>
-        <small>{componentDetail(data, data.t) || data.emptyDetail}</small>
+        <small>{detail}</small>
       </div>
-      {!runtime && <Handle type="source" position={Position.Right} />}
+      {!isOutput && <Handle type="source" position={Position.Right} />}
     </article>
   );
 }
 
-const nodeTypes = { agentComponent: AgentComponent };
+const nodeTypes = { architectureNode: ArchitectureNode };
 
 function diagnosticText(item, t) {
-  const definition = item.kind ? componentDefinition(item.kind) : null;
   const messages = {
     name_required: t("Agent name is required."),
-    duplicate_component_id: t("Component identifiers must be unique."),
-    runtime_count: t("Add exactly one Agent Runtime component."),
-    model_count: t("Add exactly one Model Provider component."),
-    duplicate_component_kind: t("Only one {type} component can be used.", { type: t(definition?.label || item.kind) }),
-    dangling_binding: t("{count} bindings reference missing components.", { count: item.count }),
-    invalid_binding: t("{count} bindings do not configure the Agent Runtime.", { count: item.count }),
-    model_binding_required: t("Bind the Model Provider to the Agent Runtime."),
-    unbound_components: t("{count} components are not bound to the Agent Runtime.", { count: item.count }),
+    node_required: t("Add at least one architecture node."),
+    duplicate_node_id: t("Node identifiers must be unique."),
+    entry_required: t("Choose an architecture entry node."),
+    entry_missing: t("The architecture entry node no longer exists."),
+    dangling_edge: t("{count} transitions reference missing nodes.", { count: item.count }),
+    output_required: t("Add a Complete node to end the run."),
+    unreachable_nodes: t("{count} nodes cannot be reached from the entry node.", { count: item.count }),
   };
   return messages[item.code] || item.code;
 }
 
-function AgentDesigner({ t }) {
-  const [library, setLibrary] = useState(loadLibrary);
-  const [selectedComponentId, setSelectedComponentId] = useState(null);
-  const [selectedBindingId, setSelectedBindingId] = useState(null);
-  const [saveState, setSaveState] = useState("saved");
+function AgentDesigner({ t, library, onLibraryChange, onUseArchitecture, onOpenAgentWorkspace }) {
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [importError, setImportError] = useState("");
   const fileInputRef = useRef(null);
-  const canvasRef = useRef(null);
   const { screenToFlowPosition, fitView } = useReactFlow();
-
-  const architecture = useMemo(
-    () => library.architectures.find(({ id }) => id === library.activeArchitectureId) || library.architectures[0],
-    [library],
-  );
+  const architecture = useMemo(() => library.architectures.find(({ id }) => id === library.activeArchitectureId) || library.architectures[0], [library]);
   const validation = useMemo(() => validateAgentArchitecture(architecture), [architecture]);
-  const selectedComponent = architecture.components.find(({ id }) => id === selectedComponentId) || null;
-  const selectedBinding = architecture.bindings.find(({ id }) => id === selectedBindingId) || null;
-  const selectedDefinition = selectedComponent ? componentDefinition(selectedComponent.data.kind) : null;
-  const builderSteps = useMemo(() => architectureBuilderSteps(architecture), [architecture]);
-  const existingKinds = useMemo(() => new Set(architecture.components.map(({ data }) => data.kind)), [architecture.components]);
+  const runtimeStatus = architectureRuntimeStatus(architecture);
+  const selectedNode = architecture.nodes.find(({ id }) => id === selectedNodeId) || null;
+  const selectedEdge = architecture.edges.find(({ id }) => id === selectedEdgeId) || null;
+  const selectedDefinition = selectedNode ? nodeDefinition(selectedNode.data.kind) : null;
+  const preset = presetDefinition(architecture.preset);
 
-  const decoratedComponents = useMemo(() => architecture.components.map((component) => {
-    const definition = componentDefinition(component.data.kind);
-    return {
-      ...component,
-      data: {
-        ...component.data,
-        groupLabel: t(definition?.group || "Component"),
-        emptyDetail: t("Not configured"),
-        t,
-      },
-    };
-  }), [architecture.components, t]);
-
-  useEffect(() => {
-    setSaveState("saving");
-    const timer = window.setTimeout(() => {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        ...library,
-        architectures: library.architectures.map(architectureForExport),
-      }));
-      setSaveState("saved");
-    }, 180);
-    return () => window.clearTimeout(timer);
-  }, [library]);
+  const decoratedNodes = useMemo(() => architecture.nodes.map((node) => {
+    const definition = nodeDefinition(node.data.kind);
+    return { ...node, data: { ...node.data, groupLabel: t(definition?.group || "Node"), emptyDetail: t("No node configuration"), isEntry: node.id === architecture.entryNodeId } };
+  }), [architecture.entryNodeId, architecture.nodes, t]);
 
   const replaceArchitecture = useCallback((nextArchitecture) => {
-    setLibrary((current) => ({
-      ...current,
-      architectures: current.architectures.map((item) => item.id === current.activeArchitectureId ? nextArchitecture : item),
-    }));
-  }, []);
+    onLibraryChange({ ...library, architectures: library.architectures.map((item) => item.id === library.activeArchitectureId ? nextArchitecture : item) });
+  }, [library, onLibraryChange]);
 
-  const updateArchitecture = useCallback((updater) => {
-    replaceArchitecture(typeof updater === "function" ? updater(architecture) : updater);
-  }, [architecture, replaceArchitecture]);
+  const updateArchitecture = useCallback((updater) => replaceArchitecture(typeof updater === "function" ? updater(architecture) : updater), [architecture, replaceArchitecture]);
+  const selectArchitecture = useCallback((id) => {
+    onLibraryChange({ ...library, activeArchitectureId: id });
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+    window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220, maxZoom: 1 }));
+  }, [fitView, library, onLibraryChange]);
 
-  const onNodesChange = useCallback((changes) => {
-    updateArchitecture({ ...architecture, components: applyNodeChanges(changes, architecture.components) });
-  }, [architecture, updateArchitecture]);
-
-  const onEdgesChange = useCallback((changes) => {
-    updateArchitecture({ ...architecture, bindings: applyEdgeChanges(changes, architecture.bindings) });
-  }, [architecture, updateArchitecture]);
-
-  const validConnection = useCallback(({ source, target }) => {
-    const sourceKind = architecture.components.find(({ id }) => id === source)?.data.kind;
-    const targetKind = architecture.components.find(({ id }) => id === target)?.data.kind;
-    return Boolean(sourceKind && targetKind === "runtime" && sourceKind !== "runtime"
-      && !architecture.bindings.some((binding) => binding.source === source && binding.target === target));
-  }, [architecture]);
-
+  const onNodesChange = useCallback((changes) => updateArchitecture({ ...architecture, nodes: applyNodeChanges(changes, architecture.nodes) }), [architecture, updateArchitecture]);
+  const onEdgesChange = useCallback((changes) => updateArchitecture({ ...architecture, edges: applyEdgeChanges(changes, architecture.edges) }), [architecture, updateArchitecture]);
+  const validConnection = useCallback(({ source, target }) => source !== target && !architecture.edges.some((edge) => edge.source === source && edge.target === target), [architecture.edges]);
   const onConnect = useCallback((connection) => {
     if (!validConnection(connection)) return;
-    updateArchitecture({
-      ...architecture,
-      bindings: addEdge({ ...connection, id: `binding-${Date.now().toString(36)}`, label: "configures" }, architecture.bindings),
-    });
+    updateArchitecture({ ...architecture, edges: addEdge({ ...connection, id: `transition-${Date.now().toString(36)}`, label: "next" }, architecture.edges) });
   }, [architecture, updateArchitecture, validConnection]);
 
-  const addComponent = useCallback((type, position) => {
-    if (existingKinds.has(type)) return;
-    const component = createArchitectureComponent(type, position || { x: 180, y: 120 });
-    updateArchitecture({ ...architecture, components: [...architecture.components, component] });
-    setSelectedComponentId(component.id);
-    setSelectedBindingId(null);
-    window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220, maxZoom: 1 }));
-  }, [architecture, existingKinds, fitView, updateArchitecture]);
+  const addNode = useCallback((type, position) => {
+    const node = createArchitectureNode(type, position || { x: 180 + architecture.nodes.length * 18, y: 120 + architecture.nodes.length * 14 });
+    updateArchitecture({ ...architecture, entryNodeId: architecture.entryNodeId || node.id, nodes: [...architecture.nodes, node] });
+    setSelectedNodeId(node.id);
+    setSelectedEdgeId(null);
+  }, [architecture, updateArchitecture]);
 
   const onDrop = useCallback((event) => {
     event.preventDefault();
-    const type = event.dataTransfer.getData("application/amadeus-agent-component");
-    if (!type || existingKinds.has(type)) return;
-    addComponent(type, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
-  }, [addComponent, existingKinds, screenToFlowPosition]);
+    const type = event.dataTransfer.getData("application/amadeus-architecture-node");
+    if (type) addNode(type, screenToFlowPosition({ x: event.clientX, y: event.clientY }));
+  }, [addNode, screenToFlowPosition]);
 
-  const updateComponentData = useCallback((key, value) => {
-    if (!selectedComponent) return;
-    updateArchitecture({
-      ...architecture,
-      components: architecture.components.map((component) => component.id === selectedComponent.id
-        ? { ...component, data: { ...component.data, [key]: value } }
-        : component),
-    });
-  }, [architecture, selectedComponent, updateArchitecture]);
+  const updateNodeData = useCallback((key, value) => {
+    if (!selectedNode) return;
+    updateArchitecture({ ...architecture, nodes: architecture.nodes.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, [key]: value } } : node) });
+  }, [architecture, selectedNode, updateArchitecture]);
 
   const removeSelection = useCallback(() => {
-    if (selectedComponent?.data.kind === "runtime") return;
     updateArchitecture({
       ...architecture,
-      components: selectedComponent ? architecture.components.filter(({ id }) => id !== selectedComponent.id) : architecture.components,
-      bindings: architecture.bindings.filter((binding) => (
-        binding.id !== selectedBinding?.id
-        && binding.source !== selectedComponent?.id
-        && binding.target !== selectedComponent?.id
-      )),
+      entryNodeId: selectedNode?.id === architecture.entryNodeId ? "" : architecture.entryNodeId,
+      nodes: selectedNode ? architecture.nodes.filter(({ id }) => id !== selectedNode.id) : architecture.nodes,
+      edges: architecture.edges.filter((edge) => edge.id !== selectedEdge?.id && edge.source !== selectedNode?.id && edge.target !== selectedNode?.id),
     });
-    setSelectedComponentId(null);
-    setSelectedBindingId(null);
-  }, [architecture, selectedBinding, selectedComponent, updateArchitecture]);
+    setSelectedNodeId(null);
+    setSelectedEdgeId(null);
+  }, [architecture, selectedEdge, selectedNode, updateArchitecture]);
 
-  const createNewArchitecture = useCallback(() => {
-    const created = createAgentArchitecture(t("Untitled agent"), { blank: true });
-    setLibrary((current) => ({ ...current, activeArchitectureId: created.id, architectures: [...current.architectures, created] }));
-    setSelectedComponentId(null);
-    setSelectedBindingId(null);
-    window.requestAnimationFrame(() => fitView({ padding: 0.3, duration: 220 }));
-  }, [fitView, t]);
+  const createFromPreset = useCallback((presetId = architecture.preset) => {
+    const definition = presetDefinition(presetId);
+    const created = createAgentArchitecture(`${definition.label} copy`, { preset: presetId });
+    onLibraryChange({ ...library, activeArchitectureId: created.id, architectures: [...library.architectures, created] });
+    window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220, maxZoom: 1 }));
+  }, [architecture.preset, fitView, library, onLibraryChange]);
 
   const deleteArchitecture = useCallback(() => {
-    if (library.architectures.length <= 1) return;
+    if (library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length) return;
     const remaining = library.architectures.filter(({ id }) => id !== architecture.id);
-    setLibrary({ ...library, activeArchitectureId: remaining[0].id, architectures: remaining });
-    setSelectedComponentId(null);
-    setSelectedBindingId(null);
-  }, [architecture.id, library]);
+    onLibraryChange({ ...library, activeArchitectureId: remaining[0].id, architectures: remaining });
+  }, [architecture.id, library, onLibraryChange]);
 
   const exportArchitecture = useCallback(() => {
     const contents = JSON.stringify(architectureForExport(architecture), null, 2);
@@ -305,167 +223,92 @@ function AgentDesigner({ t }) {
     try {
       const imported = parseArchitectureFile(await file.text());
       imported.id = `${imported.id}-${Date.now().toString(36)}`;
-      setLibrary((current) => ({ ...current, activeArchitectureId: imported.id, architectures: [...current.architectures, imported] }));
+      onLibraryChange({ ...library, activeArchitectureId: imported.id, architectures: [...library.architectures, imported] });
       setImportError("");
-      window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220 }));
     } catch (caught) {
-      setImportError(caught.message.startsWith("Unsupported agent architecture schema")
-        ? t("Unsupported agent architecture schema.")
-        : t(caught.message));
+      setImportError(caught.message.startsWith("Unsupported agent architecture schema") ? t("Unsupported agent architecture schema.") : t(caught.message));
     }
-  }, [fitView, t]);
+  }, [library, onLibraryChange, t]);
 
   return (
     <section className="workflow-workspace architecture-workspace" aria-labelledby="agent-designer-title">
       <header className="workflow-toolbar">
         <div className="workflow-title-control">
           <FlowArrow aria-hidden="true" />
-          <select
-            aria-label={t("Active agent design")}
-            value={architecture.id}
-            onChange={(event) => {
-              setLibrary((current) => ({ ...current, activeArchitectureId: event.target.value }));
-              setSelectedComponentId(null);
-              setSelectedBindingId(null);
-              window.requestAnimationFrame(() => fitView({ padding: 0.2, duration: 220 }));
-            }}
-          >
+          <select aria-label={t("Active agent design")} value={architecture.id} onChange={(event) => selectArchitecture(event.target.value)}>
             {library.architectures.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
           <input id="agent-designer-title" value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} />
-          <span className={`workflow-save-state ${saveState}`}><CheckCircle />{saveState === "saved" ? t("Saved locally") : t("Saving")}</span>
+          <span className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Runnable ReAct") : runtimeStatus === "planned" ? t("Runtime planned") : t("Invalid design")}</span>
         </div>
         <div className="workflow-toolbar-actions">
-          <button type="button" className="icon-button" title={t("New agent design")} aria-label={t("New agent design")} onClick={createNewArchitecture}><Plus /></button>
-          <button type="button" className="icon-button danger-hover" title={t("Delete agent design")} aria-label={t("Delete agent design")} disabled={library.architectures.length <= 1} onClick={deleteArchitecture}><Trash /></button>
-          <button type="button" className="toolbar-button" aria-label={t("Import")} title={t("Import")} onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
-          <button type="button" className="toolbar-button" aria-label={t("Export manifest")} title={t("Export manifest")} onClick={exportArchitecture}><DownloadSimple /><span>{t("Export")}</span></button>
+          <button type="button" className="icon-button" title={t("Duplicate from this pattern")} aria-label={t("Duplicate from this pattern")} onClick={() => createFromPreset()}><Plus /></button>
+          <button type="button" className="icon-button danger-hover" title={t("Delete agent design")} aria-label={t("Delete agent design")} disabled={library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length} onClick={deleteArchitecture}><Trash /></button>
+          <button type="button" className="toolbar-button" onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
+          <button type="button" className="toolbar-button" onClick={exportArchitecture}><DownloadSimple /><span>{t("Export")}</span></button>
+          <button type="button" className="workflow-use-button" disabled={runtimeStatus !== "production"} title={runtimeStatus === "production" ? t("Create a session with the production ReAct runtime") : t("This architecture preset is not executable yet")} onClick={() => onUseArchitecture(architecture.id)}><Robot />{t("Create agent")}</button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={importArchitecture} />
         </div>
       </header>
-
       {importError && <div className="workflow-import-error" role="alert"><WarningCircle /><span>{importError}</span><button type="button" onClick={() => setImportError("")}>{t("Dismiss")}</button></div>}
 
       <div className="workflow-editor-grid">
         <aside className="workflow-palette architecture-palette">
-          <div className="workflow-panel-heading"><div><strong>{t("Component library")}</strong><span>{t("Core AgentBuilder modules")}</span></div></div>
-          <div className="workflow-palette-list">
-            {AGENT_COMPONENT_TYPES.filter(({ type }) => type !== "runtime").map((definition) => {
-              const Icon = componentIcons[definition.type];
-              const disabled = existingKinds.has(definition.type);
-              return (
-                <button
-                  key={definition.type}
-                  type="button"
-                  draggable={!disabled}
-                  disabled={disabled}
-                  onDragStart={(event) => {
-                    event.dataTransfer.setData("application/amadeus-agent-component", definition.type);
-                    event.dataTransfer.effectAllowed = "move";
-                  }}
-                  onClick={() => addComponent(definition.type)}
-                >
-                  <span className={`workflow-palette-icon kind-${definition.type}`}><Icon /></span>
-                  <span><strong>{t(definition.label)}</strong><small>{t(definition.description)}</small></span>
-                  {disabled ? <CheckCircle aria-hidden="true" /> : <Plus aria-hidden="true" />}
-                </button>
-              );
+          <div className="workflow-panel-heading"><div><strong>{t("Architecture patterns")}</strong><span>{t("Control algorithms, not task flows")}</span></div></div>
+          <div className="architecture-pattern-list">
+            {AGENT_ARCHITECTURE_PRESETS.map((item) => {
+              const Icon = presetIcons[item.id];
+              const design = library.architectures.find(({ preset: designPreset, id }) => designPreset === item.id && id === `preset-${item.id}`);
+              return <button key={item.id} className={architecture.id === design?.id ? "active" : ""} onClick={() => design && selectArchitecture(design.id)}><Icon /><span><strong>{t(item.label)}</strong><small>{t(item.description)}</small></span><i className={item.runtimeStatus} title={item.runtimeStatus === "production" ? t("Runnable now") : t("Runtime planned")} /></button>;
             })}
           </div>
-          <div className="architecture-legend"><FlowArrow /><span>{t("Bindings configure the runtime. They do not define task order.")}</span></div>
+          <div className="workflow-panel-heading architecture-node-heading"><div><strong>{t("Runtime nodes")}</strong><span>{t("Drag or click to add")}</span></div></div>
+          <div className="workflow-palette-list architecture-node-library">
+            {AGENT_NODE_TYPES.map((definition) => {
+              const Icon = nodeIcons[definition.type];
+              return <button key={definition.type} type="button" draggable onDragStart={(event) => { event.dataTransfer.setData("application/amadeus-architecture-node", definition.type); event.dataTransfer.effectAllowed = "move"; }} onClick={() => addNode(definition.type)}><span className={`workflow-palette-icon kind-${definition.type}`}><Icon /></span><span><strong>{t(definition.label)}</strong><small>{t(definition.description)}</small></span><Plus /></button>;
+            })}
+          </div>
         </aside>
 
-        <div className="workflow-canvas" ref={canvasRef} onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
-          <ReactFlow
-            nodes={decoratedComponents}
-            edges={architecture.bindings}
-            nodeTypes={nodeTypes}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onNodeClick={(_, node) => { setSelectedComponentId(node.id); setSelectedBindingId(null); }}
-            onEdgeClick={(_, edge) => { setSelectedBindingId(edge.id); setSelectedComponentId(null); }}
-            onPaneClick={() => { setSelectedComponentId(null); setSelectedBindingId(null); }}
-            isValidConnection={validConnection}
-            fitView
-            fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-            minZoom={0.25}
-            maxZoom={1.8}
-            defaultEdgeOptions={{ type: "smoothstep" }}
-            deleteKeyCode={null}
-            proOptions={{ hideAttribution: true }}
-          >
+        <div className="workflow-canvas" onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
+          <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "smoothstep" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#3a3a3a" />
             <Controls showInteractive={false} />
-            <MiniMap pannable zoomable nodeColor={(node) => node.data.kind === "runtime" ? "#ef7d32" : "#676767"} maskColor="rgba(15,15,15,.72)" />
+            <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? "#ef7d32" : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />
           </ReactFlow>
-          <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>
-            {validation.isValid && !validation.warnings.length ? <CheckCircle /> : <WarningCircle />}
-            <span>{validation.isValid ? validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Architecture valid") : t("{count} validation errors", { count: validation.errors.length })}</span>
-          </div>
+          <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>{validation.isValid && !validation.warnings.length ? <CheckCircle /> : <WarningCircle />}<span>{validation.isValid ? validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Architecture valid") : t("{count} validation errors", { count: validation.errors.length })}</span></div>
         </div>
 
         <aside className="workflow-inspector">
-          {selectedComponent ? (
-            <>
-              <div className="workflow-panel-heading"><div><strong>{t("Component inspector")}</strong><span>{t(selectedDefinition?.builder || "AgentBuilder component")}</span></div></div>
-              <div className="workflow-inspector-form">
-                <label>{t("Label")}<input value={selectedComponent.data.label} onChange={(event) => updateComponentData("label", event.target.value)} /></label>
-                {selectedDefinition?.fields.map((field) => (
-                  <label key={field.key}>{t(field.label)}
-                    {field.control === "checkbox" ? (
-                      <span className="architecture-checkbox"><input type="checkbox" checked={Boolean(selectedComponent.data[field.key])} onChange={(event) => updateComponentData(field.key, event.target.checked)} /><span>{selectedComponent.data[field.key] ? t("Enabled") : t("Disabled")}</span></span>
-                    ) : field.multiline ? (
-                      <textarea rows="4" value={selectedComponent.data[field.key] || ""} readOnly={field.readOnly} onChange={(event) => updateComponentData(field.key, event.target.value)} />
-                    ) : (
-                      <input inputMode={field.inputMode} value={selectedComponent.data[field.key] || ""} readOnly={field.readOnly} onChange={(event) => updateComponentData(field.key, event.target.value)} />
-                    )}
-                  </label>
-                ))}
-                <label>{t("Component ID")}<input className="mono" value={selectedComponent.id} readOnly /></label>
-              </div>
-              <div className="workflow-inspector-actions"><button type="button" className="danger" disabled={selectedComponent.data.kind === "runtime"} onClick={removeSelection}><Trash />{selectedComponent.data.kind === "runtime" ? t("Runtime is required") : t("Delete component")}</button></div>
-            </>
-          ) : selectedBinding ? (
-            <>
-              <div className="workflow-panel-heading"><div><strong>{t("Binding inspector")}</strong><span>{t("Component configures runtime")}</span></div></div>
-              <div className="workflow-inspector-form">
-                <label>{t("Binding type")}<input value={t("configures")} readOnly /></label>
-                <label>{t("Source")}<input className="mono" value={selectedBinding.source} readOnly /></label>
-                <label>{t("Destination")}<input className="mono" value={selectedBinding.target} readOnly /></label>
-              </div>
-              <div className="workflow-inspector-actions"><button type="button" className="danger" onClick={removeSelection}><Trash />{t("Delete binding")}</button></div>
-            </>
-          ) : (
-            <>
-              <div className="workflow-panel-heading"><div><strong>{t("Agent architecture")}</strong><span>{t("AgentBuilder composition")}</span></div></div>
-              <div className="workflow-overview-metrics">
-                <div><span>{t("Components")}</span><strong>{architecture.components.length}</strong></div>
-                <div><span>{t("Bindings")}</span><strong>{architecture.bindings.length}</strong></div>
-              </div>
-              <label className="workflow-description-field">{t("Agent name")}<input value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} /></label>
-              <label className="workflow-description-field">{t("Description")}<textarea rows="3" value={architecture.description} placeholder={t("Describe the agent this architecture creates.")} onChange={(event) => updateArchitecture({ ...architecture, description: event.target.value })} /></label>
-              <div className="workflow-diagnostics">
-                <strong>{t("Validation")}</strong>
-                {!validation.errors.length && !validation.warnings.length ? (
-                  <div className="workflow-diagnostic valid"><CheckCircle />{t("Architecture is ready to export.")}</div>
-                ) : [...validation.errors, ...validation.warnings].map((item, index) => (
-                  <div className={`workflow-diagnostic ${validation.errors.includes(item) ? "error" : "warning"}`} key={`${item.code}-${index}`}><WarningCircle />{diagnosticText(item, t)}</div>
-                ))}
-              </div>
-              <div className="architecture-build-preview">
-                <strong><Gauge />{t("Core build map")}</strong>
-                <ol>{builderSteps.map((step) => <li key={step}><code>{step}</code></li>)}</ol>
-              </div>
-              <div className="workflow-runtime-note"><FlowArrow /><div><strong>{t("Manifest export only")}</strong><span>{t("The current API cannot apply serialized agent architectures yet.")}</span></div></div>
-            </>
-          )}
+          {selectedNode ? <>
+            <div className="workflow-panel-heading"><div><strong>{t("Node inspector")}</strong><span>{t(selectedDefinition?.description || "Architecture node")}</span></div></div>
+            <div className="workflow-inspector-form">
+              <label>{t("Label")}<input value={selectedNode.data.label} onChange={(event) => updateNodeData("label", event.target.value)} /></label>
+              {selectedDefinition?.fields.map((field) => <label key={field.key}>{t(field.label)}{field.multiline ? <textarea rows="5" value={selectedNode.data[field.key] || ""} onChange={(event) => updateNodeData(field.key, event.target.value)} /> : <input value={selectedNode.data[field.key] || ""} onChange={(event) => updateNodeData(field.key, event.target.value)} />}</label>)}
+              <label>{t("Node ID")}<input className="mono" value={selectedNode.id} readOnly /></label>
+            </div>
+            <div className="workflow-inspector-actions"><button className={selectedNode.id === architecture.entryNodeId ? "entry active" : "entry"} onClick={() => updateArchitecture({ ...architecture, entryNodeId: selectedNode.id })}><SignIn />{selectedNode.id === architecture.entryNodeId ? t("Entry node") : t("Set as entry")}</button><button className="danger" onClick={removeSelection}><Trash />{t("Delete node")}</button></div>
+          </> : selectedEdge ? <>
+            <div className="workflow-panel-heading"><div><strong>{t("Transition inspector")}</strong><span>{t("Declared workflow destination")}</span></div></div>
+            <div className="workflow-inspector-form"><label>{t("Transition label")}<input value={selectedEdge.label || ""} onChange={(event) => updateArchitecture({ ...architecture, edges: architecture.edges.map((edge) => edge.id === selectedEdge.id ? { ...edge, label: event.target.value } : edge) })} /></label><label>{t("Source")}<input className="mono" value={selectedEdge.source} readOnly /></label><label>{t("Destination")}<input className="mono" value={selectedEdge.target} readOnly /></label></div>
+            <div className="workflow-inspector-actions"><button className="danger" onClick={removeSelection}><Trash />{t("Delete transition")}</button></div>
+          </> : <>
+            <div className="workflow-panel-heading"><div><strong>{t(preset.label)}</strong><span>{t("Agent control architecture")}</span></div></div>
+            <div className="architecture-runtime-summary"><div className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Production runtime") : t("Runtime migration pending")}</div><p>{t(preset.description)}</p></div>
+            <div className="workflow-overview-metrics"><div><span>{t("Nodes")}</span><strong>{architecture.nodes.length}</strong></div><div><span>{t("Transitions")}</span><strong>{architecture.edges.length}</strong></div></div>
+            <label className="workflow-description-field">{t("Agent name")}<input value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} /></label>
+            <label className="workflow-description-field">{t("Description")}<textarea rows="3" value={architecture.description} onChange={(event) => updateArchitecture({ ...architecture, description: event.target.value })} /></label>
+            <label className="workflow-description-field">{t("Maximum transitions")}<input inputMode="numeric" value={architecture.maxTransitions} onChange={(event) => updateArchitecture({ ...architecture, maxTransitions: Math.max(1, Number.parseInt(event.target.value, 10) || 1) })} /></label>
+            <div className="workflow-diagnostics"><strong>{t("Validation")}</strong>{!validation.errors.length && !validation.warnings.length ? <div className="workflow-diagnostic valid"><CheckCircle />{t("Architecture graph is structurally valid.")}</div> : [...validation.errors, ...validation.warnings].map((item, index) => <div className={`workflow-diagnostic ${validation.errors.includes(item) ? "error" : "warning"}`} key={`${item.code}-${index}`}><WarningCircle />{diagnosticText(item, t)}</div>)}</div>
+            <div className="workflow-runtime-note"><Robot /><div><strong>{runtimeStatus === "production" ? t("Use from Agent workspace") : t("Design available, execution pending")}</strong><span>{runtimeStatus === "production" ? t("Creates a session with the production ReAct loop. Visual graph edits are not applied by the backend yet.") : t("The typed runtime exists, but this preset's built-in nodes and API bridge are not implemented yet.")}</span>{runtimeStatus === "production" && <button onClick={() => onUseArchitecture(architecture.id)}>{t("Create ReAct agent")}<ArrowRight /></button>}<button className="text-only" onClick={onOpenAgentWorkspace}>{t("Open Agent workspace")}</button></div></div>
+          </>}
         </aside>
       </div>
     </section>
   );
 }
 
-export function AgentDesignerWorkspace({ t }) {
-  return <ReactFlowProvider><AgentDesigner t={t} /></ReactFlowProvider>;
+export function AgentDesignerWorkspace(props) {
+  return <ReactFlowProvider><AgentDesigner {...props} /></ReactFlowProvider>;
 }

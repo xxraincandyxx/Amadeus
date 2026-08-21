@@ -9,6 +9,7 @@
 // - fn: createAgentArchitecture
 // - fn: createArchitectureNode
 // - fn: createArchitectureLibrary
+// - fn: loadArchitectureLibrary
 // - fn: parseArchitectureFile
 // - fn: validateAgentArchitecture
 // - fn: architectureForExport
@@ -107,6 +108,18 @@ export function createAgentArchitecture(name, options = {}) {
 export function createArchitectureLibrary() {
   const architectures = AGENT_ARCHITECTURE_PRESETS.map((preset) => createAgentArchitecture(preset.label, { preset: preset.id, id: `preset-${preset.id}` }));
   return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, activeArchitectureId: architectures[0].id, architectures };
+}
+
+export function loadArchitectureLibrary(storage) {
+  try {
+    const stored = JSON.parse(storage?.getItem(AGENT_ARCHITECTURE_STORAGE_KEY));
+    if (stored?.schemaVersion !== AGENT_ARCHITECTURE_SCHEMA_VERSION || !Array.isArray(stored.architectures) || !stored.architectures.length) return createArchitectureLibrary();
+    const architectures = stored.architectures.map(normalizeAgentArchitecture);
+    const activeArchitectureId = architectures.some(({ id }) => id === stored.activeArchitectureId) ? stored.activeArchitectureId : architectures[0].id;
+    return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, activeArchitectureId, architectures };
+  } catch {
+    return createArchitectureLibrary();
+  }
 }
 
 function normalizeNode(value, index) {

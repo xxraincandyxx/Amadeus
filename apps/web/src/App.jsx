@@ -10,6 +10,7 @@
 // - module: apps/web/src/api.js
 // - module: apps/web/src/AgentDesignerWorkspace.jsx
 // - module: apps/web/src/AgentWorkspace.jsx
+// - module: apps/web/src/agentArchitecture.js
 // - module: apps/web/src/agentSessions.js
 // - module: apps/web/src/FileDiffView.jsx
 // - module: apps/web/src/GuideWorkspace.jsx
@@ -71,6 +72,7 @@ import {
 } from "@phosphor-icons/react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { AGENT_ARCHITECTURE_STORAGE_KEY, architectureForExport, architectureRuntimeStatus, loadArchitectureLibrary } from "./agentArchitecture";
 import { AgentWorkspace } from "./AgentWorkspace";
 import { agentSessionRows, sessionRelations, upsertSession } from "./agentSessions";
 import { FileDiffView } from "./FileDiffView";
@@ -193,6 +195,11 @@ function App() {
   const [creatingSession, setCreatingSession] = useState(false);
   const [createError, setCreateError] = useState("");
   const [newSessionName, setNewSessionName] = useState("");
+  const [architectureLibrary, setArchitectureLibrary] = useState(() => loadArchitectureLibrary(localStorage));
+  const [selectedArchitectureId, setSelectedArchitectureId] = useState("preset-react");
+  const [sessionArchitectures, setSessionArchitectures] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("amadeus.sessionArchitectures.v1")) || {}; } catch { return {}; }
+  });
   const [showDetails, setShowDetails] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showContribute, setShowContribute] = useState(false);
@@ -337,12 +344,21 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    localStorage.setItem(AGENT_ARCHITECTURE_STORAGE_KEY, JSON.stringify({ ...architectureLibrary, architectures: architectureLibrary.architectures.map(architectureForExport) }));
+  }, [architectureLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem("amadeus.sessionArchitectures.v1", JSON.stringify(sessionArchitectures));
+  }, [sessionArchitectures]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [runtime.timeline, runtime.streamingText, runtime.thinking, runtime.approvals]);
 
-  const openCreateDialog = useCallback(() => {
+  const openCreateDialog = useCallback((architectureId = "preset-react") => {
     setNewSessionName("");
     setCreateError("");
+    setSelectedArchitectureId(architectureId);
     setCreating(true);
   }, []);
 
@@ -355,9 +371,15 @@ function App() {
     setCreatingSession(true);
     setCreateError("");
     try {
+      const architecture = architectureLibrary.architectures.find(({ id }) => id === selectedArchitectureId);
+      if (!architecture || architectureRuntimeStatus(architecture) !== "production") {
+        setCreateError(t("This architecture preset is not executable yet."));
+        return;
+      }
       const name = newSessionName.trim() || t("Session {number}", { number: sessions.length + 1 });
       const session = await api.createSession(name, "default");
       setSessions((current) => [...current, session]);
+      setSessionArchitectures((current) => ({ ...current, [session.id]: architecture.id }));
       setActiveId(session.id);
       setView("conversation");
       setNewSessionName("");
@@ -637,7 +659,13 @@ function App() {
             activeId={activeId}
             metadata={subagentMetadata}
             onSelect={selectSession}
+            architectures={architectureLibrary.architectures}
+            sessionArchitectures={sessionArchitectures}
             onCreate={openCreateDialog}
+            onEditArchitecture={(architectureId) => {
+              setArchitectureLibrary((current) => ({ ...current, activeArchitectureId: architectureId }));
+              setView("agent-designer");
+            }}
             statusLabel={(status) => statusLabel(status, t)}
             t={t}
           />
@@ -652,7 +680,13 @@ function App() {
           <ToolsWorkspace online={serverOnline} t={t} />
         ) : view === "agent-designer" ? (
           <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading agent designer")}</div>}>
-            <AgentDesignerWorkspace t={t} />
+            <AgentDesignerWorkspace
+              t={t}
+              library={architectureLibrary}
+              onLibraryChange={setArchitectureLibrary}
+              onUseArchitecture={openCreateDialog}
+              onOpenAgentWorkspace={() => setView("agents")}
+            />
           </Suspense>
         ) : view === "workflows" ? (
           <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading workflow designer")}</div>}>
@@ -714,6 +748,9 @@ function App() {
           online={serverOnline}
           submitting={creatingSession}
           error={createError}
+          architectures={architectureLibrary.architectures}
+          architectureId={selectedArchitectureId}
+          onArchitecture={setSelectedArchitectureId}
           onChange={setNewSessionName}
           onSubmit={createSession}
           onClose={() => setCreating(false)}
@@ -750,7 +787,7 @@ function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, o
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
         <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
-          <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
+          <button onClick={() => onCreate()}><Plus /><span>{t("New session")}</span></button>
           <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
           <button className={view === "agent-designer" ? "active" : ""} onClick={onAgentDesigner}><TreeStructure /><span>{t("Agent designer")}</span></button>
           <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Task workflows")}</span></button>
@@ -1093,17 +1130,24 @@ function DetailsPanel({ session, runtime, parentSession, children, onClose }) {
   );
 }
 
-function CreateDialog({ value, online, submitting, error, onChange, onSubmit, onClose, onSettings }) {
+function CreateDialog({ value, online, submitting, error, architectures, architectureId, onArchitecture, onChange, onSubmit, onClose, onSettings }) {
   const t = useTranslation();
+  const selectedArchitecture = architectures.find(({ id }) => id === architectureId) || architectures[0];
+  const runtimeStatus = architectureRuntimeStatus(selectedArchitecture);
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-session-title" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
         <div className="dialog-icon"><Sparkle weight="fill" /></div><h2 id="create-session-title">{t("New session")}</h2><p>{t("Start with a clean conversation and an independent agent context.")}</p>
         <label htmlFor="session-name">{t("Session name")}</label><input id="session-name" autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("Feature implementation")} />
+        <label htmlFor="session-architecture">{t("Agent architecture")}</label>
+        <select id="session-architecture" value={architectureId} onChange={(event) => onArchitecture(event.target.value)}>
+          {architectures.map((architecture) => <option key={architecture.id} value={architecture.id} disabled={architectureRuntimeStatus(architecture) !== "production"}>{architecture.name} · {architectureRuntimeStatus(architecture) === "production" ? t("Runnable now") : t("Runtime planned")}</option>)}
+        </select>
+        <div className={`create-architecture-summary ${runtimeStatus}`}><Brain /><span><strong>{selectedArchitecture.name}</strong><small>{runtimeStatus === "production" ? t("Uses the production ReAct runtime. Visual edits are retained as design metadata until the runtime API accepts manifests.") : t("This design cannot create a session until its runtime preset is implemented.")}</small></span></div>
         {(!online || error) && (
           <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || t("The Amadeus API is unavailable.")}</span>{!online && <button type="button" onClick={onSettings}>{t("Connection settings")}</button>}</div>
         )}
-        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting}>{submitting ? t("Creating…") : online ? t("Create session") : t("API unavailable")}</button></div>
+        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting || runtimeStatus !== "production"}>{submitting ? t("Creating…") : online ? t("Create agent") : t("API unavailable")}</button></div>
       </form>
     </div>
   );
@@ -1215,7 +1259,7 @@ function AgentWorking() {
 
 function EmptyState({ onCreate, online }) {
   const t = useTranslation();
-  return <div className="empty-state"><Robot /><h1>{online ? t("No open sessions") : t("Amadeus API is offline")}</h1><p>{online ? t("Create a session to begin working with an agent.") : t("Start the server at {url}, then refresh this page.", { url: api.baseUrl })}</p>{online && <button onClick={onCreate}><Plus />{t("New session")}</button>}</div>;
+  return <div className="empty-state"><Robot /><h1>{online ? t("No open sessions") : t("Amadeus API is offline")}</h1><p>{online ? t("Create a session to begin working with an agent.") : t("Start the server at {url}, then refresh this page.", { url: api.baseUrl })}</p>{online && <button onClick={() => onCreate()}><Plus />{t("New session")}</button>}</div>;
 }
 
 function LoadingScreen() {
