@@ -66,7 +66,7 @@ const server = http.createServer(async (request, response) => {
   if (url.pathname === "/v1/sessions" && request.method === "GET") return json(response, 200, { sessions, active_session_id: sessions[0]?.id || null });
   if (url.pathname === "/v1/sessions" && request.method === "POST") {
     const body = await readBody(request);
-    const session = { id: randomUUID(), name: body.name || "New session", profile: body.profile || "default", status: "idle", parent_session_id: null };
+    const session = { id: randomUUID(), name: body.name || "New session", profile: body.profile || "default", status: "idle", parent_session_id: null, architecture_id: body.architecture?.id, architecture_name: body.architecture?.name, architecture_preset: body.architecture?.preset };
     sessions.push(session); histories.set(session.id, []); return json(response, 201, session);
   }
   if (parts[0] === "v1" && parts[1] === "sessions") {

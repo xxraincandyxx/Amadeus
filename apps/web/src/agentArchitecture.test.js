@@ -32,11 +32,11 @@ test("ReAct contains an act-observe loop and is production runnable", () => {
   assert.equal(architectureRuntimeStatus(architecture), "production");
 });
 
-test("plan and execute loops over execution steps but remains planned", () => {
+test("plan and execute loops over execution steps and is runnable", () => {
   const architecture = createAgentArchitecture("Planner", { preset: "plan-execute", id: "planner" });
   const execute = architecture.nodes.find(({ data }) => data.kind === "execute");
   assert.ok(architecture.edges.some(({ target, label }) => target === execute.id && label === "more steps"));
-  assert.equal(architectureRuntimeStatus(architecture), "planned");
+  assert.equal(architectureRuntimeStatus(architecture), "production");
 });
 
 test("validation reports missing entry, output, and dangling edges", () => {

@@ -31,9 +31,9 @@ export const AGENT_TOOL_PERMISSION_MODES = ["read-only", "workspace-write", "dan
 
 export const AGENT_ARCHITECTURE_PRESETS = [
   { id: "react", label: "ReAct", description: "Reason, act with tools, observe results, and repeat until complete.", runtimeStatus: "production" },
-  { id: "plan-execute", label: "Plan and execute", description: "Create a plan, execute one step at a time, then synthesize the result.", runtimeStatus: "planned" },
-  { id: "reflection", label: "Reflection", description: "Draft, critique, and revise until the quality gate passes.", runtimeStatus: "planned" },
-  { id: "supervisor-team", label: "Supervisor team", description: "Route work to specialists, review their output, and decide whether to continue.", runtimeStatus: "planned" },
+  { id: "plan-execute", label: "Plan and execute", description: "Create a plan, execute one step at a time, then synthesize the result.", runtimeStatus: "production" },
+  { id: "reflection", label: "Reflection", description: "Draft, critique, and revise until the quality gate passes.", runtimeStatus: "production" },
+  { id: "supervisor-team", label: "Supervisor team", description: "Route work to specialists, review their output, and decide whether to continue.", runtimeStatus: "production" },
 ];
 
 export const AGENT_NODE_TYPES = [
@@ -199,7 +199,7 @@ export function validateAgentArchitecture(architecture) {
 
 export function architectureRuntimeStatus(architecture) {
   if (!validateAgentArchitecture(architecture).isValid) return "invalid";
-  return architecture.preset === "react" ? "production" : "planned";
+  return "production";
 }
 
 export function architectureForExport(architecture) { return normalizeAgentArchitecture(architecture); }

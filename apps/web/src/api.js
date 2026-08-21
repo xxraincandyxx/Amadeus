@@ -78,8 +78,8 @@ export const api = {
   },
   health: (baseUrl) => request("/health", {}, baseUrl),
   listSessions: () => request("/v1/sessions"),
-  createSession: (name, profile = "default", toolProfile) =>
-    request("/v1/sessions", { method: "POST", body: JSON.stringify({ name, profile, tool_profile: toolProfile }) }),
+  createSession: (name, profile = "default", toolProfile, architecture) =>
+    request("/v1/sessions", { method: "POST", body: JSON.stringify({ name, profile, tool_profile: toolProfile, architecture }) }),
   getSession: (id) => request(`/v1/sessions/${id}`),
   getHistory: (id) => request(`/v1/sessions/${id}/history`),
   getConfig: () => request("/config"),

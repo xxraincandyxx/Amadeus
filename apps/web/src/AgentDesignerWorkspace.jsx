@@ -295,7 +295,7 @@ function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture,
             {library.architectures.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
           <input id="agent-designer-title" value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} />
-          <span className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Runnable ReAct") : runtimeStatus === "planned" ? t("Runtime planned") : t("Invalid design")}</span>
+          <span className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Runnable workflow") : t("Invalid design")}</span>
         </div>
         <div className="workflow-toolbar-actions">
           <button type="button" className="icon-button" title={t("Duplicate from this pattern")} aria-label={t("Duplicate from this pattern")} onClick={() => createFromPreset()}><Plus /></button>
@@ -303,7 +303,7 @@ function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture,
           <button type="button" className="toolbar-button" onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
           <button type="button" className={`toolbar-button ${inspectorMode === "tools" ? "active" : ""}`} onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("tools"); }}><Wrench /><span>{t("Tools")}</span><small>{enabledToolCount || 0}</small></button>
           <button type="button" className="toolbar-button" onClick={exportArchitecture}><DownloadSimple /><span>{t("Export")}</span></button>
-          <button type="button" className="workflow-use-button" disabled={runtimeStatus !== "production"} title={runtimeStatus === "production" ? t("Create a session with the production ReAct runtime") : t("This architecture preset is not executable yet")} onClick={() => onUseArchitecture(architecture.id)}><Robot />{t("Create agent")}</button>
+          <button type="button" className="workflow-use-button" disabled={runtimeStatus !== "production"} title={runtimeStatus === "production" ? t("Create a session with this workflow architecture") : t("Fix the graph validation errors before creating this agent.")} onClick={() => onUseArchitecture(architecture.id)}><Robot />{t("Create agent")}</button>
           <input ref={fileInputRef} type="file" accept="application/json,.json" hidden onChange={importArchitecture} />
         </div>
       </header>
@@ -372,13 +372,13 @@ function AgentDesigner({ t, library, online, onLibraryChange, onUseArchitecture,
             <div className="workflow-inspector-actions"><button className="danger" onClick={removeSelection}><Trash />{t("Delete transition")}</button></div>
           </> : <>
             <div className="workflow-panel-heading"><div><strong>{t(preset.label)}</strong><span>{t("Agent control architecture")}</span></div></div>
-            <div className="architecture-runtime-summary"><div className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Production runtime") : t("Runtime migration pending")}</div><p>{t(preset.description)}</p></div>
+            <div className="architecture-runtime-summary"><div className={`architecture-runtime-status ${runtimeStatus}`}><i />{runtimeStatus === "production" ? t("Executable runtime") : t("Invalid design")}</div><p>{t(preset.description)}</p></div>
             <div className="workflow-overview-metrics"><div><span>{t("Nodes")}</span><strong>{architecture.nodes.length}</strong></div><div><span>{t("Transitions")}</span><strong>{architecture.edges.length}</strong></div></div>
             <label className="workflow-description-field">{t("Agent name")}<input value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} /></label>
             <label className="workflow-description-field">{t("Description")}<textarea rows="3" value={architecture.description} onChange={(event) => updateArchitecture({ ...architecture, description: event.target.value })} /></label>
             <label className="workflow-description-field">{t("Maximum transitions")}<input inputMode="numeric" value={architecture.maxTransitions} onChange={(event) => updateArchitecture({ ...architecture, maxTransitions: Math.max(1, Number.parseInt(event.target.value, 10) || 1) })} /></label>
             <div className="workflow-diagnostics"><strong>{t("Validation")}</strong>{!validation.errors.length && !validation.warnings.length ? <div className="workflow-diagnostic valid"><CheckCircle />{t("Architecture graph is structurally valid.")}</div> : [...validation.errors, ...validation.warnings].map((item, index) => <div className={`workflow-diagnostic ${validation.errors.includes(item) ? "error" : "warning"}`} key={`${item.code}-${index}`}><WarningCircle />{diagnosticText(item, t)}</div>)}</div>
-            <div className="workflow-runtime-note"><Robot /><div><strong>{runtimeStatus === "production" ? t("Use from Agent workspace") : t("Design available, execution pending")}</strong><span>{runtimeStatus === "production" ? t("Creates a session with the production ReAct loop. Visual graph edits are not applied by the backend yet.") : t("The typed runtime exists, but this preset's built-in nodes and API bridge are not implemented yet.")}</span>{runtimeStatus === "production" && <button onClick={() => onUseArchitecture(architecture.id)}>{t("Create ReAct agent")}<ArrowRight /></button>}<button className="text-only" onClick={onOpenAgentWorkspace}>{t("Open Agent workspace")}</button></div></div>
+            <div className="workflow-runtime-note"><Robot /><div><strong>{runtimeStatus === "production" ? t("Use from Agent workspace") : t("Fix the design before running")}</strong><span>{runtimeStatus === "production" ? t("The backend compiles this serialized graph and executes its model, tool, routing, and delegation nodes.") : t("The graph must be structurally valid before it can create an agent session.")}</span>{runtimeStatus === "production" && <button onClick={() => onUseArchitecture(architecture.id)}>{t("Create agent")}<ArrowRight /></button>}<button className="text-only" onClick={onOpenAgentWorkspace}>{t("Open Agent workspace")}</button></div></div>
           </>}
         </aside>
       </div>

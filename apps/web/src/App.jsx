@@ -377,7 +377,7 @@ function App() {
         return;
       }
       const name = newSessionName.trim() || t("Session {number}", { number: sessions.length + 1 });
-      const session = await api.createSession(name, "default", architecture.toolProfile);
+      const session = await api.createSession(name, "default", architecture.toolProfile, architectureForExport(architecture));
       setSessions((current) => [...current, session]);
       setSessionArchitectures((current) => ({ ...current, [session.id]: architecture.id }));
       setActiveId(session.id);
@@ -1144,7 +1144,7 @@ function CreateDialog({ value, online, submitting, error, architectures, archite
         <select id="session-architecture" value={architectureId} onChange={(event) => onArchitecture(event.target.value)}>
           {architectures.map((architecture) => <option key={architecture.id} value={architecture.id} disabled={architectureRuntimeStatus(architecture) !== "production"}>{architecture.name} · {architectureRuntimeStatus(architecture) === "production" ? t("Runnable now") : t("Runtime planned")}</option>)}
         </select>
-        <div className={`create-architecture-summary ${runtimeStatus}`}><Brain /><span><strong>{selectedArchitecture.name}</strong><small>{runtimeStatus === "production" ? t("Uses the production ReAct runtime. Tool access is applied when this session is created; visual graph edits remain design metadata.") : t("This design cannot create a session until its runtime preset is implemented.")}</small><small>{t("Tool profile: {profile} · {selection}", { profile: selectedArchitecture.toolProfile.name, selection: selectedArchitecture.toolProfile.selectionMode === "selected" ? t("{count} selected tools", { count: selectedArchitecture.toolProfile.enabledTools.length }) : t("runtime catalog") })}</small></span></div>
+        <div className={`create-architecture-summary ${runtimeStatus}`}><Brain /><span><strong>{selectedArchitecture.name}</strong><small>{runtimeStatus === "production" ? t("Runs the serialized workflow with built-in model, tool, routing, and delegation nodes.") : t("Fix the graph validation errors before creating this agent.")}</small><small>{t("Tool profile: {profile} · {selection}", { profile: selectedArchitecture.toolProfile.name, selection: selectedArchitecture.toolProfile.selectionMode === "selected" ? t("{count} selected tools", { count: selectedArchitecture.toolProfile.enabledTools.length }) : t("runtime catalog") })}</small></span></div>
         {(!online || error) && (
           <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || t("The Amadeus API is unavailable.")}</span>{!online && <button type="button" onClick={onSettings}>{t("Connection settings")}</button>}</div>
         )}
