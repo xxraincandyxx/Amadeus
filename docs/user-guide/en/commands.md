@@ -9,6 +9,7 @@ Type `/` as the first character in the composer to open the command palette. Use
 | `/context` | Show current session and token usage |
 | `/compact` | Summarize older context and recover space |
 | `/tools` | Inspect the active tool catalog |
+| `/workflow` | Open the visual workflow designer |
 | `/prompt` | Inspect the active model and prompt profile |
 | `/export [markdown\|json]` | Download the conversation |
 | `/settings` | Open connection and language settings |

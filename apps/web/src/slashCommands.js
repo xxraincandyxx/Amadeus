@@ -23,6 +23,7 @@ export const SLASH_COMMANDS = [
   { name: "context", summary: "Show current token and session usage", icon: "context" },
   { name: "compact", summary: "Summarize older context and recover space", icon: "compact" },
   { name: "tools", summary: "Inspect the active tool catalog", icon: "tools" },
+  { name: "workflow", summary: "Open the visual workflow designer", icon: "workflow" },
   { name: "prompt", summary: "Inspect the active model and prompt profile", icon: "prompt" },
   { name: "export", summary: "Download this conversation", argumentHint: "[markdown|json]", icon: "export" },
   { name: "settings", summary: "Open API connection settings", icon: "settings" },

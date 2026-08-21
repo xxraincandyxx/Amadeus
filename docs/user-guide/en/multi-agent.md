@@ -17,6 +17,12 @@ Open **Agents** from the sidebar to see the hierarchy. Each row shows the agent 
 
 Create a new coordinator for independent work. Let a coordinator delegate when several focused tasks contribute to one shared outcome.
 
+## Design a workflow
+
+Open **Workflows** from the sidebar or run `/workflow` to create a visual agent architecture. Drag Trigger, Agent, Tool, Condition, Approval, and Output nodes onto the canvas, connect their handles, then configure the selected node in the inspector.
+
+Workflow definitions are validated and saved locally. Use Import and Export to move the versioned JSON definition between clients. Running a custom graph is not available yet because the core runtime does not expose serialized node implementations through the HTTP API.
+
 ## Watch status
 
 Running and approval-required agents need attention first. Completed agents remain available as evidence. Failed agents retain their conversation so the failure can be inspected or retried from the parent task.

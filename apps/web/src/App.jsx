@@ -16,6 +16,7 @@
 // - module: apps/web/src/panelResize.js
 // - module: apps/web/src/sessionState.js
 // - module: apps/web/src/ToolsWorkspace.jsx
+// - module: apps/web/src/WorkflowWorkspace.jsx
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
@@ -30,7 +31,7 @@
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
   ArrowsInLineVertical,
@@ -46,6 +47,7 @@ import {
   DownloadSimple,
   FileText,
   FolderSimple,
+  FlowArrow,
   GearSix,
   GithubLogo,
   Gauge,
@@ -113,6 +115,7 @@ const eventNames = [
 ];
 
 const TranslationContext = createContext((key, variables) => translate("en", key, variables));
+const WorkflowWorkspace = lazy(() => import("./WorkflowWorkspace").then((module) => ({ default: module.WorkflowWorkspace })));
 
 function useTranslation() {
   return useContext(TranslationContext);
@@ -454,6 +457,10 @@ function App() {
         setView("tools");
         setShowDetails(false);
       }
+      if (command.name === "workflow") {
+        setView("workflows");
+        setShowDetails(false);
+      }
       if (command.name === "prompt") {
         const config = await api.getConfig();
         addCommandResult("Active prompt", [
@@ -560,6 +567,12 @@ function App() {
     setSidebarOpen(false);
   }, []);
 
+  const openWorkflows = useCallback(() => {
+    setView("workflows");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
@@ -575,6 +588,7 @@ function App() {
         onAgents={openAgentWorkspace}
         onGuide={() => openGuide(guideChapter)}
         onTools={openTools}
+        onWorkflows={openWorkflows}
         onCreate={openCreateDialog}
         onSettings={() => setShowSettings(true)}
         onContribute={() => setShowContribute(true)}
@@ -622,6 +636,10 @@ function App() {
           />
         ) : view === "tools" ? (
           <ToolsWorkspace online={serverOnline} t={t} />
+        ) : view === "workflows" ? (
+          <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading workflow designer")}</div>}>
+            <WorkflowWorkspace t={t} />
+          </Suspense>
         ) : (
           <>
             <section className="conversation" aria-live="polite">
@@ -704,7 +722,7 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
+function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onWorkflows, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
   const t = useTranslation();
   const rows = agentSessionRows(sessions);
   return (
@@ -716,6 +734,7 @@ function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, o
         <nav className="primary-nav" aria-label={t("Primary")}>
           <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
           <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
+          <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Workflows")}</span></button>
           <button className={view === "guide" ? "active" : ""} onClick={onGuide}><BookOpenText /><span>{t("Guide")}</span></button>
           <button className={view === "tools" ? "active" : ""} onClick={onTools}><TerminalWindow /><span>{t("Tools")}</span></button>
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
@@ -751,15 +770,16 @@ function Header({ session, status, view, sessionCount, parentSession, onMenu, on
   const agentsView = view === "agents";
   const guideView = view === "guide";
   const toolsView = view === "tools";
-  const standaloneView = agentsView || guideView || toolsView;
+  const workflowsView = view === "workflows";
+  const standaloneView = agentsView || guideView || toolsView || workflowsView;
   return (
     <header className="topbar">
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
-        {agentsView ? <Robot /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
+        {agentsView ? <Robot /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : <FolderSimple />}
         <div>
-          <strong>{agentsView ? t("Agent workspace") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
-          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
+          <strong>{agentsView ? t("Agent workspace") : workflowsView ? t("Workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : session?.name || "Amadeus"}</strong>
+          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : workflowsView ? t("Visual agent architecture") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
         </div>
       </div>
       <div className="header-actions">

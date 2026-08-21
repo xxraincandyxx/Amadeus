@@ -6,6 +6,8 @@ When a provider exposes a distinct reasoning stream, live thinking appears in an
 
 Assistant answers render safe GitHub-flavored Markdown, including headings, emphasis, links, lists, task lists, blockquotes, tables, inline code, and fenced code blocks with copy actions. Raw HTML is escaped by default. Markdown is rendered during streaming as well as after history hydration.
 
+The Workflow designer provides a node-based canvas for defining agent control flow. Workflow graphs are validated, stored locally, and can be imported or exported as versioned JSON. Direct execution remains disabled until the runtime exposes a serialized workflow API and built-in node implementations.
+
 ## In-app guide
 
 The Guide workspace provides a searchable, offline product handbook in English and Simplified Chinese. Its source manuscripts live in [`../../docs/user-guide/`](../../docs/user-guide/) and are bundled with the client at build time. Keep user-facing workflow documentation there so the web and native apps always ship the same guide.
@@ -21,6 +23,7 @@ Type `/` as the first character in the composer to open the command palette. A s
 | `/context` | Show current session and token usage |
 | `/compact` | Summarize older history and recover context space |
 | `/tools` | Read the active tool catalog |
+| `/workflow` | Open the visual workflow designer |
 | `/prompt` | Read the active model and prompt configuration |
 | `/export [markdown\|json]` | Download the visible conversation |
 | `/settings` | Open connection settings |

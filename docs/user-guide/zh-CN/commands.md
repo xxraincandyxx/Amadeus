@@ -9,6 +9,7 @@
 | `/context` | 显示当前会话和令牌用量 |
 | `/compact` | 总结较早上下文并释放空间 |
 | `/tools` | 查看当前工具目录 |
+| `/workflow` | 打开可视化工作流设计器 |
 | `/prompt` | 查看当前模型和提示词配置档 |
 | `/export [markdown\|json]` | 下载当前对话 |
 | `/settings` | 打开连接和语言设置 |
