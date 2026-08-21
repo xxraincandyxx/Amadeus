@@ -241,9 +241,8 @@ architecture failures use `WorkflowError::ArchitectureFailure`.
 - Registry routing is explicit by `AgentId`; capability selection is not implemented here.
 - Checkpoints are owned in memory and are not yet a durable serialized format.
 - Fork and join nodes are not built in.
-- An `approval` manifest node can suspend the typed runner, but the external-session bridge does
-  not yet retain and resume that workflow checkpoint. A suspended external run currently ends in
-  an error.
+- `approval` manifest nodes resume through the in-memory external session that created them; their
+  workflow checkpoints are not yet durable across process restarts.
 - Tool approvals inside a manifest phase use the non-interactive agent path. Tools that require an
   interactive decision are denied; configure an appropriate session tool profile.
 - Session checkpoints preserve the underlying conversation and todo state, not the current graph
@@ -254,5 +253,5 @@ architecture failures use `WorkflowError::ArchitectureFailure`.
 The existing `amadeus::Agent<C>` remains the production model/tool engine and the fallback for
 sessions created without an architecture. Manifest-backed sessions compile to `WorkflowAgent`
 and call that engine from built-in semantic nodes. This preserves existing provider and tool
-behavior while moving control flow into the editable graph. Interactive approval resume and
-durable workflow checkpoints remain the next compatibility work.
+behavior while moving control flow into the editable graph. Durable workflow checkpoints remain
+the next compatibility work.

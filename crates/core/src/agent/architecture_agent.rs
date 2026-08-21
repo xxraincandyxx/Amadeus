@@ -13,9 +13,11 @@
 // invariants:
 // - One architecture run emits at most one terminal Done event.
 // - Intermediate phase text is retained as workflow state rather than emitted as final text.
+// - Suspended approval checkpoints resume only after a matching external decision.
 // side_effects:
 // - Invokes configured models and tools.
 // - May request delegated child-agent sessions.
+// - May wait for an interactive architecture approval decision.
 // tests:
 // - cmd: cargo test -p core architecture_agent --features full
 // @end-amadeus-header
@@ -36,7 +38,9 @@ use futures::{Stream, StreamExt};
 use serde_json::Value;
 use tokio::sync::{mpsc, Mutex};
 
-use crate::agent::{Agent, AgentEvent, Message, RunResult, ToolCall};
+use crate::agent::{
+    Agent, AgentEvent, ApprovalDecision, ApprovalRequest, Message, RunResult, ToolCall,
+};
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
 
@@ -110,6 +114,18 @@ pub fn run_architecture_stream<C>(
 where
     C: LLMClient + Clone + 'static,
 {
+    run_architecture_stream_with_approval(agent, manifest, prompt, None)
+}
+
+pub(crate) fn run_architecture_stream_with_approval<C>(
+    agent: Agent<C>,
+    manifest: AgentArchitectureManifest,
+    prompt: String,
+    approval_rx: Option<mpsc::Receiver<(String, ApprovalDecision)>>,
+) -> ArchitectureEventStream
+where
+    C: LLMClient + Clone + 'static,
+{
     let (events_tx, events_rx) = mpsc::unbounded_channel();
     let task_events = events_tx.clone();
     let _task = tokio::spawn(async move {
@@ -135,32 +151,14 @@ where
         )
         .with_runner(WorkflowRunner::new(manifest.max_transitions));
 
-        match workflow_agent.run(ArchitectureRunState::new(prompt)).await {
-            Ok(run) => match run.into_status() {
-                WorkflowAgentRunStatus::Completed { state, .. } => {
-                    let result = RunResult {
-                        text: state.current_output,
-                        tool_calls: tool_calls.lock().await.clone(),
-                    };
-                    if !result.text.is_empty() {
-                        let _ = task_events.send(Ok(AgentEvent::TextDelta {
-                            delta: result.text.clone(),
-                        }));
-                    }
-                    let _ = task_events.send(Ok(AgentEvent::Done { result }));
-                }
-                WorkflowAgentRunStatus::Suspended(checkpoint) => {
-                    let _ = task_events.send(Err(AgentError::InvalidResponse(format!(
-                        "Architecture suspended at '{}': {}",
-                        checkpoint.node_id(),
-                        checkpoint.reason()
-                    ))));
-                }
-            },
-            Err(error) => {
-                let _ = task_events.send(Err(AgentError::Api(error.to_string())));
-            }
-        }
+        run_workflow_agent(
+            &workflow_agent,
+            ArchitectureRunState::new(prompt),
+            approval_rx,
+            &task_events,
+            &tool_calls,
+        )
+        .await;
     });
     drop(events_tx);
 
@@ -168,6 +166,112 @@ where
         events_rx,
         |mut receiver| async move { receiver.recv().await.map(|event| (event, receiver)) },
     ))
+}
+
+async fn run_workflow_agent<C>(
+    workflow_agent: &WorkflowAgent<
+        ArchitectureRunState,
+        ArchitectureResources<CoreNodeExecutor<C>>,
+    >,
+    state: ArchitectureRunState,
+    mut approval_rx: Option<mpsc::Receiver<(String, ApprovalDecision)>>,
+    events: &mpsc::UnboundedSender<Result<AgentEvent>>,
+    tool_calls: &Arc<Mutex<Vec<ToolCall>>>,
+) where
+    C: LLMClient + Clone + 'static,
+{
+    let mut status = match workflow_agent.run(state).await {
+        Ok(run) => run.into_status(),
+        Err(error) => {
+            let _ = events.send(Err(AgentError::Api(error.to_string())));
+            return;
+        }
+    };
+
+    loop {
+        match status {
+            WorkflowAgentRunStatus::Completed { state, .. } => {
+                emit_completed_run(state, events, tool_calls).await;
+                return;
+            }
+            WorkflowAgentRunStatus::Suspended(mut checkpoint) => {
+                let approval_id = uuid::Uuid::new_v4().to_string();
+                let request = ApprovalRequest {
+                    id: approval_id.clone(),
+                    tool: "agent_architecture".to_string(),
+                    input: serde_json::json!({ "nodeId": checkpoint.node_id().as_str() }),
+                    reason: checkpoint.reason().to_string(),
+                };
+                let _ = events.send(Ok(AgentEvent::ApprovalRequired { request }));
+
+                match receive_approval(&mut approval_rx, &approval_id).await {
+                    Ok(ApprovalDecision::Approve | ApprovalDecision::AlwaysApprove) => {
+                        let node_id = checkpoint.node_id().as_str().to_string();
+                        checkpoint.state_mut().approve_node(&node_id);
+                        status = match workflow_agent.resume(checkpoint).await {
+                            Ok(run) => run.into_status(),
+                            Err(error) => {
+                                let _ = events.send(Err(AgentError::Api(error.to_string())));
+                                return;
+                            }
+                        };
+                    }
+                    Ok(ApprovalDecision::Deny) => {
+                        let _ = events.send(Err(AgentError::InvalidResponse(format!(
+                            "Architecture approval denied at '{}'",
+                            checkpoint.node_id()
+                        ))));
+                        return;
+                    }
+                    Err(error) => {
+                        let _ = events.send(Err(error));
+                        return;
+                    }
+                }
+            }
+        }
+    }
+}
+
+async fn receive_approval(
+    approval_rx: &mut Option<mpsc::Receiver<(String, ApprovalDecision)>>,
+    approval_id: &str,
+) -> Result<ApprovalDecision> {
+    let receiver = approval_rx.as_mut().ok_or_else(|| {
+        AgentError::InvalidResponse(
+            "Architecture approval requires an interactive session".to_string(),
+        )
+    })?;
+    let decision = tokio::time::timeout(std::time::Duration::from_secs(300), async {
+        while let Some((response_id, decision)) = receiver.recv().await {
+            if response_id == approval_id {
+                return Some(decision);
+            }
+        }
+        None
+    })
+    .await
+    .map_err(|_| AgentError::InvalidResponse("Architecture approval timed out".to_string()))?;
+    decision.ok_or_else(|| {
+        AgentError::InvalidResponse("Architecture approval channel closed".to_string())
+    })
+}
+
+async fn emit_completed_run(
+    state: ArchitectureRunState,
+    events: &mpsc::UnboundedSender<Result<AgentEvent>>,
+    tool_calls: &Arc<Mutex<Vec<ToolCall>>>,
+) {
+    let result = RunResult {
+        text: state.current_output,
+        tool_calls: tool_calls.lock().await.clone(),
+    };
+    if !result.text.is_empty() {
+        let _ = events.send(Ok(AgentEvent::TextDelta {
+            delta: result.text.clone(),
+        }));
+    }
+    let _ = events.send(Ok(AgentEvent::Done { result }));
 }
 
 fn node_prompt(

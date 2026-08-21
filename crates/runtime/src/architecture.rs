@@ -15,6 +15,7 @@
 // invariants:
 // - Every compiled edge targets a declared node.
 // - Branching nodes select one of their declared edge labels.
+// - Approval nodes advance only after consuming a one-shot approval marker.
 // - Output nodes terminate the workflow.
 // side_effects: none
 // tests:
@@ -165,6 +166,15 @@ impl ArchitectureRunState {
             outputs: BTreeMap::new(),
         }
     }
+
+    /// Allow one suspended approval node to continue when the run resumes.
+    pub fn approve_node(&mut self, node_id: &str) {
+        self.outputs.insert(node_id.to_string(), String::new());
+    }
+
+    fn take_node_approval(&mut self, node_id: &str) -> bool {
+        self.outputs.remove(node_id).is_some()
+    }
 }
 
 /// Result returned by a model, tool, route, or delegation node implementation.
@@ -218,6 +228,9 @@ where
         match self.node.data.kind {
             ArchitectureNodeKind::Output => return Ok(Transition::Complete),
             ArchitectureNodeKind::Approval => {
+                if state.take_node_approval(&self.node.id) {
+                    return self.select_transition(None);
+                }
                 let reason = setting(&self.node, "reason").unwrap_or("Approval required");
                 return Ok(Transition::suspend(reason));
             }
@@ -478,6 +491,53 @@ mod tests {
         match result {
             RunStatus::Completed { state, .. } => assert_eq!(state.current_output, "route"),
             RunStatus::Suspended(_) => panic!("unexpected suspension"),
+        }
+    }
+
+    #[tokio::test]
+    async fn resumes_an_approved_manifest_node_once() {
+        let manifest = AgentArchitectureManifest {
+            schema_version: 2,
+            kind: "agent-architecture".to_string(),
+            id: "approval-test".to_string(),
+            name: "Approval test".to_string(),
+            preset: String::new(),
+            entry_node_id: "input".to_string(),
+            max_transitions: 8,
+            nodes: vec![
+                node("input", ArchitectureNodeKind::Input),
+                node("approval", ArchitectureNodeKind::Approval),
+                node("output", ArchitectureNodeKind::Output),
+            ],
+            edges: vec![
+                edge("e1", "input", "approval", "next"),
+                edge("e2", "approval", "output", "approved"),
+            ],
+        };
+        let workflow = compile_architecture::<ScriptedExecutor>(&manifest).expect("compile");
+        let resources = ArchitectureResources::new(ScriptedExecutor);
+        let runner = WorkflowRunner::new(manifest.max_transitions);
+        let result = runner
+            .run(&workflow, &resources, ArchitectureRunState::new("request"))
+            .await
+            .expect("run");
+        let mut suspended = match result {
+            RunStatus::Suspended(suspended) => suspended,
+            RunStatus::Completed { .. } => panic!("expected approval suspension"),
+        };
+        assert_eq!(suspended.node_id().as_str(), "approval");
+        suspended.state_mut().approve_node("approval");
+
+        let resumed = runner
+            .resume(&workflow, &resources, suspended)
+            .await
+            .expect("resume");
+
+        match resumed {
+            RunStatus::Completed { state, .. } => {
+                assert!(!state.outputs.contains_key("approval"));
+            }
+            RunStatus::Suspended(_) => panic!("approval should be consumed exactly once"),
         }
     }
 

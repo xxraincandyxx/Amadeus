@@ -40,10 +40,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::agent::architecture_agent::run_architecture_stream_with_approval;
 use crate::agent::loop_agent::create_approval_channels;
 use crate::agent::{
-    run_architecture_stream, Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest,
-    CompactionResult, Config, ContextCompactor, RunResult, SessionCheckpoint,
+    Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest, CompactionResult, Config,
+    ContextCompactor, RunResult, SessionCheckpoint,
 };
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
@@ -429,9 +430,15 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             let agent = session.agent.clone();
             let (stream, append_prompt) = match session.architecture.clone() {
                 Some(architecture) => {
-                    session.approval_tx = None;
+                    let (approval_tx, approval_rx) = mpsc::channel(8);
+                    session.approval_tx = Some(approval_tx);
                     (
-                        run_architecture_stream(agent.clone(), architecture, prompt.clone()),
+                        run_architecture_stream_with_approval(
+                            agent.clone(),
+                            architecture,
+                            prompt.clone(),
+                            Some(approval_rx),
+                        ),
                         false,
                     )
                 }
@@ -1112,6 +1119,105 @@ mod tests {
 
         assert_eq!(terminal_results.len(), 1);
         assert_eq!(terminal_results[0].text, "planned response");
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn bridge_resumes_an_approved_architecture_node() {
+        let bridge =
+            LocalSessionBridge::new(BridgeMockClient::default(), Arc::new(Config::default()));
+        let architecture = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "kind": "agent-architecture",
+            "id": "approval-test",
+            "name": "Approval test",
+            "preset": "custom",
+            "entryNodeId": "input",
+            "maxTransitions": 8,
+            "nodes": [
+                { "id": "input", "data": { "kind": "input", "label": "Input" } },
+                {
+                    "id": "approval",
+                    "data": {
+                        "kind": "approval",
+                        "label": "Approval",
+                        "reason": "Approve this architecture checkpoint"
+                    }
+                },
+                { "id": "output", "data": { "kind": "output", "label": "Complete" } }
+            ],
+            "edges": [
+                { "id": "e1", "source": "input", "target": "approval", "label": "next" },
+                { "id": "e2", "source": "approval", "target": "output", "label": "approved" }
+            ]
+        }))
+        .expect("architecture manifest");
+        let session = bridge
+            .create_session_with_architecture(
+                Some("approval-test".to_string()),
+                AgentProfile::Default,
+                ToolProfile::default_root(),
+                architecture,
+            )
+            .await
+            .expect("create architecture session");
+        let mut events = bridge.subscribe(&session.id).await.expect("subscribe");
+
+        bridge
+            .submit_input(&session.id, "continue after approval".to_string())
+            .await
+            .expect("submit input");
+
+        let approval_id = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed receive")
+                .expect("bridge event");
+            if let BridgeEvent::Agent {
+                event: AgentEvent::ApprovalRequired { request },
+                ..
+            } = event
+            {
+                assert_eq!(request.reason, "Approve this architecture checkpoint");
+                break request.id;
+            }
+        };
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::AwaitingApproval
+        );
+
+        bridge
+            .submit_approval(&session.id, &approval_id, ApprovalDecision::Approve)
+            .await
+            .expect("submit approval");
+
+        loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed receive")
+                .expect("bridge event");
+            if matches!(
+                event,
+                BridgeEvent::Agent {
+                    event: AgentEvent::Done { .. },
+                    ..
+                }
+            ) {
+                break;
+            }
+        }
         assert_eq!(
             bridge
                 .get_session(&session.id)
