@@ -8,9 +8,11 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/AgentProfilePanel.jsx
 // - module: apps/web/src/AgentDesignerWorkspace.jsx
 // - module: apps/web/src/AgentWorkspace.jsx
 // - module: apps/web/src/agentArchitecture.js
+// - module: apps/web/src/agentProfileState.js
 // - module: apps/web/src/agentSessions.js
 // - module: apps/web/src/FileDiffView.jsx
 // - module: apps/web/src/GuideWorkspace.jsx
@@ -30,6 +32,7 @@
 // - Interface language selection persists across web and native client launches.
 // - The selected theme accent persists and applies to every workspace.
 // - Workspace identity and active-session selection persist per local application user.
+// - Agent character profiles persist per workspace and session for the local application user.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -58,7 +61,7 @@ import {
   GearSix,
   GithubLogo,
   Gauge,
-  List,
+  IdentificationCard,
   Plus,
   PlugsConnected,
   Robot,
@@ -78,6 +81,8 @@ import {
 
 import { api } from "./api";
 import { AGENT_ARCHITECTURE_STORAGE_KEY, architectureForExport, architectureRuntimeStatus, loadArchitectureLibrary } from "./agentArchitecture";
+import { defaultAgentProfile, loadAgentProfile, saveAgentProfile } from "./agentProfileState";
+import { AgentProfilePanel } from "./AgentProfilePanel";
 import { AgentWorkspace } from "./AgentWorkspace";
 import { agentSessionRows, sessionRelations, upsertSession } from "./agentSessions";
 import { FileDiffView } from "./FileDiffView";
@@ -192,6 +197,7 @@ function App() {
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
+  const [agentProfiles, setAgentProfiles] = useState({});
   const [view, setView] = useState("conversation");
   const [guideChapter, setGuideChapter] = useState("getting-started");
   const [subagentMetadata, setSubagentMetadata] = useState({});
@@ -219,7 +225,13 @@ function App() {
   const t = useCallback((key, variables) => translate(language, key, variables), [language]);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const activeSessionName = activeSession?.name || "";
   const activeRelations = sessionRelations(sessions, activeId);
+  const activeProfileKey = workspaceProfile?.id && activeId ? `${workspaceProfile.id}:${activeId}` : "";
+  const activeAgentProfile = useMemo(
+    () => agentProfiles[activeProfileKey] || defaultAgentProfile(activeSession),
+    [activeProfileKey, activeSession, agentProfiles],
+  );
   const runtime = runtimeBySession[activeId] || { ...emptyRuntime, status: activeSession?.status || "idle" };
   const busy = runtime.status === "running" || runtime.status === "awaiting_approval";
 
@@ -301,6 +313,12 @@ function App() {
     loadHistory(activeId).catch((caught) => setError(caught.message));
     setSidebarOpen(false);
   }, [activeId, apiEpoch, loadHistory, workspaceProfile?.id]);
+
+  useEffect(() => {
+    if (!activeProfileKey || !activeId || !workspaceProfile?.id) return;
+    const storedProfile = loadAgentProfile(localStorage, workspaceProfile.id, { id: activeId, name: activeSessionName });
+    setAgentProfiles((current) => ({ ...current, [activeProfileKey]: storedProfile }));
+  }, [activeId, activeProfileKey, activeSessionName, workspaceProfile?.id]);
 
   useEffect(() => {
     streamRef.current?.close();
@@ -671,6 +689,7 @@ function App() {
           view={view}
           sessionCount={sessions.length}
           parentSession={activeRelations.parent}
+          detailsOpen={showDetails}
           onMenu={() => setSidebarOpen(true)}
           onDetails={() => setShowDetails((value) => !value)}
           onClose={closeSession}
@@ -778,11 +797,19 @@ function App() {
       </main>
 
       {showDetails && activeSession && (
-        <DetailsPanel
+        <AgentProfilePanel
+          key={activeProfileKey}
           session={activeSession}
+          profile={activeAgentProfile}
           runtime={runtime}
           parentSession={activeRelations.parent}
           children={activeRelations.children}
+          t={t}
+          onSave={(profile) => {
+            const saved = saveAgentProfile(localStorage, workspaceProfile?.id, activeSession, profile);
+            setAgentProfiles((current) => ({ ...current, [activeProfileKey]: saved }));
+            return saved;
+          }}
           onClose={() => setShowDetails(false)}
         />
       )}
@@ -857,7 +884,7 @@ function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, 
   );
 }
 
-function Header({ session, status, view, sessionCount, parentSession, onMenu, onDetails, onClose }) {
+function Header({ session, status, view, sessionCount, parentSession, detailsOpen, onMenu, onDetails, onClose }) {
   const t = useTranslation();
   const agentsView = view === "agents";
   const guideView = view === "guide";
@@ -878,7 +905,7 @@ function Header({ session, status, view, sessionCount, parentSession, onMenu, on
       </div>
       <div className="header-actions">
         {!standaloneView && session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
-        {!standaloneView && <button className="toolbar-button" onClick={onDetails} aria-label={t("Details")}><List /><span>{t("Details")}</span></button>}
+        {!standaloneView && session && <button className={`toolbar-button ${detailsOpen ? "active" : ""}`} onClick={onDetails} aria-label={t("Agent profile")} aria-pressed={detailsOpen}><IdentificationCard /><span>{t("Profile")}</span></button>}
         {!standaloneView && session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
       </div>
     </header>
@@ -1154,16 +1181,6 @@ function Welcome({ session }) {
         <button onClick={() => document.getElementById("agent-prompt")?.focus()}><TerminalWindow /><span><strong>{t("Build a feature")}</strong><small>{t("Plan, implement, test, and verify")}</small></span></button>
       </div>
     </div>
-  );
-}
-
-function DetailsPanel({ session, runtime, parentSession, children, onClose }) {
-  const t = useTranslation();
-  return (
-    <aside className="details-panel">
-      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose} aria-label={t("Close")}><X /></button></div>
-      <dl><div><dt>{t("Role")}</dt><dd>{parentSession ? t("Sub-agent") : t("Coordinator")}</dd></div>{parentSession && <div><dt>{t("Parent agent")}</dt><dd>{parentSession.name}</dd></div>}<div><dt>{t("Child agents")}</dt><dd>{children.length}</dd></div><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
-    </aside>
   );
 }
 
