@@ -61,7 +61,7 @@ const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${host}:${port}`);
   const parts = url.pathname.split("/").filter(Boolean);
   if (url.pathname === "/health") return json(response, 200, { status: "ok", version: "mock" });
-  if (url.pathname === "/config") return json(response, 200, { model: "mock-agent", context_window_size: 32768, prompt: { active_profile: "default", section_count: 4 }, tools: { active_profile: "default" } });
+  if (url.pathname === "/config") return json(response, 200, { working_dir: "/workspace/amadeus", model: "mock-agent", context_window_size: 32768, prompt: { active_profile: "default", section_count: 4 }, tools: { active_profile: "default" } });
   if (url.pathname === "/tools/catalog") return json(response, 200, { tools: [{ name: "bash", level: "core", permission_mode: "workspace_write" }, { name: "read_file", level: "core", permission_mode: "read_only" }, { name: "web_fetch", level: "extended", permission_mode: "network" }] });
   if (url.pathname === "/v1/sessions" && request.method === "GET") return json(response, 200, { sessions, active_session_id: sessions[0]?.id || null });
   if (url.pathname === "/v1/sessions" && request.method === "POST") {

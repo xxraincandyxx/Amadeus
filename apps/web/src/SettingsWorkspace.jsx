@@ -12,6 +12,7 @@
 // invariants:
 // - Appearance and language changes apply immediately and persist locally.
 // - API endpoint changes reconnect only after explicit save.
+// - Workspace identity reflects the connected runtime and remains read-only.
 // side_effects:
 // - Tests HTTP API connectivity.
 // - Persists client preferences through parent callbacks.
@@ -20,14 +21,14 @@
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { Check, PaintBrush, PlugsConnected, Translate } from "@phosphor-icons/react";
+import { Check, FolderSimple, PaintBrush, PlugsConnected, Translate } from "@phosphor-icons/react";
 import { useState } from "react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
 import { normalizeLanguage, SUPPORTED_LANGUAGES } from "./i18n";
 import { DEFAULT_THEME_COLOR, THEME_COLOR_PRESETS, normalizeThemeColor } from "./theme";
 
-export function SettingsWorkspace({ online, language, themeColor, onLanguage, onThemeColor, onReconnect, t }) {
+export function SettingsWorkspace({ online, language, themeColor, workspace, onLanguage, onThemeColor, onReconnect, t }) {
   const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
   const [customColor, setCustomColor] = useState(themeColor);
   const [status, setStatus] = useState("");
@@ -80,6 +81,15 @@ export function SettingsWorkspace({ online, language, themeColor, onLanguage, on
           <h1 id="settings-title">{t("Settings")}</h1>
           <p>{t("Configure the interface and the local runtime connection.")}</p>
         </header>
+
+        <section className="settings-section" aria-labelledby="workspace-settings-title">
+          <div className="settings-section-heading"><FolderSimple /><div><h2 id="workspace-settings-title">{t("Current workspace")}</h2><p>{t("Workspace identity and the last selected session are remembered for this user.")}</p></div></div>
+          <div className="settings-section-controls workspace-summary">
+            <div><span>{t("Workspace name")}</span><strong>{workspace?.name || t("Unavailable")}</strong></div>
+            <div><span>{t("Project folder")}</span><code>{workspace?.path || t("Unavailable")}</code></div>
+            <small>{t("Saved for this user on this device.")}</small>
+          </div>
+        </section>
 
         <section className="settings-section" aria-labelledby="appearance-settings-title">
           <div className="settings-section-heading"><PaintBrush /><div><h2 id="appearance-settings-title">{t("Appearance")}</h2><p>{t("Choose the accent used for active controls, focus, and workflow state.")}</p></div></div>

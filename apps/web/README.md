@@ -59,6 +59,8 @@ VITE_AMADEUS_API_URL=http://localhost:8080 npm run dev
 
 The Settings page includes interface language, a configurable theme accent, and runtime Connection settings. Dark red is the default accent. The selected color is stored under `amadeus.themeColor`; the saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
 
+The client derives the current workspace from the connected server's `working_dir`. Workspace metadata and the last selected session are stored in the versioned `amadeus.workspaces.v1` registry. Browser profiles and native OS users have separate local storage, so one user's workspace selection does not overwrite another user's state on the same installation.
+
 ## UI-only demo
 
 The mock server exercises message submission, reasoning, tool execution, streaming GitHub-flavored Markdown, slash-command information requests, completion, token usage, session creation, and cancellation without an LLM credential:

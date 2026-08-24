@@ -21,6 +21,7 @@
 // - module: apps/web/src/theme.js
 // - module: apps/web/src/ToolsWorkspace.jsx
 // - module: apps/web/src/WorkflowWorkspace.jsx
+// - module: apps/web/src/workspaceState.js
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
@@ -28,6 +29,7 @@
 // - Slash commands advertised by the composer execute without model involvement.
 // - Interface language selection persists across web and native client launches.
 // - The selected theme accent persists and applies to every workspace.
+// - Workspace identity and active-session selection persist per local application user.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -89,6 +91,7 @@ import { SettingsWorkspace } from "./SettingsWorkspace";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
 import { applyThemeColor, loadThemeColor } from "./theme";
 import { ToolsWorkspace } from "./ToolsWorkspace";
+import { loadWorkspaceActiveSession, rememberWorkspace, saveWorkspaceActiveSession } from "./workspaceState";
 
 const emptyRuntime = {
   timeline: [],
@@ -187,7 +190,8 @@ function App() {
   const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
   const [themeColor, setThemeColor] = useState(() => loadThemeColor(localStorage));
   const [sessions, setSessions] = useState([]);
-  const [activeId, setActiveId] = useState(localStorage.getItem("amadeus.activeSession"));
+  const [activeId, setActiveId] = useState(null);
+  const [workspaceProfile, setWorkspaceProfile] = useState(null);
   const [view, setView] = useState("conversation");
   const [guideChapter, setGuideChapter] = useState("getting-started");
   const [subagentMetadata, setSubagentMetadata] = useState({});
@@ -226,13 +230,15 @@ function App() {
     });
   }, []);
 
-  const refreshSessions = useCallback(async () => {
+  const refreshSessions = useCallback(async (preferredActiveId = null) => {
     const data = await api.listSessions();
     const available = data.sessions.filter((session) => session.status !== "closed");
     setSessions(available);
     setActiveId((current) => {
       const exists = available.some((session) => session.id === current);
-      return exists ? current : data.active_session_id || available[0]?.id || null;
+      if (exists) return current;
+      const preferredExists = available.some((session) => session.id === preferredActiveId);
+      return preferredExists ? preferredActiveId : data.active_session_id || available[0]?.id || null;
     });
     return available;
   }, []);
@@ -255,7 +261,13 @@ function App() {
         await api.health();
         if (cancelled) return;
         setServerOnline(true);
-        const available = await refreshSessions();
+        const config = await api.getConfig();
+        if (cancelled) return;
+        const currentWorkspace = rememberWorkspace(localStorage, config, api.baseUrl);
+        setWorkspaceProfile(currentWorkspace);
+        const preferredActiveId = loadWorkspaceActiveSession(localStorage, currentWorkspace.id)
+          || localStorage.getItem("amadeus.activeSession");
+        const available = await refreshSessions(preferredActiveId);
         if (!available.length) {
           const created = await api.createSession(t("Main Agent"), "default");
           setSessions([created]);
@@ -285,9 +297,10 @@ function App() {
   useEffect(() => {
     if (!activeId) return;
     localStorage.setItem("amadeus.activeSession", activeId);
+    saveWorkspaceActiveSession(localStorage, workspaceProfile?.id, activeId);
     loadHistory(activeId).catch((caught) => setError(caught.message));
     setSidebarOpen(false);
-  }, [activeId, apiEpoch, loadHistory]);
+  }, [activeId, apiEpoch, loadHistory, workspaceProfile?.id]);
 
   useEffect(() => {
     streamRef.current?.close();
@@ -648,6 +661,7 @@ function App() {
         onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
         resizeHandle={mainSidebarResize.handleProps}
+        workspace={workspaceProfile}
       />
 
       <main className="workspace">
@@ -717,6 +731,7 @@ function App() {
             online={serverOnline}
             language={language}
             themeColor={themeColor}
+            workspace={workspaceProfile}
             onLanguage={setLanguage}
             onThemeColor={setThemeColor}
             onReconnect={reconnect}
@@ -797,7 +812,7 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
+function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
   const t = useTranslation();
   const rows = agentSessionRows(sessions);
   return (
@@ -817,7 +832,7 @@ function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, o
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
         </nav>
         <div className="section-label">{t("Workspace")}</div>
-        <div className="project-label"><FolderSimple /><span>amadeus</span></div>
+        <div className="project-label" title={workspace?.path || t("Workspace unavailable")}><FolderSimple /><span>{workspace?.name || "Amadeus"}</span></div>
         <div className="session-list">
           {rows.map(({ session, depth }) => (
             <button
