@@ -8,7 +8,7 @@
 // uses:
 // - crate: core::tools::Tool (tool trait)
 // - crate: core::error (AgentError, Result)
-// - crate::embedding::EmbeddingClient
+// - crate::embedding::Embedder
 // - crate::vector_store::VectorMemoryProvider
 // - crate::chunker::chunk_text
 // - crate: amadeus_config::Config
@@ -18,7 +18,7 @@
 // - Query embeds query text and returns top-k chunk results with scores.
 // side_effects:
 // - Writes document chunks to the vector store (persisted to disk).
-// - Makes HTTP calls via EmbeddingClient for embedding generation.
+// - Embeds via the configured Embedder backend (local or HTTP).
 // tests:
 // - cmd: cargo test -p rag
 // @end-amadeus-header
@@ -36,8 +36,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::chunker::chunk_text;
-use crate::embedding::EmbeddingClient;
-use crate::vector_store::VectorMemoryProvider;
+use crate::embedding::{embedder_from_config, Embedder, EmbedderConfig};
+use crate::vector_store::{Quantization, VectorMemoryProvider};
 
 #[derive(Debug, Deserialize)]
 struct RagInput {
@@ -115,16 +115,49 @@ fn rag_schema() -> &'static Value {
 
 pub struct RagTool {
     store: Arc<VectorMemoryProvider>,
-    embedder: Arc<EmbeddingClient>,
+    embedder: Arc<dyn Embedder>,
     default_chunk_size: usize,
     default_chunk_overlap: usize,
     default_top_k: usize,
 }
 
 impl RagTool {
+    /// Open the workspace RAG store (`.amadeus/rag_index.json`) and build the
+    /// embedding backend from the runtime configuration.
+    ///
+    /// Infallible: a missing or corrupt index loads as empty, and unknown
+    /// backend/quantization strings fall back with a warning.
+    pub fn open_in_workspace(workdir: &std::path::Path, config: &amadeus_config::Config) -> Self {
+        let store = Arc::new(VectorMemoryProvider::with_quantization(
+            workdir.join(".amadeus").join("rag_index.json"),
+            Quantization::parse(&config.rag_quantization),
+        ));
+        let embedder = embedder_from_config(&EmbedderConfig {
+            backend: config.embedding_backend.clone(),
+            base_url: config
+                .embedding_base_url
+                .clone()
+                .unwrap_or_else(|| config.base_url.clone().unwrap_or_default()),
+            model: config
+                .embedding_model
+                .clone()
+                .unwrap_or_else(|| config.model.clone()),
+            api_key: config.api_key.clone(),
+            local_dimension: config.embedding_dimension,
+            kylin_endpoint: config.kylin_embedding_endpoint.clone(),
+        });
+        Self::new(
+            store,
+            embedder,
+            config.rag_chunk_size,
+            config.rag_chunk_overlap,
+            config.rag_top_k,
+        )
+    }
+
     pub fn new(
         store: Arc<VectorMemoryProvider>,
-        embedder: Arc<EmbeddingClient>,
+        embedder: Arc<dyn Embedder>,
         default_chunk_size: usize,
         default_chunk_overlap: usize,
         default_top_k: usize,
@@ -301,7 +334,7 @@ mod tests {
         let path = temp.path().join("rag_index.json");
         let store = Arc::new(VectorMemoryProvider::new(path));
         // Use a dummy embedder that will fail if actually called
-        let embedder = Arc::new(EmbeddingClient::new(
+        let embedder: Arc<dyn Embedder> = Arc::new(crate::embedding::EmbeddingClient::new(
             "http://localhost:0/v1",
             "test-model",
             "test-key",

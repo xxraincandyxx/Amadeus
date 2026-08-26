@@ -12,6 +12,7 @@ name = "amadeus_rag"
 path = "src/lib.rs"
 
 [dependencies]
+amadeus_config = { package = "config", path = "../config" }
 amadeus_context = { package = "context", path = "../context" }
 amadeus_core = { package = "core", path = "../core" }
 async-trait = "0.1"

@@ -16,6 +16,10 @@
 | **Mid-term** | **A record database of what the conversation established: tasks, decisions, files touched, errors and resolutions, state snapshots** | **`crates/memory` (this crate)** | Across sessions, on disk |
 | Long-term | Durable user/LLM-stored facts and semantic RAG | `JsonFileMemoryProvider` (`.amadeus/memory.json`), `VectorMemoryProvider` (`.amadeus/rag_index.json`) | Permanent |
 
+> For the RAG tier — pluggable embedding backends (`remote` / `local` /
+> `kylin`), the versioned vector-store format, and int8 quantization — see
+> [docs/RAG.md](./RAG.md).
+
 The mid tier is filled by a **gate**: a transformer that runs over context
 that is leaving the short-term window (typically at compaction time) and
 decides what survives, as what kind of record, with what importance.

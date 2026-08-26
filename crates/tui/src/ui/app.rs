@@ -39,6 +39,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -4013,7 +4014,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let config = active_session.agent.config();
 
         // Create a fresh agent with empty history and default configuration
-        let new_agent = Agent::builder(client, config).with_default_tools().build();
+        let mut builder = Agent::builder(client, Arc::clone(&config)).with_default_tools();
+        if config.rag_enabled {
+            builder = builder.with_rag(Box::new(amadeus_rag::tool::RagTool::open_in_workspace(
+                &config.workdir,
+                &config,
+            )));
+        }
+        let new_agent = builder.build();
 
         let label = format!("session{}", self.next_session_id);
 

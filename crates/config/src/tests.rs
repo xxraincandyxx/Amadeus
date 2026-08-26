@@ -26,7 +26,7 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
-        .expect("env test lock poisoned")
+        .unwrap_or_else(|e| e.into_inner())
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn load_with_hierarchy_prefers_workspace_settings() {
     let workspace_root = workdir.join(".amadeus");
     std::fs::create_dir_all(&workspace_root).unwrap();
 
-    let home = env::var("HOME").ok();
+    let home = env::var("AMADEUS_HOME").ok();
 
     let fake_home = temp.path().join("home");
     let global_root = fake_home.join(".amadeus");
@@ -86,7 +86,7 @@ fn load_with_hierarchy_prefers_workspace_settings() {
         r#"{"model":"workspace-model","timeout_seconds":45,"api_key":"workspace-key"}"#,
     )
     .unwrap();
-    env::set_var("HOME", &fake_home);
+    env::set_var("AMADEUS_HOME", &fake_home);
 
     let config = Config::load_with_hierarchy(&workdir).unwrap();
 
@@ -117,7 +117,7 @@ fn load_with_hierarchy_prefers_workspace_settings() {
         ]
     );
 
-    restore_env("HOME", home);
+    restore_env("AMADEUS_HOME", home);
 }
 
 #[test]
@@ -134,9 +134,14 @@ fn load_with_hierarchy_ignores_workspace_env_file() {
     )
     .unwrap();
 
+    let home = env::var("AMADEUS_HOME").ok();
+    env::set_var("AMADEUS_HOME", temp.path().join("home"));
+
     let config = Config::load_with_hierarchy(&workdir).unwrap();
 
     assert_eq!(config.model, DEFAULT_MODEL);
+
+    restore_env("AMADEUS_HOME", home);
 }
 
 #[test]
@@ -357,11 +362,11 @@ fn load_with_hierarchy_prefers_local_settings_layer() {
     let workspace_root = workdir.join(".amadeus");
     std::fs::create_dir_all(&workspace_root).unwrap();
 
-    let home = env::var("HOME").ok();
+    let home = env::var("AMADEUS_HOME").ok();
 
     let fake_home = temp.path().join("home");
     std::fs::create_dir_all(fake_home.join(".amadeus")).unwrap();
-    env::set_var("HOME", &fake_home);
+    env::set_var("AMADEUS_HOME", &fake_home);
 
     std::fs::write(
         workspace_root.join("settings.json"),
@@ -382,7 +387,7 @@ fn load_with_hierarchy_prefers_local_settings_layer() {
         workspace_root.join("settings.local.json")
     );
 
-    restore_env("HOME", home);
+    restore_env("AMADEUS_HOME", home);
 }
 
 #[test]
@@ -467,12 +472,12 @@ fn layered_settings_merge_arrays_across_scopes() {
     let workspace_root = workdir.join(".amadeus");
     std::fs::create_dir_all(&workspace_root).unwrap();
 
-    let home = env::var("HOME").ok();
+    let home = env::var("AMADEUS_HOME").ok();
 
     let fake_home = temp.path().join("home");
     let global_root = fake_home.join(".amadeus");
     std::fs::create_dir_all(&global_root).unwrap();
-    env::set_var("HOME", &fake_home);
+    env::set_var("AMADEUS_HOME", &fake_home);
 
     std::fs::write(
         global_root.join("settings.json"),
@@ -519,7 +524,7 @@ fn layered_settings_merge_arrays_across_scopes() {
         vec!["tool(write_file)".to_string()]
     );
 
-    restore_env("HOME", home);
+    restore_env("AMADEUS_HOME", home);
 }
 
 #[test]
@@ -549,11 +554,65 @@ fn hierarchy_loads_tui_language() {
     )
     .expect("write settings");
 
-    let home = env::var("HOME").ok();
-    env::set_var("HOME", temp.path());
+    let home = env::var("AMADEUS_HOME").ok();
+    env::set_var("AMADEUS_HOME", temp.path());
 
     let config = Config::load_with_hierarchy_internal(temp.path(), false).expect("load config");
     assert_eq!(config.tui.language, Language::ChineseSimplified);
 
-    restore_env("HOME", home);
+    restore_env("AMADEUS_HOME", home);
+}
+
+#[test]
+fn embedding_backend_fields_default_and_apply_json() {
+    let mut config = Config::default();
+    assert_eq!(config.embedding_backend, "remote");
+    assert_eq!(config.embedding_dimension, 384);
+    assert_eq!(config.kylin_embedding_endpoint, None);
+    assert_eq!(config.rag_quantization, "none");
+
+    config.apply_json(
+        &serde_json::json!({
+            "embedding_backend": "local",
+            "embedding_dimension": 512,
+            "kylin_embedding_endpoint": "http://127.0.0.1:18080/v1",
+            "rag_quantization": "int8"
+        }),
+        None,
+    );
+    assert_eq!(config.embedding_backend, "local");
+    assert_eq!(config.embedding_dimension, 512);
+    assert_eq!(
+        config.kylin_embedding_endpoint.as_deref(),
+        Some("http://127.0.0.1:18080/v1")
+    );
+    assert_eq!(config.rag_quantization, "int8");
+
+    config.apply_json(&serde_json::json!({"kylin_embedding_endpoint": null}), None);
+    assert_eq!(config.kylin_embedding_endpoint, None);
+}
+
+#[test]
+fn embedding_backend_fields_merge_prefers_non_default() {
+    let base = Config::default();
+    let mut override_layer = Config::default();
+    override_layer.embedding_backend = "kylin".to_string();
+    override_layer.embedding_dimension = 1024;
+    override_layer.rag_quantization = "int8".to_string();
+    override_layer.kylin_embedding_endpoint = Some("http://kylin.local/v1".to_string());
+
+    let merged = base.merge(override_layer);
+    assert_eq!(merged.embedding_backend, "kylin");
+    assert_eq!(merged.embedding_dimension, 1024);
+    assert_eq!(merged.rag_quantization, "int8");
+    assert_eq!(
+        merged.kylin_embedding_endpoint.as_deref(),
+        Some("http://kylin.local/v1")
+    );
+
+    // A layer that leaves the fields at defaults must not clobber.
+    let mut non_default_base = Config::default();
+    non_default_base.embedding_backend = "local".to_string();
+    let merged = non_default_base.merge(Config::default());
+    assert_eq!(merged.embedding_backend, "local");
 }

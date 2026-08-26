@@ -30,6 +30,7 @@ api = ["amadeus_core/api", "dep:amadeus_api", "orchestra"]
 tui = [
   "amadeus_core/tui",
   "dep:amadeus_tui",
+  "dep:amadeus_rag",
   "dep:crossterm",
   "dep:ratatui",
   "concurrency",
@@ -49,6 +50,7 @@ full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
 amadeus_core = { package = "core", path = "crates/core", default-features = false }
 amadeus_api = { package = "api", path = "crates/api", optional = true, default-features = false }
 amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-features = false }
+amadeus_rag = { package = "rag", path = "crates/rag", optional = true }
 
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
@@ -118,3 +120,8 @@ required-features = ["test-utils"]
 name = "e2e_product_flow"
 path = "tests/e2e_product_flow.rs"
 required-features = ["orchestra"]
+
+[[test]]
+name = "embedding_indicator_test"
+path = "tests/embedding_indicator_test.rs"
+required-features = ["full"]
