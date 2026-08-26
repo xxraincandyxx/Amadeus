@@ -40,7 +40,10 @@ Example files in this repo:
 Current settings sections:
 
 - top-level runtime fields such as `provider`, `model`, `session_log_dir`, and compaction settings
+- `compact_prompt` for an inline automatic-compaction system prompt
+- `compact_prompt_file` for a prompt file resolved relative to the settings file; `compact_prompt` takes precedence when both are set
 - `hooks.files`
+- `hooks.enabled`, `hooks.timeout_seconds`, `hooks.max_output_bytes`, and `hooks.sandbox`
 - `telemetry.enabled` and `telemetry.jsonl_path`
 - `permissions.mode`
 - `permissions.allow`
@@ -49,6 +52,28 @@ Current settings sections:
 - `permissions.rules`
 - `permissions.additionalDirectories`
 - `tui.language` (`en` or `zh-CN`)
+
+Prompt profiles can customize the built-in system prompt through `builtin_sections`.
+Use a string value to replace a section and `null` to remove it. Stable section IDs
+are `core_loop`, `security`, `context_efficiency`, `engineering_standards`,
+`task_management`, and `tool_usage`. Custom `sections` and `files` are still merged
+according to the profile's `mode`.
+
+```json
+{
+  "prompts": {
+    "active_profile": "focused",
+    "profiles": {
+      "focused": {
+        "builtin_sections": {
+          "core_loop": "You are the implementation agent for this workspace.",
+          "task_management": null
+        }
+      }
+    }
+  }
+}
+```
 
 Important current limitation:
 

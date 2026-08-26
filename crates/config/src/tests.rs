@@ -29,6 +29,33 @@ fn env_lock() -> std::sync::MutexGuard<'static, ()> {
         .expect("env test lock poisoned")
 }
 
+#[test]
+fn compaction_prompt_settings_support_inline_and_relative_file_values() {
+    let temp = tempdir().unwrap();
+    let settings_dir = temp.path().join(".amadeus");
+    std::fs::create_dir_all(&settings_dir).unwrap();
+    let path = settings_dir.join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{"compact_prompt":"inline prompt","compact_prompt_file":"prompts/compact.md"}"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_file(&path).unwrap();
+
+    assert_eq!(config.compact_prompt.as_deref(), Some("inline prompt"));
+    assert_eq!(
+        config.compact_prompt_file,
+        Some(settings_dir.join("prompts/compact.md"))
+    );
+    let compaction = config.to_compaction_config();
+    assert_eq!(compaction.prompt.as_deref(), Some("inline prompt"));
+    assert_eq!(
+        compaction.prompt_file,
+        Some(settings_dir.join("prompts/compact.md"))
+    );
+}
+
 fn restore_env(key: &str, value: Option<String>) {
     match value {
         Some(value) => env::set_var(key, value),
@@ -256,6 +283,70 @@ fn configured_system_prompt_preserves_default_and_supports_append() {
     assert!(configured_prompt.starts_with(&default_prompt));
     assert!(configured_prompt.contains("## Style"));
     assert!(configured_prompt.contains("Prefer compact explanations."));
+}
+
+#[test]
+fn prompt_profile_can_replace_and_remove_builtin_sections() {
+    let mut config = Config {
+        workdir: PathBuf::from("/tmp/amadeus-prompt-profile"),
+        ..Config::default()
+    };
+    config.prompts.active_profile = "focused".to_string();
+    config.prompts.profiles.insert(
+        "focused".to_string(),
+        PromptProfileConfig {
+            builtin_sections: HashMap::from([
+                (
+                    "core_loop".to_string(),
+                    Some("Custom agent identity.".to_string()),
+                ),
+                ("task_management".to_string(), None),
+            ]),
+            ..PromptProfileConfig::default()
+        },
+    );
+
+    let prompt = config.system_prompt(false);
+
+    assert!(prompt.contains("Custom agent identity."));
+    assert!(!prompt.contains("You are a CLI agent"));
+    assert!(!prompt.contains("Use todo to track multi-step tasks"));
+    assert!(prompt.contains("Never commit secrets"));
+}
+
+#[test]
+fn builtin_section_settings_load_from_json() {
+    let temp = tempdir().unwrap();
+    let path = temp.path().join("settings.json");
+    std::fs::write(
+        &path,
+        r#"{
+            "prompts": {
+                "active_profile": "focused",
+                "profiles": {
+                    "focused": {
+                        "builtin_sections": {
+                            "core_loop": "Custom identity.",
+                            "task_management": null
+                        }
+                    }
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let config = Config::load_from_file(&path).unwrap();
+    let profile = config.prompt_profile().unwrap();
+
+    assert_eq!(
+        profile
+            .builtin_sections
+            .get("core_loop")
+            .and_then(Option::as_deref),
+        Some("Custom identity.")
+    );
+    assert_eq!(profile.builtin_sections.get("task_management"), Some(&None));
 }
 
 #[test]

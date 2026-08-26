@@ -6,10 +6,13 @@
 // provides:
 // - module: crate
 // - module: crate::agent
+// - module: crate::architecture
 // - module: crate::orchestra
 // - module: crate::scheduler
 // - module: crate::team
 // - module: crate::worker
+// - module: crate::workflow
+// - module: crate::workflow_agent
 // - type: crate::RuntimeError
 // - type: crate::Result
 // uses:
@@ -26,10 +29,13 @@
 //! Runtime coordination primitives for Amadeus.
 
 pub mod agent;
+pub mod architecture;
 pub mod orchestra;
 pub mod scheduler;
 pub mod team;
 pub mod worker;
+pub mod workflow;
+pub mod workflow_agent;
 
 use thiserror::Error;
 
@@ -46,6 +52,12 @@ pub use agent::{
     normalize_active_index_after_removal, previous_agent_index, select_agent, AgentInfo,
     AgentRouteCandidate, AgentStatus,
 };
+pub use architecture::{
+    compile_architecture, setting as architecture_setting, validate_architecture,
+    AgentArchitectureManifest, ArchitectureCompileError, ArchitectureEdge, ArchitectureNode,
+    ArchitectureNodeData, ArchitectureNodeExecutor, ArchitectureNodeKind, ArchitectureNodeOutput,
+    ArchitectureResources, ArchitectureRunState,
+};
 pub use orchestra::{
     AgentOrchestra, OrchestraConfig, OrchestraLeader, OrchestraRegistry, OrchestraStatus,
     OrchestraStrategy, OrchestraTask, OrchestraTaskStatus,
@@ -60,4 +72,12 @@ pub use team::{
 pub use worker::{
     finalize_worker_task, mark_worker_task_started, HelpRequest, RunOutcome, Task, TaskResult,
     WorkerConfig, WorkerInfo, WorkerStatus,
+};
+pub use workflow::{
+    Node, NodeContext, NodeError, NodeId, NodeResult, RunStatus, SuspendedRun, Suspension,
+    Transition, Workflow, WorkflowBuilder, WorkflowError, WorkflowResult, WorkflowRunner,
+};
+pub use workflow_agent::{
+    AgentRunId, WorkflowAgent, WorkflowAgentCheckpoint, WorkflowAgentError, WorkflowAgentIdentity,
+    WorkflowAgentRegistry, WorkflowAgentResult, WorkflowAgentRun, WorkflowAgentRunStatus,
 };

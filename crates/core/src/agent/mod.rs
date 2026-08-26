@@ -6,6 +6,7 @@
 // - orchestra
 // provides:
 // - module: crate::agent
+// - module: crate::agent::architecture_agent
 // uses: none
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
@@ -16,6 +17,7 @@
 
 //! Agent system for the SDK
 
+pub mod architecture_agent;
 pub mod compaction;
 pub mod config;
 pub mod events;
@@ -29,6 +31,7 @@ pub mod profile;
 #[cfg(feature = "orchestra")]
 pub mod worker;
 
+pub use architecture_agent::run_architecture_stream;
 pub use compaction::{
     CompactionConfig, CompactionEvent, CompactionResult, CompressionStatus, ContextCompactor,
 };

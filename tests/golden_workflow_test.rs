@@ -56,6 +56,7 @@ async fn golden_incident_workflow_runs_end_to_end() {
         "golden-incident".to_string(),
         PromptProfileConfig {
             mode: PromptMergeMode::Append,
+            builtin_sections: HashMap::new(),
             sections: vec![PromptSectionConfig {
                 id: "golden-incident-protocol".to_string(),
                 title: Some("Golden incident protocol".to_string()),

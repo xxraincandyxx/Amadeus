@@ -11,7 +11,10 @@
 // - tui
 // provides:
 // - module: crate
-// uses: none
+// uses:
+// - module: amadeus_runtime::architecture
+// - module: amadeus_runtime::workflow
+// - module: amadeus_runtime::workflow_agent
 // invariants:
 // - Core modules remain frontend-agnostic and reusable across transports.
 // side_effects: none
@@ -49,6 +52,18 @@ pub mod transcript;
 pub use agent::config::{
     Config, Language, PromptMergeMode, PromptProfileConfig, PromptSectionConfig, PromptSettings,
     Provider, ToolOverrideConfig, ToolProfileConfig, ToolSettings, TuiSettings,
+};
+pub use amadeus_runtime::architecture::{
+    AgentArchitectureManifest, ArchitectureCompileError, ArchitectureEdge, ArchitectureNode,
+    ArchitectureNodeData, ArchitectureNodeKind,
+};
+pub use amadeus_runtime::workflow::{
+    Node, NodeContext, NodeError, NodeId, NodeResult, RunStatus, SuspendedRun, Suspension,
+    Transition, Workflow, WorkflowBuilder, WorkflowError, WorkflowResult, WorkflowRunner,
+};
+pub use amadeus_runtime::workflow_agent::{
+    AgentRunId, WorkflowAgent, WorkflowAgentCheckpoint, WorkflowAgentError, WorkflowAgentIdentity,
+    WorkflowAgentRegistry, WorkflowAgentResult, WorkflowAgentRun, WorkflowAgentRunStatus,
 };
 pub use assessment::{
     default_prompt as default_assessment_prompt, AssessmentConfig, AssessmentResult,

@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Source file for shell.
+// summary: Configurable shell hooks for tool lifecycle events.
 // layer: infra
 // status: active
 // feature_flags: none
@@ -7,11 +7,13 @@
 // - module: crate::hooks::shell
 // - type: crate::hooks::shell::ShellHook
 // uses:
+// - module: crate::agent::config
 // - module: crate::error::Result
 // - module: crate::hooks
+// - module: crate::security
 // - format: JSON values
 // invariants:
-// - Listed interfaces stay aligned with the implementation in this file.
+// - Per-hook runtime settings override layered hook defaults.
 // side_effects:
 // - Runs external commands or subprocesses.
 // tests:
@@ -28,9 +30,10 @@
 //! {
 //!   "type": "shell",
 //!   "name": "pre-commit",
-//!   "event": "tool_start",
+//!   "event": "pre_tool_use",
 //!   "command": "pre-commit run --files {FILES}",
 //!   "tools": ["write_file", "edit_file"],
+//!   "sandbox": "workspace-write",
 //!   "env": {
 //!     "CUSTOM_VAR": "value"
 //!   }
@@ -40,10 +43,12 @@
 //! ## Environment Variables
 //!
 //! The following environment variables are available in the command:
-//! - `TOOL_NAME` - The name of the tool being invoked
-//! - `TOOL_INPUT` - JSON string of the tool input
-//! - `TOOL_OUTPUT` - The tool output (only for tool_complete events)
-//! - `TOOL_DURATION_MS` - Duration in milliseconds (only for tool_complete events)
+//! - `HOOK_EVENT` - The hook event name
+//! - `HOOK_TOOL_NAME` - The name of the tool being invoked
+//! - `HOOK_TOOL_INPUT` - JSON string of the tool input
+//! - `HOOK_TOOL_OUTPUT` - The tool output for completion events
+//! - `HOOK_TOOL_DURATION_MS` - Duration in milliseconds for completion events
+//! - `HOOK_TOOL_IS_ERROR` - Whether tool execution failed
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -51,7 +56,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::error::Result;
+use crate::agent::config::{Config, HookSandboxMode};
+use crate::error::{AgentError, Result};
 use crate::hooks::{Hook, HookAction, HookEvent};
 use crate::permissions::PermissionMode;
 use crate::security::{CommandRequest, CommandRunner, SandboxProfile};
@@ -60,6 +66,45 @@ struct ShellHookResult {
     exit_code: i32,
     success: bool,
     output: String,
+}
+
+struct ShellHookDefaults {
+    timeout_secs: u64,
+    max_output_bytes: usize,
+    workdir: PathBuf,
+    permission_mode: PermissionMode,
+    workspace_roots: Vec<PathBuf>,
+}
+
+impl ShellHookDefaults {
+    fn standalone() -> Self {
+        let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        Self {
+            timeout_secs: 10,
+            max_output_bytes: 65_536,
+            workdir: workdir.clone(),
+            permission_mode: PermissionMode::DangerFullAccess,
+            workspace_roots: vec![workdir],
+        }
+    }
+
+    fn for_config(config: &Config) -> Self {
+        let permission_mode = match config.hooks.sandbox {
+            HookSandboxMode::Inherit => config.permission_mode,
+            HookSandboxMode::ReadOnly => PermissionMode::ReadOnly,
+            HookSandboxMode::WorkspaceWrite => PermissionMode::WorkspaceWrite,
+            HookSandboxMode::DangerFullAccess => PermissionMode::DangerFullAccess,
+        };
+        let mut workspace_roots = vec![config.workdir.clone()];
+        workspace_roots.extend(config.permissions.additional_directories.clone());
+        Self {
+            timeout_secs: config.hooks.timeout_seconds,
+            max_output_bytes: config.hooks.max_output_bytes,
+            workdir: config.workdir.clone(),
+            permission_mode,
+            workspace_roots,
+        }
+    }
 }
 
 /// A hook that executes a shell command.
@@ -80,6 +125,8 @@ pub struct ShellHook {
     pub max_output_bytes: usize,
     pub workdir: PathBuf,
     pub permission_mode: PermissionMode,
+    /// Filesystem access profile passed to the shared command runner.
+    pub sandbox: SandboxProfile,
 }
 
 impl ShellHook {
@@ -89,6 +136,7 @@ impl ShellHook {
         event: super::HookEvent,
         command: impl Into<String>,
     ) -> Self {
+        let defaults = ShellHookDefaults::standalone();
         Self {
             name: name.into(),
             event,
@@ -96,10 +144,11 @@ impl ShellHook {
             tools: Vec::new(),
             env: HashMap::new(),
             block_on_error: false,
-            timeout_secs: 10,
-            max_output_bytes: 65_536,
-            workdir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            permission_mode: PermissionMode::DangerFullAccess,
+            timeout_secs: defaults.timeout_secs,
+            max_output_bytes: defaults.max_output_bytes,
+            workdir: defaults.workdir,
+            permission_mode: defaults.permission_mode,
+            sandbox: SandboxProfile::DangerFullAccess,
         }
     }
 
@@ -123,6 +172,14 @@ impl ShellHook {
 
     /// Load from a JSON configuration.
     pub fn from_config(config: &Value) -> Result<Self> {
+        Self::from_config_with_defaults(config, ShellHookDefaults::standalone())
+    }
+
+    pub(crate) fn from_config_for_runtime(config: &Value, runtime: &Config) -> Result<Self> {
+        Self::from_config_with_defaults(config, ShellHookDefaults::for_config(runtime))
+    }
+
+    fn from_config_with_defaults(config: &Value, defaults: ShellHookDefaults) -> Result<Self> {
         let name = config
             .get("name")
             .and_then(|v| v.as_str())
@@ -173,12 +230,36 @@ impl ShellHook {
         let timeout_secs = config
             .get("timeout_seconds")
             .and_then(|v| v.as_u64())
-            .unwrap_or(10);
+            .unwrap_or(defaults.timeout_secs);
         let max_output_bytes = config
             .get("max_output_bytes")
             .and_then(|v| v.as_u64())
             .and_then(|value| usize::try_from(value).ok())
-            .unwrap_or(65_536);
+            .unwrap_or(defaults.max_output_bytes);
+        let workdir = config
+            .get("workdir")
+            .and_then(|v| v.as_str())
+            .map(PathBuf::from)
+            .map(|path| {
+                if path.is_absolute() {
+                    path
+                } else {
+                    defaults.workdir.join(path)
+                }
+            })
+            .unwrap_or(defaults.workdir);
+        let permission_mode = match config.get("sandbox").and_then(|v| v.as_str()) {
+            Some("read-only") => PermissionMode::ReadOnly,
+            Some("workspace-write") => PermissionMode::WorkspaceWrite,
+            Some("danger-full-access") => PermissionMode::DangerFullAccess,
+            Some(sandbox) => {
+                return Err(AgentError::Config(format!(
+                    "Invalid shell hook sandbox '{sandbox}'"
+                )));
+            }
+            None => defaults.permission_mode,
+        };
+        let sandbox = sandbox_profile(permission_mode, defaults.workspace_roots);
 
         Ok(Self {
             name,
@@ -189,8 +270,9 @@ impl ShellHook {
             block_on_error,
             timeout_secs,
             max_output_bytes,
-            workdir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
-            permission_mode: PermissionMode::DangerFullAccess,
+            workdir,
+            permission_mode,
+            sandbox,
         })
     }
 
@@ -240,7 +322,7 @@ impl ShellHook {
                 command: self.command.clone(),
                 cwd: self.workdir.clone(),
                 permission_mode: self.permission_mode,
-                sandbox: SandboxProfile::DangerFullAccess,
+                sandbox: self.sandbox.clone(),
                 timeout: Duration::from_secs(self.timeout_secs),
                 max_output_bytes: self.max_output_bytes,
                 env,
@@ -253,6 +335,21 @@ impl ShellHook {
             success: result.exit_code == 0 && !result.timed_out,
             output: result.output,
         })
+    }
+}
+
+fn sandbox_profile(mode: PermissionMode, roots: Vec<PathBuf>) -> SandboxProfile {
+    match mode {
+        PermissionMode::ReadOnly => SandboxProfile::ReadOnly {
+            readable_roots: roots,
+        },
+        PermissionMode::WorkspaceWrite | PermissionMode::Prompt => SandboxProfile::WorkspaceWrite {
+            readable_roots: roots.clone(),
+            writable_roots: roots,
+        },
+        PermissionMode::DangerFullAccess | PermissionMode::Allow => {
+            SandboxProfile::DangerFullAccess
+        }
     }
 }
 
@@ -378,6 +475,54 @@ mod tests {
         assert_eq!(hook.tools, vec!["bash"]);
         assert_eq!(hook.env.get("FOO"), Some(&"bar".to_string()));
         assert!(hook.block_on_error);
+    }
+
+    #[test]
+    fn runtime_config_supplies_hook_defaults_and_per_hook_overrides() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut runtime = Config {
+            workdir: temp.path().to_path_buf(),
+            permission_mode: PermissionMode::ReadOnly,
+            ..Config::default()
+        };
+        runtime.hooks.timeout_seconds = 42;
+        runtime.hooks.max_output_bytes = 1234;
+        runtime.hooks.sandbox = HookSandboxMode::Inherit;
+
+        let inherited =
+            ShellHook::from_config_for_runtime(&serde_json::json!({"command": "true"}), &runtime)
+                .unwrap();
+        assert_eq!(inherited.timeout_secs, 42);
+        assert_eq!(inherited.max_output_bytes, 1234);
+        assert_eq!(inherited.workdir, temp.path());
+        assert_eq!(inherited.permission_mode, PermissionMode::ReadOnly);
+        assert!(matches!(inherited.sandbox, SandboxProfile::ReadOnly { .. }));
+
+        let overridden = ShellHook::from_config_for_runtime(
+            &serde_json::json!({
+                "command": "true",
+                "timeout_seconds": 7,
+                "max_output_bytes": 99,
+                "sandbox": "danger-full-access",
+                "workdir": "hooks"
+            }),
+            &runtime,
+        )
+        .unwrap();
+        assert_eq!(overridden.timeout_secs, 7);
+        assert_eq!(overridden.max_output_bytes, 99);
+        assert_eq!(overridden.workdir, temp.path().join("hooks"));
+        assert_eq!(overridden.permission_mode, PermissionMode::DangerFullAccess);
+        assert!(matches!(
+            overridden.sandbox,
+            SandboxProfile::DangerFullAccess
+        ));
+
+        let invalid = ShellHook::from_config_for_runtime(
+            &serde_json::json!({"command": "true", "sandbox": "unrestricted"}),
+            &runtime,
+        );
+        assert!(matches!(invalid, Err(AgentError::Config(_))));
     }
 
     #[test]

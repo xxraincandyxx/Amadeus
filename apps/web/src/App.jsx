@@ -8,15 +8,26 @@
 // - runtime: React agent workspace
 // uses:
 // - module: apps/web/src/api.js
+// - module: apps/web/src/AgentDesignerWorkspace.jsx
+// - module: apps/web/src/AgentWorkspace.jsx
+// - module: apps/web/src/agentArchitecture.js
+// - module: apps/web/src/agentSessions.js
 // - module: apps/web/src/FileDiffView.jsx
+// - module: apps/web/src/GuideWorkspace.jsx
 // - module: apps/web/src/i18n.js
+// - module: apps/web/src/panelResize.js
 // - module: apps/web/src/sessionState.js
+// - module: apps/web/src/SettingsWorkspace.jsx
+// - module: apps/web/src/theme.js
+// - module: apps/web/src/ToolsWorkspace.jsx
+// - module: apps/web/src/WorkflowWorkspace.jsx
 // - protocol: Amadeus REST and SSE APIs
 // invariants:
 // - Live reasoning is visually distinct from final assistant output.
 // - Reasoning disclosures remain keyboard accessible, user-controlled, and collapsed by default.
 // - Slash commands advertised by the composer execute without model involvement.
 // - Interface language selection persists across web and native client launches.
+// - The selected theme accent persists and applies to every workspace.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -25,7 +36,7 @@
 // - cmd: npm run build
 // @end-amadeus-header
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
   ArrowsInLineVertical,
@@ -41,6 +52,7 @@ import {
   DownloadSimple,
   FileText,
   FolderSimple,
+  FlowArrow,
   GearSix,
   GithubLogo,
   Gauge,
@@ -53,6 +65,7 @@ import {
   Stop,
   StopCircle,
   TerminalWindow,
+  TreeStructure,
   Trash,
   UserPlus,
   WarningCircle,
@@ -61,13 +74,21 @@ import {
   XCircle,
 } from "@phosphor-icons/react";
 
-import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
+import { api } from "./api";
+import { AGENT_ARCHITECTURE_STORAGE_KEY, architectureForExport, architectureRuntimeStatus, loadArchitectureLibrary } from "./agentArchitecture";
+import { AgentWorkspace } from "./AgentWorkspace";
+import { agentSessionRows, sessionRelations, upsertSession } from "./agentSessions";
 import { FileDiffView } from "./FileDiffView";
 import { buildFileDiff } from "./fileDiff";
-import { normalizeLanguage, SUPPORTED_LANGUAGES, translate } from "./i18n";
+import { GuideWorkspace } from "./GuideWorkspace";
+import { normalizeLanguage, translate } from "./i18n";
 import { MarkdownContent } from "./MarkdownContent";
+import { useResizablePanel } from "./panelResize";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
+import { SettingsWorkspace } from "./SettingsWorkspace";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
+import { applyThemeColor, loadThemeColor } from "./theme";
+import { ToolsWorkspace } from "./ToolsWorkspace";
 
 const emptyRuntime = {
   timeline: [],
@@ -103,6 +124,8 @@ const eventNames = [
 ];
 
 const TranslationContext = createContext((key, variables) => translate("en", key, variables));
+const AgentDesignerWorkspace = lazy(() => import("./AgentDesignerWorkspace").then((module) => ({ default: module.AgentDesignerWorkspace })));
+const WorkflowWorkspace = lazy(() => import("./WorkflowWorkspace").then((module) => ({ default: module.WorkflowWorkspace })));
 
 function useTranslation() {
   return useContext(TranslationContext);
@@ -155,9 +178,19 @@ function exportConversation(session, timeline, format) {
 }
 
 function App() {
+  const mainSidebarResize = useResizablePanel({
+    storageKey: "amadeus.sidebarWidth",
+    defaultWidth: 292,
+    minimum: 220,
+    maximum: 440,
+  });
   const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
+  const [themeColor, setThemeColor] = useState(() => loadThemeColor(localStorage));
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(localStorage.getItem("amadeus.activeSession"));
+  const [view, setView] = useState("conversation");
+  const [guideChapter, setGuideChapter] = useState("getting-started");
+  const [subagentMetadata, setSubagentMetadata] = useState({});
   const [runtimeBySession, setRuntimeBySession] = useState({});
   const [draft, setDraft] = useState("");
   const [loading, setLoading] = useState(true);
@@ -168,8 +201,12 @@ function App() {
   const [creatingSession, setCreatingSession] = useState(false);
   const [createError, setCreateError] = useState("");
   const [newSessionName, setNewSessionName] = useState("");
+  const [architectureLibrary, setArchitectureLibrary] = useState(() => loadArchitectureLibrary(localStorage));
+  const [selectedArchitectureId, setSelectedArchitectureId] = useState("preset-react");
+  const [sessionArchitectures, setSessionArchitectures] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("amadeus.sessionArchitectures.v1")) || {}; } catch { return {}; }
+  });
   const [showDetails, setShowDetails] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
   const [showContribute, setShowContribute] = useState(false);
   const [apiEpoch, setApiEpoch] = useState(0);
   const streamRef = useRef(null);
@@ -178,6 +215,7 @@ function App() {
   const t = useCallback((key, variables) => translate(language, key, variables), [language]);
 
   const activeSession = sessions.find((session) => session.id === activeId) || null;
+  const activeRelations = sessionRelations(sessions, activeId);
   const runtime = runtimeBySession[activeId] || { ...emptyRuntime, status: activeSession?.status || "idle" };
   const busy = runtime.status === "running" || runtime.status === "awaiting_approval";
 
@@ -237,6 +275,14 @@ function App() {
   }, [refreshSessions, apiEpoch, t]);
 
   useEffect(() => {
+    if (!serverOnline) return undefined;
+    const timer = window.setInterval(() => {
+      refreshSessions().catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [refreshSessions, serverOnline]);
+
+  useEffect(() => {
     if (!activeId) return;
     localStorage.setItem("amadeus.activeSession", activeId);
     loadHistory(activeId).catch((caught) => setError(caught.message));
@@ -255,10 +301,22 @@ function App() {
         const payload = parseData(event);
         setRuntime(activeId, (previous) => reduceEvent(previous, eventName, payload));
         if (eventName === "session_state") {
-          setSessions((current) => current.map((session) => session.id === payload.id ? payload : session));
+          setSessions((current) => upsertSession(current, payload));
+        }
+        if (eventName === "subagent_session" && payload.session) {
+          setSessions((current) => upsertSession(current, payload.session));
+          setSubagentMetadata((current) => ({
+            ...current,
+            [payload.session.id]: {
+              prompt: payload.prompt,
+              depth: payload.depth,
+              requestId: payload.request_id,
+            },
+          }));
         }
         if (eventName === "done" || eventName === "error") {
           loadHistory(activeId).catch(() => undefined);
+          refreshSessions().catch(() => undefined);
         }
       });
     });
@@ -279,7 +337,7 @@ function App() {
     };
 
     return () => source.close();
-  }, [activeId, apiEpoch, loadHistory, serverOnline, setRuntime, t]);
+  }, [activeId, apiEpoch, loadHistory, refreshSessions, serverOnline, setRuntime, t]);
 
   useEffect(() => {
     if (window.__TAURI_INTERNALS__) document.documentElement.classList.add("is-tauri");
@@ -291,12 +349,25 @@ function App() {
   }, [language]);
 
   useEffect(() => {
+    applyThemeColor(themeColor, localStorage);
+  }, [themeColor]);
+
+  useEffect(() => {
+    localStorage.setItem(AGENT_ARCHITECTURE_STORAGE_KEY, JSON.stringify({ ...architectureLibrary, architectures: architectureLibrary.architectures.map(architectureForExport) }));
+  }, [architectureLibrary]);
+
+  useEffect(() => {
+    localStorage.setItem("amadeus.sessionArchitectures.v1", JSON.stringify(sessionArchitectures));
+  }, [sessionArchitectures]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [runtime.timeline, runtime.streamingText, runtime.thinking, runtime.approvals]);
 
-  const openCreateDialog = useCallback(() => {
+  const openCreateDialog = useCallback((architectureId = "preset-react") => {
     setNewSessionName("");
     setCreateError("");
+    setSelectedArchitectureId(architectureId);
     setCreating(true);
   }, []);
 
@@ -309,10 +380,17 @@ function App() {
     setCreatingSession(true);
     setCreateError("");
     try {
+      const architecture = architectureLibrary.architectures.find(({ id }) => id === selectedArchitectureId);
+      if (!architecture || architectureRuntimeStatus(architecture) !== "production") {
+        setCreateError(t("This architecture preset is not executable yet."));
+        return;
+      }
       const name = newSessionName.trim() || t("Session {number}", { number: sessions.length + 1 });
-      const session = await api.createSession(name, "default");
+      const session = await api.createSession(name, "default", architecture.toolProfile, architectureForExport(architecture));
       setSessions((current) => [...current, session]);
+      setSessionArchitectures((current) => ({ ...current, [session.id]: architecture.id }));
       setActiveId(session.id);
+      setView("conversation");
       setNewSessionName("");
       setCreating(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -373,14 +451,16 @@ function App() {
 
     try {
       if (command.name === "help") {
-        const lines = SLASH_COMMANDS.map((item) => `- \`/${item.name}${item.argumentHint ? ` ${item.argumentHint}` : ""}\`: ${item.summary}`);
-        addCommandResult("Slash commands", lines.join("\n"));
+        setGuideChapter("commands");
+        setView("guide");
+        setShowDetails(false);
       }
       if (command.name === "new-agent") {
         const name = parsed.argument || t("Session {number}", { number: sessions.length + 1 });
         const session = await api.createSession(name, "default");
         setSessions((current) => [...current, session]);
         setActiveId(session.id);
+        setView("conversation");
       }
       if (command.name === "context") {
         const usage = runtime.tokenUsage;
@@ -408,9 +488,16 @@ function App() {
         addCommandResult(title, lines.join("\n"));
       }
       if (command.name === "tools") {
-        const data = await api.getToolCatalog();
-        const rows = (data.tools || []).map((tool) => `| \`${tool.name}\` | ${tool.level} | ${tool.permission_mode} |`);
-        addCommandResult("Active tool catalog", ["| Tool | Level | Permission |", "| --- | --- | --- |", ...rows].join("\n"));
+        setView("tools");
+        setShowDetails(false);
+      }
+      if (command.name === "workflow") {
+        setView("workflows");
+        setShowDetails(false);
+      }
+      if (command.name === "agent-designer") {
+        setView("agent-designer");
+        setShowDetails(false);
       }
       if (command.name === "prompt") {
         const config = await api.getConfig();
@@ -431,7 +518,10 @@ function App() {
           addCommandResult("Conversation exported", `Downloaded \`${activeSession?.name || "Amadeus session"}.${extension}\`.`);
         }
       }
-      if (command.name === "settings") setShowSettings(true);
+      if (command.name === "settings") {
+        setView("settings");
+        setShowDetails(false);
+      }
       if (command.name === "contribute") setShowContribute(true);
       if (command.name === "cancel") {
         if (busy) await cancel();
@@ -494,27 +584,79 @@ function App() {
     setApiEpoch((value) => value + 1);
   }, []);
 
+  const selectSession = useCallback((sessionId) => {
+    setActiveId(sessionId);
+    setView("conversation");
+  }, []);
+
+  const openAgentWorkspace = useCallback(() => {
+    setView("agents");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openGuide = useCallback((chapter = "getting-started") => {
+    setGuideChapter(chapter);
+    setView("guide");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openTools = useCallback(() => {
+    setView("tools");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openWorkflows = useCallback(() => {
+    setView("workflows");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openAgentDesigner = useCallback(() => {
+    setView("agent-designer");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
+  const openSettings = useCallback(() => {
+    setView("settings");
+    setShowDetails(false);
+    setSidebarOpen(false);
+  }, []);
+
   if (loading) return <LoadingScreen />;
 
   return (
     <TranslationContext.Provider value={t}>
-    <div className="app-shell">
+    <div className="app-shell" ref={mainSidebarResize.containerRef} style={mainSidebarResize.containerStyle}>
       <Sidebar
         sessions={sessions}
         activeId={activeId}
+        view={view}
         open={sidebarOpen}
         online={serverOnline}
-        onSelect={setActiveId}
+        onSelect={selectSession}
+        onAgents={openAgentWorkspace}
+        onGuide={() => openGuide(guideChapter)}
+        onTools={openTools}
+        onWorkflows={openWorkflows}
+        onAgentDesigner={openAgentDesigner}
         onCreate={openCreateDialog}
-        onSettings={() => setShowSettings(true)}
+        onSettings={openSettings}
         onContribute={() => setShowContribute(true)}
         onClose={() => setSidebarOpen(false)}
+        resizeHandle={mainSidebarResize.handleProps}
       />
 
       <main className="workspace">
         <Header
           session={activeSession}
           status={runtime.status}
+          view={view}
+          sessionCount={sessions.length}
+          parentSession={activeRelations.parent}
           onMenu={() => setSidebarOpen(true)}
           onDetails={() => setShowDetails((value) => !value)}
           onClose={closeSession}
@@ -524,49 +666,110 @@ function App() {
           <ErrorBanner
             message={error}
             onRetry={reconnect}
-            onSettings={() => setShowSettings(true)}
+            onSettings={openSettings}
             onDismiss={() => setError("")}
           />
         )}
 
-        <section className="conversation" aria-live="polite">
-          {!activeSession ? (
-            <EmptyState onCreate={openCreateDialog} online={serverOnline} />
-          ) : (
-            <div className="conversation-column">
-              {!runtime.timeline.length && !runtime.streamingText && (
-                <Welcome session={activeSession} />
+        {view === "agents" ? (
+          <AgentWorkspace
+            sessions={sessions}
+            activeId={activeId}
+            metadata={subagentMetadata}
+            onSelect={selectSession}
+            architectures={architectureLibrary.architectures}
+            sessionArchitectures={sessionArchitectures}
+            onCreate={openCreateDialog}
+            onEditArchitecture={(architectureId) => {
+              setArchitectureLibrary((current) => ({ ...current, activeArchitectureId: architectureId }));
+              setView("agent-designer");
+            }}
+            statusLabel={(status) => statusLabel(status, t)}
+            t={t}
+          />
+        ) : view === "guide" ? (
+          <GuideWorkspace
+            language={language}
+            initialChapter={guideChapter}
+            onChapterChange={setGuideChapter}
+            t={t}
+          />
+        ) : view === "tools" ? (
+          <ToolsWorkspace online={serverOnline} t={t} />
+        ) : view === "agent-designer" ? (
+          <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading agent designer")}</div>}>
+            <AgentDesignerWorkspace
+              t={t}
+              library={architectureLibrary}
+              online={serverOnline}
+              themeColor={themeColor}
+              onLibraryChange={setArchitectureLibrary}
+              onUseArchitecture={openCreateDialog}
+              onOpenAgentWorkspace={() => setView("agents")}
+            />
+          </Suspense>
+        ) : view === "workflows" ? (
+          <Suspense fallback={<div className="workflow-loading" role="status">{t("Loading workflow designer")}</div>}>
+            <WorkflowWorkspace t={t} themeColor={themeColor} />
+          </Suspense>
+        ) : view === "settings" ? (
+          <SettingsWorkspace
+            online={serverOnline}
+            language={language}
+            themeColor={themeColor}
+            onLanguage={setLanguage}
+            onThemeColor={setThemeColor}
+            onReconnect={reconnect}
+            t={t}
+          />
+        ) : (
+          <>
+            <section className="conversation" aria-live="polite">
+              {!activeSession ? (
+                <EmptyState onCreate={openCreateDialog} online={serverOnline} />
+              ) : (
+                <div className="conversation-column">
+                  {!runtime.timeline.length && !runtime.streamingText && (
+                    <Welcome session={activeSession} />
+                  )}
+                  {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
+                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
+                  {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
+                  {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
+                  {runtime.approvals.map((approval) => (
+                    <ApprovalCard key={approval.id} approval={approval} onDecision={decideApproval} />
+                  ))}
+                  {busy && !runtime.streamingText && !runtime.thinking && !visibleTools.length && !runtime.approvals.length && (
+                    <AgentWorking />
+                  )}
+                  <div ref={endRef} />
+                </div>
               )}
-              {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-              {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
-              {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
-              {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
-              {runtime.approvals.map((approval) => (
-                <ApprovalCard key={approval.id} approval={approval} onDecision={decideApproval} />
-              ))}
-              {busy && !runtime.streamingText && !runtime.thinking && !visibleTools.length && !runtime.approvals.length && (
-                <AgentWorking />
-              )}
-              <div ref={endRef} />
-            </div>
-          )}
-        </section>
+            </section>
 
-        <Composer
-          draft={draft}
-          disabled={!activeSession || !serverOnline}
-          busy={busy}
-          tokenUsage={runtime.tokenUsage}
-          onChange={setDraft}
-          onSubmit={submit}
-          onCommand={submit}
-          onCancel={cancel}
-          textareaRef={textareaRef}
-        />
+            <Composer
+              draft={draft}
+              disabled={!activeSession || !serverOnline}
+              busy={busy}
+              tokenUsage={runtime.tokenUsage}
+              onChange={setDraft}
+              onSubmit={submit}
+              onCommand={submit}
+              onCancel={cancel}
+              textareaRef={textareaRef}
+            />
+          </>
+        )}
       </main>
 
       {showDetails && activeSession && (
-        <DetailsPanel session={activeSession} runtime={runtime} onClose={() => setShowDetails(false)} />
+        <DetailsPanel
+          session={activeSession}
+          runtime={runtime}
+          parentSession={activeRelations.parent}
+          children={activeRelations.children}
+          onClose={() => setShowDetails(false)}
+        />
       )}
 
       {creating && (
@@ -575,23 +778,16 @@ function App() {
           online={serverOnline}
           submitting={creatingSession}
           error={createError}
+          architectures={architectureLibrary.architectures}
+          architectureId={selectedArchitectureId}
+          onArchitecture={setSelectedArchitectureId}
           onChange={setNewSessionName}
           onSubmit={createSession}
           onClose={() => setCreating(false)}
           onSettings={() => {
             setCreating(false);
-            setShowSettings(true);
+            openSettings();
           }}
-        />
-      )}
-
-      {showSettings && (
-        <SettingsDialog
-          online={serverOnline}
-          language={language}
-          onLanguage={setLanguage}
-          onReconnect={reconnect}
-          onClose={() => setShowSettings(false)}
         />
       )}
 
@@ -601,8 +797,9 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSettings, onContribute, onClose }) {
+function Sidebar({ sessions, activeId, view, open, online, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
   const t = useTranslation();
+  const rows = agentSessionRows(sessions);
   return (
     <>
       <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label={t("Close sidebar")} onClick={onClose} />
@@ -610,20 +807,26 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
         <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
-          <button onClick={onCreate}><Plus /><span>{t("New session")}</span></button>
-          <button><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
-          <button><TerminalWindow /><span>{t("Tools")}</span></button>
+          <button onClick={() => onCreate()}><Plus /><span>{t("New session")}</span></button>
+          <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>
+          <button className={view === "agent-designer" ? "active" : ""} onClick={onAgentDesigner}><TreeStructure /><span>{t("Agent designer")}</span></button>
+          <button className={view === "workflows" ? "active" : ""} onClick={onWorkflows}><FlowArrow /><span>{t("Task workflows")}</span></button>
+          <button className={view === "guide" ? "active" : ""} onClick={onGuide}><BookOpenText /><span>{t("Guide")}</span></button>
+          <button className={view === "tools" ? "active" : ""} onClick={onTools}><TerminalWindow /><span>{t("Tools")}</span></button>
+          <button className={view === "settings" ? "active" : ""} onClick={onSettings}><GearSix /><span>{t("Settings")}</span></button>
           <button onClick={onContribute}><GithubLogo /><span>{t("Contribute")}</span></button>
         </nav>
         <div className="section-label">{t("Workspace")}</div>
         <div className="project-label"><FolderSimple /><span>amadeus</span></div>
         <div className="session-list">
-          {sessions.map((session) => (
+          {rows.map(({ session, depth }) => (
             <button
               key={session.id}
               className={`session-button ${session.id === activeId ? "active" : ""}`}
+              style={{ "--session-depth": depth }}
               onClick={() => onSelect(session.id)}
             >
+              {depth > 0 && <span className="session-branch" aria-hidden="true" />}
               <span>{session.name}</span>
               <i className={`status-dot ${session.status}`} title={statusLabel(session.status, t)} />
             </button>
@@ -633,24 +836,35 @@ function Sidebar({ sessions, activeId, open, online, onSelect, onCreate, onSetti
           <div className="connection"><i className={online ? "online" : "offline"} /><span>{online ? t("Local API connected") : t("API unavailable")}</span></div>
           <button onClick={onSettings} aria-label={t("Connection settings")}><GearSix /></button>
         </div>
+        <div className="resize-handle app-sidebar-resize" aria-label={t("Resize main sidebar")} title={t("Drag to resize sidebar")} {...resizeHandle} />
       </aside>
     </>
   );
 }
 
-function Header({ session, status, onMenu, onDetails, onClose }) {
+function Header({ session, status, view, sessionCount, parentSession, onMenu, onDetails, onClose }) {
   const t = useTranslation();
+  const agentsView = view === "agents";
+  const guideView = view === "guide";
+  const toolsView = view === "tools";
+  const workflowsView = view === "workflows";
+  const agentDesignerView = view === "agent-designer";
+  const settingsView = view === "settings";
+  const standaloneView = agentsView || guideView || toolsView || workflowsView || agentDesignerView || settingsView;
   return (
     <header className="topbar">
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
-        <FolderSimple />
-        <div><strong>{session?.name || "Amadeus"}</strong><span>{session ? session.profile : t("agent workspace")}</span></div>
+        {agentsView ? <Robot /> : agentDesignerView ? <TreeStructure /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : settingsView ? <GearSix /> : <FolderSimple />}
+        <div>
+          <strong>{agentsView ? t("Agent workspace") : agentDesignerView ? t("Agent designer") : workflowsView ? t("Task workflow designer") : guideView ? t("Guide") : toolsView ? t("Tools") : settingsView ? t("Settings") : session?.name || "Amadeus"}</strong>
+          <span>{agentsView ? t("{count} sessions", { count: sessionCount }) : agentDesignerView ? t("Agent architecture manifest") : workflowsView ? t("Task control flow") : guideView ? t("Product handbook") : toolsView ? t("Runtime capabilities") : settingsView ? t("Preferences and connection") : parentSession ? t("Sub-agent of {name}", { name: parentSession.name }) : session ? t("Coordinator · {profile}", { profile: session.profile }) : t("agent workspace")}</span>
+        </div>
       </div>
       <div className="header-actions">
-        {session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
-        <button className="toolbar-button" onClick={onDetails}><List /><span>{t("Details")}</span></button>
-        {session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
+        {!standaloneView && session && <span className={`status-badge ${status}`}>{statusLabel(status, t)}</span>}
+        {!standaloneView && <button className="toolbar-button" onClick={onDetails} aria-label={t("Details")}><List /><span>{t("Details")}</span></button>}
+        {!standaloneView && session && <button className="icon-button danger-hover" onClick={onClose} aria-label={t("Close session")}><Trash /></button>}
       </div>
     </header>
   );
@@ -928,93 +1142,34 @@ function Welcome({ session }) {
   );
 }
 
-function DetailsPanel({ session, runtime, onClose }) {
+function DetailsPanel({ session, runtime, parentSession, children, onClose }) {
   const t = useTranslation();
   return (
     <aside className="details-panel">
-      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose}><X /></button></div>
-      <dl><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
+      <div className="details-header"><strong>{t("Session details")}</strong><button onClick={onClose} aria-label={t("Close")}><X /></button></div>
+      <dl><div><dt>{t("Role")}</dt><dd>{parentSession ? t("Sub-agent") : t("Coordinator")}</dd></div>{parentSession && <div><dt>{t("Parent agent")}</dt><dd>{parentSession.name}</dd></div>}<div><dt>{t("Child agents")}</dt><dd>{children.length}</dd></div><div><dt>{t("Status")}</dt><dd>{statusLabel(runtime.status, t)}</dd></div><div><dt>{t("Profile")}</dt><dd>{session.profile}</dd></div><div><dt>{t("Session ID")}</dt><dd className="mono">{session.id}</dd></div><div><dt>{t("Messages")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "user" || item.kind === "assistant").length}</dd></div><div><dt>{t("Tool calls")}</dt><dd>{runtime.timeline.filter((item) => item.kind === "tool").length}</dd></div>{runtime.tokenUsage && <><div><dt>{t("Input tokens")}</dt><dd>{runtime.tokenUsage.input_tokens.toLocaleString()}</dd></div><div><dt>{t("Output tokens")}</dt><dd>{runtime.tokenUsage.output_tokens.toLocaleString()}</dd></div></>}</dl>
     </aside>
   );
 }
 
-function CreateDialog({ value, online, submitting, error, onChange, onSubmit, onClose, onSettings }) {
+function CreateDialog({ value, online, submitting, error, architectures, architectureId, onArchitecture, onChange, onSubmit, onClose, onSettings }) {
   const t = useTranslation();
+  const selectedArchitecture = architectures.find(({ id }) => id === architectureId) || architectures[0];
+  const runtimeStatus = architectureRuntimeStatus(selectedArchitecture);
   return (
     <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
       <form className="dialog" role="dialog" aria-modal="true" aria-labelledby="create-session-title" onSubmit={onSubmit} onMouseDown={(event) => event.stopPropagation()}>
         <div className="dialog-icon"><Sparkle weight="fill" /></div><h2 id="create-session-title">{t("New session")}</h2><p>{t("Start with a clean conversation and an independent agent context.")}</p>
         <label htmlFor="session-name">{t("Session name")}</label><input id="session-name" autoFocus value={value} onChange={(event) => onChange(event.target.value)} placeholder={t("Feature implementation")} />
+        <label htmlFor="session-architecture">{t("Agent architecture")}</label>
+        <select id="session-architecture" value={architectureId} onChange={(event) => onArchitecture(event.target.value)}>
+          {architectures.map((architecture) => <option key={architecture.id} value={architecture.id} disabled={architectureRuntimeStatus(architecture) !== "production"}>{architecture.name} · {architectureRuntimeStatus(architecture) === "production" ? t("Runnable now") : t("Runtime planned")}</option>)}
+        </select>
+        <div className={`create-architecture-summary ${runtimeStatus}`}><Brain /><span><strong>{selectedArchitecture.name}</strong><small>{runtimeStatus === "production" ? t("Runs the serialized workflow with built-in model, tool, routing, and delegation nodes.") : t("Fix the graph validation errors before creating this agent.")}</small><small>{t("Tool profile: {profile} · {selection}", { profile: selectedArchitecture.toolProfile.name, selection: selectedArchitecture.toolProfile.selectionMode === "selected" ? t("{count} selected tools", { count: selectedArchitecture.toolProfile.enabledTools.length }) : t("runtime catalog") })}</small></span></div>
         {(!online || error) && (
           <div className="dialog-inline-error" role="alert"><WarningCircle /><span>{error || t("The Amadeus API is unavailable.")}</span>{!online && <button type="button" onClick={onSettings}>{t("Connection settings")}</button>}</div>
         )}
-        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting}>{submitting ? t("Creating…") : online ? t("Create session") : t("API unavailable")}</button></div>
-      </form>
-    </div>
-  );
-}
-
-function SettingsDialog({ online, language, onLanguage, onReconnect, onClose }) {
-  const t = useTranslation();
-  const [value, setValue] = useState(getApiBaseUrl());
-  const [status, setStatus] = useState("");
-  const [testing, setTesting] = useState(false);
-
-  const testConnection = async () => {
-    setTesting(true);
-    setStatus("");
-    try {
-      const normalized = value.trim().replace(/\/$/, "");
-      const parsed = new URL(normalized);
-      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error(t("Use an HTTP or HTTPS URL."));
-      await api.health(normalized);
-      setStatus(t("Connection successful."));
-    } catch (caught) {
-      setStatus(caught.message);
-    } finally {
-      setTesting(false);
-    }
-  };
-
-  const save = (event) => {
-    event.preventDefault();
-    try {
-      setApiBaseUrl(value);
-      onClose();
-      onReconnect();
-    } catch (caught) {
-      setStatus(caught.message);
-    }
-  };
-
-  const reset = () => {
-    const defaultUrl = resetApiBaseUrl();
-    setValue(defaultUrl);
-    setStatus(t("Restored the default local address. Save to reconnect."));
-  };
-
-  return (
-    <div className="dialog-backdrop" role="presentation" onMouseDown={onClose}>
-      <form className="dialog settings-dialog" onSubmit={save} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="dialog-heading">
-          <div className="dialog-icon"><PlugsConnected weight="fill" /></div>
-          <div><h2>{t("Connection")}</h2><p>{t("Choose the Amadeus HTTP server used by this client.")}</p></div>
-        </div>
-        <div className="connection-summary"><i className={online ? "online" : "offline"} /><span>{online ? t("Connected") : t("Not connected")}</span><code>{getApiBaseUrl()}</code></div>
-        <label htmlFor="api-url">{t("HTTP API URL")}</label>
-        <input id="api-url" autoFocus value={value} onChange={(event) => setValue(event.target.value)} placeholder="http://127.0.0.1:3000" />
-        <p className="field-help">{t("Remote servers should use HTTPS and authentication at the network boundary.")}</p>
-        <label htmlFor="interface-language">{t("Interface language")}</label>
-        <select id="interface-language" value={language} onChange={(event) => onLanguage(normalizeLanguage(event.target.value))}>
-          {SUPPORTED_LANGUAGES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-        {status && <div className="connection-test-result" role="status">{status}</div>}
-        <div className="dialog-actions split-actions">
-          <button type="button" onClick={reset}>{t("Reset default")}</button>
-          <span />
-          <button type="button" onClick={testConnection} disabled={testing}>{testing ? t("Testing…") : t("Test")}</button>
-          <button className="primary" type="submit">{t("Save and reconnect")}</button>
-        </div>
+        <div className="dialog-actions"><button type="button" onClick={onClose}>{t("Cancel")}</button><button className="primary" type="submit" disabled={!online || submitting || runtimeStatus !== "production"}>{submitting ? t("Creating…") : online ? t("Create agent") : t("API unavailable")}</button></div>
       </form>
     </div>
   );
@@ -1060,7 +1215,7 @@ function AgentWorking() {
 
 function EmptyState({ onCreate, online }) {
   const t = useTranslation();
-  return <div className="empty-state"><Robot /><h1>{online ? t("No open sessions") : t("Amadeus API is offline")}</h1><p>{online ? t("Create a session to begin working with an agent.") : t("Start the server at {url}, then refresh this page.", { url: api.baseUrl })}</p>{online && <button onClick={onCreate}><Plus />{t("New session")}</button>}</div>;
+  return <div className="empty-state"><Robot /><h1>{online ? t("No open sessions") : t("Amadeus API is offline")}</h1><p>{online ? t("Create a session to begin working with an agent.") : t("Start the server at {url}, then refresh this page.", { url: api.baseUrl })}</p>{online && <button onClick={() => onCreate()}><Plus />{t("New session")}</button>}</div>;
 }
 
 function LoadingScreen() {

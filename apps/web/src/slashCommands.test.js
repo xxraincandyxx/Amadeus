@@ -30,6 +30,8 @@ test("slash completion filters command names without description noise", () => {
   assert.deepEqual(filterSlashCommands("/new").map((command) => command.name), ["new-agent"]);
   assert.deepEqual(filterSlashCommands("/comp").map((command) => command.name), ["compact"]);
   assert.deepEqual(filterSlashCommands("/to").map((command) => command.name), ["tools"]);
+  assert.deepEqual(filterSlashCommands("/agent-d").map((command) => command.name), ["agent-designer"]);
+  assert.deepEqual(filterSlashCommands("/work").map((command) => command.name), ["workflow"]);
   assert.deepEqual(filterSlashCommands("/token"), []);
 });
 

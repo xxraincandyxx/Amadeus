@@ -258,6 +258,8 @@ pub struct PromptProfileConfig {
     #[serde(default)]
     pub mode: PromptMergeMode,
     #[serde(default)]
+    pub builtin_sections: HashMap<String, Option<String>>,
+    #[serde(default)]
     pub sections: Vec<PromptSectionConfig>,
     #[serde(default)]
     pub files: Vec<PathBuf>,
@@ -269,6 +271,7 @@ impl Default for PromptProfileConfig {
     fn default() -> Self {
         Self {
             mode: PromptMergeMode::Append,
+            builtin_sections: HashMap::new(),
             sections: Vec::new(),
             files: Vec::new(),
             include_project_context: true,
@@ -320,6 +323,8 @@ pub struct Config {
     pub compact_max_summary_chars: usize,
     pub compact_min_messages: usize,
     pub compact_max_tool_result_chars: usize,
+    pub compact_prompt: Option<String>,
+    pub compact_prompt_file: Option<PathBuf>,
     pub max_subagent_depth: usize,
     pub rag_enabled: bool,
     pub embedding_model: Option<String>,
@@ -365,6 +370,8 @@ impl Default for Config {
             compact_max_summary_chars: DEFAULT_COMPACT_MAX_SUMMARY_CHARS,
             compact_min_messages: DEFAULT_COMPACT_MIN_MESSAGES,
             compact_max_tool_result_chars: DEFAULT_COMPACT_MAX_TOOL_RESULT_CHARS,
+            compact_prompt: None,
+            compact_prompt_file: None,
             max_subagent_depth: DEFAULT_MAX_SUBAGENT_DEPTH,
             rag_enabled: DEFAULT_RAG_ENABLED,
             embedding_model: None,
@@ -503,12 +510,23 @@ impl Config {
     }
 
     pub fn system_prompt(&self, include_sub_agent_tool: bool) -> String {
-        let base_prompt = amadeus_prompts::build_system_prompt(
+        let profile = self.prompt_profile();
+        let mut base_sections = amadeus_prompts::default_sections(
             &self.workdir.display().to_string(),
             include_sub_agent_tool,
-            &[],
         );
-        let profile = self.prompt_profile();
+        if let Some(profile) = profile {
+            base_sections.retain_mut(|section| match profile.builtin_sections.get(&section.id) {
+                Some(Some(content)) => {
+                    section.content.clone_from(content);
+                    true
+                }
+                Some(None) => false,
+                None => true,
+            });
+        }
+        let base_prompt =
+            amadeus_prompts::SystemPromptBuilder::with_sections(base_sections).build();
         let custom_sections = self.render_prompt_profile_sections(profile);
         let mut prompt = match profile.map(|profile| profile.mode).unwrap_or_default() {
             PromptMergeMode::Append => append_prompt_sections(base_prompt, custom_sections),
@@ -707,6 +725,8 @@ impl Config {
             } else {
                 self.compact_max_tool_result_chars
             },
+            compact_prompt: other.compact_prompt.or(self.compact_prompt),
+            compact_prompt_file: other.compact_prompt_file.or(self.compact_prompt_file),
             max_subagent_depth: if other.max_subagent_depth != DEFAULT_MAX_SUBAGENT_DEPTH {
                 other.max_subagent_depth
             } else {
@@ -813,6 +833,8 @@ impl Config {
             max_summary_chars: self.compact_max_summary_chars,
             min_messages: self.compact_min_messages,
             max_tool_result_chars: self.compact_max_tool_result_chars,
+            prompt: self.compact_prompt.clone(),
+            prompt_file: self.compact_prompt_file.clone(),
         }
     }
 
@@ -973,6 +995,20 @@ impl Config {
             .and_then(|v| v.as_u64())
         {
             self.compact_max_tool_result_chars = max_tr as usize;
+        }
+
+        if json.get("compact_prompt").is_some() {
+            self.compact_prompt = json
+                .get("compact_prompt")
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string);
+        }
+
+        if json.get("compact_prompt_file").is_some() {
+            self.compact_prompt_file = json
+                .get("compact_prompt_file")
+                .and_then(|v| v.as_str())
+                .map(|path| resolve_path(base_dir, path));
         }
 
         if let Some(max_subagent_depth) = json.get("max_subagent_depth").and_then(|v| v.as_u64()) {
@@ -1216,6 +1252,18 @@ impl Config {
                     if let Some(mode) = raw_profile.get("mode").and_then(|v| v.as_str()) {
                         profile.mode = parse_prompt_merge_mode(mode);
                     }
+                    if let Some(builtin_sections) = raw_profile
+                        .get("builtin_sections")
+                        .and_then(|v| v.as_object())
+                    {
+                        for (id, content) in builtin_sections {
+                            if content.is_null() || content.is_string() {
+                                profile
+                                    .builtin_sections
+                                    .insert(id.clone(), content.as_str().map(ToString::to_string));
+                            }
+                        }
+                    }
                     if let Some(include_project_context) = raw_profile
                         .get("include_project_context")
                         .and_then(|v| v.as_bool())
@@ -1407,6 +1455,10 @@ fn merge_prompt_profiles(
             name,
             PromptProfileConfig {
                 mode: incoming_profile.mode,
+                builtin_sections: merge_builtin_prompt_sections(
+                    current.builtin_sections,
+                    incoming_profile.builtin_sections,
+                ),
                 sections: merge_prompt_sections(current.sections, incoming_profile.sections),
                 files: append_unique_paths(current.files, incoming_profile.files),
                 include_project_context: incoming_profile.include_project_context,
@@ -1414,6 +1466,14 @@ fn merge_prompt_profiles(
         );
     }
     merged
+}
+
+fn merge_builtin_prompt_sections(
+    mut existing: HashMap<String, Option<String>>,
+    incoming: HashMap<String, Option<String>>,
+) -> HashMap<String, Option<String>> {
+    existing.extend(incoming);
+    existing
 }
 
 fn merge_prompt_sections(

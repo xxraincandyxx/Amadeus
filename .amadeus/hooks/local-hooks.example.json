@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "type": "shell",
+      "name": "log-bash-start",
+      "event": "pre_tool_use",
+      "command": "mkdir -p .amadeus/logs && printf '%s\\n' \"$HOOK_TOOL_NAME\" >> .amadeus/logs/hooks.log",
+      "tools": ["bash"],
+      "sandbox": "workspace-write",
+      "block_on_error": false
+    }
+  ]
+}

@@ -21,6 +21,8 @@
 
 pub mod trigger;
 
+use std::path::PathBuf;
+
 use serde::{Deserialize, Serialize};
 
 pub use trigger::{
@@ -37,6 +39,10 @@ pub struct CompactionConfig {
     pub max_summary_chars: usize,
     pub min_messages: usize,
     pub max_tool_result_chars: usize,
+    #[serde(default)]
+    pub prompt: Option<String>,
+    #[serde(default)]
+    pub prompt_file: Option<PathBuf>,
 }
 
 impl Default for CompactionConfig {
@@ -49,6 +55,8 @@ impl Default for CompactionConfig {
             max_summary_chars: 2000,
             min_messages: 10,
             max_tool_result_chars: 5000,
+            prompt: None,
+            prompt_file: None,
         }
     }
 }

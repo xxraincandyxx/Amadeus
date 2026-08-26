@@ -12,6 +12,8 @@
 // - type: crate::bridge::BridgeEvent
 // - type: crate::bridge::LocalSessionBridge
 // - fn: crate::bridge::LocalSessionBridge::history
+// - fn: crate::bridge::LocalSessionBridge::create_session_with_tool_profile
+// - fn: crate::bridge::LocalSessionBridge::create_session_with_architecture
 // - fn: crate::bridge::LocalSessionBridge::pending_approvals
 // - fn: crate::bridge::LocalSessionBridge::compact
 // - fn: crate::bridge::LocalSessionBridge::cancel
@@ -38,6 +40,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tokio::task::JoinHandle;
 
+use crate::agent::architecture_agent::run_architecture_stream_with_approval;
 use crate::agent::loop_agent::create_approval_channels;
 use crate::agent::{
     Agent, AgentEvent, AgentProfile, ApprovalDecision, ApprovalRequest, CompactionResult, Config,
@@ -45,6 +48,8 @@ use crate::agent::{
 };
 use crate::client::LLMClient;
 use crate::error::{AgentError, Result};
+use crate::tools::ToolProfile;
+use amadeus_runtime::{validate_architecture, AgentArchitectureManifest};
 
 const SESSION_EVENT_BUFFER: usize = 256;
 
@@ -66,6 +71,12 @@ pub struct BridgeSessionInfo {
     pub profile: String,
     pub status: BridgeSessionStatus,
     pub parent_session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub architecture_preset: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +109,7 @@ struct BridgeSession<C: LLMClient> {
     approval_tx: Option<mpsc::Sender<(String, ApprovalDecision)>>,
     task: Option<JoinHandle<()>>,
     parent_request_id: Option<String>,
+    architecture: Option<AgentArchitectureManifest>,
 }
 
 impl<C: LLMClient> BridgeSession<C> {
@@ -105,6 +117,7 @@ impl<C: LLMClient> BridgeSession<C> {
         info: BridgeSessionInfo,
         agent: Agent<C>,
         parent_request_id: Option<String>,
+        architecture: Option<AgentArchitectureManifest>,
     ) -> (Self, broadcast::Receiver<BridgeEvent>) {
         let (events_tx, events_rx) = broadcast::channel(SESSION_EVENT_BUFFER);
         (
@@ -116,6 +129,7 @@ impl<C: LLMClient> BridgeSession<C> {
                 approval_tx: None,
                 task: None,
                 parent_request_id,
+                architecture,
             },
             events_rx,
         )
@@ -124,6 +138,16 @@ impl<C: LLMClient> BridgeSession<C> {
 
 type BridgeSessionHandle<C> = Arc<Mutex<BridgeSession<C>>>;
 type BridgeSessionMap<C> = HashMap<String, BridgeSessionHandle<C>>;
+
+struct BridgeSessionSpec<C: LLMClient> {
+    id: Option<String>,
+    parent_session_id: Option<String>,
+    name: Option<String>,
+    profile: AgentProfile,
+    parent_request_id: Option<String>,
+    agent: Option<Agent<C>>,
+    architecture: Option<AgentArchitectureManifest>,
+}
 
 #[derive(Clone)]
 pub struct LocalSessionBridge<C: LLMClient + Clone + 'static> {
@@ -169,34 +193,102 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
         name: Option<String>,
         profile: AgentProfile,
     ) -> Result<BridgeSessionInfo> {
-        self.create_session_with_agent(None, None, name, profile, None, None)
-            .await
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
+            name,
+            profile,
+            parent_request_id: None,
+            agent: None,
+            architecture: None,
+        })
+        .await
+    }
+
+    /// Create a root session with a request-scoped tool profile.
+    pub async fn create_session_with_tool_profile(
+        &self,
+        name: Option<String>,
+        profile: AgentProfile,
+        tool_profile: ToolProfile,
+    ) -> Result<BridgeSessionInfo> {
+        let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
+            .with_default_tools()
+            .with_inline_tool_profile(tool_profile)
+            .with_subagent_delegate();
+        if let Some(ref memory) = self.memory_registry {
+            builder = builder.with_memory_registry(memory.clone());
+        }
+        if let Some(ref trace) = self.llm_trace {
+            builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+        }
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
+            name,
+            profile,
+            parent_request_id: None,
+            agent: Some(builder.build()),
+            architecture: None,
+        })
+        .await
+    }
+
+    /// Create a root session backed by a serialized workflow architecture.
+    pub async fn create_session_with_architecture(
+        &self,
+        name: Option<String>,
+        profile: AgentProfile,
+        tool_profile: ToolProfile,
+        architecture: AgentArchitectureManifest,
+    ) -> Result<BridgeSessionInfo> {
+        validate_architecture(&architecture)
+            .map_err(|error| AgentError::InvalidResponse(error.to_string()))?;
+        let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
+            .with_default_tools()
+            .with_inline_tool_profile(tool_profile)
+            .with_subagent_delegate();
+        if let Some(ref memory) = self.memory_registry {
+            builder = builder.with_memory_registry(memory.clone());
+        }
+        if let Some(ref trace) = self.llm_trace {
+            builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+        }
+        self.create_session_with_agent(BridgeSessionSpec {
+            id: None,
+            parent_session_id: None,
+            name,
+            profile,
+            parent_request_id: None,
+            agent: Some(builder.build()),
+            architecture: Some(architecture),
+        })
+        .await
     }
 
     async fn create_session_with_agent(
         &self,
-        id: Option<String>,
-        parent_session_id: Option<String>,
-        name: Option<String>,
-        profile: AgentProfile,
-        parent_request_id: Option<String>,
-        agent: Option<Agent<C>>,
+        spec: BridgeSessionSpec<C>,
     ) -> Result<BridgeSessionInfo> {
-        let id = id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let name = name.unwrap_or_else(|| format!("session-{}", &id[..8]));
+        let id = spec.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let name = spec.name.unwrap_or_else(|| format!("session-{}", &id[..8]));
         let info = BridgeSessionInfo {
             id: id.clone(),
             name,
-            profile: profile.to_string(),
+            profile: spec.profile.to_string(),
             status: BridgeSessionStatus::Idle,
-            parent_session_id,
+            parent_session_id: spec.parent_session_id,
+            architecture_id: spec.architecture.as_ref().map(|value| value.id.clone()),
+            architecture_name: spec.architecture.as_ref().map(|value| value.name.clone()),
+            architecture_preset: spec.architecture.as_ref().map(|value| value.preset.clone()),
         };
 
-        let agent = match agent {
+        let agent = match spec.agent {
             Some(agent) => agent,
             None => {
                 let mut builder = Agent::builder(self.client.clone(), Arc::clone(&self.config))
-                    .with_default_tools();
+                    .with_default_tools()
+                    .with_subagent_delegate();
                 if let Some(ref mem) = self.memory_registry {
                     builder = builder.with_memory_registry(mem.clone());
                 }
@@ -207,7 +299,12 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             }
         };
 
-        let (session, mut events_rx) = BridgeSession::new(info.clone(), agent, parent_request_id);
+        let (session, mut events_rx) = BridgeSession::new(
+            info.clone(),
+            agent,
+            spec.parent_request_id,
+            spec.architecture,
+        );
         let session = Arc::new(Mutex::new(session));
         {
             let mut sessions = self.sessions.write().await;
@@ -310,7 +407,7 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
             AgentError::InvalidResponse(format!("Session '{}' not found", session_id))
         })?;
 
-        let (agent, mut stream, events_tx, parent_session_id, parent_request_id) = {
+        let (agent, mut stream, append_prompt, events_tx, parent_session_id, parent_request_id) = {
             let mut session = session.lock().await;
             match session.info.status {
                 BridgeSessionStatus::Running | BridgeSessionStatus::AwaitingApproval => {
@@ -328,25 +425,46 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                 _ => {}
             }
 
-            let (channels, handle) = create_approval_channels();
             session.info.status = BridgeSessionStatus::Running;
             session.pending_approvals.clear();
-            session.approval_tx = Some(handle.decision_tx.clone());
-            let stream = session.agent.run_stream_with_approval(Some(channels));
+            let agent = session.agent.clone();
+            let (stream, append_prompt) = match session.architecture.clone() {
+                Some(architecture) => {
+                    let (approval_tx, approval_rx) = mpsc::channel(8);
+                    session.approval_tx = Some(approval_tx);
+                    (
+                        run_architecture_stream_with_approval(
+                            agent.clone(),
+                            architecture,
+                            prompt.clone(),
+                            Some(approval_rx),
+                        ),
+                        false,
+                    )
+                }
+                None => {
+                    let (channels, handle) = create_approval_channels();
+                    session.approval_tx = Some(handle.decision_tx.clone());
+                    (agent.run_stream_with_approval(Some(channels)), true)
+                }
+            };
             (
-                session.agent.clone(),
+                agent,
                 stream,
+                append_prompt,
                 session.events_tx.clone(),
                 session.info.parent_session_id.clone(),
                 session.parent_request_id.clone(),
             )
         };
 
-        agent
-            .history()
-            .write()
-            .await
-            .push(crate::agent::Message::user(&prompt));
+        if append_prompt {
+            agent
+                .history()
+                .write()
+                .await
+                .push(crate::agent::Message::user(&prompt));
+        }
 
         self.emit_session_update(session_id).await?;
 
@@ -662,9 +780,92 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                     .await;
                 }
             }
-            AgentEvent::SubAgentRequested { .. } => {}
+            AgentEvent::SubAgentRequested { id, prompt, depth } => {
+                if let Err(error) = self
+                    .spawn_subagent_session(session_id, id, prompt, *depth)
+                    .await
+                {
+                    let _ = agent
+                        .complete_subagent(
+                            id,
+                            crate::agent::loop_agent::SubAgentResult {
+                                output: format!("Error: {error}"),
+                                is_error: true,
+                            },
+                        )
+                        .await;
+                }
+            }
             _ => {}
         }
+    }
+
+    async fn spawn_subagent_session(
+        &self,
+        parent_session_id: &str,
+        request_id: &str,
+        prompt: &str,
+        depth: usize,
+    ) -> Result<BridgeSessionInfo> {
+        let parent = self
+            .session_handle(parent_session_id)
+            .await
+            .ok_or_else(|| {
+                AgentError::InvalidResponse(format!(
+                    "Parent session '{}' not found",
+                    parent_session_id
+                ))
+            })?;
+        let (parent_agent, parent_events_tx) = {
+            let parent = parent.lock().await;
+            (parent.agent.clone(), parent.events_tx.clone())
+        };
+        let mut child_agent = parent_agent.spawn_child_agent(depth);
+        child_agent.enable_subagent_delegate();
+
+        let prompt_label: String = prompt
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .chars()
+            .take(42)
+            .collect();
+        let name = if prompt_label.is_empty() {
+            let request_label: String = request_id.chars().take(8).collect();
+            format!("subagent-{request_label}")
+        } else {
+            prompt_label
+        };
+        let session = self
+            .create_session_with_agent(BridgeSessionSpec {
+                id: None,
+                parent_session_id: Some(parent_session_id.to_string()),
+                name: Some(name),
+                profile: AgentProfile::Default,
+                parent_request_id: Some(request_id.to_string()),
+                agent: Some(child_agent),
+                architecture: None,
+            })
+            .await?;
+
+        let _ = parent_events_tx.send(BridgeEvent::ChildSessionSpawned {
+            parent_session_id: parent_session_id.to_string(),
+            request_id: request_id.to_string(),
+            prompt: prompt.to_string(),
+            depth,
+            session: session.clone(),
+        });
+
+        recursive_submit::spawn(
+            self.clone(),
+            session.clone(),
+            parent_session_id.to_string(),
+            request_id.to_string(),
+            prompt.to_string(),
+        );
+
+        Ok(session)
     }
 
     async fn finish_session(&self, session_id: &str, status: BridgeSessionStatus) {
@@ -725,6 +926,36 @@ impl<C: LLMClient + Clone + 'static> LocalSessionBridge<C> {
                 )
                 .await;
         }
+    }
+}
+
+mod recursive_submit {
+    use super::*;
+
+    pub(super) fn spawn<C: LLMClient + Clone + 'static>(
+        bridge: LocalSessionBridge<C>,
+        child: BridgeSessionInfo,
+        parent_session_id: String,
+        request_id: String,
+        prompt: String,
+    ) {
+        let _task = tokio::spawn(async move {
+            if let Err(error) = bridge.submit_input(&child.id, prompt).await {
+                bridge.fail_session(&child.id, error.to_string()).await;
+                if let Some(parent) = bridge.session_handle(&parent_session_id).await {
+                    let parent_agent = parent.lock().await.agent.clone();
+                    let _ = parent_agent
+                        .complete_subagent(
+                            &request_id,
+                            crate::agent::loop_agent::SubAgentResult {
+                                output: format!("Error: {error}"),
+                                is_error: true,
+                            },
+                        )
+                        .await;
+                }
+            }
+        });
     }
 }
 
@@ -826,6 +1057,178 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bridge_runs_a_compiled_architecture_through_legacy_events() {
+        let client = BridgeMockClient {
+            events: vec![
+                StreamEvent::TextDelta("planned response".to_string()),
+                StreamEvent::StopReason("end_turn".to_string()),
+            ],
+        };
+        let bridge = LocalSessionBridge::new(client, Arc::new(Config::default()));
+        let architecture = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "kind": "agent-architecture",
+            "id": "plan-execute",
+            "name": "Plan and execute",
+            "preset": "plan-execute",
+            "entryNodeId": "input",
+            "maxTransitions": 8,
+            "nodes": [
+                { "id": "input", "data": { "kind": "input", "label": "Input" } },
+                { "id": "plan", "data": { "kind": "plan", "label": "Plan" } },
+                { "id": "output", "data": { "kind": "output", "label": "Complete" } }
+            ],
+            "edges": [
+                { "id": "e1", "source": "input", "target": "plan", "label": "next" },
+                { "id": "e2", "source": "plan", "target": "output", "label": "next" }
+            ]
+        }))
+        .expect("architecture manifest");
+        let session = bridge
+            .create_session_with_architecture(
+                Some("planner".to_string()),
+                AgentProfile::Default,
+                ToolProfile::default_root(),
+                architecture,
+            )
+            .await
+            .expect("create architecture session");
+        assert_eq!(session.architecture_preset.as_deref(), Some("plan-execute"));
+        let mut events = bridge.subscribe(&session.id).await.expect("subscribe");
+
+        bridge
+            .submit_input(&session.id, "plan this".to_string())
+            .await
+            .expect("submit input");
+
+        let mut terminal_results = Vec::new();
+        for _ in 0..8 {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed receive")
+                .expect("bridge event");
+            if let BridgeEvent::Agent {
+                event: AgentEvent::Done { result },
+                ..
+            } = event
+            {
+                terminal_results.push(result);
+                break;
+            }
+        }
+
+        assert_eq!(terminal_results.len(), 1);
+        assert_eq!(terminal_results[0].text, "planned response");
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn bridge_resumes_an_approved_architecture_node() {
+        let bridge =
+            LocalSessionBridge::new(BridgeMockClient::default(), Arc::new(Config::default()));
+        let architecture = serde_json::from_value(serde_json::json!({
+            "schemaVersion": 2,
+            "kind": "agent-architecture",
+            "id": "approval-test",
+            "name": "Approval test",
+            "preset": "custom",
+            "entryNodeId": "input",
+            "maxTransitions": 8,
+            "nodes": [
+                { "id": "input", "data": { "kind": "input", "label": "Input" } },
+                {
+                    "id": "approval",
+                    "data": {
+                        "kind": "approval",
+                        "label": "Approval",
+                        "reason": "Approve this architecture checkpoint"
+                    }
+                },
+                { "id": "output", "data": { "kind": "output", "label": "Complete" } }
+            ],
+            "edges": [
+                { "id": "e1", "source": "input", "target": "approval", "label": "next" },
+                { "id": "e2", "source": "approval", "target": "output", "label": "approved" }
+            ]
+        }))
+        .expect("architecture manifest");
+        let session = bridge
+            .create_session_with_architecture(
+                Some("approval-test".to_string()),
+                AgentProfile::Default,
+                ToolProfile::default_root(),
+                architecture,
+            )
+            .await
+            .expect("create architecture session");
+        let mut events = bridge.subscribe(&session.id).await.expect("subscribe");
+
+        bridge
+            .submit_input(&session.id, "continue after approval".to_string())
+            .await
+            .expect("submit input");
+
+        let approval_id = loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed receive")
+                .expect("bridge event");
+            if let BridgeEvent::Agent {
+                event: AgentEvent::ApprovalRequired { request },
+                ..
+            } = event
+            {
+                assert_eq!(request.reason, "Approve this architecture checkpoint");
+                break request.id;
+            }
+        };
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::AwaitingApproval
+        );
+
+        bridge
+            .submit_approval(&session.id, &approval_id, ApprovalDecision::Approve)
+            .await
+            .expect("submit approval");
+
+        loop {
+            let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+                .await
+                .expect("timed receive")
+                .expect("bridge event");
+            if matches!(
+                event,
+                BridgeEvent::Agent {
+                    event: AgentEvent::Done { .. },
+                    ..
+                }
+            ) {
+                break;
+            }
+        }
+        assert_eq!(
+            bridge
+                .get_session(&session.id)
+                .await
+                .expect("session")
+                .status,
+            BridgeSessionStatus::Completed
+        );
+    }
+
+    #[tokio::test]
     async fn bridge_compacts_an_idle_session_and_emits_the_result() {
         let mut config = Config::default();
         config.compact_preserve_recent = 1;
@@ -875,5 +1278,45 @@ mod tests {
                 .status,
             BridgeSessionStatus::Completed
         );
+    }
+
+    #[tokio::test]
+    async fn bridge_spawns_child_session_and_emits_parent_event() {
+        let bridge = LocalSessionBridge::new(
+            BridgeMockClient {
+                events: vec![StreamEvent::StopReason("end_turn".to_string())],
+            },
+            Arc::new(Config::default()),
+        );
+        let parent = bridge
+            .create_session(Some("coordinator".to_string()), AgentProfile::Default)
+            .await
+            .expect("create parent session");
+        let mut events = bridge.subscribe(&parent.id).await.expect("subscribe");
+
+        let child = bridge
+            .spawn_subagent_session(
+                &parent.id,
+                "request-12345678",
+                "Inspect the bridge implementation",
+                1,
+            )
+            .await
+            .expect("spawn child session");
+
+        assert_eq!(child.parent_session_id.as_deref(), Some(parent.id.as_str()));
+        assert_eq!(child.name, "Inspect the bridge implementation");
+        let event = events.recv().await.expect("child session event");
+        assert!(matches!(
+            event,
+            BridgeEvent::ChildSessionSpawned {
+                parent_session_id,
+                request_id,
+                session,
+                ..
+            } if parent_session_id == parent.id
+                && request_id == "request-12345678"
+                && session.id == child.id
+        ));
     }
 }

@@ -18,11 +18,13 @@
 // @end-amadeus-header
 
 export const SLASH_COMMANDS = [
-  { name: "help", summary: "Show commands available in this app", icon: "help" },
+  { name: "help", summary: "Open the product guide and command reference", icon: "help" },
   { name: "new-agent", summary: "Create and switch to a new agent session", argumentHint: "[name]", icon: "agent" },
   { name: "context", summary: "Show current token and session usage", icon: "context" },
   { name: "compact", summary: "Summarize older context and recover space", icon: "compact" },
   { name: "tools", summary: "Inspect the active tool catalog", icon: "tools" },
+  { name: "agent-designer", summary: "Design an agent from core architecture components", icon: "workflow" },
+  { name: "workflow", summary: "Open the task workflow designer", icon: "workflow" },
   { name: "prompt", summary: "Inspect the active model and prompt profile", icon: "prompt" },
   { name: "export", summary: "Download this conversation", argumentHint: "[markdown|json]", icon: "export" },
   { name: "settings", summary: "Open API connection settings", icon: "settings" },

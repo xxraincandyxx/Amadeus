@@ -29,11 +29,22 @@ Current file format:
       "env": {
         "CUSTOM_SCOPE": "project"
       },
+      "timeout_seconds": 10,
+      "max_output_bytes": 65536,
+      "sandbox": "workspace-write",
+      "workdir": ".",
       "block_on_error": false
     }
   ]
 }
 ```
+
+Layer-loaded hooks inherit `hooks.timeout_seconds`, `hooks.max_output_bytes`, and
+`hooks.sandbox` from `settings.json`. They run from the configured workspace by
+default. Hook entries can override those values, and relative `workdir` values are
+resolved from the workspace. Supported sandbox values are `read-only`,
+`workspace-write`, and `danger-full-access`; omitting the value inherits the
+runtime permission mode.
 
 Shell hook environment:
 
@@ -50,4 +61,4 @@ Shell hook stdin:
 
 Working example:
 
-- [local-hooks.json](/.amadeus/hooks/local-hooks.json)
+- [local-hooks.example.json](/.amadeus/hooks/local-hooks.example.json)

@@ -15,11 +15,13 @@
 // - module: crate::agent::messages
 // - module: crate::client::LLMClient
 // - module: crate::error::Result
+// - artifact: optional compaction prompt files
 // - protocol: serde serialization
 // - runtime: tracing instrumentation
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
-// side_effects: none
+// side_effects:
+// - Reads configured compaction prompt files during summarization.
 // tests:
 // - tests/compaction_test.rs
 // @end-amadeus-header
@@ -75,7 +77,7 @@ pub use amadeus_compaction::{
 
 use crate::agent::messages::{ContentBlock, Message};
 use crate::client::LLMClient;
-use crate::error::Result;
+use crate::error::{AgentError, Result};
 
 /// Structured compression prompt for LLM summarization.
 const COMPRESSION_PROMPT: &str = r#"You are a specialized system component responsible for distilling chat history into a structured XML <state_snapshot>.
@@ -558,6 +560,7 @@ impl ContextCompactor {
         prompt_override: Option<&str>,
     ) -> Result<String> {
         let conversation = self.format_messages_for_summary(messages);
+        let prompt = self.resolve_prompt(prompt_override)?;
 
         // Check if there's a previous snapshot to anchor from
         let anchor_instruction = if conversation.contains("<state_snapshot>") {
@@ -573,12 +576,7 @@ impl ContextCompactor {
 
         let tool_schemas: Vec<serde_json::Value> = vec![];
         let mut stream = client
-            .create_message_stream(
-                prompt_override.unwrap_or(COMPRESSION_PROMPT),
-                &summary_request,
-                &tool_schemas,
-                1000,
-            )
+            .create_message_stream(&prompt, &summary_request, &tool_schemas, 1000)
             .await?;
 
         use futures::StreamExt;
@@ -607,6 +605,25 @@ impl ContextCompactor {
         }
 
         Ok(summary_text)
+    }
+
+    fn resolve_prompt(&self, prompt_override: Option<&str>) -> Result<String> {
+        if let Some(prompt) = prompt_override {
+            return Ok(prompt.to_string());
+        }
+        if let Some(prompt) = &self.config.prompt {
+            return Ok(prompt.clone());
+        }
+        if let Some(path) = &self.config.prompt_file {
+            return std::fs::read_to_string(path).map_err(|error| {
+                AgentError::Config(format!(
+                    "Failed to read compaction prompt file {}: {}",
+                    path.display(),
+                    error
+                ))
+            });
+        }
+        Ok(COMPRESSION_PROMPT.to_string())
     }
 
     /// Extract key points from messages without using LLM.
@@ -929,5 +946,35 @@ mod tests {
         assert!(COMPRESSION_PROMPT.contains("<recent_actions>"));
         assert!(COMPRESSION_PROMPT.contains("<task_state>"));
         assert!(COMPRESSION_PROMPT.contains("SECURITY RULE"));
+    }
+
+    #[test]
+    fn configured_inline_prompt_takes_precedence_over_file() {
+        let config = CompactionConfig {
+            prompt: Some("inline prompt".to_string()),
+            prompt_file: Some(std::path::PathBuf::from("missing-prompt.md")),
+            ..Default::default()
+        };
+        let compactor = ContextCompactor::from_config(config);
+
+        assert_eq!(compactor.resolve_prompt(None).unwrap(), "inline prompt");
+        assert_eq!(
+            compactor.resolve_prompt(Some("request prompt")).unwrap(),
+            "request prompt"
+        );
+    }
+
+    #[test]
+    fn configured_prompt_file_is_loaded() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("compact.md");
+        std::fs::write(&path, "file prompt").unwrap();
+        let config = CompactionConfig {
+            prompt_file: Some(path),
+            ..Default::default()
+        };
+        let compactor = ContextCompactor::from_config(config);
+
+        assert_eq!(compactor.resolve_prompt(None).unwrap(), "file prompt");
     }
 }

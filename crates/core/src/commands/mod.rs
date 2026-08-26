@@ -64,6 +64,7 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "agents"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
     }
@@ -83,6 +84,7 @@ mod tests {
         assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
         assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
+        assert_eq!(SlashCommand::parse("/agents"), Some(SlashCommand::Agents));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),
             Some(SlashCommand::Rewind { steps: Some(2) })

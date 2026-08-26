@@ -6,20 +6,27 @@ When a provider exposes a distinct reasoning stream, live thinking appears in an
 
 Assistant answers render safe GitHub-flavored Markdown, including headings, emphasis, links, lists, task lists, blockquotes, tables, inline code, and fenced code blocks with copy actions. Raw HTML is escaped by default. Markdown is rendered during streaming as well as after history hydration.
 
+The Workflow designer provides a node-based canvas for defining agent control flow. Workflow graphs are validated, stored locally, and can be imported or exported as versioned JSON. Direct execution remains disabled until the runtime exposes a serialized workflow API and built-in node implementations.
+
+## In-app guide
+
+The Guide workspace provides a searchable, offline product handbook in English and Simplified Chinese. Its source manuscripts live in [`../../docs/user-guide/`](../../docs/user-guide/) and are bundled with the client at build time. Keep user-facing workflow documentation there so the web and native apps always ship the same guide.
+
 ## Slash commands
 
 Type `/` as the first character in the composer to open the command palette. A slash elsewhere in a message, including after leading whitespace, remains ordinary prompt text. Completion matches command names and closes once an argument begins.
 
 | Command | Action |
 | --- | --- |
-| `/help` | Show the client command catalog |
+| `/help` | Open the product guide at the command reference |
 | `/new-agent [name]` | Create and switch to a session |
 | `/context` | Show current session and token usage |
 | `/compact` | Summarize older history and recover context space |
 | `/tools` | Read the active tool catalog |
+| `/workflow` | Open the visual workflow designer |
 | `/prompt` | Read the active model and prompt configuration |
 | `/export [markdown\|json]` | Download the visible conversation |
-| `/settings` | Open connection settings |
+| `/settings` | Open the settings workspace |
 | `/contribute` | Open contribution resources |
 | `/cancel` | Stop the active turn |
 | `/close` | Close the current session |
@@ -50,7 +57,7 @@ The default API address is `http://127.0.0.1:3000`. Set a development default wh
 VITE_AMADEUS_API_URL=http://localhost:8080 npm run dev
 ```
 
-The gear button opens runtime Connection settings. The saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
+The Settings page includes interface language, a configurable theme accent, and runtime Connection settings. Dark red is the default accent. The selected color is stored under `amadeus.themeColor`; the saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
 
 ## UI-only demo
 

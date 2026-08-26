@@ -60,6 +60,7 @@ pub const SLASH_COMMAND_SPECS: &[SlashCommandSpec] = &[
     SlashCommandSpec::new("prompt", &[], "Inspect active prompt profile", None),
     SlashCommandSpec::new("hooks", &[], "Inspect configured hook phases", None),
     SlashCommandSpec::new("new-agent", &[], "Create a new agent session", None),
+    SlashCommandSpec::new("agents", &[], "Switch to an existing agent session", None),
     SlashCommandSpec::new(
         "language",
         &["lang"],
@@ -91,6 +92,7 @@ pub enum SlashCommand {
     Prompt,
     Hooks,
     NewAgent,
+    Agents,
     Language { language: Option<String> },
     Rewind { steps: Option<usize> },
     Export { path: Option<String> },
@@ -125,6 +127,7 @@ impl SlashCommand {
             "prompt" => Self::Prompt,
             "hooks" => Self::Hooks,
             "new-agent" => Self::NewAgent,
+            "agents" => Self::Agents,
             "language" | "lang" => Self::Language {
                 language: remainder.map(String::from),
             },
@@ -149,6 +152,7 @@ impl SlashCommand {
             Self::Prompt => "prompt",
             Self::Hooks => "hooks",
             Self::NewAgent => "new-agent",
+            Self::Agents => "agents",
             Self::Language { .. } => "language",
             Self::Rewind { .. } => "rewind",
             Self::Export { .. } => "export",
@@ -168,6 +172,7 @@ mod tests {
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "hooks"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "tools"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "prompt"));
+        assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "agents"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "rewind"));
         assert!(SLASH_COMMAND_SPECS.iter().any(|spec| spec.name == "export"));
         assert!(SLASH_COMMAND_SPECS
@@ -196,6 +201,7 @@ mod tests {
         assert_eq!(SlashCommand::parse("/tools"), Some(SlashCommand::Tools));
         assert_eq!(SlashCommand::parse("/prompt"), Some(SlashCommand::Prompt));
         assert_eq!(SlashCommand::parse("/hooks"), Some(SlashCommand::Hooks));
+        assert_eq!(SlashCommand::parse("/agents"), Some(SlashCommand::Agents));
         assert_eq!(
             SlashCommand::parse("/rewind 2"),
             Some(SlashCommand::Rewind { steps: Some(2) })

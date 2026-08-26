@@ -643,10 +643,23 @@ struct RewindConfirmState {
 }
 
 #[derive(Debug, Clone)]
+struct AgentsDialogState {
+    dialog: SlashDialog,
+    session_ids: Vec<usize>,
+}
+
+#[derive(Debug, Clone)]
 enum SlashDialogState {
     Hooks(HooksDialogState),
     Rewind(RewindDialogState),
     RewindConfirm(RewindConfirmState),
+    Agents(AgentsDialogState),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AgentDialogAction {
+    Open,
+    SwitchTo(usize),
 }
 
 #[derive(Debug, Clone)]
@@ -709,6 +722,7 @@ pub(crate) struct Session<C: LLMClient> {
     session_label: String,
     session_id: usize,
     pending_new_agent: bool,
+    pending_agent_dialog: Option<AgentDialogAction>,
     pending_transcript_reset: bool,
     pending_approvals: VecDeque<ApprovalRequest>,
     last_error: Option<String>,
@@ -909,6 +923,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             session_label,
             session_id,
             pending_new_agent: false,
+            pending_agent_dialog: None,
             pending_transcript_reset: false,
             pending_approvals: VecDeque::new(),
             last_error: None,
@@ -1378,6 +1393,14 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                             );
                         }
                         _ => {}
+                    }
+                }
+                self.dismiss_slash_dialog();
+            }
+            Some(SlashDialogState::Agents(state)) => {
+                if let Some(selected) = state.dialog.selected() {
+                    if let Some(session_id) = state.session_ids.get(selected) {
+                        self.pending_agent_dialog = Some(AgentDialogAction::SwitchTo(*session_id));
                     }
                 }
                 self.dismiss_slash_dialog();
@@ -2139,6 +2162,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         SlashDialogState::Hooks(state) => state.dialog.select_previous(),
                         SlashDialogState::Rewind(state) => state.dialog.select_previous(),
                         SlashDialogState::RewindConfirm(state) => state.dialog.select_previous(),
+                        SlashDialogState::Agents(state) => state.dialog.select_previous(),
                     }
                 }
             }
@@ -2148,6 +2172,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                         SlashDialogState::Hooks(state) => state.dialog.select_next(),
                         SlashDialogState::Rewind(state) => state.dialog.select_next(),
                         SlashDialogState::RewindConfirm(state) => state.dialog.select_next(),
+                        SlashDialogState::Agents(state) => state.dialog.select_next(),
                     }
                 }
             }
@@ -3005,6 +3030,13 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.pending_new_agent = true;
                     return Ok(());
                 }
+                SlashCommand::Agents => {
+                    self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
+                        .await?;
+                    self.input.clear();
+                    self.pending_agent_dialog = Some(AgentDialogAction::Open);
+                    return Ok(());
+                }
                 SlashCommand::Language { language } => {
                     self.capture_rewind_checkpoint(Self::checkpoint_preview(trimmed))
                         .await?;
@@ -3273,6 +3305,7 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                 SlashDialogState::Hooks(state) => state.dialog.render(frame, size),
                 SlashDialogState::Rewind(state) => state.dialog.render(frame, size),
                 SlashDialogState::RewindConfirm(state) => state.dialog.render(frame, size),
+                SlashDialogState::Agents(state) => state.dialog.render(frame, size),
             }
         }
 
@@ -3599,6 +3632,70 @@ impl<C: LLMClient + Clone + 'static> App<C> {
             if session.is_background != should_background {
                 session.is_background = should_background;
                 session.footer.set_background(should_background);
+            }
+        }
+    }
+
+    fn open_agents_dialog(&mut self) {
+        let active_idx = self.active_idx;
+        let ordered_indices = std::iter::once(active_idx)
+            .chain((0..self.sessions.len()).filter(|idx| *idx != active_idx));
+        let mut session_ids = Vec::with_capacity(self.sessions.len());
+        let mut items = Vec::with_capacity(self.sessions.len());
+
+        for idx in ordered_indices {
+            let session = &self.sessions[idx];
+            session_ids.push(session.session_id);
+            let detail = if idx == active_idx {
+                crate::ui::i18n::text("agents.current")
+            } else if session.stream_rx.is_some() {
+                crate::ui::i18n::text("agents.working")
+            } else {
+                crate::ui::i18n::text("agents.idle")
+            };
+            items.push(SlashDialogItem::new(
+                session.session_label.clone(),
+                Some(detail.to_string()),
+            ));
+        }
+
+        let session = self.active_session_mut();
+        session.slash_dialog = Some(SlashDialogState::Agents(AgentsDialogState {
+            dialog: SlashDialog::new(
+                crate::ui::i18n::text("agents.title"),
+                Some(crate::ui::i18n::text("agents.subtitle").to_string()),
+                Vec::new(),
+                crate::ui::i18n::text("agents.footer"),
+                items,
+            ),
+            session_ids,
+        }));
+        session.mode = AppMode::SlashDialog;
+    }
+
+    fn process_pending_agent_dialog(&mut self) -> bool {
+        let Some(action) = self.active_session_mut().pending_agent_dialog.take() else {
+            return false;
+        };
+
+        match action {
+            AgentDialogAction::Open => {
+                self.open_agents_dialog();
+                false
+            }
+            AgentDialogAction::SwitchTo(session_id) => {
+                let Some(next_idx) = self
+                    .sessions
+                    .iter()
+                    .position(|session| session.session_id == session_id)
+                else {
+                    return false;
+                };
+                if next_idx == self.active_idx {
+                    return false;
+                }
+                self.switch_session(next_idx);
+                true
             }
         }
     }
@@ -4233,6 +4330,9 @@ impl<C: LLMClient + Clone + 'static> App<C> {
                         };
                         if needs_new_agent {
                             self.spawn_new_session()?;
+                            self.finish_session_switch(&mut terminal)?;
+                        }
+                        if self.process_pending_agent_dialog() {
                             self.finish_session_switch(&mut terminal)?;
                         }
                         if session_stream_rx.is_some() {
