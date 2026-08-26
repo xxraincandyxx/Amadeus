@@ -24,6 +24,7 @@
 // - module: crate::hooks
 // - module: crate::policy::Policy
 // - module: crate::telemetry
+// - tool: kylin_memory
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
 // side_effects:
@@ -389,12 +390,23 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             self.tools
         };
 
-        // Register the memory tool if a memory registry is available
+        // Register the legacy memory tool if a memory registry is available.
         let tools = if let Some(ref mem_reg) = self.memory_registry {
             let shared = Arc::new(std::sync::RwLock::new(mem_reg.clone()));
             tools.register(Box::new(crate::tools::memory_tool::MemoryTool::new(shared)))
         } else {
             tools
+        };
+
+        // Structured memory is independent from the legacy memory registry.
+        let tools = match crate::tools::kylin_memory::KylinMemoryTool::open_in_workspace(
+            config.workdir.clone(),
+        ) {
+            Ok(tool) => tools.register(Box::new(tool)),
+            Err(error) => {
+                tracing::warn!(error = %error, "Failed to initialize kylin_memory tool");
+                tools
+            }
         };
 
         // Register the RAG tool if provided
@@ -1267,8 +1279,8 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         }
                                         Some(ApprovalDecision::AlwaysApprove) => {
                                             debug!(tool = %name, "Tool approved with remember, executing");
-                                            // Remember the exact invocation rather than approving the whole tool.
-                                            {
+                                            // Destructive memory operations always require a fresh decision.
+                                            if !crate::policy::requires_one_time_approval(&name, &input) {
                                                 let mut policy_guard = policy.write().await;
                                                 policy_guard.add_scoped_auto_approve(&name, &input);
                                             }
