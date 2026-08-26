@@ -6,6 +6,7 @@
 // provides:
 // - type: crate::record::MemoryKind
 // - type: crate::record::MemoryRecord
+// - fn: crate::record::key_to_slug
 // uses:
 // - type: amadeus_context::memory::MemoryEntry
 // - protocol: serde serialization
@@ -102,13 +103,14 @@ impl MemoryRecord {
         importance: u8,
     ) -> Self {
         let now = now_epoch_secs();
+        let key = key.into();
         Self {
             id: format!(
                 "mt:{}:{}",
                 session_id.as_deref().unwrap_or("anon"),
                 key_to_slug(&key)
             ),
-            key: key.into(),
+            key,
             kind,
             content: content.into(),
             session_id,
@@ -149,7 +151,10 @@ impl TryFrom<MemoryEntry> for MemoryRecord {
 }
 
 /// Deterministic slug used inside record ids.
-pub(crate) fn key_to_slug(key: &str) -> String {
+///
+/// Public so callers that rewrite a record's key (e.g. privacy redaction at
+/// the ingestion boundary) can rebuild a consistent id.
+pub fn key_to_slug(key: &str) -> String {
     let slug: String = key
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })

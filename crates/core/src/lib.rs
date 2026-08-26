@@ -38,6 +38,7 @@ pub mod core;
 pub mod error;
 pub mod hooks;
 pub mod mcp;
+pub use amadeus_memory as memory;
 pub use amadeus_memory_domain as memory_domain;
 pub use amadeus_memory_service as memory_service;
 pub use amadeus_privacy as privacy;

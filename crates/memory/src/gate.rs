@@ -88,7 +88,10 @@ pub trait ContextGate: Send + Sync + std::fmt::Debug {
     fn name(&self) -> &'static str;
 
     /// Transform context into mid-term memory records.
-    fn transform(&self, input: &GateInput<'_>) -> Result<Vec<MemoryRecord>, amadeus_context::memory::MemoryError>;
+    fn transform(
+        &self,
+        input: &GateInput<'_>,
+    ) -> Result<Vec<MemoryRecord>, amadeus_context::memory::MemoryError>;
 }
 
 /// Deterministic, rule-based gate. No LLM calls.
@@ -145,23 +148,24 @@ impl ContextGate for RuleBasedGate {
     ) -> Result<Vec<MemoryRecord>, amadeus_context::memory::MemoryError> {
         let mut report = GateReport::default();
         let mut records: Vec<MemoryRecord> = Vec::new();
-        let mut push = |record: MemoryRecord, report: &mut GateReport, records: &mut Vec<MemoryRecord>| {
-            if record.content.chars().count() < self.config.min_content_chars {
-                report.skipped_short += 1;
-                return;
-            }
-            if records.len() >= self.config.max_records_per_transform {
-                report.dropped_over_cap += 1;
-                return;
-            }
-            // Deduplicate by key within one transform; later records win.
-            if let Some(existing) = records.iter_mut().find(|r| r.key == record.key) {
-                *existing = record;
-            } else {
-                records.push(record);
-            }
-            report.emitted += 1;
-        };
+        let push =
+            |record: MemoryRecord, report: &mut GateReport, records: &mut Vec<MemoryRecord>| {
+                if record.content.chars().count() < self.config.min_content_chars {
+                    report.skipped_short += 1;
+                    return;
+                }
+                if records.len() >= self.config.max_records_per_transform {
+                    report.dropped_over_cap += 1;
+                    return;
+                }
+                // Deduplicate by key within one transform; later records win.
+                if let Some(existing) = records.iter_mut().find(|r| r.key == record.key) {
+                    *existing = record;
+                } else {
+                    records.push(record);
+                }
+                report.emitted += 1;
+            };
 
         for (index, message) in input.messages.iter().enumerate() {
             for block in &message.content {
@@ -198,7 +202,9 @@ impl ContextGate for RuleBasedGate {
                             );
                         }
                     }
-                    ContentBlock::ToolUse { input: tool_input, .. } => {
+                    ContentBlock::ToolUse {
+                        input: tool_input, ..
+                    } => {
                         for path in extract_paths(tool_input) {
                             push(
                                 MemoryRecord::new(
@@ -335,7 +341,9 @@ mod tests {
         assert_eq!(records[0].content, "Implement the memory module");
         assert_eq!(records[0].session_id.as_deref(), Some("s1"));
         assert_eq!(records[0].importance, 60);
-        assert!(records[0].key.starts_with("task:implement-the-memory-module"));
+        assert!(records[0]
+            .key
+            .starts_with("task:implement-the-memory-module"));
     }
 
     #[test]

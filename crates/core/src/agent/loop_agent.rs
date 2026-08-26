@@ -22,11 +22,13 @@
 // - module: crate::client
 // - module: crate::error
 // - module: crate::hooks
+// - module: crate::agent::memory_wiring
 // - module: crate::policy::Policy
 // - module: crate::telemetry
 // - tool: kylin_memory
 // invariants:
 // - Listed interfaces stay aligned with the implementation in this file.
+// - Preference ingestion and mid-term archival never fail the agent loop.
 // side_effects:
 // - Reads or writes filesystem state.
 // - Spawns asynchronous tasks.
@@ -420,6 +422,8 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             .history
             .unwrap_or_else(|| Arc::new(RwLock::new(Vec::new())));
 
+        let preference_store = crate::agent::memory_wiring::open_preference_store(&config.workdir);
+
         Agent {
             client: self.client,
             tools,
@@ -436,6 +440,7 @@ impl<C: LLMClient + Clone + 'static> AgentBuilder<C> {
             llm_trace: self.llm_trace,
             compaction_trigger: self.compaction_trigger.map(Arc::from),
             memory_registry: self.memory_registry,
+            preference_store,
         }
     }
 }
@@ -458,6 +463,7 @@ pub struct Agent<C: LLMClient> {
     llm_trace: Option<Arc<LlmTraceSink>>,
     compaction_trigger: Option<Arc<dyn CompactionTrigger>>,
     memory_registry: Option<crate::context::memory::MemoryRegistry>,
+    preference_store: Arc<amadeus_context::preference::PreferenceStore>,
 }
 
 /// Approval channels for bidirectional communication with UI.
@@ -669,6 +675,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             llm_trace: self.llm_trace.clone(),
             compaction_trigger: self.compaction_trigger.clone(),
             memory_registry: self.memory_registry.clone(),
+            preference_store: Arc::clone(&self.preference_store),
         };
 
         // Run with the rendered prompt
@@ -955,6 +962,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         let telemetry = self.telemetry.clone();
         let llm_trace = self.llm_trace.clone();
         let memory_registry = self.memory_registry.clone();
+        let preference_store = Arc::clone(&self.preference_store);
         let session_id = session_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let mut system = config.system_prompt(self.subagent_depth < self.config.max_subagent_depth);
         if let Some(ref mem) = memory_registry {
@@ -1011,8 +1019,15 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                         );
 
                         let mut history_guard = history.write().await;
+                        let retired_messages = history_guard.clone();
                         match compactor.compact(&mut history_guard, &client, config.context_window_size).await {
                             Ok(result) => {
+                                crate::agent::memory_wiring::archive_compacted_context(
+                                    &config.workdir,
+                                    &session_id,
+                                    &retired_messages,
+                                    &result,
+                                );
                                 debug!(
                                     original = result.original_count,
                                     compacted = result.compacted_count,
@@ -1424,6 +1439,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         id,
                                         name,
                                         input,
+                                        Arc::clone(&preference_store),
                                     );
 
                                     let mut final_record: Option<ToolExecutionRecord> = None;
@@ -1567,6 +1583,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                                         id,
                                         name,
                                         input,
+                                        Arc::clone(&preference_store),
                                     );
 
                                     let mut final_record: Option<ToolExecutionRecord> = None;
@@ -1727,6 +1744,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         Ok(rx)
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn execute_tool_call(
         tools: &ToolRegistry,
         hooks: &HookRegistry,
@@ -1735,6 +1753,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         id: String,
         name: String,
         input: serde_json::Value,
+        preference_store: Arc<amadeus_context::preference::PreferenceStore>,
     ) -> ToolExecutionRecord {
         let tool_start = Instant::now();
         let execution = tools.execute_structured(&name, input.clone()).await;
@@ -1765,6 +1784,14 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
             },
         );
 
+        crate::agent::memory_wiring::ingest_tool_execution(
+            &preference_store,
+            &name,
+            &output,
+            is_error,
+            duration_ms,
+        );
+
         ToolExecutionRecord::new(id, name, input, output, is_error)
     }
 
@@ -1781,6 +1808,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
         id: String,
         name: String,
         input: serde_json::Value,
+        preference_store: Arc<amadeus_context::preference::PreferenceStore>,
     ) -> mpsc::Receiver<AgentEvent> {
         let tools = tools.clone();
         let hooks = hooks.clone();
@@ -1818,6 +1846,7 @@ impl<C: LLMClient + Clone + 'static> Agent<C> {
                     id.clone(),
                     name,
                     input,
+                    preference_store,
                 );
                 tokio::pin!(exec);
 

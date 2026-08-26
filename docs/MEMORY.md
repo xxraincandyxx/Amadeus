@@ -1,9 +1,12 @@
 # Memory System: Short-Term, Mid-Term, Long-Term
 
 > Status: the mid-term crate (`crates/memory`, package `amadeus_memory`) is
-> implemented and tested but **not yet wired** into the agent loop, bridge,
-> or HTTP API. This document is the contract for its interfaces and storage
-> format, plus the planned integration points.
+> wired into the agent loop: when compaction retires context,
+> `crates/core/src/agent/memory_wiring.rs` runs the `RuleBasedGate` over the
+> retired messages, redacts them through the privacy detector, and upserts
+> the records into `.amadeus/mid_term_memory.json`. The bridge and HTTP API
+> do not expose it yet. This document is the contract for its interfaces and
+> storage format.
 
 ## The Three Tiers
 

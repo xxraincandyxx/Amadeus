@@ -308,7 +308,7 @@ impl LockManager {
             self.notify_waiters(&resource);
         }
 
-        for (_, queue) in self.wait_queue.iter_mut() {
+        for queue in self.wait_queue.values_mut() {
             queue.retain(|w| w.agent != holder);
         }
     }

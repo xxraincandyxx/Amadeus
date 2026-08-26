@@ -305,15 +305,15 @@ fn render_text_line(
                 .fg(colors.text.accent)
                 .add_modifier(Modifier::BOLD),
         )]))
-    } else if let Some(stripped) = trimmed.strip_prefix("# ") {
-        Some(Line::from(vec![Span::styled(
-            stripped.trim_end().to_string(),
-            Style::default()
-                .fg(colors.text.accent)
-                .add_modifier(Modifier::BOLD),
-        )]))
     } else {
-        None
+        trimmed.strip_prefix("# ").map(|stripped| {
+            Line::from(vec![Span::styled(
+                stripped.trim_end().to_string(),
+                Style::default()
+                    .fg(colors.text.accent)
+                    .add_modifier(Modifier::BOLD),
+            )])
+        })
     };
 
     if let Some(line) = header_line {

@@ -104,7 +104,10 @@ async fn golden_incident_workflow_runs_end_to_end() {
 
     let updated = std::fs::read_to_string(source_path).expect("updated calculator");
     assert!(updated.contains("a + b"));
-    assert!(workspace.path().join("calculator_test").exists());
+    assert!(
+        workspace.path().join("calculator_test").exists()
+            || workspace.path().join("calculator_test.exe").exists()
+    );
 
     let tool_order: Vec<&str> = events
         .iter()

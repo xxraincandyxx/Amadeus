@@ -1817,10 +1817,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.scroll_up(3);
                 }
             }
-            MouseEventKind::ScrollDown => {
-                if self.is_mouse_in_messages_area(event.column, event.row) {
-                    self.messages.scroll_down(3);
-                }
+            MouseEventKind::ScrollDown
+                if self.is_mouse_in_messages_area(event.column, event.row) =>
+            {
+                self.messages.scroll_down(3);
             }
             _ => {}
         }
@@ -2320,10 +2320,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.handle_char(c);
                 }
             }
-            (KeyModifiers::NONE, KeyCode::Backspace) => {
-                if self.stream_rx.is_none() {
-                    self.restore_input_focus();
-                }
+            (KeyModifiers::NONE, KeyCode::Backspace) if self.stream_rx.is_none() => {
+                self.restore_input_focus();
             }
             _ => {}
         }
@@ -2668,15 +2666,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.handle_char('?');
                 }
             }
-            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-                if self.stream_rx.is_none() {
-                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        apply_shift_modifier(c)
-                    } else {
-                        c
-                    };
-                    self.input.handle_char(c);
-                }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
+                if self.stream_rx.is_none() =>
+            {
+                let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    apply_shift_modifier(c)
+                } else {
+                    c
+                };
+                self.input.handle_char(c);
             }
             _ => {}
         }

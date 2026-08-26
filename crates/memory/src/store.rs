@@ -234,11 +234,7 @@ impl MidTermStore for JsonMidTermStore {
                     }
                 }
                 if let Some(needle) = &filter.key_contains {
-                    if !r
-                        .key
-                        .to_lowercase()
-                        .contains(&needle.to_lowercase())
-                    {
+                    if !r.key.to_lowercase().contains(&needle.to_lowercase()) {
                         return false;
                     }
                 }
@@ -259,10 +255,7 @@ impl MidTermStore for JsonMidTermStore {
     }
 
     fn count(&self) -> usize {
-        self.envelope
-            .lock()
-            .map(|g| g.records.len())
-            .unwrap_or(0)
+        self.envelope.lock().map(|g| g.records.len()).unwrap_or(0)
     }
 
     fn flush(&self) -> Result<(), MemoryError> {
@@ -308,7 +301,14 @@ mod tests {
     use super::*;
 
     fn record(key: &str, kind: MemoryKind, importance: u8, session: Option<&str>) -> MemoryRecord {
-        MemoryRecord::new(key, kind, format!("content for {}", key), session.map(String::from), [0, 0], importance)
+        MemoryRecord::new(
+            key,
+            kind,
+            format!("content for {}", key),
+            session.map(String::from),
+            [0, 0],
+            importance,
+        )
     }
 
     #[test]
@@ -323,16 +323,20 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let store = JsonMidTermStore::open(temp.path().join("mid_term_memory.json"));
 
-        store.upsert(record("task-a", MemoryKind::Task, 60, Some("s1"))).unwrap();
-        store.upsert(record("fact-b", MemoryKind::Fact, 30, None)).unwrap();
+        store
+            .upsert(record("task-a", MemoryKind::Task, 60, Some("s1")))
+            .unwrap();
+        store
+            .upsert(record("fact-b", MemoryKind::Fact, 30, None))
+            .unwrap();
         assert_eq!(store.count(), 2);
         assert_eq!(store.get("task-a").unwrap().kind, MemoryKind::Task);
         assert!(store.get("missing").is_none());
 
-        store.delete("task-a").unwrap();
+        MidTermStore::delete(&store, "task-a").unwrap();
         assert_eq!(store.count(), 1);
         assert!(matches!(
-            store.delete("task-a"),
+            MidTermStore::delete(&store, "task-a"),
             Err(MemoryError::NotFound(_))
         ));
     }
@@ -362,9 +366,15 @@ mod tests {
         let temp = tempfile::TempDir::new().unwrap();
         let store = JsonMidTermStore::open(temp.path().join("mid_term_memory.json"));
 
-        store.upsert(record("task-a", MemoryKind::Task, 60, Some("s1"))).unwrap();
-        store.upsert(record("decision-b", MemoryKind::Decision, 80, Some("s1"))).unwrap();
-        store.upsert(record("task-c", MemoryKind::Task, 20, Some("s2"))).unwrap();
+        store
+            .upsert(record("task-a", MemoryKind::Task, 60, Some("s1")))
+            .unwrap();
+        store
+            .upsert(record("decision-b", MemoryKind::Decision, 80, Some("s1")))
+            .unwrap();
+        store
+            .upsert(record("task-c", MemoryKind::Task, 20, Some("s2")))
+            .unwrap();
 
         let by_kind = store.query(&MemoryQuery {
             kinds: Some(vec![MemoryKind::Task]),
@@ -405,7 +415,9 @@ mod tests {
 
         {
             let store = JsonMidTermStore::open(path.clone());
-            store.upsert(record("decision-x", MemoryKind::Decision, 80, Some("s1"))).unwrap();
+            store
+                .upsert(record("decision-x", MemoryKind::Decision, 80, Some("s1")))
+                .unwrap();
         }
 
         let raw = fs::read_to_string(&path).unwrap();
@@ -415,7 +427,10 @@ mod tests {
 
         let store = JsonMidTermStore::open(path);
         assert_eq!(store.count(), 1);
-        assert_eq!(store.get("decision-x").unwrap().session_id.as_deref(), Some("s1"));
+        assert_eq!(
+            store.get("decision-x").unwrap().session_id.as_deref(),
+            Some("s1")
+        );
     }
 
     #[test]
