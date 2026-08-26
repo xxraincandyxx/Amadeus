@@ -1,5 +1,5 @@
 // @amadeus-header
-// summary: Project context loading and formatting shared across runtime surfaces.
+// summary: Project context loading, memory providers, and versioned preference memory.
 // layer: core
 // status: active
 // feature_flags: none
@@ -7,6 +7,7 @@
 // - module: crate
 // - type: crate::ProjectContext
 // - fn: crate::load_context_prompt
+// - module: crate::preference
 // uses:
 // - artifact: filesystem paths and files
 // invariants:
@@ -17,12 +18,13 @@
 // - cmd: cargo test -p context
 // @end-amadeus-header
 
-//! Project context loading and memory providers.
+//! Project context loading, memory providers, and preference memory.
 
 pub mod memory;
 pub mod memory_file;
 pub mod memory_json;
 pub mod memory_session;
+pub mod preference;
 
 use std::path::{Path, PathBuf};
 
