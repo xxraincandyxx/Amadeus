@@ -56,6 +56,9 @@ const DEFAULT_RAG_ENABLED: bool = false;
 const DEFAULT_RAG_CHUNK_SIZE: usize = 1200;
 const DEFAULT_RAG_CHUNK_OVERLAP: usize = 200;
 const DEFAULT_RAG_TOP_K: usize = 5;
+const DEFAULT_EMBEDDING_BACKEND: &str = "remote";
+const DEFAULT_EMBEDDING_DIMENSION: usize = 384;
+const DEFAULT_RAG_QUANTIZATION: &str = "none";
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
 
@@ -329,6 +332,10 @@ pub struct Config {
     pub rag_enabled: bool,
     pub embedding_model: Option<String>,
     pub embedding_base_url: Option<String>,
+    pub embedding_backend: String,
+    pub embedding_dimension: usize,
+    pub kylin_embedding_endpoint: Option<String>,
+    pub rag_quantization: String,
     pub rag_chunk_size: usize,
     pub rag_chunk_overlap: usize,
     pub rag_top_k: usize,
@@ -376,6 +383,10 @@ impl Default for Config {
             rag_enabled: DEFAULT_RAG_ENABLED,
             embedding_model: None,
             embedding_base_url: None,
+            embedding_backend: DEFAULT_EMBEDDING_BACKEND.to_string(),
+            embedding_dimension: DEFAULT_EMBEDDING_DIMENSION,
+            kylin_embedding_endpoint: None,
+            rag_quantization: DEFAULT_RAG_QUANTIZATION.to_string(),
             rag_chunk_size: DEFAULT_RAG_CHUNK_SIZE,
             rag_chunk_overlap: DEFAULT_RAG_CHUNK_OVERLAP,
             rag_top_k: DEFAULT_RAG_TOP_K,
@@ -395,7 +406,18 @@ impl Config {
         self.workdir.join(".amadeus")
     }
 
+    /// Global configuration root (`~/.amadeus`).
+    ///
+    /// The `AMADEUS_HOME` environment variable overrides the home directory
+    /// resolution. This keeps the layered-loading tests hermetic on Windows
+    /// (where `dirs::home_dir` ignores `HOME`) and lets edge deployments
+    /// redirect the global root without touching the user profile.
     pub fn global_config_root() -> Option<PathBuf> {
+        if let Some(dir) = env::var_os("AMADEUS_HOME") {
+            if !dir.is_empty() {
+                return Some(PathBuf::from(dir).join(".amadeus"));
+            }
+        }
         dirs::home_dir().map(|home| home.join(".amadeus"))
     }
 
@@ -735,6 +757,24 @@ impl Config {
             rag_enabled: other.rag_enabled || self.rag_enabled,
             embedding_model: other.embedding_model.or(self.embedding_model),
             embedding_base_url: other.embedding_base_url.or(self.embedding_base_url),
+            embedding_backend: if other.embedding_backend != DEFAULT_EMBEDDING_BACKEND {
+                other.embedding_backend
+            } else {
+                self.embedding_backend
+            },
+            embedding_dimension: if other.embedding_dimension != DEFAULT_EMBEDDING_DIMENSION {
+                other.embedding_dimension
+            } else {
+                self.embedding_dimension
+            },
+            kylin_embedding_endpoint: other
+                .kylin_embedding_endpoint
+                .or(self.kylin_embedding_endpoint),
+            rag_quantization: if other.rag_quantization != DEFAULT_RAG_QUANTIZATION {
+                other.rag_quantization
+            } else {
+                self.rag_quantization
+            },
             rag_chunk_size: if other.rag_chunk_size != DEFAULT_RAG_CHUNK_SIZE {
                 other.rag_chunk_size
             } else {
@@ -1031,6 +1071,28 @@ impl Config {
         }
         if matches!(json.get("embedding_base_url"), Some(Value::Null)) {
             self.embedding_base_url = None;
+        }
+
+        if let Some(backend) = json.get("embedding_backend").and_then(|v| v.as_str()) {
+            self.embedding_backend = backend.to_string();
+        }
+
+        if let Some(dimension) = json.get("embedding_dimension").and_then(|v| v.as_u64()) {
+            self.embedding_dimension = dimension as usize;
+        }
+
+        if let Some(endpoint) = json
+            .get("kylin_embedding_endpoint")
+            .and_then(|v| v.as_str())
+        {
+            self.kylin_embedding_endpoint = Some(endpoint.to_string());
+        }
+        if matches!(json.get("kylin_embedding_endpoint"), Some(Value::Null)) {
+            self.kylin_embedding_endpoint = None;
+        }
+
+        if let Some(quantization) = json.get("rag_quantization").and_then(|v| v.as_str()) {
+            self.rag_quantization = quantization.to_string();
         }
 
         if let Some(chunk_size) = json.get("rag_chunk_size").and_then(|v| v.as_u64()) {

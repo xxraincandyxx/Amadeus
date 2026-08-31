@@ -122,8 +122,8 @@ use crate::bridge::LocalSessionBridge;
 use crate::client::LLMClient;
 use crate::context::memory_json::JsonFileMemoryProvider;
 use crate::error::Result;
-use amadeus_rag::embedding::EmbeddingClient;
-use amadeus_rag::vector_store::VectorMemoryProvider;
+use amadeus_rag::embedding::{embedder_from_config, Embedder, EmbedderConfig};
+use amadeus_rag::vector_store::{Quantization, VectorMemoryProvider};
 use tokio::sync::RwLock;
 
 /*
@@ -151,8 +151,8 @@ pub struct AppState<C: LLMClient + Clone + 'static> {
     pub memory_provider: Arc<JsonFileMemoryProvider>,
     /// Vector store for RAG document ingestion and semantic search.
     pub rag_provider: Arc<VectorMemoryProvider>,
-    /// Embedding client for vectorizing text.
-    pub embedding_client: Arc<EmbeddingClient>,
+    /// Embedding backend for vectorizing text.
+    pub embedding_client: Arc<dyn Embedder>,
 }
 
 /*
@@ -209,9 +209,12 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
     let mut memory_registry = crate::context::memory::MemoryRegistry::new();
     memory_registry.register(memory_provider.clone());
 
-    // Build RAG vector store and embedding client.
+    // Build RAG vector store and embedding backend.
     let rag_path = config.workdir.join(".amadeus").join("rag_index.json");
-    let rag_provider = Arc::new(VectorMemoryProvider::new(rag_path));
+    let rag_provider = Arc::new(VectorMemoryProvider::with_quantization(
+        rag_path,
+        Quantization::parse(&config.rag_quantization),
+    ));
     let embedding_base_url = config
         .embedding_base_url
         .clone()
@@ -220,11 +223,14 @@ pub async fn run_server<C: LLMClient + Clone + 'static>(
         .embedding_model
         .clone()
         .unwrap_or_else(|| config.model.clone());
-    let embedding_client = Arc::new(EmbeddingClient::new(
-        embedding_base_url,
-        embedding_model,
-        config.api_key.clone(),
-    ));
+    let embedding_client = embedder_from_config(&EmbedderConfig {
+        backend: config.embedding_backend.clone(),
+        base_url: embedding_base_url,
+        model: embedding_model,
+        api_key: config.api_key.clone(),
+        local_dimension: config.embedding_dimension,
+        kylin_endpoint: config.kylin_embedding_endpoint.clone(),
+    });
 
     let orchestrator = AgentOrchestrator::new(client.clone(), Arc::clone(&config))
         .with_memory_registry(memory_registry.clone());

@@ -1,0 +1,23 @@
+[package]
+name = "memory"
+version = "0.1.0"
+edition = "2021"
+description = "Mid-term memory database and context gate for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_memory"
+path = "src/lib.rs"
+
+[dependencies]
+amadeus_context = { package = "context", path = "../context" }
+amadeus_messages = { package = "messages", path = "../messages" }
+amadeus_compaction = { package = "compaction", path = "../compaction" }
+tracing = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3.10"

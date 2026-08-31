@@ -41,6 +41,7 @@ dependencies = [
  "glob",
  "libc",
  "mockito",
+ "rag",
  "rand 0.8.5",
  "ratatui",
  "regex",
@@ -368,9 +369,13 @@ dependencies = [
  "hooks",
  "ids",
  "libc",
+ "memory",
+ "memory-domain",
+ "memory-service",
  "messages",
  "mockito",
  "permissions",
+ "privacy",
  "profiles",
  "prompts",
  "rand 0.8.5",
@@ -1281,6 +1286,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "memory"
+version = "0.1.0"
+dependencies = [
+ "compaction",
+ "context",
+ "messages",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "memory-domain"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
+name = "memory-service"
+version = "0.1.0"
+dependencies = [
+ "memory-domain",
+ "privacy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 1.0.69",
+ "uuid",
+]
+
+[[package]]
 name = "messages"
 version = "0.1.0"
 dependencies = [
@@ -1543,6 +1581,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "privacy"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1637,6 +1683,7 @@ name = "rag"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "config",
  "context",
  "core",
  "reqwest",
@@ -2593,6 +2640,7 @@ dependencies = [
  "dirs",
  "futures",
  "lazy_static",
+ "rag",
  "rand 0.8.5",
  "ratatui",
  "serde",

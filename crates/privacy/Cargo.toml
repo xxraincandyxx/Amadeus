@@ -1,0 +1,16 @@
+[package]
+name = "privacy"
+version = "0.1.0"
+edition = "2021"
+description = "Sensitive-data detection and redaction for Amadeus"
+license = "MIT"
+repository = "https://github.com/xxraincandyxx/Amadeus"
+publish = false
+
+[lib]
+name = "amadeus_privacy"
+path = "src/lib.rs"
+
+[dependencies]
+regex = "1.10"
+serde = { version = "1.0", features = ["derive"] }

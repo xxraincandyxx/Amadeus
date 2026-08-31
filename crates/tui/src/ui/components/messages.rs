@@ -537,7 +537,7 @@ impl MessagesComponent {
             } else {
                 spans.push(Span::raw("   "));
             }
-            spans.extend(content_line.spans.into_iter());
+            spans.extend(content_line.spans);
             lines.push(Line::from(spans));
         }
 
@@ -1117,7 +1117,7 @@ impl MessagesComponent {
                 } else {
                     spans.push(Span::raw("    "));
                 }
-                spans.extend(content_line.spans.into_iter());
+                spans.extend(content_line.spans);
                 lines.push(Line::from(spans));
             }
             lines.push(Line::from(""));
@@ -1184,7 +1184,7 @@ impl MessagesComponent {
                     } else {
                         spans.push(Span::raw("   "));
                     }
-                    spans.extend(content_line.spans.into_iter());
+                    spans.extend(content_line.spans);
                     lines.push(Line::from(spans));
                 }
                 lines.push(Line::from(""));
@@ -1199,7 +1199,7 @@ impl MessagesComponent {
                     } else {
                         spans.push(Span::raw("  "));
                     }
-                    spans.extend(content_line.spans.into_iter());
+                    spans.extend(content_line.spans);
                     lines.push(Line::from(spans));
                 }
                 lines.push(Line::from(""));
@@ -1331,11 +1331,7 @@ impl MessagesComponent {
                 let original = compression.original_token_count.unwrap_or(0);
                 let new = compression.new_token_count.unwrap_or(0);
                 let saved = original.saturating_sub(new);
-                let percent = if original > 0 {
-                    saved * 100 / original
-                } else {
-                    0
-                };
+                let percent = (saved * 100).checked_div(original).unwrap_or(0);
                 format!(
                     "Chat history compacted: {} → {} tokens (saved {}%, ~{} tokens)",
                     original, new, percent, saved

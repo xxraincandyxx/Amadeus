@@ -100,30 +100,38 @@ async fn test_bash_write_file() {
 #[tokio::test]
 async fn test_bash_read_file() {
     let test_file = "/tmp/test_agent_read.txt";
-    fs::write(test_file, "file content\nline 2").unwrap();
-
     let tool = create_tool();
-    let input = json!({"command": format!("cat {}", test_file)});
 
+    tool.execute(json!({"command": format!("printf 'file content\\nline 2\\n' > {}", test_file)}))
+        .await
+        .unwrap();
+
+    let input = json!({"command": format!("cat {}", test_file)});
     let result = tool.execute(input).await.unwrap();
     assert!(result.contains("file content"));
     assert!(result.contains("line 2"));
 
-    let _ = fs::remove_file(test_file);
+    let _ = tool
+        .execute(json!({"command": format!("rm -f {}", test_file)}))
+        .await;
 }
 
 #[tokio::test]
 async fn test_bash_grep() {
     let test_file = "/tmp/test_agent_grep.txt";
-    fs::write(test_file, "apple\nbanana\ncherry\napple pie").unwrap();
-
     let tool = create_tool();
-    let input = json!({"command": format!("grep apple {}", test_file)});
 
+    tool.execute(json!({"command": format!("printf 'apple\\nbanana\\ncherry\\napple pie\\n' > {}", test_file)}))
+        .await
+        .unwrap();
+
+    let input = json!({"command": format!("grep apple {}", test_file)});
     let result = tool.execute(input).await.unwrap();
     assert!(result.contains("apple"));
 
-    let _ = fs::remove_file(test_file);
+    let _ = tool
+        .execute(json!({"command": format!("rm -f {}", test_file)}))
+        .await;
 }
 
 #[tokio::test]
@@ -266,7 +274,7 @@ async fn test_bash_blocked_command() {
 #[tokio::test]
 async fn test_bash_output_truncation() {
     let tool = BashTool::new(30, "/tmp".to_string(), vec![], 100);
-    let input = json!({"command": "python3 -c \"print('x' * 200)\""});
+    let input = json!({"command": "printf 'x%.0s' $(seq 1 300)"});
 
     let result = tool.execute(input).await.unwrap();
     assert!(result.len() > 100);

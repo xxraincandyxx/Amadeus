@@ -17,6 +17,7 @@ test-utils = ["amadeus_core/test-utils"]
 
 [dependencies]
 amadeus_core = { package = "core", path = "../core", default-features = false, features = ["tui"] }
+amadeus_rag = { package = "rag", path = "../rag" }
 anyhow = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 colored = "2.1"

@@ -29,3 +29,6 @@ pub use amadeus_api::api;
 
 #[cfg(feature = "tui")]
 pub use amadeus_tui::ui;
+
+#[cfg(feature = "tui")]
+pub use amadeus_rag as rag;

@@ -21,6 +21,9 @@ refs/claw-code-parity/
 .amadeus/memory.json
 .amadeus/rag_index.json
 .amadeus/hooks/local-hooks.json
+.amadeus/preferences.json
+.amadeus/mid_term_memory.json
+.amadeus/structured_memory.json
 
 # Runtime generated output
 runtime/locomo/debug_logs/

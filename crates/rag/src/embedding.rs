@@ -1,31 +1,136 @@
 // @amadeus-header
-// summary: EmbeddingClient — calls OpenAI-compatible /v1/embeddings endpoint.
+// summary: Embedder trait, OpenAI-compatible remote client, and backend selection.
 // layer: core
 // status: active
 // feature_flags: none
 // provides:
+// - trait: crate::embedding::Embedder
 // - type: crate::embedding::EmbeddingClient
 // - type: crate::embedding::EmbeddingError
+// - type: crate::embedding::EmbedderConfig
+// - fn: crate::embedding::embedder_from_config
 // uses:
 // - crate: reqwest (HTTP client)
 // - service: /v1/embeddings (OpenAI-compatible)
+// - type: crate::local_embedding::LocalHashEmbedder
+// - type: crate::kylin_embedding::KylinEmbedder
 // invariants:
-// - Batching: max 32 texts per request.
+// - Batching: max 32 texts per request (remote backends).
 // - Embedding vectors are f32 slices.
+// - Unknown backend names fall back to the remote backend with a warning.
 // side_effects:
-// - Makes HTTP POST requests to the embedding API endpoint.
+// - Makes HTTP POST requests to the embedding API endpoint (remote/kylin backends).
 // tests:
 // - cmd: cargo test -p rag
 // @end-amadeus-header
 
-//! Embedding client for OpenAI-compatible `/v1/embeddings` endpoints.
+//! Pluggable embedding backends behind the [`Embedder`] trait.
 //!
-//! Calls the same vLLM server already used for LLM inference.
+//! Backends:
+//! - `remote`: [`EmbeddingClient`], OpenAI-compatible `/v1/embeddings` (the
+//!   same vLLM server used for LLM inference).
+//! - `local`: [`crate::local_embedding::LocalHashEmbedder`], zero-dependency
+//!   on-device feature hashing — the edge-deployment baseline.
+//! - `kylin`: [`crate::kylin_embedding::KylinEmbedder`], Galaxy Kylin
+//!   embedding SDK adapter (local OpenAI-compatible service by default).
+//!
+//! The trait is the contract: consumers hold `Arc<dyn Embedder>` and never
+//! see which backend produced a vector.
+
+use std::sync::Arc;
 
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
+use crate::kylin_embedding::KylinEmbedder;
+use crate::local_embedding::LocalHashEmbedder;
+
 const BATCH_SIZE: usize = 32;
+
+/// Pluggable embedding backend. Consumers hold `Arc<dyn Embedder>`.
+#[async_trait::async_trait]
+pub trait Embedder: Send + Sync + std::fmt::Debug {
+    /// Unique backend name (`remote_http`, `local_hash`, `kylin_sdk`).
+    fn name(&self) -> &'static str;
+
+    /// Output vector dimension, if known ahead of time. Remote models report
+    /// `None` until the first response arrives.
+    fn dimension(&self) -> Option<usize>;
+
+    /// Embed a batch of texts, one vector per input.
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError>;
+
+    /// Embed a single text.
+    async fn embed_single(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
+        let results = self.embed(&[text.to_string()]).await?;
+        Ok(results.into_iter().next().unwrap_or_default())
+    }
+}
+
+/// Everything needed to construct an [`Embedder`] from user configuration.
+///
+/// Deliberately decoupled from `amadeus_config::Config` so the rag crate does
+/// not depend on the config crate; callers map their config into this view.
+#[derive(Debug, Clone)]
+pub struct EmbedderConfig {
+    /// Backend selector: `remote` (default), `local`, or `kylin`.
+    pub backend: String,
+    /// Remote/kylin fallback base URL (already resolved against the LLM
+    /// base URL by the caller).
+    pub base_url: String,
+    /// Embedding model name (remote/kylin backends).
+    pub model: String,
+    /// API key (remote/kylin backends).
+    pub api_key: String,
+    /// Vector dimension for the local hash backend.
+    pub local_dimension: usize,
+    /// Kylin SDK endpoint override (`kylin` backend).
+    pub kylin_endpoint: Option<String>,
+}
+
+impl Default for EmbedderConfig {
+    fn default() -> Self {
+        Self {
+            backend: "remote".to_string(),
+            base_url: String::new(),
+            model: String::new(),
+            api_key: String::new(),
+            local_dimension: crate::local_embedding::DEFAULT_DIMENSION,
+            kylin_endpoint: None,
+        }
+    }
+}
+
+/// Construct the configured embedding backend.
+///
+/// Unknown backend names fall back to `remote` with a warning so a typo in
+/// the config never disables RAG entirely.
+pub fn embedder_from_config(config: &EmbedderConfig) -> Arc<dyn Embedder> {
+    match config.backend.as_str() {
+        "local" => Arc::new(LocalHashEmbedder::new(config.local_dimension)),
+        "kylin" => Arc::new(KylinEmbedder::new(
+            config.kylin_endpoint.clone(),
+            &config.model,
+            &config.api_key,
+        )),
+        "remote" => Arc::new(EmbeddingClient::new(
+            &config.base_url,
+            &config.model,
+            &config.api_key,
+        )),
+        other => {
+            tracing::warn!(
+                backend = %other,
+                "Unknown embedding backend, falling back to remote"
+            );
+            Arc::new(EmbeddingClient::new(
+                &config.base_url,
+                &config.model,
+                &config.api_key,
+            ))
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 struct EmbeddingRequest {
@@ -138,11 +243,32 @@ impl EmbeddingClient {
     }
 }
 
+#[async_trait::async_trait]
+impl Embedder for EmbeddingClient {
+    fn name(&self) -> &'static str {
+        "remote_http"
+    }
+
+    fn dimension(&self) -> Option<usize> {
+        None
+    }
+
+    async fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbeddingError> {
+        EmbeddingClient::embed(self, texts).await
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum EmbeddingError {
     Network(String),
-    Api { status: u16, body: String },
+    Api {
+        status: u16,
+        body: String,
+    },
     Parse(String),
+    /// Backend-level failure (local backend misconfiguration, Kylin SDK
+    /// unavailable, ...).
+    Backend(String),
 }
 
 impl std::fmt::Display for EmbeddingError {
@@ -151,6 +277,7 @@ impl std::fmt::Display for EmbeddingError {
             Self::Network(msg) => write!(f, "embedding network error: {}", msg),
             Self::Api { status, body } => write!(f, "embedding API error {}: {}", status, body),
             Self::Parse(msg) => write!(f, "embedding parse error: {}", msg),
+            Self::Backend(msg) => write!(f, "embedding backend error: {}", msg),
         }
     }
 }

@@ -7,6 +7,7 @@
 // provides:
 // - module: crate::agent
 // - module: crate::agent::architecture_agent
+// - module: crate::agent::memory_wiring
 // uses: none
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
@@ -23,6 +24,7 @@ pub mod config;
 pub mod events;
 pub mod llm_trace;
 pub mod loop_agent;
+pub mod memory_wiring;
 pub mod messages;
 #[cfg(feature = "orchestra")]
 pub mod orchestra;

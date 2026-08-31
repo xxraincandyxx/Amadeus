@@ -39,6 +39,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -1817,10 +1818,10 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.messages.scroll_up(3);
                 }
             }
-            MouseEventKind::ScrollDown => {
-                if self.is_mouse_in_messages_area(event.column, event.row) {
-                    self.messages.scroll_down(3);
-                }
+            MouseEventKind::ScrollDown
+                if self.is_mouse_in_messages_area(event.column, event.row) =>
+            {
+                self.messages.scroll_down(3);
             }
             _ => {}
         }
@@ -2320,10 +2321,8 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.handle_char(c);
                 }
             }
-            (KeyModifiers::NONE, KeyCode::Backspace) => {
-                if self.stream_rx.is_none() {
-                    self.restore_input_focus();
-                }
+            (KeyModifiers::NONE, KeyCode::Backspace) if self.stream_rx.is_none() => {
+                self.restore_input_focus();
             }
             _ => {}
         }
@@ -2668,15 +2667,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
                     self.input.handle_char('?');
                 }
             }
-            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c)) => {
-                if self.stream_rx.is_none() {
-                    let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
-                        apply_shift_modifier(c)
-                    } else {
-                        c
-                    };
-                    self.input.handle_char(c);
-                }
+            (KeyModifiers::NONE | KeyModifiers::SHIFT, KeyCode::Char(c))
+                if self.stream_rx.is_none() =>
+            {
+                let c = if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    apply_shift_modifier(c)
+                } else {
+                    c
+                };
+                self.input.handle_char(c);
             }
             _ => {}
         }
@@ -4015,7 +4014,14 @@ impl<C: LLMClient + Clone + 'static> App<C> {
         let config = active_session.agent.config();
 
         // Create a fresh agent with empty history and default configuration
-        let new_agent = Agent::builder(client, config).with_default_tools().build();
+        let mut builder = Agent::builder(client, Arc::clone(&config)).with_default_tools();
+        if config.rag_enabled {
+            builder = builder.with_rag(Box::new(amadeus_rag::tool::RagTool::open_in_workspace(
+                &config.workdir,
+                &config,
+            )));
+        }
+        let new_agent = builder.build();
 
         let label = format!("session{}", self.next_session_id);
 

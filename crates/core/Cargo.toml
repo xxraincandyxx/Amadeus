@@ -31,7 +31,11 @@ amadeus_compaction = { package = "compaction", path = "../compaction" }
 amadeus_events = { package = "events", path = "../events" }
 amadeus_messages = { package = "messages", path = "../messages" }
 amadeus_ids = { package = "ids", path = "../ids" }
+amadeus_memory = { package = "memory", path = "../memory" }
+amadeus_memory_domain = { package = "memory-domain", path = "../memory-domain" }
+amadeus_memory_service = { package = "memory-service", path = "../memory-service" }
 amadeus_permissions = { package = "permissions", path = "../permissions" }
+amadeus_privacy = { package = "privacy", path = "../privacy" }
 amadeus_profiles = { package = "profiles", path = "../profiles" }
 amadeus_prompts = { package = "prompts", path = "../prompts" }
 amadeus_runtime = { package = "runtime", path = "../runtime" }

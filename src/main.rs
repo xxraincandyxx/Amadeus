@@ -347,10 +347,18 @@ fn build_agent<C: amadeus::client::LLMClient + Clone + 'static>(
     config: Arc<Config>,
     llm_trace: &Option<Arc<amadeus::agent::llm_trace::LlmTraceSink>>,
 ) -> amadeus::agent::loop_agent::Agent<C> {
-    let mut builder =
-        amadeus::agent::loop_agent::Agent::builder(client, config).with_default_tools();
+    let mut builder = amadeus::agent::loop_agent::Agent::builder(client, Arc::clone(&config))
+        .with_default_tools();
     if let Some(trace) = llm_trace {
         builder = builder.with_llm_trace(Some(Arc::clone(trace)));
+    }
+    // RAG semantic search is opt-in via `rag_enabled`; failures never block
+    // agent startup (kylin_memory precedent).
+    if config.rag_enabled {
+        builder = builder.with_rag(Box::new(amadeus_rag::tool::RagTool::open_in_workspace(
+            &config.workdir,
+            &config,
+        )));
     }
     builder.build()
 }

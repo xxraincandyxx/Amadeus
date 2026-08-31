@@ -5,6 +5,7 @@
 // feature_flags: none
 // provides:
 // - module: crate::policy
+// - fn: crate::policy::requires_one_time_approval
 // - type: crate::policy::ApprovalMode
 // - type: crate::policy::Policy
 // uses:
@@ -14,6 +15,7 @@
 // - format: JSON values
 // invariants:
 // - Module exports stay aligned with child modules and re-exports.
+// - Destructive memory confirmation and template activation always require fresh approval.
 // side_effects: none
 // tests:
 // - tests/mod.rs
@@ -157,6 +159,9 @@ impl Policy {
     ///
     /// Returns `true` if the tool execution should be blocked for approval.
     pub fn needs_approval(&self, tool: &str, input: &Value) -> bool {
+        if requires_one_time_approval(tool, input) {
+            return true;
+        }
         match self.mode {
             ApprovalMode::Auto => false,
             ApprovalMode::Strict => {
@@ -245,6 +250,16 @@ impl Policy {
 
     /// Get the reason why approval is needed.
     pub fn approval_reason(&self, tool: &str, input: &Value) -> String {
+        if requires_one_time_approval(tool, input) {
+            return format!(
+                "Tool '{}' requires one-time human approval for operation '{}'",
+                tool,
+                input
+                    .get("operation")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            );
+        }
         let input_str = self.extract_check_string(input);
 
         if self.is_auto_denied(tool, input) {
@@ -319,6 +334,15 @@ impl Policy {
     }
 }
 
+/// Operations that must never be approved by the model or a remembered grant.
+pub fn requires_one_time_approval(tool: &str, input: &Value) -> bool {
+    tool == "kylin_memory"
+        && matches!(
+            input.get("operation").and_then(Value::as_str),
+            Some("forget_confirm" | "activate_template")
+        )
+}
+
 fn input_hash(input: &Value) -> u64 {
     let mut hasher = DefaultHasher::new();
     input.to_string().hash(&mut hasher);
@@ -344,6 +368,25 @@ mod tests {
 
         // In auto mode, nothing needs approval
         assert!(!policy.needs_approval("bash", &serde_json::json!({"command": "rm -rf /"})));
+    }
+
+    #[test]
+    fn destructive_memory_operations_always_require_one_time_approval() {
+        let mut policy = Policy::new();
+        policy.mode = ApprovalMode::Auto;
+        for operation in ["forget_confirm", "activate_template"] {
+            let input = serde_json::json!({"operation": operation, "plan_id": "plan"});
+            policy.add_auto_approve("kylin_memory");
+            policy.add_scoped_auto_approve("kylin_memory", &input);
+            assert!(policy.needs_approval("kylin_memory", &input));
+            assert!(policy
+                .approval_reason("kylin_memory", &input)
+                .contains("one-time"));
+        }
+        assert!(!policy.needs_approval(
+            "kylin_memory",
+            &serde_json::json!({"operation": "forget_preview"})
+        ));
     }
 
     #[test]

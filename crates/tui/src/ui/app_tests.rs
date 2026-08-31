@@ -936,6 +936,7 @@ async fn restore_rewind_code_restores_tracked_git_diff() {
     run_git(root, &["init"]);
     run_git(root, &["config", "user.email", "test@example.com"]);
     run_git(root, &["config", "user.name", "Test User"]);
+    run_git(root, &["config", "core.autocrlf", "false"]);
     fs::write(root.join("tracked.txt"), "one\n").expect("write tracked");
     run_git(root, &["add", "tracked.txt"]);
     run_git(root, &["commit", "-m", "initial"]);

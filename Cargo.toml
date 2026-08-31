@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/api", "crates/commands", "crates/compaction", "crates/config", "crates/context", "crates/core", "crates/events", "crates/hooks", "crates/ids", "crates/messages", "crates/permissions", "crates/profiles", "crates/prompts", "crates/rag", "crates/runtime", "crates/skills", "crates/telemetry", "crates/tui"]
+members = ["crates/api", "crates/commands", "crates/compaction", "crates/config", "crates/context", "crates/core", "crates/events", "crates/hooks", "crates/ids", "crates/memory", "crates/memory-domain", "crates/memory-service", "crates/messages", "crates/permissions", "crates/privacy", "crates/profiles", "crates/prompts", "crates/rag", "crates/runtime", "crates/skills", "crates/telemetry", "crates/tui"]
 resolver = "2"
 
 [package]
@@ -30,6 +30,7 @@ api = ["amadeus_core/api", "dep:amadeus_api", "orchestra"]
 tui = [
   "amadeus_core/tui",
   "dep:amadeus_tui",
+  "dep:amadeus_rag",
   "dep:crossterm",
   "dep:ratatui",
   "concurrency",
@@ -49,6 +50,7 @@ full = ["api", "tui", "concurrency", "orchestra", "context", "test-utils"]
 amadeus_core = { package = "core", path = "crates/core", default-features = false }
 amadeus_api = { package = "api", path = "crates/api", optional = true, default-features = false }
 amadeus_tui = { package = "tui", path = "crates/tui", optional = true, default-features = false }
+amadeus_rag = { package = "rag", path = "crates/rag", optional = true }
 
 # Core dependencies
 tokio = { version = "1.39", features = ["full"] }
@@ -118,3 +120,8 @@ required-features = ["test-utils"]
 name = "e2e_product_flow"
 path = "tests/e2e_product_flow.rs"
 required-features = ["orchestra"]
+
+[[test]]
+name = "embedding_indicator_test"
+path = "tests/embedding_indicator_test.rs"
+required-features = ["full"]
