@@ -17,7 +17,7 @@
   --border-soft: #2b2b2b;
   --text: #f0f0f0;
   --muted: #a7a7a7;
-  --quiet: #757575;
+  --quiet: #949494;
   --accent: #a72f42;
   --accent-rgb: 167, 47, 66;
   --accent-soft: rgba(167, 47, 66, 0.14);
@@ -604,11 +604,11 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .composer-meta.right { justify-content: flex-end; }
 .composer-meta button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; background: transparent; color: #bdbdbd; border-radius: 8px; cursor: pointer; }
 .composer-meta button:hover { background: rgba(255,255,255,.06); }
-.access-label { color: var(--accent); display: flex; align-items: center; gap: 5px; }
+.access-label { color: var(--red); display: flex; align-items: center; gap: 5px; }
 .send-button { border-radius: 50% !important; background: #dedede !important; color: #222 !important; }
 .send-button:disabled { opacity: .35; cursor: not-allowed; }
 .send-button.stop { color: var(--red) !important; }
-.composer-hint { text-align: center; color: #666; font-size: 10px; margin-top: 7px; }
+.composer-hint { text-align: center; color: #8a8a8a; font-size: 10px; margin-top: 7px; }
 .slash-palette { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(100% + 10px); border: 1px solid #464646; border-radius: 14px; background: #262626; box-shadow: 0 18px 48px rgba(0,0,0,.4); overflow: hidden; }
 .slash-palette-heading { min-height: 34px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #383838; color: #8e8e8e; }
 .slash-palette-heading span { font-size: 11px; font-weight: 650; }
