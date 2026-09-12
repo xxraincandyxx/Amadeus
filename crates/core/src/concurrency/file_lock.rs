@@ -37,7 +37,9 @@
 //! - **Modification Detection**: Validates file wasn't modified since last read
 //! - **Timeout Support**: Configurable lock acquisition timeout
 
+use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -62,6 +64,12 @@ fn format_system_time(time: SystemTime) -> String {
     datetime
         .map(|dt| dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
         .unwrap_or_else(|| format!("{secs}s"))
+}
+
+fn compute_content_hash(content: &str) -> u64 {
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    hasher.finish()
 }
 
 /// Information about a cached file read.
@@ -242,6 +250,7 @@ impl FileLockManager {
             {
                 debug!(agent_id = %agent_id, path = %path, "Acquired write lock");
                 return Ok(FileWriteGuard {
+                    agent_id,
                     path: path.to_string(),
                     lock: lock.clone(),
                 });
@@ -255,24 +264,34 @@ impl FileLockManager {
     /// Returns Ok if the file can be safely written to, Err if it may have been
     /// modified by another agent since the last read.
     pub async fn validate_read_freshness(&self, agent_id: AgentId, path: &str) -> Result<()> {
-        let cache = self.read_cache.read().await;
+        let read_info = {
+            let cache = self.read_cache.read().await;
+            cache
+                .get(&agent_id)
+                .and_then(|agent_cache| agent_cache.get(path))
+                .cloned()
+        };
 
-        if let Some(agent_cache) = cache.get(&agent_id) {
-            if let Some(read_info) = agent_cache.get(path) {
-                // Get current file modification time
-                let current_modified =
-                    tokio::fs::metadata(path)
-                        .await
-                        .and_then(|m| m.modified())
-                        .map_err(|e| AgentError::Io(std::io::Error::other(e.to_string())))?;
+        if let Some(read_info) = read_info {
+            let current_modified = tokio::fs::metadata(path)
+                .await
+                .and_then(|metadata| metadata.modified())
+                .map_err(|error| AgentError::Io(std::io::Error::other(error.to_string())))?;
+            let content_changed = if let Some(expected_hash) = read_info.content_hash {
+                let content = tokio::fs::read_to_string(path)
+                    .await
+                    .map_err(|error| AgentError::Io(std::io::Error::other(error.to_string())))?;
+                compute_content_hash(&content) != expected_hash
+            } else {
+                current_modified != read_info.modified_at
+            };
 
-                if current_modified > read_info.modified_at {
-                    return Err(AgentError::FileModified {
-                        path: path.to_string(),
-                        read_at: format_system_time(read_info.modified_at),
-                        modified_at: format_system_time(current_modified),
-                    });
-                }
+            if content_changed {
+                return Err(AgentError::FileModified {
+                    path: path.to_string(),
+                    read_at: format_system_time(read_info.modified_at),
+                    modified_at: format_system_time(current_modified),
+                });
             }
         }
 
@@ -316,6 +335,20 @@ impl FileLockManager {
             agent_cache.remove(path);
         }
         debug!(path = %path, "Invalidated file cache");
+    }
+
+    async fn invalidate_agent_file_cache(&self, agent_id: AgentId, path: &str) {
+        let mut cache = self.read_cache.write().await;
+        let remove_agent = if let Some(agent_cache) = cache.get_mut(&agent_id) {
+            agent_cache.remove(path);
+            agent_cache.is_empty()
+        } else {
+            false
+        };
+        if remove_agent {
+            cache.remove(&agent_id);
+        }
+        debug!(agent_id = %agent_id, path = %path, "Invalidated agent file cache");
     }
 
     /// Get lock statistics for debugging.
@@ -389,6 +422,7 @@ impl Drop for FileReadGuard {
 /// Guard for releasing a write lock.
 #[derive(Debug)]
 pub struct FileWriteGuard {
+    agent_id: AgentId,
     path: String,
     lock: Arc<FileLock>,
 }
@@ -398,7 +432,9 @@ impl FileWriteGuard {
     ///
     /// Call this after successfully writing to the file.
     pub async fn invalidate_after_write(self, manager: &FileLockManager) {
-        manager.invalidate_file_cache(&self.path).await;
+        manager
+            .invalidate_agent_file_cache(self.agent_id, &self.path)
+            .await;
     }
 }
 
@@ -523,5 +559,37 @@ mod tests {
             .validate_read_freshness(agent, file_path.to_str().unwrap())
             .await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_read_freshness_uses_hash_when_mtime_is_unchanged() {
+        let manager = FileLockManager::new();
+        let agent = test_agent();
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+
+        std::fs::write(&file_path, "original").unwrap();
+        let modified_at = std::fs::metadata(&file_path).unwrap().modified().unwrap();
+        manager
+            .cache_read(
+                agent,
+                file_path.to_str().unwrap(),
+                modified_at,
+                Some(compute_content_hash("original")),
+            )
+            .await;
+
+        std::fs::write(&file_path, "modified").unwrap();
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&file_path)
+            .unwrap();
+        file.set_times(std::fs::FileTimes::new().set_modified(modified_at))
+            .unwrap();
+
+        let result = manager
+            .validate_read_freshness(agent, file_path.to_str().unwrap())
+            .await;
+        assert!(matches!(result, Err(AgentError::FileModified { .. })));
     }
 }

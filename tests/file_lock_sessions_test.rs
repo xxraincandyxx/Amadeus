@@ -69,19 +69,100 @@ async fn stale_edit_is_rejected_after_another_session_writes() {
         .await
         .expect_err("stale session a edit should fail");
 
-    match err {
-        AgentError::TextNotFound { path, snippet } => {
-            assert_eq!(path, "shared.txt");
-            assert_eq!(snippet, "original");
-        }
-        other => panic!("expected TextNotFound error, got {other:?}"),
-    }
+    assert!(matches!(err, AgentError::FileModified { .. }));
 
     let latest = session_c
         .read("shared.txt", None)
         .await
         .expect("session c read");
     assert_eq!(latest, "updated by session b");
+}
+
+#[tokio::test]
+async fn stale_full_write_is_rejected_after_another_session_writes() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let file_path = temp_dir.path().join("shared.txt");
+    tokio::fs::write(&file_path, "original")
+        .await
+        .expect("seed file");
+
+    let manager = Arc::new(FileLockManager::with_timeout(Duration::from_millis(250)));
+    let session_a = session_tools(&temp_dir, manager.clone());
+    let session_b = session_tools(&temp_dir, manager);
+
+    session_a
+        .read("shared.txt", None)
+        .await
+        .expect("session a read");
+    session_b
+        .write("shared.txt", "updated by session b")
+        .await
+        .expect("session b write");
+
+    let err = session_a
+        .write("shared.txt", "stale session a overwrite")
+        .await
+        .expect_err("stale session a write should fail");
+    assert!(matches!(err, AgentError::FileModified { .. }));
+
+    let latest = tokio::fs::read_to_string(file_path)
+        .await
+        .expect("read latest content");
+    assert_eq!(latest, "updated by session b");
+}
+
+#[tokio::test]
+async fn queued_writer_revalidates_after_acquiring_the_lock() {
+    let temp_dir = TempDir::new().expect("temp dir");
+    let file_path = temp_dir.path().join("shared.txt");
+    tokio::fs::write(&file_path, "original")
+        .await
+        .expect("seed file");
+
+    let manager = Arc::new(FileLockManager::with_timeout(Duration::from_millis(500)));
+    let stale_session = session_tools(&temp_dir, manager.clone());
+    stale_session
+        .read("shared.txt", None)
+        .await
+        .expect("stale session read");
+
+    let writer_id = AgentId::new();
+    let path = file_path
+        .canonicalize()
+        .expect("canonical file path")
+        .to_string_lossy()
+        .to_string();
+    let active_writer = manager
+        .acquire_write(writer_id, &path)
+        .await
+        .expect("active writer lock");
+
+    let queued_write = tokio::spawn(async move {
+        stale_session
+            .write("shared.txt", "stale queued overwrite")
+            .await
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        !queued_write.is_finished(),
+        "writer should be waiting for lock"
+    );
+
+    tokio::fs::write(&file_path, "newer active writer content")
+        .await
+        .expect("active writer update");
+    drop(active_writer);
+
+    let err = queued_write
+        .await
+        .expect("queued writer task")
+        .expect_err("queued stale writer should revalidate after acquiring the lock");
+    assert!(matches!(err, AgentError::FileModified { .. }));
+
+    let latest = tokio::fs::read_to_string(file_path)
+        .await
+        .expect("read latest content");
+    assert_eq!(latest, "newer active writer content");
 }
 
 #[tokio::test]
