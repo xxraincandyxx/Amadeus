@@ -1086,6 +1086,7 @@ function Composer({ draft, disabled, busy, tokenUsage, onChange, onSubmit, onCom
   };
 
   const onKeyDown = (event) => {
+    if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
     if (paletteVisible && event.key === "ArrowDown") {
       event.preventDefault();
       setSelectedIndex((index) => (index + 1) % matches.length);
