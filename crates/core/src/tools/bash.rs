@@ -257,11 +257,14 @@ impl BashTool {
 
     fn truncate_output(&self, output: String) -> String {
         if output.len() > self.max_output_bytes {
-            let truncated = &output[..self.max_output_bytes];
+            let mut boundary = self.max_output_bytes.min(output.len());
+            while boundary > 0 && !output.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
             format!(
                 "{}\n\n... (truncated {} bytes)",
-                truncated,
-                output.len() - self.max_output_bytes
+                &output[..boundary],
+                output.len() - boundary
             )
         } else {
             output
@@ -371,6 +374,15 @@ impl Tool for BashTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_truncation_preserves_utf8_boundaries() {
+        let tool = BashTool::new(30, ".".to_string(), Vec::new(), 1);
+
+        let output = tool.truncate_output("你好".to_string());
+
+        assert_eq!(output, "\n\n... (truncated 6 bytes)");
+    }
 
     #[tokio::test]
     async fn execute_with_metadata_respects_override_timeout() {

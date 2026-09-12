@@ -106,6 +106,14 @@ fn compute_content_hash(content: &str) -> u64 {
     hasher.finish()
 }
 
+fn floor_char_boundary(text: &str, requested: usize) -> usize {
+    let mut boundary = requested.min(text.len());
+    while boundary > 0 && !text.is_char_boundary(boundary) {
+        boundary -= 1;
+    }
+    boundary
+}
+
 #[derive(Clone)]
 pub struct FileTools {
     path_policy: PathPolicy,
@@ -192,11 +200,11 @@ impl FileTools {
 
     fn truncate_output(&self, output: String) -> String {
         if output.len() > self.max_output_bytes {
-            let truncated = &output[..self.max_output_bytes];
+            let boundary = floor_char_boundary(&output, self.max_output_bytes);
             format!(
                 "{}\n\n... (truncated {} bytes)",
-                truncated,
-                output.len() - self.max_output_bytes
+                &output[..boundary],
+                output.len() - boundary
             )
         } else {
             output
@@ -271,13 +279,12 @@ impl FileTools {
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
 
-            // First validate that file wasn't modified since last read
+            // Acquire the exclusive lock before validating so a queued writer cannot
+            // overwrite changes made while it was waiting.
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
             manager
                 .validate_read_freshness(*agent_id, &path_str)
                 .await?;
-
-            // Acquire exclusive write lock
-            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
 
             if let Some(parent) = fp.parent() {
                 tokio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -333,13 +340,12 @@ impl FileTools {
         if let (Some(manager), Some(agent_id)) = (&self.file_lock_manager, &self.agent_id) {
             let path_str = fp.to_string_lossy().to_string();
 
-            // First validate that file wasn't modified since last read
+            // Acquire the exclusive lock before validating so a queued writer cannot
+            // edit content that changed while it was waiting.
+            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
             manager
                 .validate_read_freshness(*agent_id, &path_str)
                 .await?;
-
-            // Acquire exclusive write lock
-            let write_guard = manager.acquire_write(*agent_id, &path_str).await?;
 
             let content = tokio::fs::read_to_string(&fp).await.map_err(|e| {
                 AgentError::Io(std::io::Error::other(format!(
@@ -349,10 +355,11 @@ impl FileTools {
             })?;
 
             if !content.contains(old_text) {
+                let snippet_boundary = floor_char_boundary(old_text, 50);
                 return Err(AgentError::TextNotFound {
                     path: path.to_string(),
                     snippet: if old_text.len() > 50 {
-                        format!("{}...", &old_text[..50])
+                        format!("{}...", &old_text[..snippet_boundary])
                     } else {
                         old_text.to_string()
                     },
@@ -386,10 +393,11 @@ impl FileTools {
         })?;
 
         if !content.contains(old_text) {
+            let snippet_boundary = floor_char_boundary(old_text, 50);
             return Err(AgentError::TextNotFound {
                 path: path.to_string(),
                 snippet: if old_text.len() > 50 {
-                    format!("{}...", &old_text[..50])
+                    format!("{}...", &old_text[..snippet_boundary])
                 } else {
                     old_text.to_string()
                 },
@@ -502,5 +510,39 @@ impl Tool for EditFileTool {
                 parsed.replace_all,
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_truncation_preserves_utf8_boundaries() {
+        let tools = FileTools::new(PathBuf::from("."), 1);
+
+        let output = tools.truncate_output("你好".to_string());
+
+        assert_eq!(output, "\n\n... (truncated 6 bytes)");
+    }
+
+    #[tokio::test]
+    async fn missing_unicode_edit_text_returns_an_error_instead_of_panicking() {
+        let temp = tempfile::tempdir().expect("temp dir");
+        std::fs::write(temp.path().join("sample.txt"), "content").expect("sample file");
+        let tools = FileTools::new(temp.path().to_path_buf(), 1024);
+        let old_text = "界".repeat(17);
+
+        let error = tools
+            .edit("sample.txt", &old_text, "replacement", false)
+            .await
+            .expect_err("missing text");
+
+        match error {
+            AgentError::TextNotFound { snippet, .. } => {
+                assert_eq!(snippet, format!("{}...", "界".repeat(16)));
+            }
+            other => panic!("expected text-not-found error, got {other:?}"),
+        }
     }
 }

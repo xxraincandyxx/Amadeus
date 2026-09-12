@@ -33,45 +33,58 @@ pub fn chunk_text(text: &str, chunk_size: usize, overlap: usize) -> Vec<String> 
     if text.is_empty() {
         return Vec::new();
     }
-    if text.len() <= chunk_size {
+
+    let chunk_size = chunk_size.max(1);
+    let overlap = overlap.min(chunk_size.saturating_sub(1));
+    let boundaries = text
+        .char_indices()
+        .map(|(index, _)| index)
+        .chain(std::iter::once(text.len()))
+        .collect::<Vec<_>>();
+    let char_count = boundaries.len() - 1;
+
+    if char_count <= chunk_size {
         return vec![text.trim().to_string()];
     }
 
     let mut chunks = Vec::new();
-    let mut start = 0;
+    let mut start_char = 0;
 
-    while start < text.len() {
-        let mut end = (start + chunk_size).min(text.len());
+    while start_char < char_count {
+        let mut end_char = (start_char + chunk_size).min(char_count);
 
         // If we're not at the end, try to find a natural break
-        if end < text.len() {
+        if end_char < char_count {
             // Search window: 20% of chunk_size around the target
             let window = chunk_size / 5;
-            let search_start = end.saturating_sub(window);
-            let search_end = (end + window).min(text.len());
+            let search_start_char = end_char.saturating_sub(window).max(start_char);
+            let search_end_char = (end_char + window).min(char_count);
+            let search_start = boundaries[search_start_char];
+            let search_end = boundaries[search_end_char];
             let search = &text[search_start..search_end];
 
             let break_offset = find_break(search);
             if let Some(offset) = break_offset {
-                end = search_start + offset + 1; // include the break char
-                if end <= start {
-                    end = (start + chunk_size).min(text.len()); // fallback
+                let break_end = search_start + offset + 1;
+                if let Ok(candidate_end_char) = boundaries.binary_search(&break_end) {
+                    if candidate_end_char > start_char {
+                        end_char = candidate_end_char;
+                    }
                 }
             }
         }
 
+        let start = boundaries[start_char];
+        let end = boundaries[end_char];
         let chunk = text[start..end].trim().to_string();
         if !chunk.is_empty() {
             chunks.push(chunk);
         }
 
-        if end >= text.len() {
+        if end_char >= char_count {
             break;
         }
-        start = end.saturating_sub(overlap);
-        if start >= end {
-            start = end; // prevent infinite loop
-        }
+        start_char = end_char - overlap;
     }
 
     chunks
@@ -134,5 +147,22 @@ mod tests {
         for chunk in &chunks {
             assert!(chunk.len() <= 400); // generous bound for break-finding
         }
+    }
+
+    #[test]
+    fn test_unicode_chunk_boundaries() {
+        let chunks = chunk_text("你好世界", 2, 1);
+
+        assert_eq!(chunks, vec!["你好", "好世", "世界"]);
+    }
+
+    #[test]
+    fn test_zero_chunk_size_makes_progress() {
+        assert_eq!(chunk_text("abc", 0, 10), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_overlap_is_clamped_below_chunk_size() {
+        assert_eq!(chunk_text("abcd", 2, 2), vec!["ab", "bc", "cd"]);
     }
 }
