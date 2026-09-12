@@ -53,6 +53,28 @@ test("history keeps reasoning separate from assistant text", () => {
   ]);
 });
 
+test("history attaches tool results to the tool call in the previous message", () => {
+  const timeline = historyToTimeline([
+    { role: "user", content: [{ type: "text", text: "List the crates directory." }] },
+    {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "tool-1", name: "bash", input: { command: "ls crates" } }],
+    },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "tool-1", content: "core/\ntui/\n" }] },
+    { role: "assistant", content: [{ type: "text", text: "Two crates." }] },
+  ]);
+
+  assert.deepEqual(timeline.map(({ kind }) => kind), ["user", "tool", "assistant"]);
+  assert.deepEqual(timeline[1], {
+    id: "tool-1",
+    kind: "tool",
+    name: "bash",
+    input: { command: "ls crates" },
+    status: "complete",
+    output: "core/\ntui/\n",
+  });
+});
+
 test("done commits streamed reasoning before the final answer", () => {
   const withThinking = reduceEvent(runtime, "thinking", { delta: "Inspect the inputs." });
   const withText = reduceEvent(withThinking, "text", { content: "The result is 42." });
