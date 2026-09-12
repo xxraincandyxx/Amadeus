@@ -1,0 +1,83 @@
+% !TeX program = xelatex
+% XA-202612 用户手册 —— OS Agent 记忆模块
+% 编译：latexmk -xelatex main.tex（或连续运行两遍 xelatex main.tex 生成目录）
+\documentclass[zihao=-4,a4paper]{ctexart}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage[hidelinks]{hyperref}
+
+% ---------- 颜色与 TODO 标记（与技术报告同一约定） ----------
+\definecolor{todored}{RGB}{211,47,47}
+\definecolor{codebg}{RGB}{246,246,246}
+\definecolor{codeframe}{RGB}{176,190,197}
+\definecolor{figfill}{RGB}{239,246,255}
+
+\newcommand{\todo}[1]{\textcolor{todored}{\textbf{【TODO：#1】}}}
+\newcommand{\todoblank}{\textcolor{todored}{\textbf{TODO}}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+
+\lstdefinestyle{amalst}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false,
+  xleftmargin=2mm,
+}
+\lstset{style=amalst}
+
+\captionsetup{font=small, labelfont=bf}
+
+\tikzset{
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+    font=\small, minimum height=8.5mm, fill=figfill},
+  proc/.style={box, fill=gray!10},
+  arrow/.style={-{Stealth[length=2.6mm]}, semithick},
+}
+
+\begin{document}
+
+% ---------- 封面 ----------
+\begin{titlepage}
+  \centering
+  \vspace*{20mm}
+  {\heiti\zihao{2} OS Agent 记忆模块用户手册\par}
+  \vspace{8mm}
+  {\zihao{3} 偏好记忆 · 知识记忆 · 精准遗忘\par}
+  \vspace{6mm}
+  {\zihao{-4} 题目编号：XA-202612\par}
+  \vspace{4mm}
+  {\zihao{-4} 发榜单位：麒麟软件有限公司\par}
+  \vspace{22mm}
+  \begin{tabular}{rl}
+    参赛单位： & \todo{学校 / 单位全称} \\
+    队伍名称： & \todo{队伍名称}         \\
+  \end{tabular}
+  \vfill
+  {\zihao{-4} 版本 0.1 · 2026 年 9 月\par}
+  \vspace*{8mm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\input{sections/01-getting-started}
+\input{sections/02-config}
+\input{sections/03-preference}
+\input{sections/04-knowledge}
+\input{sections/05-forget-privacy}
+\input{sections/06-memory-tiers}
+\input{sections/07-troubleshooting}
+
+\end{document}

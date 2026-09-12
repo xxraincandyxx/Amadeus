@@ -1,0 +1,79 @@
+\section{配置指南}\label{sec:config}
+
+记忆行为由工作区配置文件控制，全部配置项见表~\ref{tab:config}。修改配置后重启会话
+生效；切换嵌入后端或维度后，需要删除 \code{rag_index.json} 并重新注入文档（不同模型
+的向量不可混用，系统会显式拒绝维度不一致的写入而不是悄悄污染结果）。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{记忆与检索配置项}
+  \label{tab:config}
+  \begin{tabular}{l p{4.9cm} p{4.4cm}}
+    \toprule
+    配置项 & 默认值 & 说明 \\
+    \midrule
+    \code{rag\_enabled} & \code{false} & 是否启用语义检索工具 \\
+    \code{embedding\_backend} & \code{remote} & 嵌入后端：\code{remote} / \code{local} / \code{kylin} \\
+    \code{embedding\_model} & --- & remote 后端的模型名 \\
+    \code{embedding\_base\_url} & --- & remote 后端服务地址 \\
+    \code{kylin\_embedding\_endpoint} & \code{http://127.0.0.1:18080/v1} & 麒麟 SDK 服务端点 \\
+    \code{embedding\_dimension} & \code{384} & 向量维度，库内强制一致 \\
+    \code{rag\_quantization} & \code{none} & \code{int8} 可将向量内存占用降为 1/4 \\
+    \code{rag\_chunk\_size} & --- & 文档切块大小 \\
+    \code{rag\_chunk\_overlap} & --- & 相邻切块重叠量 \\
+    \code{rag\_top\_k} & --- & 检索返回条数 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{选择嵌入后端}\label{sec:config-emb}
+
+三种后端面向三种使用环境，配置其一即可，切换不影响其他功能。
+
+\textbf{remote}：语义质量最好，适合开发与联网环境。将 \code{embedding\_backend} 设为
+\code{remote}，并提供一个 OpenAI 兼容的嵌入服务地址与模型名，例如：
+
+\begin{lstlisting}[language={}]
+{
+  "rag_enabled": true,
+  "embedding_backend": "remote",
+  "embedding_base_url": "http://127.0.0.1:1113/v1",
+  "embedding_model": "bge-small-zh-v1.5",
+  "embedding_dimension": 512
+}
+\end{lstlisting}
+
+\textbf{local}：完全离线、零依赖的内置方案，不需要任何模型文件或网络。向量由文本
+特征哈希生成，检索效果以词面重合为主，适合作为端侧兜底。启用配置如下，建议同时
+开启 int8 量化以降低内存占用：
+
+\begin{lstlisting}[language={}]
+{
+  "embedding_backend": "local",
+  "rag_quantization": "int8"
+}
+\end{lstlisting}
+
+\textbf{kylin}：面向银河麒麟桌面操作系统的部署形态，连接本机运行的麒麟 embedding
+SDK 服务（OpenAI 兼容接口）。配置见~\S\ref{sec:kylin-deploy}。
+
+\subsection{银河麒麟环境部署}\label{sec:kylin-deploy}
+
+在银河麒麟桌面操作系统上，推荐使用 \code{kylin} 后端以获得国产 SDK 的语义嵌入能力。
+部署步骤为：先在本机启动麒麟 embedding SDK 服务（默认监听
+\code{127.0.0.1:18080}），再按下例配置助手：
+
+\begin{lstlisting}[language={}]
+{
+  "rag_enabled": true,
+  "embedding_backend": "kylin",
+  "kylin_embedding_endpoint": "http://127.0.0.1:18080/v1",
+  "embedding_dimension": 384,
+  "rag_quantization": "int8"
+}
+\end{lstlisting}
+
+若 SDK 服务未启动或端口不同，检索类操作会明确报错（网络连接失败），不会静默降级；
+此时可临时切换 \code{local} 后端保持功能可用。麒麟 SDK 的实际交付形态若与本节假设
+不同（例如以动态库形式提供），升级只需要更新嵌入适配层，你的配置与数据文件不受影响。
+SDK 服务在不同麒麟版本上的安装与启动方法 \todo{麒麟 SDK 实机部署步骤与截图}。
