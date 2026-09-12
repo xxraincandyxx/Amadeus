@@ -1,0 +1,251 @@
+\section{核心算法设计}\label{sec:algo}
+
+\subsection{多源偏好记忆：提取、版本化与跨场景适配}\label{sec:pref}
+
+\subsubsection{数据模型}
+
+偏好条目 \code{StoredPreference} 由键、类别、置信度、场景标签与\textbf{版本链}构成。
+类别覆盖赛题要求的三类偏好并扩展为六类（表~\ref{tab:prefcat}）。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{偏好类别划分}
+  \label{tab:prefcat}
+  \begin{tabular}{l l}
+    \toprule
+    类别 & 语义 \\
+    \midrule
+    \code{ToolChoice} & 工具选择偏好（同任务下倾向使用哪个工具） \\
+    \code{OutputStyle} & 输出风格偏好（格式、详略、语言习惯） \\
+    \code{SafetyPolicy} & 安全策略偏好（敏感操作授权习惯、避免清单） \\
+    \code{Workflow} & 工作流偏好（常用步骤顺序） \\
+    \code{Habit} & 重复操作习惯 \\
+    \code{General} & 其他通用偏好 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsubsection{三路提取器}
+
+针对赛题要求的三类数据源分别实现确定性提取器（表~\ref{tab:extractors}），全部为
+规则与统计阈值驱动，无 LLM 调用。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{多源偏好提取器}
+  \label{tab:extractors}
+  \begin{tabular}{l p{6.6cm} l}
+    \toprule
+    数据源 & 触发条件与产出 & 产出类别 \\
+    \midrule
+    工具执行结果 &
+      按（任务，工具）聚簇统计成功 / 失败 / 延迟；样本数 $\ge 2$、成功率
+      $\ge 0.8$ 且使用占比 $\ge 0.6$ 时生成 \code{tool\_choice::\{task\}} 偏好；
+      同簇连续失败 $\ge 2$ 次则对该工具降权（置信度 $-0.15$，不删除条目） &
+      ToolChoice \\
+    用户行为数据 &
+      同一动作重复 $\ge 2$ 次沉淀为 \code{habit::} 偏好；检测到用户纠正行为时生成
+      \code{avoid::} 偏好并削弱与之冲突的习惯；安全敏感动作归入安全策略 &
+      Habit / SafetyPolicy \\
+    手动配置信息 &
+      配置项直接生成 \code{config::} 偏好（置信度 $0.98$），按键名关键词推断类别 &
+      全类别 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+置信度由样本计数与信号一致性映射：样本越充分、信号越一致，置信度越高；连续失败与
+用户纠正均以固定步长衰减，使偏好可随行为漂移而退化。
+
+\subsubsection{版本化管理}
+
+版本链采用\textbf{只追加}策略：任何更新都生成新版本而非改写历史。\code{push\_version}
+负责追加版本，历史版本完整保留；\code{rollback} 是非破坏性回滚——生成一个「恢复为
+旧值」的新版本而非删除；\code{versions()} 提供完整版本史查询；\code{resolve\_as\_of(t)}
+则按任意时间点回溯当时生效的版本，支持审计与复盘。
+
+\subsubsection{跨场景适配与回溯}
+
+每个偏好可携带场景标签（\code{ScenarioTag}：场景名 + 属性键值对）。解析当前生效
+偏好时按两级匹配：第一级由 \code{resolve\_for\_scenario} 优先取场景完全匹配的版本，
+无则回退默认场景；第二级由 \code{cross\_scenario\_candidates} 按场景属性集合的
+Jaccard 相似度排序，跨场景推荐最相近场景下已验证的偏好，实现「跨场景复用」。
+
+\subsubsection{接入状态}
+
+工具执行结果管道已接入 agent 主循环（每次工具调用后即时提取）；用户行为与手动配置
+两路提取器已实现，生产接线 \todo{用户行为 / 手动配置管道接入 agent 主循环}；学到的
+偏好注入提示词 \todo{偏好注入系统提示词（闭环演示）}。
+
+\subsection{知识记忆：结构化整合、冲突处理与关联检索}\label{sec:knowledge}
+
+\subsubsection{数据模型}
+
+知识库（\code{memory-service}）由四类要素构成。\code{FactVersion} 是 SPO 三元组
+（主语—谓语—宾语）附加上下文、版本号与 \code{supersedes\_id} 指针，构成可追溯的
+版本链；\code{Episode} 为历史片段，含内容哈希与敏感级别，是模板证据的唯一合法来源；
+\code{AssociationEdge} 表示知识条目间的关联边，参与检索加分；\code{MemoryTemplate}
+承载可复用工作流模板（前置条件、步骤、输入 schema、证据链、成功率、版本、状态）。
+
+\subsubsection{新旧知识冲突处理}\label{sec:conflict}
+
+新事实入库时先做\textbf{中文同义归一化}（\code{canonicalize}，如「住址 / 地址」统一
+为 \code{address}），再与既有事实判定冲突关系，按表~\ref{tab:conflict} 六种动作处置。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{冲突判定与六种处置动作}
+  \label{tab:conflict}
+  \begin{tabular}{l p{3.6cm} p{7.2cm}}
+    \toprule
+    动作 & 触发条件 & 处置 \\
+    \midrule
+    \code{Add} & 无既有相关事实 & 新增版本链 \\
+    \code{Reinforce} & 同 SPO 且上下文一致 & 置信度 $+0.05$（设上限），不新增版本 \\
+    \code{Merge} & 宾语互含（语义包含） & 保留信息量更大（更长）的宾语 \\
+    \code{Supersede} & 互斥谓词（住址、工作单位、电话、邮箱、状态等） &
+      旧版本转 \code{Historical} 并记录失效时间，新版本接替 \\
+    \code{KeepBoth} & 有冲突但无法判定 & 并存，等待后续证据 \\
+    \code{Reject} & 输入校验失败（含敏感值、schema 非法） & 拒绝入库 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+被取代的旧事实不删除，转为 \code{Historical} 状态并记录 \code{valid\_to} 时间；
+\code{fact\_history()} 可回放任一事实的完整演变史，与偏好版本链的设计一致。
+
+\subsubsection{关联检索}
+
+检索采用「字段匹配 + 关键词 + 关联图 + 状态」的加权打分：
+
+\begin{equation}
+  \mathrm{score}(q, f) = 4.0\,[\text{字段全匹配}] + 1.0\,n_{\mathrm{kw}}(q,f)
+    + 1.5\,n_{\mathrm{assoc}}(f) + 0.5\,[f \in \mathrm{Active}] + w_c \cdot \mathrm{conf}(f)
+\end{equation}
+
+其中 $n_{\mathrm{kw}}$ 为查询词命中数，$n_{\mathrm{assoc}}$ 为命中条目经关联边可达的
+证据数，$\mathrm{conf}$ 为置信度。查询词同样经过同义归一化，缓解中文同义表述导致的
+漏检。语义级检索（向量近邻）由第~\ref{sec:embedding}~节的 RAG 子系统承担，两者互补。
+
+\subsubsection{可复用模板生命周期}
+
+模板沉淀遵循「证据先行、人审把关」原则（表~\ref{tab:template}）：先以
+\code{register\_template} 注册为 \code{Draft} 状态；随后通过
+\code{record\_template\_result} 挂接真实执行片段作为证据；满足\textbf{证据数 $\ge 5$、
+成功率 $\ge 0.8$、人工复核}三条件方可激活为 \code{Active}；证据所依赖的事实被遗忘时
+自动级联降级为 \code{Retired}。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{模板状态机}
+  \label{tab:template}
+  \begin{tabular}{l l}
+    \toprule
+    状态 & 进入条件 \\
+    \midrule
+    \code{Draft} & \code{register\_template} 注册 \\
+    \code{Active} & 证据 $\ge 5$ 且成功率 $\ge 0.8$ 且人工复核通过（需权限审批） \\
+    \code{Retired} & 证据级联失效或人工退役 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{敏感信息识别与精准遗忘}\label{sec:forget}
+
+\subsubsection{敏感信息识别与过滤}
+
+\code{privacy} crate 实现六类检测器（表~\ref{tab:privacy}），按三级风险分级，命中
+内容替换为 \code{[REDACTED:KIND]} 占位符后入库。脱敏发生在\textbf{所有入库边界}：
+偏好入库、中期记忆入库、知识库写入，以及服务启动时对磁盘存量数据的全量复扫。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{敏感信息检测器}
+  \label{tab:privacy}
+  \begin{tabular}{l l}
+    \toprule
+    类型 & 校验手段 \\
+    \midrule
+    电子邮箱 & 格式匹配 \\
+    手机号 & 号段与位数规则 \\
+    身份证号 & 18 位 + 校验码验证 \\
+    银行卡号 & Luhn 校验 \\
+    API 密钥 & 前缀与熵特征 \\
+    口令字段 & 字段名启发（password / token 等） \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsubsection{两阶段精准遗忘协议}
+
+遗忘采用「解析—预览—确认—复验」两阶段协议（图~\ref{fig:forget}），全程不可逆操作
+均需人工确认。
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[node distance=6mm and 8mm]
+    \node[box] (parse) {意图解析\\ {\scriptsize parse\_forget\_intent}};
+    \node[box, right=of parse] (propose) {生成删除预案\\ {\scriptsize propose\_forget：DeletionPlan}};
+    \node[proc, right=of propose] (approve) {人工审批\\ {\scriptsize 权限护栏强制确认}};
+    \node[box, below=8mm of approve] (confirm) {执行删除\\ {\scriptsize confirm\_forget：哈希校验 + 物理删除}};
+    \node[proc, left=of confirm] (verify) {残留复验\\ {\scriptsize 重读磁盘，断言 0 残留}};
+    \node[box, left=of verify] (audit) {审计记录\\ {\scriptsize 无内容 AuditRecord}};
+
+    \draw[arrow] (parse) -- (propose);
+    \draw[arrow] (propose) -- (approve);
+    \draw[arrow] (approve) -- (confirm);
+    \draw[arrow] (confirm) -- (verify);
+    \draw[arrow] (verify) -- (audit);
+  \end{tikzpicture}
+  \caption{两阶段精准遗忘协议}
+  \label{fig:forget}
+\end{figure}
+
+意图解析支持中英文自然语言指令，含两类修饰语法。\textbf{排除}语法如「忘掉我的所有
+住址，\textbf{但保留}城市偏好」，排除项不进入删除预案；\textbf{来源限定}语法如
+「只忘掉\textbf{来源：}手动配置的」，按数据来源缩小删除范围。
+
+删除预案（\code{DeletionPlan}）含脱敏预览、预案哈希与 5 分钟生存期；确认时校验哈希
+防篡改，物理删除事实、关联边与孤儿片段，级联退役受影响模板，随后\textbf{重读磁盘
+验证残留数为零}，最后写入不含任何内容线索的审计记录。无法唯一确定删除目标的模糊指令
+（如「忘掉一些东西」）会被安全拒绝。\code{forget\_confirm} 与 \code{activate\_template}
+操作在权限层强制一次性人工审批。
+
+\subsection{端侧语义检索：可插拔嵌入与轻量向量库}\label{sec:embedding}
+
+\subsubsection{可插拔嵌入后端}
+
+嵌入能力抽象为 \code{Embedder} trait，按配置在三种后端间切换（表~\ref{tab:backends}），
+消费方代码不感知差异。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{嵌入后端}
+  \label{tab:backends}
+  \begin{tabular}{l l l}
+    \toprule
+    后端 & 形态 & 用途 \\
+    \midrule
+    \code{remote} & OpenAI 兼容 HTTP 服务 & 开发期 / 有网络环境 \\
+    \code{local} & 内置哈希嵌入器，零依赖离线运行 & 端侧基线，无网络可用 \\
+    \code{kylin} & 银河麒麟 embedding SDK（本机服务形态） & 麒麟环境部署 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\code{local} 基线采用特征哈希嵌入：拉丁词 + 中文二元组（bigram）分词后，经 FNV-1a
+64 位哈希投射到固定维度（默认 384 维），哈希导出符号位，向量 L2 归一化。该方案完全
+确定性、离线、无模型文件，适合端侧兜底；其局限是仅捕获词法重叠，语义近邻能力有限
+（优化方向见 \S\ref{sec:conclusion}）。
+
+\subsubsection{轻量化向量存储}
+
+向量库采用单文件 JSON 持久化与内存态线性扫描，轻量化体现在三个方面。\textbf{int8
+标量量化}将每向量按绝对值最大值缩放为 int8 存储，查询以整数点积累加（i32 精度），
+内存占用降为浮点的四分之一，重启后自相似度 $> 0.99$（有测试断言）；\textbf{v2 信封
+格式}在文件头记录版本、量化模式与维度，v1 旧格式透明迁移；\textbf{维度防护}则将与
+库内维度不一致的写入与查询显式拒绝，避免静默污染。
+
+检索为 $O(n \cdot d)$ 余弦线性扫描 + 全排序取 top-$k$。在端侧典型知识库规模
+（$10^3 \sim 10^4$ 条、$d = 384$）下，单次扫描为千万级浮点乘加，理论耗时远低于
+赛题 500ms 上限；分规模实测数据（P50 / P95）\todo{检索延迟实测：库规模 1k / 10k / 100k}。

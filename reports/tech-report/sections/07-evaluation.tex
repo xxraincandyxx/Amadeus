@@ -1,0 +1,138 @@
+\section{效果验证报告}\label{sec:evaluation}
+
+\subsection{评测指标定义与口径}\label{sec:metrics}
+
+四项核心指标的评测口径定义如表~\ref{tab:metricdef}，全部指标在标注数据集上以自动化
+脚本计算，可复现。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{评测指标定义}
+  \label{tab:metricdef}
+  \begin{tabular}{l c p{7.2cm}}
+    \toprule
+    指标 & 目标值 & 口径定义 \\
+    \midrule
+    偏好提取准确率 & $\ge 85\%$ &
+      系统提取的偏好与人工标注偏好（类别 + 内容 + 场景）的一致率 \\
+    知识检索召回率 & $\ge 85\%$ &
+      标注相关的知识条目出现在 top-$k$（$k=5$）结果中的比例（Recall@5） \\
+    知识检索响应时间 & $\le 500\mathrm{ms}$ &
+      端到端检索耗时（含打分排序）的 P50 / P95 \\
+    知识冲突处理正确率 & $\ge 88\%$ &
+      六动作判定结果与人工标注期望动作的一致率 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{标准化测试数据集说明}\label{sec:dataset}
+
+评测数据集由三个子集构成。\textbf{偏好标注集}收录工具调用执行序列（任务—工具—
+成败—延迟）、用户行为序列与配置项，由双人独立标注「应提取出的偏好」并仲裁分歧，
+用于偏好提取准确率。\textbf{知识检索集}为查询—相关知识条目对（含同义改写、多关联边、
+历史版本干扰项），用于 Recall@5 与检索延迟。\textbf{冲突判定集}为新旧事实对附期望
+处置动作（六动作全覆盖，含互斥谓词与上下文一致性边界情形），用于冲突处理正确率。
+
+数据集规模、来源与标注一致性（双人一致率 / Kappa）\todo{评测数据集构建完成并冻结
+版本}。
+
+\subsection{量化指标结果}
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{核心指标实测结果}
+  \label{tab:metricresult}
+  \begin{tabular}{l c c c}
+    \toprule
+    指标 & 目标值 & 实测值 & 结论 \\
+    \midrule
+    偏好提取准确率 & $\ge 85\%$ & \todoblank & \todoblank \\
+    知识检索召回率（Recall@5） & $\ge 85\%$ & \todoblank & \todoblank \\
+    检索响应时间 P50 / P95 & $\le 500\mathrm{ms}$ & \todoblank & \todoblank \\
+    冲突处理正确率 & $\ge 88\%$ & \todoblank & \todoblank \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\todo{在冻结数据集上运行四项指标评测脚本并填入本表；未达标项在第~\ref{sec:conclusion}~
+章给出优化方向}
+
+\subsection{对比实验设计（消融）}
+
+为量化各机制的贡献，设计如下消融对比（表~\ref{tab:ablation}），实验组仅关闭单一
+机制，其余条件一致。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{消融实验设计与结果}
+  \label{tab:ablation}
+  \begin{tabular}{l l c}
+    \toprule
+    实验组 & 检验假设 & 结果 \\
+    \midrule
+    完整方案 & — & \todoblank \\
+    去版本化（仅保留最新版本） & 版本链对回溯 / 审计的贡献 & \todoblank \\
+    去冲突融合（新事实一律 Add） & 六动作机制对正确率的贡献 & \todoblank \\
+    去关联边（检索不加关联分） & 关联图对召回的贡献 & \todoblank \\
+    去同义归一化 & 中文同义对召回的贡献 & \todoblank \\
+    int8 vs 全精度 & 量化对检索质量与延迟的影响 & \todoblank \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{功能验收测试}\label{sec:functest}
+
+跨 crate 集成指标测试共 11 个，2026-09-13 以 \code{cargo test --features full} 运行，
+\textbf{全部通过}（表~\ref{tab:functest}），覆盖赛题内容要求 (3)(4)(5) 的核心闭环。
+
+\begin{table}[htbp]
+  \centering\footnotesize
+  \caption{集成指标测试（11 / 11 通过）}
+  \label{tab:functest}
+  \begin{tabular}{p{6.4cm} p{5.2cm} c}
+    \toprule
+    测试 & 验证点 & 结果 \\
+    \midrule
+    \testname{indicator_3_conflict_search_and_history_form_a_closed_loop} &
+      冲突接替—检索—版本史闭环 & 通过 \\
+    \testname{indicator_3_template_activation_requires_five_examples_review_and_eighty_percent_success} &
+      模板激活三条件门槛 & 通过 \\
+    \testname{indicator_3_default_agent_registers_kylin_memory_without_legacy_registry} &
+      工具默认注册 & 通过 \\
+    \testname{indicator_5_rejects_ambiguous_and_non_deletion_requests} &
+      模糊遗忘指令安全拒绝 & 通过 \\
+    \testname{indicator_5_sensitive_information_is_redacted_at_scan_and_storage_boundaries} &
+      扫描与入库双边界脱敏 & 通过 \\
+    \testname{indicator_5_precise_forgetting_preserves_exclusions_and_requires_confirmation} &
+      排除项保留 + 强制确认 & 通过 \\
+    \testname{indicator_4_local_hash_embedder_is_deterministic_normalized_and_offline} &
+      local 后端确定性 / 归一化 / 离线 & 通过 \\
+    \testname{indicator_4_int8_quantized_store_survives_restart} &
+      int8 量化重启自相似度 $> 0.99$ & 通过 \\
+    \testname{indicator_4_rag_tool_ingest_and_query_end_to_end} &
+      注入—检索端到端 & 通过 \\
+    \testname{indicator_4_backend_selection_from_config} & 后端配置切换 & 通过 \\
+    \testname{indicator_4_agent_registers_rag_tool_when_enabled} &
+      RAG 工具按配置挂载 & 通过 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+模块级单元测试另有数十个（知识记忆服务 14、偏好提取与版本化 25、隐私检测 3 等），
+覆盖阈值边界、版本回滚、跨场景解析与校验码算法。
+
+\subsection{历史基线与重测计划}
+
+2026 年 5 月曾以 LoCoMo 长对话数据集（10 会话 / 189 问答对）对早期 RAG 链路做过一次
+评测（当时为 remote 嵌入后端、LLM 问答 F1 口径）：RAG 模式 F1 = 39.2\%、全上下文
+F1 = 54.0\%，其中单跳 60.4\%、多跳 25.0\%、时序 12.2\%，平均查询耗时 0.02s。
+
+需要说明：\textbf{该口径度量的是问答生成质量而非检索召回率}，且早于 local / kylin
+后端与 int8 量化的引入，不能直接对标赛题指标，仅作为演进基线保留。以本方案口径
+（Recall@5，local / kylin 后端）的重测 \todo{LoCoMo 数据集按 Recall 口径重测}。
+
+\subsection{检索延迟实测方案}
+
+延迟实测按库规模 $\times$ 量化模式网格执行（1k / 10k / 100k 条，int8 / 全精度，
+$d=384$），每组 1000 次查询取 P50 / P95，测试机规格与结果
+\todo{延迟网格实测并填入 assets/metrics-latency.png}。

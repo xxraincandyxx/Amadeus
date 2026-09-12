@@ -1,0 +1,102 @@
+\section{端侧部署与银河麒麟适配}\label{sec:deploy}
+
+\subsection{端侧轻量化设计}
+
+端侧轻量化体现在四个方面。\textbf{零外部服务依赖}：除可选的嵌入服务外，系统不需要
+数据库、消息队列或 GPU，local 嵌入后端零模型文件、完全离线。\textbf{轻量存储}：全部
+状态为单文件 JSON + int8 量化向量，内存与磁盘占用小，人可直接检视与备份。
+\textbf{确定性算法}：偏好提取 / 冲突处理 / 遗忘判定均为规则与统计阈值，无常驻模型
+推理开销。\textbf{按需裁剪}：feature flags 支持只保留记忆内核的最小端侧构建。
+
+\subsection{银河麒麟 embedding SDK 接入}\label{sec:kylin-sdk}
+
+\code{kylin} 嵌入后端当前按「麒麟 SDK 以本机 OpenAI 兼容服务进程形态提供」接入
+（默认端点 \code{http://127.0.0.1:18080/v1}）。针对 SDK 交付形态的可能变化，系统
+预留了无侵入的升级路径（表~\ref{tab:kylinpath}）：由于嵌入能力收敛在 \code{Embedder}
+trait 之后，任何形态变化只影响 \code{KylinEmbedder} 单个文件的内部实现。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{麒麟 SDK 交付形态与升级路径}
+  \label{tab:kylinpath}
+  \begin{tabular}{l l}
+    \toprule
+    SDK 形态 & 适配方式 \\
+    \midrule
+    本机 HTTP 服务（OpenAI 兼容） & 现有后端直接可用，仅改端点配置 \\
+    C FFI 动态库 & 重写 \code{KylinEmbedder} 内部加载逻辑，接口面不变 \\
+    嵌入维度不同 & 维度防护显式拒绝混用，重建向量索引后重新注入 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+与麒麟 SDK 的真机联调记录 \todo{麒麟 embedding SDK 真机联调（SDK 到货后执行）}。
+
+\subsection{安装部署指南}
+
+\textbf{前置依赖}：Rust 稳定版工具链；可选的嵌入服务（remote 形态或麒麟 SDK 服务）。
+
+\textbf{构建与运行}：
+
+\begin{lstlisting}[language=bash]
+# 构建（无默认特性，按需启用）
+cargo build --features full
+# 运行（TUI / HTTP 服务）
+cargo run --features full
+cargo run --features full -- --server 8080
+\end{lstlisting}
+
+\textbf{端侧启用麒麟嵌入 + int8 量化的最小配置}（工作区 \code{.amadeus/} 下）：
+
+\begin{lstlisting}[language={}]
+{
+  "rag_enabled": true,
+  "embedding_backend": "kylin",
+  "kylin_embedding_endpoint": "http://127.0.0.1:18080/v1",
+  "embedding_dimension": 384,
+  "rag_quantization": "int8",
+  "rag_top_k": 5
+}
+\end{lstlisting}
+
+运行时目录 \code{.amadeus/}（表~\ref{tab:storage}）随首次运行自动创建。
+
+\subsection{操作说明}
+
+记忆操作经 agent 的 \code{kylin\_memory} 工具以自然语言或结构化指令完成，典型示例：
+
+\begin{lstlisting}[language={}]
+{"operation": "store_fact", "subject": "user",
+ "predicate": "住址", "object": "南京市", "context": "工作信息"}
+
+{"operation": "search", "query": "住址"}
+
+{"operation": "forget_preview",
+ "instruction": "忘掉我的所有住址，但保留城市偏好"}
+\end{lstlisting}
+
+遗忘操作先预览预案、再经人工审批确认（\S\ref{sec:forget}）；模板激活同理。
+
+\subsection{银河麒麟桌面操作系统适配测试报告}
+
+记忆子系统全部依赖（Tokio、serde、reqwest 等）均原生支持 Linux / 国产 CPU 架构，
+代码中不含平台专有调用，具备跨平台适配基础。正式适配测试记录如表~\ref{tab:kylinenv}。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{银河麒麟适配测试环境与结果}
+  \label{tab:kylinenv}
+  \begin{tabular}{l l}
+    \toprule
+    项目 & 记录 \\
+    \midrule
+    操作系统版本 & \todoblank \\
+    内核版本 / CPU 架构 & \todoblank \\
+    构建工具链版本 & \todoblank \\
+    功能测试结果 & \todoblank \\
+    性能指标结果 & \todoblank \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\todo{银河麒麟桌面 OS 环境完成安装部署与全量回归，出具适配测试报告}

@@ -1,0 +1,102 @@
+% !TeX program = xelatex
+% XA-202612「OS Agent 记忆优化及高效应用研究」技术方案报告
+% 编译：latexmk -xelatex main.tex（或连续运行两遍 xelatex main.tex 生成目录）
+\documentclass[zihao=-4,a4paper]{ctexart}
+
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{positioning,arrows.meta}
+\usepackage{listings}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+
+% 段落断行弹性，吸收少量中英混排超宽
+\emergencystretch=3em
+
+% ---------- 颜色与 TODO 标记 ----------
+% 约定：所有未实测 / 待完成内容统一以红色 TODO 标出（\todo、\todoblank、\statustodo）
+\definecolor{todored}{RGB}{211,47,47}
+\definecolor{codebg}{RGB}{246,246,246}
+\definecolor{codeframe}{RGB}{176,190,197}
+\definecolor{figfill}{RGB}{239,246,255}
+
+\newcommand{\todo}[1]{\textcolor{todored}{\textbf{【TODO：#1】}}}
+\newcommand{\todoblank}{\textcolor{todored}{\textbf{TODO}}}
+\newcommand{\statustodo}{\textcolor{todored}{\textbf{待完成}}}
+\newcommand{\statusdone}{已实现}
+\newcommand{\statuspartial}{部分实现}
+
+% 行内代码（text 模式转义 \_ \{ 直接正确渲染；不引入断行）
+\newcommand{\code}[1]{\texttt{#1}}
+% 可断行的长测试名（\path 允许在下划线处换行，参数内下划线无需转义）
+\newcommand{\testname}[1]{{\ttfamily\footnotesize\path{#1}}}
+
+\lstdefinestyle{amalst}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  breaklines=true,
+  columns=fullflexible,
+  showstringspaces=false,
+  xleftmargin=2mm,
+}
+\lstset{style=amalst}
+
+\captionsetup{font=small, labelfont=bf}
+
+% TikZ 通用样式
+\tikzset{
+  box/.style={draw, rounded corners=2pt, align=center, inner sep=5pt,
+    font=\small, minimum height=8.5mm, fill=figfill},
+  proc/.style={box, fill=gray!10},
+  todo/.style={box, dashed, draw=todored, text=todored, fill=white},
+  arrow/.style={-{Stealth[length=2.6mm]}, semithick},
+}
+
+\begin{document}
+
+% ---------- 封面 ----------
+\begin{titlepage}
+  \centering
+  \vspace*{20mm}
+  {\heiti\zihao{2} OS Agent 记忆优化及高效应用研究\par}
+  \vspace{8mm}
+  {\zihao{3} 多源融合偏好与知识记忆优化技术方案报告\par}
+  \vspace{6mm}
+  {\zihao{-4} 题目编号：XA-202612\par}
+  \vspace{4mm}
+  {\zihao{-4} 发榜单位：麒麟软件有限公司\par}
+  \vspace{22mm}
+  \begin{tabular}{rl}
+    参赛单位： & \todo{学校 / 单位全称} \\
+    队伍名称： & \todo{队伍名称}         \\
+    队伍成员： & \todo{成员姓名}         \\
+    指导教师： & \todo{指导教师姓名}     \\
+  \end{tabular}
+  \vfill
+  {\zihao{-4} 2026 年 9 月\par}
+  \vspace*{8mm}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+\input{sections/01-intro}
+\input{sections/02-architecture}
+\input{sections/03-algorithms}
+\input{sections/04-memory-flow}
+\input{sections/05-implementation}
+\input{sections/06-deployment}
+\input{sections/07-evaluation}
+\input{sections/08-case-study}
+\input{sections/09-conclusion}
+
+\end{document}

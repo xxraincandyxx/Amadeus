@@ -1,0 +1,11 @@
+# LaTeX 编译中间产物
+*.aux
+*.log
+*.out
+*.toc
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.xdv
+*.bbl
+*.blg

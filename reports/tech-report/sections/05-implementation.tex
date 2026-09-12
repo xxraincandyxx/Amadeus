@@ -1,0 +1,91 @@
+\section{技术实现方案}\label{sec:impl}
+
+\subsection{实现栈与工程约束}
+
+系统以 Rust 实现，全异步 Tokio 运行时，序列化统一为 serde JSON。工程约束如下：全链路
+统一错误类型 \code{Result<T>}，生产代码零 \code{unwrap}；公共接口全部 rustdoc 文档化，
+模块有文档级说明，满足赛题源代码可读性要求；工作区按 crate 划分（表~\ref{tab:crates}），
+记忆子系统可整体独立复用于其他 Agent 产品；特性开关（feature flags）按需裁剪，端侧可
+只编译记忆内核 + local 嵌入后端。
+
+\subsection{Agent 主循环接线点}\label{sec:wiring}
+
+记忆系统经统一接线模块 \code{memory\_wiring} 接入 agent 主循环（表~\ref{tab:wiring}），
+对主循环零侵入。
+
+\begin{table}[htbp]
+  \centering\footnotesize
+  \caption{主循环接线点}
+  \label{tab:wiring}
+  \begin{tabular}{l l p{5.2cm}}
+    \toprule
+    时机 & 管道 & 目标 \\
+    \midrule
+    每次工具调用后 & \code{ingest\_tool\_execution} & 偏好库（工具选择偏好提取） \\
+    上下文压缩退役时 & \code{archive\_compacted\_context} & 中期记忆库（网关抽取） \\
+    系统提示词构建时 & \code{MemoryRegistry} & 长期记忆注入（Persistent Memory 区块） \\
+    会话启动时 & 工具注册 & \code{kylin\_memory} / \code{RagTool} 挂载 \\
+    服务启动时 & 存量复扫 & 磁盘记忆全量脱敏校验 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{知识记忆工具面}
+
+agent 通过 \code{kylin\_memory} 工具操作知识库，九个操作覆盖写入、检索、模板与遗忘
+全流程（表~\ref{tab:ops}）；其中 \code{forget\_confirm} 与 \code{activate\_template}
+受权限层强制人工审批。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{kylin\_memory 工具操作}
+  \label{tab:ops}
+  \begin{tabular}{l l}
+    \toprule
+    操作 & 功能 \\
+    \midrule
+    \code{store\_fact} & 写入 SPO 事实（触发冲突判定与脱敏校验） \\
+    \code{search} & 关联检索（加权打分排序） \\
+    \code{register\_template} & 注册工作流模板（Draft 状态） \\
+    \code{record\_template\_result} & 为模板挂接真实执行证据 \\
+    \code{activate\_template} & 激活模板（三条件门槛 + 人工审批） \\
+    \code{find\_templates} & 检索可用模板 \\
+    \code{privacy\_scan} & 敏感信息扫描 \\
+    \code{forget\_preview} & 遗忘预案预览（DeletionPlan） \\
+    \code{forget\_confirm} & 确认执行遗忘（哈希校验 + 残留复验） \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{配置面}
+
+记忆与检索行为均由工作区配置驱动（表~\ref{tab:config}），无需改码即可切换端侧 /
+云端 / 麒麟形态。
+
+\begin{table}[htbp]
+  \centering\footnotesize
+  \caption{关键配置项}
+  \label{tab:config}
+  \begin{tabular}{l l p{4.4cm}}
+    \toprule
+    配置项 & 默认值 & 说明 \\
+    \midrule
+    \code{rag\_enabled} & \code{false} & 是否启用 RAG 工具 \\
+    \code{embedding\_backend} & \code{remote} & \code{remote} / \code{local} / \code{kylin} \\
+    \code{embedding\_model} & --- & 嵌入模型名 \\
+    \code{embedding\_base\_url} & --- & remote 后端服务地址 \\
+    \code{kylin\_embedding\_endpoint} & \code{http://127.0.0.1:18080/v1} & 麒麟 SDK 服务端点 \\
+    \code{embedding\_dimension} & \code{384} & 向量维度（库内强制一致） \\
+    \code{rag\_quantization} & \code{none} & \code{none} / \code{int8} \\
+    \code{rag\_chunk\_size} / \code{rag\_chunk\_overlap} & --- & 切块参数 \\
+    \code{rag\_top\_k} & --- & 检索返回条数 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{质量保障}
+
+记忆子系统建立了三层测试：模块单元测试（知识记忆服务 14 个、偏好提取与版本化 25 个、
+隐私检测 3 个等）、跨 crate 集成指标测试（11 个，\S\ref{sec:functest}）、以及全工作区
+回归（\code{cargo test --features full}）。2026-09-13 集成指标测试运行结果为
+\textbf{11 通过 / 0 失败}。

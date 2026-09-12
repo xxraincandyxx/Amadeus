@@ -1,0 +1,119 @@
+\section{总体架构设计}\label{sec:arch}
+
+\subsection{设计原则}
+
+架构设计遵循四项原则。\textbf{无 LLM 依赖的记忆内核}：偏好提取、冲突处理、遗忘判定
+均为确定性规则与统计阈值，不引入额外推理开销，适合端侧部署，且每一步决策可解释、
+可审计。\textbf{单一职责的 crate 划分}：领域类型、存储、服务逻辑、接入管道分层清晰，
+便于按需裁剪与移植。\textbf{文件即数据库}：全部记忆状态持久化为工作区 \code{.amadeus/}
+目录下的 JSON 文件，零外部服务依赖，便于备份、检视与迁移。\textbf{安全边界前置}：
+敏感信息检测与脱敏发生在一切入库边界，而非事后清理。
+
+\subsection{三层记忆总体架构}\label{sec:arch-tiers}
+
+系统沿用「短期—中期—长期」三层记忆模型（图~\ref{fig:tierflow}）：
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[node distance=7mm and 8mm]
+    \node[box] (ctx) {短期记忆\\ {\scriptsize 会话上下文窗口}};
+    \node[box, right=of ctx] (mid) {中期记忆库\\ {\scriptsize mid\_term\_memory.json}};
+    \node[box, right=of mid] (long) {长期记忆\\ {\scriptsize memory.json}\\[-1pt] {\scriptsize rag\_index.json}};
+    \node[proc, right=of long] (prompt) {提示词注入\\ {\scriptsize Persistent Memory}};
+    \node[proc, below=10mm of ctx] (multi) {多源输入：工具执行结果 / 用户行为 / 手动配置};
+
+    \draw[arrow] (ctx) -- node[above,font=\scriptsize] {网关} (mid);
+    \draw[arrow, dashed, todored] (mid) -- node[above,font=\scriptsize,text=todored] {晋升} (long);
+    \draw[arrow] (long) -- node[above,font=\scriptsize] {注入} (prompt);
+    \draw[arrow] (prompt.south) to[bend right=26] node[below,font=\scriptsize] {增强上下文} (ctx.south);
+    \draw[arrow] (multi) -- (ctx);
+  \end{tikzpicture}
+  \caption{三层记忆架构与数据流转（短中期之间经 ContextGate 网关；红色虚线为待实现的晋升路径）}
+  \label{fig:tierflow}
+\end{figure}
+
+三层记忆的分工如下。\textbf{短期记忆}是活跃会话的上下文窗口（\code{Agent.history}）
+与压缩摘要，生命周期为单会话；\textbf{中期记忆}是跨会话的记录数据库，沉淀任务、
+决策、文件状态、错误与解决方案、状态快照（\S\ref{sec:flow}）；\textbf{长期记忆}则
+涵盖用户事实（\code{memory.json}）、结构化知识库（\code{structured\_memory.json}）、
+偏好库（\code{preferences.json}）与语义索引（\code{rag\_index.json}），经
+\code{MemoryRegistry} 注入系统提示词。
+
+\subsection{双库架构：偏好库与知识库}\label{sec:arch-dual}
+
+偏好与知识两类记忆分别由独立仓库管理，共享统一的隐私脱敏边界（图~\ref{fig:dualrepo}）。
+
+\begin{figure}[htbp]
+  \centering
+  \begin{tikzpicture}[node distance=6mm and 9mm]
+    \node[box] (tool) {工具执行结果};
+    \node[box, right=8mm of tool] (behavior) {用户行为数据};
+    \node[box, right=8mm of behavior] (config) {手动配置信息};
+
+    \node[proc, below=9mm of behavior] (redact) {统一脱敏与质量校验边界\\
+      {\scriptsize SensitiveDataDetector / 输入校验}};
+
+    \node[box, below=10mm of redact, xshift=-24mm] (pref) {偏好库 preferences.json\\
+      {\scriptsize 三路提取器 + 版本链}};
+    \node[box, below=10mm of redact, xshift=24mm] (know) {知识库 structured\_memory.json\\
+      {\scriptsize 事实版本链 + 关联图 + 模板}};
+
+    \node[todo, below=9mm of pref] (pinject) {偏好注入提示词};
+    \node[proc, below=9mm of know] (ktool) {kylin\_memory 工具\\ {\scriptsize 查询 / 冲突 / 遗忘}};
+
+    \draw[arrow] (tool) -- (redact);
+    \draw[arrow] (behavior) -- (redact);
+    \draw[arrow] (config) -- (redact);
+    \draw[arrow] (redact) -- (pref);
+    \draw[arrow] (redact) -- (know);
+    \draw[arrow, dashed, todored] (pref) -- (pinject);
+    \draw[arrow] (know) -- (ktool);
+  \end{tikzpicture}
+  \caption{多源数据接入与偏好 / 知识双库（红色虚线框为待接线部分）}
+  \label{fig:dualrepo}
+\end{figure}
+
+\subsection{代码组织}
+
+记忆子系统在 Rust 工作区内按职责划分为独立 crate（表~\ref{tab:crates}）。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{记忆子系统代码组织}
+  \label{tab:crates}
+  \begin{tabular}{l l l}
+    \toprule
+    crate & 职责 & 关键内容 \\
+    \midrule
+    \code{memory-domain} & 领域类型 & 事实版本、片段、关联边、模板的纯数据模型 \\
+    \code{memory-service} & 知识库服务 & 冲突处理、关联检索、模板生命周期、两阶段遗忘 \\
+    \code{memory} & 中期记忆 & 记录模型、存储接口、上下文网关（ContextGate） \\
+    \code{context}（preference 模块） & 偏好库 & 三路提取器、版本化、场景标签与回溯 \\
+    \code{privacy} & 隐私保护 & 六类敏感信息检测器与脱敏 \\
+    \code{rag} & 语义检索 & 可插拔嵌入后端、int8 量化向量库、RagTool \\
+    \code{core}（memory\_wiring 等） & 接线 & agent 主循环与记忆系统间的数据管道 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{运行时存储布局}
+
+全部状态位于工作区 \code{.amadeus/} 目录（表~\ref{tab:storage}），单文件 JSON、
+人可直接检视，符合端侧轻量化与可审计要求。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{运行时存储文件}
+  \label{tab:storage}
+  \begin{tabular}{l l}
+    \toprule
+    文件 & 内容 \\
+    \midrule
+    \code{.amadeus/preferences.json} & 偏好库：偏好条目及其版本链、场景标签 \\
+    \code{.amadeus/structured\_memory.json} & 知识库：事实版本链、片段、关联边、模板 \\
+    \code{.amadeus/mid\_term\_memory.json} & 中期记忆库：网关产出的五类记录 \\
+    \code{.amadeus/memory.json} & 长期用户事实（MemoryRegistry 数据源） \\
+    \code{.amadeus/rag\_index.json} & 语义向量索引（v2 信封格式，支持 int8 量化） \\
+    \bottomrule
+  \end{tabular}
+\end{table}

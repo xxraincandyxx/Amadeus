@@ -1,0 +1,73 @@
+\section{记忆流转机制：与短期、中期记忆的交互逻辑}\label{sec:flow}
+
+本章对应赛题要求（6）：兼容与记忆模块中短期、中期记忆间的数据流转。
+
+\subsection{短期 $\rightarrow$ 中期：压缩退役网关}
+
+会话上下文接近窗口上限时触发压缩（compaction）。被退役的消息并不直接丢弃，而是经过
+\textbf{上下文网关}（\code{ContextGate}）抽取为中期记忆记录（图~\ref{fig:tierflow}）。
+网关的确定性实现 \code{RuleBasedGate} 按表~\ref{tab:gate} 的规则识别五类记录。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{ContextGate 抽取规则}
+  \label{tab:gate}
+  \begin{tabular}{l l l}
+    \toprule
+    退役消息来源 & 记录类型 & 触发条件 \\
+    \midrule
+    用户文本消息 & \code{Task} & 有效内容 $\ge 8$ 字符，首句作为任务目标 \\
+    助手文本消息 & \code{Decision} & 内容含决策关键词（决定 / decision 等） \\
+    工具调用入参 & \code{FileState} & 入参含路径型字段（path 等） \\
+    工具执行结果 & \code{ErrorResolution} & 结果内容含错误关键词 \\
+    压缩摘要 & \code{StateSnapshot} & 压缩发生即产出 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+记录重要性按类型赋默认值（表~\ref{tab:importance}），与压缩摘要策略的优先级一致；
+同一次转换内按键去重（后写覆盖），单次产出上限 64 条，防止压缩风暴撑爆存储。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{记录类型默认重要性（0--100）}
+  \label{tab:importance}
+  \begin{tabular}{l c}
+    \toprule
+    记录类型 & 默认重要性 \\
+    \midrule
+    \code{Decision} & 80 \\
+    \code{StateSnapshot} & 75 \\
+    \code{ErrorResolution} & 70 \\
+    \code{Task} & 60 \\
+    \code{FileState} / \code{Fact} & 50 / 40 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{中期记忆存储接口}
+
+中期记忆库实现 \code{MidTermStore} 接口：\code{upsert}（按键替换）、\code{get}、
+\code{delete}、\code{query}（多条件 AND 过滤，按时间新到旧排序）、\code{count}、
+\code{flush}。记录模型 \code{MemoryRecord} 携带会话来源、消息区间、访问计数与重要性，
+可无损转换为长期记忆的 \code{MemoryEntry} 供既有消费方读取。
+
+\subsection{长期记忆注入短期上下文}
+
+长期记忆经 \code{MemoryRegistry}（用户事实提供者 + 向量记忆提供者）在每轮对话构建
+系统提示词时注入「Persistent Memory」区块，实现长短期记忆闭环（图~\ref{fig:tierflow}
+右侧回边）。
+
+\subsection{中期 $\rightarrow$ 长期晋升}
+
+设计上，中期记录应按「重要性 + 访问计数」驱动的晋升机制进入长期记忆库（重要性衰减
+与淘汰同理）。当前实现状态如下：短期 $\rightarrow$ 中期、长期 $\rightarrow$ 短期两条
+路径 \statusdone；中期 $\rightarrow$ 长期晋升与中期淘汰 \todo{晋升 / 淘汰机制实现}；
+中期记忆查询接入提示词注入 \todo{中期记忆读路径接入 MemoryRegistry}。
+
+\subsection{偏好与知识管道的流转关系}
+
+偏好库与知识库不经过中期库，而是由 agent 主循环直接驱动：工具每次执行后，结果即时
+流入偏好提取器；agent 亦可随时经 \code{kylin\_memory} 工具向知识库写入事实、检索、
+沉淀模板。两条管道均在入库边界完成脱敏（\S\ref{sec:forget}），与三层流转共用同一
+隐私基础设施。

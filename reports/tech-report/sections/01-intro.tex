@@ -1,0 +1,91 @@
+\section{引言与需求分析}\label{sec:intro}
+
+\subsection{题目背景}
+
+基于麒麟操作系统的 OS Agent 是智能交互系统的核心组件，其记忆模块中的\textbf{偏好记忆}
+与\textbf{知识记忆}是支撑个性化服务适配、知识沉淀复用的核心载体。当前两类记忆面临的
+问题具有多源性。一方面，\textbf{工具调用执行结果结构化不足、数据质量参差不齐}，导致
+偏好提取（如工具选择偏好）不精准、知识沉淀不高效；另一方面，\textbf{其他数据源的
+问题相互叠加}——用户行为捕捉不全面、跨场景数据不一致、配置版本混乱——最终形成
+动态偏好提取偏差、版本化管理效率低、新旧知识冲突滞后、关联检索精度有限等痛点。
+
+本方案针对上述痛点，面向麒麟操作系统 OS Agent 交付一套\textbf{多源融合偏好与知识记忆
+优化解决方案}，具备偏好精准捕捉、知识智能整合、高效检索复用等核心功能，并满足端侧
+轻量化部署与数据安全合规要求。
+
+\subsection{需求分析}
+
+赛题聚焦两大核心问题，本方案将其分解为五项技术需求。（1）\textbf{偏好记忆的动态捕捉
+与适配}：以工具调用执行结果为核心数据源，结合用户行为数据与手动配置，实现用户操作
+习惯、输出风格、安全策略等偏好的精准提取、版本化更新与跨场景复用；（2）\textbf{知识
+记忆的结构化整合}：新旧知识冲突处理、关联检索优化，支持工作流程知识、历史案例、
+可复用模板的结构化存储与智能调用；（3）\textbf{端侧部署约束}：调用银河麒麟国产桌面
+操作系统 embedding SDK，轻量化存储，检索响应延迟 $\le 500\mathrm{ms}$；
+（4）\textbf{安全合规}：敏感信息识别与过滤，自然语言指令驱动的精准遗忘；
+（5）\textbf{记忆流转}：与短期、中期记忆间的数据流转兼容。
+
+\subsection{赛题要求覆盖总览}\label{sec:coverage}
+
+表~\ref{tab:coverage-func} 给出赛题七项内容要求与本方案的对应关系及当前状态；
+表~\ref{tab:coverage-metric} 给出四项性能指标的覆盖状态。\textbf{所有未实测 / 待完成
+项均以红色 TODO 标出}，详见第~\ref{sec:evaluation}~章效果验证报告。
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{赛题内容要求覆盖对照}
+  \label{tab:coverage-func}
+  \begin{tabular}{c p{5.7cm} p{5.2cm} c}
+    \toprule
+    编号 & 赛题内容要求 & 本方案对应模块 & 状态 \\
+    \midrule
+    (1) & 多源数据整合（工具结果 / 用户行为 / 手动配置，清洗、标准化、质量校验） &
+      三路偏好提取器 + 隐私脱敏边界（\S\ref{sec:pref}） & \statuspartial \\
+    (2) & 偏好记忆动态捕捉（自动提取、版本化管理、跨场景适配与回溯） &
+      偏好版本链 + 场景标签机制（\S\ref{sec:pref}） & \statuspartial \\
+    (3) & 知识记忆结构化整合（冲突处理、关联检索、模板沉淀） &
+      SPO 事实库 + 六动作冲突处理 + 模板生命周期（\S\ref{sec:knowledge}） & \statusdone \\
+    (4) & 端侧部署（麒麟 embedding SDK、轻量存储、延迟 $\le$ 500ms） &
+      可插拔嵌入后端 + int8 量化向量库（\S\ref{sec:embedding}、\S\ref{sec:deploy}） & \statuspartial \\
+    (5) & 敏感信息识别过滤 + 自然语言精准遗忘 &
+      六类检测器 + 两阶段遗忘（\S\ref{sec:forget}） & \statusdone \\
+    (6) & 与短期 / 中期记忆的数据流转 &
+      压缩退役网关 + 三层记忆架构（\S\ref{sec:flow}） & \statuspartial \\
+    (7) & 量化评测机制与测试报告 &
+      四指标评测框架（\S\ref{sec:evaluation}） & \statustodo \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+  \centering\small
+  \caption{性能指标覆盖对照}
+  \label{tab:coverage-metric}
+  \begin{tabular}{l c l}
+    \toprule
+    性能指标 & 目标值 & 本方案现状 \\
+    \midrule
+    偏好提取准确率 & $\ge 85\%$ & 算法已实现，量化实测 \todoblank \\
+    知识检索召回率 & $\ge 85\%$ & 检索机制已实现，量化实测 \todoblank \\
+    知识检索响应时间 & $\le 500\mathrm{ms}$ & 线性扫描复杂度分析见 \S\ref{sec:embedding}，实测 \todoblank \\
+    知识冲突处理正确率 & $\ge 88\%$ & 六动作机制已实现，量化实测 \todoblank \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{方案核心思路}
+
+本方案的设计思路可概括为四点。其一是\textbf{确定性优先的记忆算法}：偏好提取与知识
+冲突处理均采用可解释的规则与统计阈值（无 LLM 依赖），行为可审计、结果可复现，契合
+端侧资源约束。其二是\textbf{只追加的版本化}：偏好与知识均以版本链存储，回滚与回溯是
+非破坏性操作，天然支持跨场景适配与按时间点回溯。其三是\textbf{隐私内建}
+（privacy by construction）：所有记忆入库边界统一经过敏感信息脱敏，遗忘操作采用
+「预览—人工确认—物理删除—残留复验」两阶段协议。其四是\textbf{可插拔嵌入与轻量
+存储}：嵌入后端按配置在 remote / local / kylin 三者间切换，向量库采用 int8 量化与
+单文件 JSON 持久化，无外部服务依赖。
+
+\subsection{报告组织}
+
+第~\ref{sec:arch}~章总体架构；第~\ref{sec:algo}~章核心算法设计；第~\ref{sec:flow}~章
+记忆流转机制；第~\ref{sec:impl}~章技术实现方案；第~\ref{sec:deploy}~章端侧部署与
+银河麒麟适配；第~\ref{sec:evaluation}~章效果验证报告；第~\ref{sec:case}~章真实场景
+应用案例；第~\ref{sec:conclusion}~章总结与优化方向。
