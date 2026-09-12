@@ -50,6 +50,10 @@ export function SettingsWorkspace({ online, language, themeColor, workspace, onL
       await api.health(normalized);
       setStatus(t("Connection successful."));
     } catch (caught) {
+      if (caught instanceof TypeError) {
+        setStatus(t("Could not reach the Amadeus API. Check that the server is running and the address is correct."));
+        return;
+      }
       setStatus(caught.message);
     } finally {
       setTesting(false);
