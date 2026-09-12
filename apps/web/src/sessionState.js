@@ -17,6 +17,7 @@
 // - Completed live reasoning remains attached to its assistant turn across history refreshes.
 // - Completed live reasoning records at least one elapsed second when timing is available.
 // - Responses without exposed reasoning do not create placeholder timeline entries.
+// - Tool results attach to their originating tool call across message boundaries.
 // side_effects: none
 // tests:
 // - apps/web/src/sessionState.test.js
@@ -31,6 +32,7 @@ export function contentText(content = []) {
 }
 
 export function historyToTimeline(messages = []) {
+  const toolItemsById = new Map();
   return messages.flatMap((message, messageIndex) => {
     const items = [];
     const text = contentText(message.content);
@@ -47,16 +49,18 @@ export function historyToTimeline(messages = []) {
     }
     for (const [blockIndex, block] of (message.content || []).entries()) {
       if (block.type === "tool_use") {
-        items.push({
+        const item = {
           id: block.id || `history-tool-${messageIndex}-${blockIndex}`,
           kind: "tool",
           name: block.name,
           input: block.input,
           status: "complete",
-        });
+        };
+        if (block.id) toolItemsById.set(block.id, item);
+        items.push(item);
       }
       if (block.type === "tool_result") {
-        const target = items.find((item) => item.id === block.tool_use_id);
+        const target = toolItemsById.get(block.tool_use_id);
         if (target) target.output = typeof block.content === "string" ? block.content : JSON.stringify(block.content);
       }
     }
