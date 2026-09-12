@@ -544,6 +544,7 @@ const ZH_CN = {
   "Create a session to begin working with an agent.": "创建会话以开始与智能体协作。",
   "Start the server at {url}, then refresh this page.": "在 {url} 启动服务器，然后刷新此页面。",
   "Connection successful.": "连接成功。",
+  "Could not reach the Amadeus API. Check that the server is running and the address is correct.": "无法连接 Amadeus API。请确认服务器已启动且地址正确。",
   "Use an HTTP or HTTPS URL.": "请使用 HTTP 或 HTTPS 地址。",
   "Restored the default local address. Save to reconnect.": "已恢复默认本地地址。保存后将重新连接。",
   "Connect to the Amadeus API before creating a session.": "创建会话前请先连接 Amadeus API。",
