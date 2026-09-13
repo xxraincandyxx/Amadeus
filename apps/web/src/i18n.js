@@ -45,6 +45,7 @@ const ZH_CN = {
   "Drag or click to add": "拖拽或点击添加",
   "New workflow": "新建工作流",
   "Delete workflow": "删除工作流",
+  "Confirm delete": "确认删除",
   "Untitled workflow": "未命名工作流",
   Trigger: "触发器",
   Agent: "智能体",

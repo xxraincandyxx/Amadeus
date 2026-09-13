@@ -22,6 +22,7 @@
 // @end-amadeus-header
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDeleteButton } from "./DeleteButton";
 import {
   addEdge,
   applyEdgeChanges,
@@ -304,7 +305,7 @@ function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseA
         </div>
         <div className="workflow-toolbar-actions">
           <button type="button" className="icon-button" title={t("Duplicate from this pattern")} aria-label={t("Duplicate from this pattern")} onClick={() => createFromPreset()}><Plus /></button>
-          <button type="button" className="icon-button danger-hover" title={t("Delete agent design")} aria-label={t("Delete agent design")} disabled={library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length} onClick={deleteArchitecture}><Trash /></button>
+          <ConfirmDeleteButton className="icon-button danger-hover" title={t("Delete agent design")} confirmLabel={t("Confirm delete")} disabled={library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length} onConfirm={deleteArchitecture} />
           <button type="button" className="toolbar-button" onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
           <button type="button" className={`toolbar-button ${inspectorMode === "tools" ? "active" : ""}`} onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("tools"); }}><Wrench /><span>{t("Tools")}</span><small>{enabledToolCount || 0}</small></button>
           <button type="button" className="toolbar-button" onClick={exportArchitecture}><DownloadSimple /><span>{t("Export")}</span></button>
