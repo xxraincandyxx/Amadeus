@@ -170,6 +170,7 @@ function exportConversation(session, timeline, format) {
       if (item.kind === "thinking") return `> Reasoning: ${item.text}`;
       if (item.kind === "tool") return `### Tool: ${item.name || "Tool"}\n\n\`\`\`text\n${item.output || item.inputText || ""}\n\`\`\``;
       if (item.kind === "command") return `### ${item.title}\n\n${item.text}`;
+      if (item.kind === "architecture") return `> Architecture${item.label ? ` · ${item.label}` : ""}\n>\n> ${item.text.split("\n").join("\n> ")}`;
       return item.text || "";
     }).filter(Boolean).join("\n\n");
     type = "text/markdown";
@@ -929,6 +930,7 @@ function TimelineItem({ item }) {
   if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} durationSeconds={item.durationSeconds} />;
   if (item.kind === "assistant") return <AssistantMessage text={item.text} at={item.at} />;
   if (item.kind === "user") return <UserMessage text={item.text} at={item.at} />;
+  if (item.kind === "architecture") return <ArchitectureTraffic label={item.label} text={item.text} />;
   if (item.kind === "command") return <CommandResult item={item} />;
   if (item.kind === "error") return <div className="inline-notice error"><WarningCircle />{item.text}</div>;
   return <div className="inline-notice"><ArrowCounterClockwise />{item.text}</div>;
@@ -985,6 +987,18 @@ function CommandResult({ item }) {
       <div className="message-body">
         <div className="message-label">{item.title}</div>
         <MarkdownContent text={item.text} />
+      </div>
+    </article>
+  );
+}
+
+function ArchitectureTraffic({ label, text }) {
+  return (
+    <article className="architecture-traffic">
+      <div className="command-result-icon"><FlowArrow /></div>
+      <div className="message-body">
+        <div className="message-label">{label || "Architecture"}</div>
+        <MarkdownContent text={text} />
       </div>
     </article>
   );
