@@ -88,6 +88,7 @@ test("done commits streamed reasoning before the final answer", () => {
   assert.equal(completed.streamingText, "");
   assert.equal(completed.timeline[0].durationSeconds, 1);
   assert.equal(completed.thinkingStartedAt, null);
+  assert.equal(typeof completed.timeline[1].at, "number");
 });
 
 test("tagged thinking is separated from streamed answer text", () => {

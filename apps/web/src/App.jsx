@@ -259,11 +259,23 @@ function App() {
     if (!sessionId) return;
     const data = await api.getHistory(sessionId);
     const approvals = await api.approvals(sessionId);
-    setRuntime(sessionId, (previous) => ({
-      ...previous,
-      timeline: preserveThinkingTimeline(historyToTimeline(data.messages), previous.timeline),
-      approvals,
-    }));
+    setRuntime(sessionId, (previous) => {
+      const observedAt = new Map();
+      for (const item of previous.timeline) {
+        if (item.at && (item.kind === "user" || item.kind === "assistant")) {
+          observedAt.set(`${item.kind}:${item.text}`, item.at);
+        }
+      }
+      const hydrated = historyToTimeline(data.messages).map((item) => {
+        const at = observedAt.get(`${item.kind}:${item.text}`);
+        return at ? { ...item, at } : item;
+      });
+      return {
+        ...previous,
+        timeline: preserveThinkingTimeline(hydrated, previous.timeline),
+        approvals,
+      };
+    });
   }, [setRuntime]);
 
   useEffect(() => {
@@ -573,7 +585,7 @@ function App() {
     setRuntime(activeId, (previous) => ({
       ...previous,
       status: "running",
-      timeline: [...previous.timeline, { id: `user-${Date.now()}`, kind: "user", text: content }],
+      timeline: [...previous.timeline, { id: `user-${Date.now()}`, kind: "user", text: content, at: Date.now() }],
       streamingText: "",
       thinking: "",
       rawStreamingText: "",
@@ -915,19 +927,44 @@ function Header({ session, status, view, sessionCount, parentSession, detailsOpe
 function TimelineItem({ item }) {
   if (item.kind === "tool") return <ToolCard tool={item} />;
   if (item.kind === "thinking") return <ThinkingBlock text={item.text} available={item.available !== false} durationSeconds={item.durationSeconds} />;
-  if (item.kind === "assistant") return <AssistantMessage text={item.text} />;
-  if (item.kind === "user") return <UserMessage text={item.text} />;
+  if (item.kind === "assistant") return <AssistantMessage text={item.text} at={item.at} />;
+  if (item.kind === "user") return <UserMessage text={item.text} at={item.at} />;
   if (item.kind === "command") return <CommandResult item={item} />;
   if (item.kind === "error") return <div className="inline-notice error"><WarningCircle />{item.text}</div>;
   return <div className="inline-notice"><ArrowCounterClockwise />{item.text}</div>;
 }
 
-function UserMessage({ text }) {
+function MessageMeta({ text, at }) {
   const t = useTranslation();
-  return <article className="message user-message"><div className="message-label">{t("You")}</div><p>{text}</p></article>;
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <div className="message-meta">
+      {at && <time dateTime={new Date(at).toISOString()}>{new Date(at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}</time>}
+      <button type="button" onClick={copy} aria-label={copied ? t("Copied") : t("Copy message")}>{copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}</button>
+    </div>
+  );
 }
 
-function AssistantMessage({ text, streaming = false }) {
+function UserMessage({ text, at }) {
+  const t = useTranslation();
+  return (
+    <article className="message user-turn">
+      <div className="user-message"><div className="message-label">{t("You")}</div><p>{text}</p></div>
+      <MessageMeta text={text} at={at} />
+    </article>
+  );
+}
+
+function AssistantMessage({ text, streaming = false, at = null }) {
   return (
     <article className="message assistant-message">
       <div className="assistant-rail"><div className="assistant-mark"><Sparkle weight="fill" /></div></div>
@@ -935,6 +972,7 @@ function AssistantMessage({ text, streaming = false }) {
         <div className="message-label">Amadeus</div>
         <MarkdownContent text={text} />
         {streaming && <span className="stream-caret" aria-hidden="true" />}
+        {!streaming && <MessageMeta text={text} at={at} />}
       </div>
     </article>
   );
@@ -1023,6 +1061,7 @@ function ToolCard({ tool, live = false }) {
 }
 
 function CodeBlock({ label, text }) {
+  const t = useTranslation();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     await navigator.clipboard.writeText(text);
@@ -1030,7 +1069,7 @@ function CodeBlock({ label, text }) {
     setTimeout(() => setCopied(false), 1200);
   };
   return (
-    <div className="code-block"><div className="code-header"><span>{label}</span><button onClick={copy}>{copied ? <Check /> : <Copy />}</button></div><pre>{text}</pre></div>
+    <div className="code-block"><div className="code-header"><span>{label}</span><button type="button" onClick={copy} aria-label={copied ? t("Copied") : t("Copy")}>{copied ? <Check /> : <Copy />}</button></div><pre>{text}</pre></div>
   );
 }
 
