@@ -4,7 +4,9 @@
 // status: active
 // feature_flags: none
 // provides:
+// - const: ARCHITECTURE_MESSAGE_PREFIX
 // - fn: contentText
+// - fn: architectureNodeLabel
 // - fn: historyToTimeline
 // - fn: preserveThinkingTimeline
 // - fn: reduceEvent
@@ -19,6 +21,7 @@
 // - Responses without exposed reasoning do not create placeholder timeline entries.
 // - Tool results attach to their originating tool call across message boundaries.
 // - Live observations carry an observation time; hydrated history never invents one.
+// - Runtime-injected architecture steering messages stay distinct from human input.
 // side_effects: none
 // tests:
 // - apps/web/src/sessionState.test.js
@@ -30,6 +33,14 @@ export function contentText(content = []) {
     .map((block) => block.text || "")
     .join("\n")
     .trim();
+}
+
+export const ARCHITECTURE_MESSAGE_PREFIX = "[Architecture node: ";
+
+export function architectureNodeLabel(text = "") {
+  if (!text.startsWith(ARCHITECTURE_MESSAGE_PREFIX)) return "";
+  const end = text.indexOf("]");
+  return end === -1 ? "" : text.slice(ARCHITECTURE_MESSAGE_PREFIX.length, end);
 }
 
 export function historyToTimeline(messages = []) {
@@ -46,7 +57,11 @@ export function historyToTimeline(messages = []) {
       items.push({ id: `history-thinking-${messageIndex}`, kind: "thinking", text: thinking, complete: true });
     }
     if (text) {
-      items.push({ id: `history-${messageIndex}`, kind: message.role, text });
+      if (message.role === "user" && text.startsWith(ARCHITECTURE_MESSAGE_PREFIX)) {
+        items.push({ id: `history-architecture-${messageIndex}`, kind: "architecture", label: architectureNodeLabel(text), text });
+      } else {
+        items.push({ id: `history-${messageIndex}`, kind: message.role, text });
+      }
     }
     for (const [blockIndex, block] of (message.content || []).entries()) {
       if (block.type === "tool_use") {

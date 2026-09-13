@@ -75,6 +75,23 @@ test("history attaches tool results to the tool call in the previous message", (
   });
 });
 
+test("runtime-injected architecture steering messages stay distinct from human input", () => {
+  const timeline = historyToTimeline([
+    { role: "user", content: [{ type: "text", text: "Write about Rust." }] },
+    {
+      role: "user",
+      content: [{
+        type: "text",
+        text: '[Architecture node: Action or answer?]\nChoose the transition that best matches the current workflow state.\nOriginal request:\nWrite about Rust.\nCurrent workflow result:\n---\n\n### Summary\n\n| a | b |\n| --- | --- |\n\nChoose the next transition.',
+      }],
+    },
+  ]);
+
+  assert.deepEqual(timeline.map(({ kind }) => kind), ["user", "architecture"]);
+  assert.equal(timeline[1].label, "Action or answer?");
+  assert.ok(timeline[1].text.startsWith("[Architecture node:"));
+});
+
 test("done commits streamed reasoning before the final answer", () => {
   const withThinking = reduceEvent(runtime, "thinking", { delta: "Inspect the inputs." });
   const withText = reduceEvent(withThinking, "text", { content: "The result is 42." });

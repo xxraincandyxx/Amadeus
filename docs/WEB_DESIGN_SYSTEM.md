@@ -62,6 +62,8 @@ Reasoning remains a separate inline inspector before the final answer. Available
 
 Completed messages may close with a quiet metadata row instead of visible chrome: a locale timestamp, when the client observed the message, and a copy action for the message text. Live observations stamp the time they were captured; hydrated history carries no server timestamps and therefore omits the time rather than inventing one. The copy button reuses the 28 px ghost-button pattern from code headers, exposes an accessible name, and may stay hidden until the row or button is hovered or focused — but must remain permanently visible on touch (hover-none) layouts. User messages render as compact, right-aligned pills; assistant copy stays directly in the message flow.
 
+Messages injected by the agent runtime itself (architecture steering prompts, identified by the `[Architecture node: …]` wire prefix) are internal traffic, not human input: they render as quiet, indented cards with a monospace node label, their embedded model markdown rendered through the same pipeline as assistant copy, and they never adopt the user pill styling.
+
 ## Composer command palette
 
 The slash-command palette is an elevated extension of the composer, not a detached dialog. It opens directly above the input only when `/` is character zero. The initial list preserves the intentional command catalog order; typed text filters command names without searching descriptive copy. Commands with arguments complete into the composer, while commands without arguments can execute immediately.
