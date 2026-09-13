@@ -1,11 +1,12 @@
 # Amadeus
 
-An AI agent architecture framework in Rust with a composable workflow runtime, a ReAct compatibility agent, multi-provider LLM support, extensible tools, policy-based safety controls, and interactive TUI and REST API adapters over a shared core runtime.
+An AI agent architecture framework in Rust with a composable workflow runtime, a ReAct compatibility agent, multi-provider LLM support, extensible tools, and policy-based safety controls — delivered primarily as a **native macOS desktop app** (Tauri + React workspace over the bundled HTTP runtime), with interactive TUI and REST API adapters over the same shared core.
 
 ![Amadeus Preview](assets/amadeus_preview.jpg)
 
 ## Features
 
+- **Native macOS Desktop App** — The primary client: a Tauri 2 bundle that hosts the React agent workspace in a native webview and supervises an embedded Amadeus server on `127.0.0.1:3000`, with live sessions, tool execution and approvals, checkpoints, and runtime connection settings.
 - **Composable Agent Architectures** — Build typed asynchronous workflows, bind each workflow to an agent identity and resource set, and hold multiple differently configured agents in one registry; models and tools are injected resources rather than the owner of control flow.
 - **Multi-Provider LLM** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
 - **ReAct Agent Loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
@@ -14,9 +15,8 @@ An AI agent architecture framework in Rust with a composable workflow runtime, a
 - **Multi-Agent Orchestration** — Spawn agents with distinct profiles, route tasks by capability, and coordinate with a priority-ordered task queue.
 - **RAG Semantic Search** — Ingest files, URLs, or raw text into a persistent vector store; agents can query at runtime through the `rag` tool.
 - **Context Compaction** — Automatic context-window management with configurable thresholds, LLM-based summarization, and pluggable triggers.
-- **Interactive TUI** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, themed rendering, and conversation export.
-- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more.
-- **Web and macOS App** — React agent workspace with live sessions, tools, approvals, runtime connection settings, and a native Tauri macOS bundle.
+- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more; the backend that both the desktop app and any custom client talk to.
+- **Interactive TUI** — Secondary client: ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, themed rendering, and conversation export.
 - **Telemetry** — Structured event recording with pluggable sinks (JSONL file, in-memory) for runtime observability.
 - **Session Management** — Automatic session persistence, restore, checkpoints with code-state rewind, and conversation export to Markdown or JSON.
 
@@ -41,11 +41,27 @@ cp .amadeus/settings.example.json .amadeus/settings.json
 cargo build --release --features full
 ```
 
-### Interactive Terminal UI
+### Native macOS Desktop App (primary)
+
+Development mode — builds the server sidecar, then opens the native window:
 
 ```bash
-cargo run --features full
+cd apps/web
+npm install
+npm run desktop:dev
 ```
+
+Build a distributable application bundle:
+
+```bash
+cd apps/web
+npm run desktop:build
+# -> apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
+```
+
+The app starts and supervises its own server on port 3000; if a server already
+owns that port it reuses it. See [docs/MACOS_APP.md](docs/MACOS_APP.md) for
+architecture and connection settings.
 
 ### HTTP API Server
 
@@ -55,6 +71,12 @@ cargo run --features full -- --server
 
 # Custom port
 cargo run --features full -- --server 8080
+```
+
+### Interactive Terminal UI (secondary)
+
+```bash
+cargo run --features full
 ```
 
 ### Clean Generated Output
@@ -221,17 +243,19 @@ When attached, the policy system blocks dangerous patterns including `sudo`, `ch
 
 ## Architecture
 
-Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends.
+Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends. The desktop app is the primary client; the TUI and raw HTTP are secondary surfaces over the same runtime.
 
-The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
-
-The same interface is packaged as a native macOS client. See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds, [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract, and [`CONTRIBUTING.md`](CONTRIBUTING.md) for repository contribution standards.
+The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. The same interface is packaged as the native macOS client ([`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds); the TUI ([`crates/tui`](crates/tui)) is the terminal alternative. See also [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract and [`CONTRIBUTING.md`](CONTRIBUTING.md) for repository contribution standards.
 
 ```
-CLI / Library call
-  -> Config + Provider selection
-  -> Core Runtime
-  -> TUI adapter | HTTP adapter | Assessment runner
+macOS App (Tauri) | Browser (apps/web) | TUI | Library call
+      |                |                |      |
+      +----------------+-------+--------+------+
+                               |
+                    HTTP API (Axum, /v1/sessions/*)
+                               |
+                    Core Runtime (ReAct agent loop,
+                    tools, policy, compaction, memory)
 ```
 
 ### Workspace Layout
@@ -389,9 +413,9 @@ The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start with `--
 
 The API has no built-in authentication and full CORS enabled, designed for trusted internal use or deployment behind a reverse proxy.
 
-## TUI
+## TUI (Terminal Client)
 
-The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
+The TUI is the secondary client — an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
 
 **Layout:**
 - **Messages pane** — Markdown-rendered conversation history with collapsible tool execution groups and reasoning blocks
