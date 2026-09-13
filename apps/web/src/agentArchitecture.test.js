@@ -9,6 +9,7 @@
 // - module: apps/web/src/agentArchitecture.js
 // invariants:
 // - Presets are valid control-flow graphs and only ReAct reports production support.
+// - Maximum transition limits are positive integers; other input falls back without corruption.
 // side_effects: none
 // tests:
 // - cmd: npm test
@@ -16,7 +17,20 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, createToolProfile, parseArchitectureFile, validateAgentArchitecture } from "./agentArchitecture.js";
+import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, createToolProfile, parseArchitectureFile, parsePositiveInt, validateAgentArchitecture } from "./agentArchitecture.js";
+
+test("parsePositiveInt accepts whole positive numbers and rejects everything else", () => {
+  assert.equal(parsePositiveInt("1024", 7), 1024);
+  assert.equal(parsePositiveInt("1e3", 7), 1000);
+  assert.equal(parsePositiveInt(" 42 ", 7), 42);
+  assert.equal(parsePositiveInt("abc", 7), 7);
+  assert.equal(parsePositiveInt("1e3x", 7), 7);
+  assert.equal(parsePositiveInt("3.7", 7), 7);
+  assert.equal(parsePositiveInt("0", 7), 7);
+  assert.equal(parsePositiveInt("-5", 7), 7);
+  assert.equal(parsePositiveInt("", 7), 7);
+  assert.equal(parsePositiveInt(undefined, 7), 7);
+});
 
 test("every architecture preset is a valid control-flow graph", () => {
   const library = createArchitectureLibrary();

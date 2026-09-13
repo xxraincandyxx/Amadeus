@@ -63,6 +63,11 @@ function uniqueId(prefix) {
 
 function text(value, fallback = "") { return typeof value === "string" ? value : fallback; }
 
+export function parsePositiveInt(value, fallback) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function normalizedPosition(position) {
   return { x: Number.isFinite(position?.x) ? position.x : 0, y: Number.isFinite(position?.y) ? position.y : 0 };
 }
@@ -159,7 +164,7 @@ export function normalizeAgentArchitecture(value) {
   if (!value || typeof value !== "object") throw new Error("Architecture file must contain a JSON object.");
   const preset = presetDefinition(value.preset);
   const nodes = Array.isArray(value.nodes) ? value.nodes.map(normalizeNode).filter(Boolean) : [];
-  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id: text(value.id, uniqueId("architecture")), name: text(value.name, "Imported agent"), description: text(value.description, preset.description), preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: Number.isInteger(value.maxTransitions) && value.maxTransitions > 0 ? value.maxTransitions : 1024, toolProfile: createToolProfile(value.toolProfile), entryNodeId: text(value.entryNodeId, nodes[0]?.id || ""), nodes, edges: Array.isArray(value.edges) ? value.edges.map(normalizeEdge).filter(Boolean) : [] };
+  return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id: text(value.id, uniqueId("architecture")), name: text(value.name, "Imported agent"), description: text(value.description, preset.description), preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: parsePositiveInt(value.maxTransitions, 1024), toolProfile: createToolProfile(value.toolProfile), entryNodeId: text(value.entryNodeId, nodes[0]?.id || ""), nodes, edges: Array.isArray(value.edges) ? value.edges.map(normalizeEdge).filter(Boolean) : [] };
 }
 
 export function parseArchitectureFile(contents) {

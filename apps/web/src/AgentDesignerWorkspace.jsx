@@ -69,6 +69,7 @@ import {
   createArchitectureNode,
   nodeDefinition,
   parseArchitectureFile,
+  parsePositiveInt,
   presetDefinition,
   validateAgentArchitecture,
 } from "./agentArchitecture";
@@ -376,7 +377,7 @@ function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseA
             <div className="workflow-overview-metrics"><div><span>{t("Nodes")}</span><strong>{architecture.nodes.length}</strong></div><div><span>{t("Transitions")}</span><strong>{architecture.edges.length}</strong></div></div>
             <label className="workflow-description-field">{t("Agent name")}<input value={architecture.name} onChange={(event) => updateArchitecture({ ...architecture, name: event.target.value })} /></label>
             <label className="workflow-description-field">{t("Description")}<textarea rows="3" value={architecture.description} onChange={(event) => updateArchitecture({ ...architecture, description: event.target.value })} /></label>
-            <label className="workflow-description-field">{t("Maximum transitions")}<input inputMode="numeric" value={architecture.maxTransitions} onChange={(event) => updateArchitecture({ ...architecture, maxTransitions: Math.max(1, Number.parseInt(event.target.value, 10) || 1) })} /></label>
+            <label className="workflow-description-field">{t("Maximum transitions")}<input inputMode="numeric" value={architecture.maxTransitions} onChange={(event) => { const parsed = parsePositiveInt(event.target.value, architecture.maxTransitions); if (parsed !== architecture.maxTransitions) updateArchitecture({ ...architecture, maxTransitions: parsed }); }} /></label>
             <div className="workflow-diagnostics"><strong>{t("Validation")}</strong>{!validation.errors.length && !validation.warnings.length ? <div className="workflow-diagnostic valid"><CheckCircle />{t("Architecture graph is structurally valid.")}</div> : [...validation.errors, ...validation.warnings].map((item, index) => <div className={`workflow-diagnostic ${validation.errors.includes(item) ? "error" : "warning"}`} key={`${item.code}-${index}`}><WarningCircle />{diagnosticText(item, t)}</div>)}</div>
             <div className="workflow-runtime-note"><Robot /><div><strong>{runtimeStatus === "production" ? t("Use from Agent workspace") : t("Fix the design before running")}</strong><span>{runtimeStatus === "production" ? t("The backend compiles this serialized graph and executes its model, tool, routing, and delegation nodes.") : t("The graph must be structurally valid before it can create an agent session.")}</span>{runtimeStatus === "production" && <button onClick={() => onUseArchitecture(architecture.id)}>{t("Create agent")}<ArrowRight /></button>}<button className="text-only" onClick={onOpenAgentWorkspace}>{t("Open Agent workspace")}</button></div></div>
           </>}
