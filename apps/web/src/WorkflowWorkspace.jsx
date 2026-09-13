@@ -390,7 +390,6 @@ function WorkflowEditor({ t, themeColor }) {
         <aside className="workflow-palette">
           <div className="workflow-panel-heading">
             <div><strong>{t("Node library")}</strong><span>{t("Drag or click to add")}</span></div>
-            <button type="button" title={t("New workflow")} aria-label={t("New workflow")} onClick={createNewWorkflow}><Plus /></button>
           </div>
           <div className="workflow-palette-list">
             {WORKFLOW_NODE_TYPES.map((definition) => {
