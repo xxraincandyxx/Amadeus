@@ -37,7 +37,15 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 
 ## Preview
 
-![Amadeus TUI preview](assets/amadeus_preview.jpg)
+**Interactive TUI**
+
+<p align="center">
+  <img src="assets/tui_preview.jpg" alt="Amadeus TUI — streaming ReAct turn with tool groups, markdown rendering, and a status footer" width="640">
+</p>
+
+**Web workspace**
+
+![Amadeus web workspace — multi-agent sessions, reasoning disclosure, and live markdown](assets/web_preview.jpg)
 
 ## Quickstart
 
@@ -456,6 +464,8 @@ The full endpoint reference lives in [docs/HTTP_API.md](docs/HTTP_API.md).
 ### Web workspace & macOS app
 
 The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
+
+![Amadeus task workflow designer — node-based control flow canvas](assets/web_workflow.jpg)
 
 The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
 
