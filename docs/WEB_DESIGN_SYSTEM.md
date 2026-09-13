@@ -29,7 +29,7 @@ The canonical runtime tokens live in `apps/web/src/styles.css` under `:root`.
 | Border | `--border` | `#3a3a3a` | Primary separators |
 | Text | `--text` | `#f0f0f0` | Primary copy |
 | Muted text | `--muted` | `#a7a7a7` | Secondary information |
-| Quiet text | `--quiet` | `#757575` | Metadata |
+| Quiet text | `--quiet` | `#949494` | Metadata (WCAG AA against the dark surfaces) |
 | Accent | `--accent` | `#a72f42` (dark-red default) | Active work and approvals; configurable in Settings |
 | Success | `--green` | `#55c97a` | Connected/completed status |
 | Failure | `--red` | `#ec6b6b` | Errors and destructive affordances |
@@ -57,6 +57,10 @@ Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20
 Assistant Markdown belongs directly in the message flow rather than inside a generic card. Preserve the body measure and use typographic hierarchy for headings, paragraphs, lists, blockquotes, and emphasis. Inline code uses a restrained neutral surface with the orange accent reserved for text contrast. Fenced code uses the established 11 px radius, a quiet language header, a Phosphor copy action, and horizontal overflow. Tables use sparse row separators, a slightly raised header surface, and horizontal scrolling at narrow widths.
 
 Reasoning remains a separate inline inspector before the final answer. Available reasoning uses the existing Show and Hide disclosure. Missing provider reasoning uses a non-interactive Reasoning unavailable status so absence cannot be mistaken for a rendering failure.
+
+## Conversation metadata
+
+Completed messages may close with a quiet metadata row instead of visible chrome: a locale timestamp, when the client observed the message, and a copy action for the message text. Live observations stamp the time they were captured; hydrated history carries no server timestamps and therefore omits the time rather than inventing one. The copy button reuses the 28 px ghost-button pattern from code headers, exposes an accessible name, and may stay hidden until the row or button is hovered or focused — but must remain permanently visible on touch (hover-none) layouts. User messages render as compact, right-aligned pills; assistant copy stays directly in the message flow.
 
 ## Composer command palette
 

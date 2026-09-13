@@ -18,6 +18,7 @@
 // - Completed live reasoning records at least one elapsed second when timing is available.
 // - Responses without exposed reasoning do not create placeholder timeline entries.
 // - Tool results attach to their originating tool call across message boundaries.
+// - Live observations carry an observation time; hydrated history never invents one.
 // side_effects: none
 // tests:
 // - apps/web/src/sessionState.test.js
@@ -193,7 +194,7 @@ export function reduceEvent(state, eventName, payload) {
         durationSeconds,
       });
     }
-    if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText });
+    if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText, at: Date.now() });
     streamingText = "";
     thinking = "";
     rawStreamingText = "";
