@@ -45,6 +45,7 @@ Do not add a second accent color. The selected accent and its derived alpha toke
 - Controls normally use 34–42 px heights. Avoid oversized marketing-style calls to action.
 - Use borders, dividers, and negative space for hierarchy before adding shadows.
 - Shadows are reserved for the composer, dialogs, drawers, and other genuinely elevated layers.
+- Canvas nodes in both designers use a fixed 208 px width; labels and subtitles ellipsize or clamp instead of growing the card, so preset spacing always leaves a clear gutter between connected nodes.
 
 ## Typography and icons
 
