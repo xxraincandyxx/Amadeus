@@ -132,8 +132,12 @@ function diagnosticText(item, t) {
     entry_required: t("Choose an entry node."),
     entry_missing: t("The entry node no longer exists."),
     duplicate_node: t("Node identifiers must be unique."),
-    dangling_edge: t("{count} connections reference missing nodes.", { count: item.count }),
-    unreachable_nodes: t("{count} nodes cannot be reached from the entry node.", { count: item.count }),
+    dangling_edge: item.count === 1
+      ? t("{count} connection references missing nodes.", { count: item.count })
+      : t("{count} connections reference missing nodes.", { count: item.count }),
+    unreachable_nodes: item.count === 1
+      ? t("{count} node cannot be reached from the entry node.", { count: item.count })
+      : t("{count} nodes cannot be reached from the entry node.", { count: item.count }),
     output_recommended: t("Add an Output node to return a workflow result."),
   };
   return messages[item.code] || item.code;
@@ -450,7 +454,7 @@ function WorkflowEditor({ t, themeColor }) {
           </ReactFlow>
           <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>
             {validation.isValid ? validation.warnings.length ? <WarningCircle /> : <CheckCircle /> : <WarningCircle />}
-            <span>{validation.isValid ? validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Workflow valid") : t("{count} validation errors", { count: validation.errors.length })}</span>
+            <span>{validation.isValid ? validation.warnings.length === 1 ? t("Valid with {count} warning", { count: validation.warnings.length }) : validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Workflow valid") : validation.errors.length === 1 ? t("{count} validation error", { count: validation.errors.length }) : t("{count} validation errors", { count: validation.errors.length })}</span>
           </div>
         </div>
 

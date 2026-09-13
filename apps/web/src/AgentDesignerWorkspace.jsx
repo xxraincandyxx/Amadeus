@@ -122,9 +122,13 @@ function diagnosticText(item, t) {
     duplicate_node_id: t("Node identifiers must be unique."),
     entry_required: t("Choose an architecture entry node."),
     entry_missing: t("The architecture entry node no longer exists."),
-    dangling_edge: t("{count} transitions reference missing nodes.", { count: item.count }),
+    dangling_edge: item.count === 1
+      ? t("{count} transition references missing nodes.", { count: item.count })
+      : t("{count} transitions reference missing nodes.", { count: item.count }),
     output_required: t("Add a Complete node to end the run."),
-    unreachable_nodes: t("{count} nodes cannot be reached from the entry node.", { count: item.count }),
+    unreachable_nodes: item.count === 1
+      ? t("{count} node cannot be reached from the entry node.", { count: item.count })
+      : t("{count} nodes cannot be reached from the entry node.", { count: item.count }),
   };
   return messages[item.code] || item.code;
 }
@@ -335,7 +339,7 @@ function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseA
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? themeColor : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />
           </ReactFlow>
-          <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>{validation.isValid && !validation.warnings.length ? <CheckCircle /> : <WarningCircle />}<span>{validation.isValid ? validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Architecture valid") : t("{count} validation errors", { count: validation.errors.length })}</span></div>
+          <div className={`workflow-validation-chip ${validation.isValid ? validation.warnings.length ? "warning" : "valid" : "invalid"}`}>{validation.isValid && !validation.warnings.length ? <CheckCircle /> : <WarningCircle />}<span>{validation.isValid ? validation.warnings.length === 1 ? t("Valid with {count} warning", { count: validation.warnings.length }) : validation.warnings.length ? t("Valid with {count} warnings", { count: validation.warnings.length }) : t("Architecture valid") : validation.errors.length === 1 ? t("{count} validation error", { count: validation.errors.length }) : t("{count} validation errors", { count: validation.errors.length })}</span></div>
         </div>
 
         <aside className="workflow-inspector">
