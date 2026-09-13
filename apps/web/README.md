@@ -104,4 +104,6 @@ npm run desktop:build
 
 The web app is intended for trusted local use. The Amadeus HTTP server currently has unrestricted CORS and no built-in authentication; see `docs/HTTP_API.md` before any remote deployment.
 
+For black-box GUI testing against the mock or the real runtime — including known automation pitfalls and the bug-to-merged-fix workflow — see [`../../docs/WEB_TESTING.md`](../../docs/WEB_TESTING.md).
+
 Visual changes must follow [`../../docs/WEB_DESIGN_SYSTEM.md`](../../docs/WEB_DESIGN_SYSTEM.md) and the repository workflow in [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md).
