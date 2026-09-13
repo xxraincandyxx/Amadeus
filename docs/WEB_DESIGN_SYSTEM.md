@@ -47,6 +47,10 @@ Do not add a second accent color. The selected accent and its derived alpha toke
 - Shadows are reserved for the composer, dialogs, drawers, and other genuinely elevated layers.
 - Canvas nodes in both designers use a fixed 208 px width; labels and subtitles ellipsize or clamp instead of growing the card, so preset spacing always leaves a clear gutter between connected nodes.
 
+## Materials
+
+The app sidebar (desktop rail and mobile drawer) is the one glass surface: a translucent `--sidebar` fill at roughly 68% opacity over `backdrop-filter: blur(24px) saturate(1.4)`, a hairline right border, and a faint top inset highlight. The app shell carries a barely-tinted ambient gradient behind it so the material reads at rest. The conversation scroll area extends beneath the desktop sidebar; the mobile drawer floats over live content. Labels on the glass stay monochrome. Provide the opaque fallbacks: `@supports not (backdrop-filter)`, `prefers-reduced-transparency: reduce`, and `prefers-contrast: more` all switch the sidebar back to solid `--sidebar`. Glass belongs nowhere else — content cards, lists, and page backgrounds stay opaque.
+
 ## Typography and icons
 
 The interface uses the local Geist/SF Pro/Segoe UI system stack and platform monospace fonts for identifiers, commands, and code. Keep body copy at readable 13–15 px sizes and reserve larger display type for empty or welcome states.
