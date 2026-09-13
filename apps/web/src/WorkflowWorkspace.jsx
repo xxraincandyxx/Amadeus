@@ -21,6 +21,7 @@
 // @end-amadeus-header
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ConfirmDeleteButton } from "./DeleteButton";
 import {
   addEdge,
   applyEdgeChanges,
@@ -380,7 +381,7 @@ function WorkflowEditor({ t, themeColor }) {
           <button type="button" className="icon-button workflow-history-button" title={t("Redo")} aria-label={t("Redo")} disabled={!historyRef.current.future.length} onClick={() => restoreSnapshot("future")}><ArrowUUpRight /></button>
           <span className="workflow-toolbar-divider" />
           <button type="button" className="icon-button" title={t("New workflow")} aria-label={t("New workflow")} onClick={createNewWorkflow}><Plus /></button>
-          <button type="button" className="icon-button danger-hover" title={t("Delete workflow")} aria-label={t("Delete workflow")} disabled={library.workflows.length <= 1} onClick={deleteWorkflow}><Trash /></button>
+          <ConfirmDeleteButton className="icon-button danger-hover" title={t("Delete workflow")} confirmLabel={t("Confirm delete")} disabled={library.workflows.length <= 1} onConfirm={deleteWorkflow} />
           <button type="button" className="toolbar-button" aria-label={t("Import")} title={t("Import")} onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
           <button type="button" className="toolbar-button" aria-label={t("Export")} title={t("Export")} onClick={exportWorkflow}><DownloadSimple /><span>{t("Export")}</span></button>
           <button type="button" className="workflow-run-button" disabled title={t("Workflow execution API is not available yet.")}><Play weight="fill" />{t("Run")}</button>
@@ -418,7 +419,7 @@ function WorkflowEditor({ t, themeColor }) {
           </div>
           <div className="workflow-library-actions">
             <button type="button" onClick={createNewWorkflow}><Plus />{t("New workflow")}</button>
-            <button type="button" className="danger" disabled={library.workflows.length <= 1} onClick={deleteWorkflow}><Trash />{t("Delete workflow")}</button>
+            <ConfirmDeleteButton className="danger" label={t("Delete workflow")} confirmLabel={t("Confirm delete")} disabled={library.workflows.length <= 1} onConfirm={deleteWorkflow} />
           </div>
         </aside>
 

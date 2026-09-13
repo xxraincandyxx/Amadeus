@@ -120,6 +120,7 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .toolbar-button:hover, .icon-button:hover, .mobile-menu:hover { background: #292929; }
 .toolbar-button.active { border-color: rgba(var(--accent-rgb),.55); background: rgba(var(--accent-rgb),.1); color: color-mix(in srgb, var(--accent) 38%, white); }
 .danger-hover:hover { color: var(--red); border-color: rgba(236,107,107,.38); }
+.confirm-armed { background: rgba(236,107,107,.16) !important; border-color: rgba(236,107,107,.55) !important; color: #f1a3a3 !important; }
 .mobile-menu { display: none; }
 .status-badge { border-radius: 999px; padding: 5px 9px; background: #292929; color: #a8a8a8; font-size: 11px; text-transform: capitalize; }
 .status-badge.running, .status-badge.awaiting_approval { color: color-mix(in srgb, var(--accent) 42%, white); background: var(--accent-soft); }
