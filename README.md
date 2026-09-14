@@ -4,7 +4,7 @@
 
 **A composable, multi-provider AI agent framework in Rust.**
 
-Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memory · RAG · TUI / REST / Web frontends
+Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memory · RAG · native macOS app / web / TUI / REST frontends
 
 [![CI](https://github.com/xxraincandyxx/Amadeus/actions/workflows/ci.yml/badge.svg)](https://github.com/xxraincandyxx/Amadeus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -12,7 +12,7 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory](#tiered-memory) · [Library](#using-as-a-library) · [TUI](#tui) · [HTTP API](#http-api) · [Web & macOS](#web-workspace--macos-app) · [Python SDK](#python-sdk) · [Docs](#documentation)
+[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory](#tiered-memory) · [Library](#using-as-a-library) · [Web & macOS](#web-workspace--macos-app) · [HTTP API](#http-api) · [TUI](#tui) · [Python SDK](#python-sdk) · [Docs](#documentation)
 
 </div>
 
@@ -20,6 +20,7 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 
 ## Highlights
 
+- **Native macOS desktop app (primary client)** — The Tauri 2 bundle hosts the React agent workspace in a native webview and supervises an embedded Amadeus server on `127.0.0.1:3000`, with live sessions, tools, approvals, checkpoints, and runtime connection settings.
 - **Composable agent architectures** — Build typed asynchronous workflows, bind each workflow to an agent identity and resource set, and hold multiple differently configured agents in one registry. Models and tools are injected resources, not owners of the control flow.
 - **Multi-provider LLM support** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
 - **ReAct agent loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
@@ -29,23 +30,22 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 - **Tiered memory** — Short-term context, a privacy-aware mid-term record database filled at compaction time, and long-term JSON/RAG memory (see [Tiered memory](#tiered-memory)).
 - **RAG semantic search** — Ingest files, URLs, or raw text into a persistent vector store with pluggable embedding backends and int8 quantization; agents query it at runtime through the `rag` tool.
 - **Context compaction** — Automatic context-window management with configurable thresholds, LLM-based summarization, and pluggable triggers.
-- **Interactive TUI** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, 12 themes, and conversation export.
-- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more.
-- **Web and macOS app** — React agent workspace with live sessions, tools, approvals, and runtime connection settings, packaged as a native Tauri macOS bundle.
+- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more; the shared backend that both the desktop app and the TUI talk to.
+- **Interactive TUI (secondary client)** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, 12 themes, and conversation export.
 - **Telemetry** — Structured event recording with pluggable sinks (JSONL file, in-memory) for runtime observability.
 - **Session management** — Automatic session persistence, restore, checkpoints with code-state rewind, and conversation export to Markdown or JSON.
 
 ## Preview
+
+**Native macOS app & web workspace**
+
+![Amadeus web workspace — multi-agent sessions, reasoning disclosure, and live markdown](assets/web_preview.jpg)
 
 **Interactive TUI**
 
 <p align="center">
   <img src="assets/tui_preview.jpg" alt="Amadeus TUI — streaming ReAct turn with tool groups, markdown rendering, and a status footer" width="640">
 </p>
-
-**Web workspace**
-
-![Amadeus web workspace — multi-agent sessions, reasoning disclosure, and live markdown](assets/web_preview.jpg)
 
 ## Quickstart
 
@@ -71,7 +71,28 @@ cargo build --release --features full
 > [!TIP]
 > Amadeus has no default features — use `--features full` for repository development and everyday use.
 
-### Interactive terminal UI
+### Native macOS desktop app (primary)
+
+Development mode — builds the server sidecar, then opens the native window:
+
+```bash
+cd apps/web
+npm install
+npm run desktop:dev
+```
+
+Build a distributable application bundle:
+
+```bash
+cd apps/web
+npm run desktop:build
+# -> apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
+```
+
+The app starts and supervises its own server on port 3000; if a server already
+owns that port it reuses it. See [docs/MACOS_APP.md](docs/MACOS_APP.md).
+
+### Interactive terminal UI (secondary)
 
 ```bash
 cargo run --features full
@@ -415,7 +436,15 @@ When attached, the policy system blocks dangerous patterns including `sudo`, `ch
 
 ## Frontends
 
-### TUI
+### Web workspace & macOS app (primary)
+
+The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
+
+![Amadeus task workflow designer — node-based control flow canvas](assets/web_workflow.jpg)
+
+The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
+
+### TUI (terminal client)
 
 The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
 
@@ -460,14 +489,6 @@ The full endpoint reference lives in [docs/HTTP_API.md](docs/HTTP_API.md).
 
 > [!WARNING]
 > The API has no built-in authentication and full CORS enabled — it is designed for trusted internal use or deployment behind a reverse proxy.
-
-### Web workspace & macOS app
-
-The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions.
-
-![Amadeus task workflow designer — node-based control flow canvas](assets/web_workflow.jpg)
-
-The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
 
 ### Python SDK
 
