@@ -31,6 +31,7 @@
 // - Slash commands advertised by the composer execute without model involvement.
 // - Interface language selection persists across web and native client launches.
 // - The selected theme accent persists and applies to every workspace.
+// - Sidebar and main-page surface opacity persist independently for each local client.
 // - Workspace identity and active-session selection persist per local application user.
 // - Agent character profiles persist per workspace and session for the local application user.
 // - Native overlay title-bar surfaces remain draggable without intercepting toolbar controls.
@@ -95,7 +96,7 @@ import { useResizablePanel } from "./panelResize";
 import { historyToTimeline, preserveThinkingTimeline, reduceEvent } from "./sessionState";
 import { SettingsWorkspace } from "./SettingsWorkspace";
 import { commandDraft, filterSlashCommands, parseSlashInput, SLASH_COMMANDS } from "./slashCommands";
-import { applyThemeColor, loadThemeColor } from "./theme";
+import { applySurfaceAppearance, applyThemeColor, loadSurfaceAppearance, loadThemeColor } from "./theme";
 import { ToolsWorkspace } from "./ToolsWorkspace";
 import { loadWorkspaceActiveSession, rememberWorkspace, saveWorkspaceActiveSession } from "./workspaceState";
 
@@ -196,6 +197,7 @@ function App() {
   });
   const [language, setLanguage] = useState(() => normalizeLanguage(localStorage.getItem("amadeus.language") || navigator.language));
   const [themeColor, setThemeColor] = useState(() => loadThemeColor(localStorage));
+  const [surfaceAppearance, setSurfaceAppearance] = useState(() => loadSurfaceAppearance(localStorage));
   const [sessions, setSessions] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [workspaceProfile, setWorkspaceProfile] = useState(null);
@@ -396,6 +398,10 @@ function App() {
   useEffect(() => {
     applyThemeColor(themeColor, localStorage);
   }, [themeColor]);
+
+  useEffect(() => {
+    applySurfaceAppearance(surfaceAppearance, localStorage);
+  }, [surfaceAppearance]);
 
   useEffect(() => {
     localStorage.setItem(AGENT_ARCHITECTURE_STORAGE_KEY, JSON.stringify({ ...architectureLibrary, architectures: architectureLibrary.architectures.map(architectureForExport) }));
@@ -764,9 +770,11 @@ function App() {
             online={serverOnline}
             language={language}
             themeColor={themeColor}
+            surfaceAppearance={surfaceAppearance}
             workspace={workspaceProfile}
             onLanguage={setLanguage}
             onThemeColor={setThemeColor}
+            onSurfaceAppearance={setSurfaceAppearance}
             onReconnect={reconnect}
             t={t}
           />

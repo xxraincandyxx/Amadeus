@@ -57,7 +57,7 @@ The default API address is `http://127.0.0.1:3000`. Set a development default wh
 VITE_AMADEUS_API_URL=http://localhost:8080 npm run dev
 ```
 
-The Settings page includes interface language, a configurable theme accent, and runtime Connection settings. Dark red is the default accent. The selected color is stored under `amadeus.themeColor`; the saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
+The Settings page includes interface language, a configurable theme accent, independent sidebar and main-page opacity controls, and runtime Connection settings. Dark red is the default accent. The sidebar defaults to 68% fill opacity, while the main page defaults to 100% so its glass effect is disabled. Surface preferences are stored together under `amadeus.surfaceAppearance.v1`; the selected color is stored under `amadeus.themeColor`. The saved endpoint overrides the build-time default, is stored under `amadeus.apiUrl`, and can be tested or reset without rebuilding the client.
 
 The client derives the current workspace from the connected server's `working_dir`. Workspace metadata and the last selected session are stored in the versioned `amadeus.workspaces.v1` registry. Each session also has an optional local character profile with a display name, role, biography, likes, dislikes, and profile image. Open it from the Profile button in a conversation header. Character profiles are stored in `amadeus.agentProfiles.v1` and remain isolated by workspace and session. Browser profiles and native OS users have separate local storage, so one user's workspace selection does not overwrite another user's state on the same installation.
 

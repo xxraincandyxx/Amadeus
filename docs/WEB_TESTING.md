@@ -87,7 +87,7 @@ Environment gotchas:
   actionability. Re-snapshot, or click via one in-page `el.click()` and move on.
 - Workflow persistence to `localStorage` (`amadeus.workflowLibrary.v1`) is debounced — never
   assert on stored state immediately after a click; read the live DOM instead.
-- Locale and preference keys: `amadeus.language`, `amadeus.themeColor`, `amadeus.apiUrl`,
+- Locale and preference keys: `amadeus.language`, `amadeus.themeColor`, `amadeus.surfaceAppearance.v1`, `amadeus.apiUrl`,
   `amadeus.activeSession`. Test both English and 简体中文; untranslated or raw-browser error
   strings are findings.
 

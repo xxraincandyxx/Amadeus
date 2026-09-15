@@ -10,7 +10,7 @@
 // - module: apps/web/src/i18n.js
 // - module: apps/web/src/theme.js
 // invariants:
-// - Appearance and language changes apply immediately and persist locally.
+// - Accent, surface-opacity, and language changes apply immediately and persist locally.
 // - API endpoint changes reconnect only after explicit save.
 // - Workspace identity reflects the connected runtime and remains read-only.
 // side_effects:
@@ -26,9 +26,9 @@ import { useState } from "react";
 
 import { api, getApiBaseUrl, resetApiBaseUrl, setApiBaseUrl } from "./api";
 import { normalizeLanguage, SUPPORTED_LANGUAGES } from "./i18n";
-import { DEFAULT_THEME_COLOR, THEME_COLOR_PRESETS, normalizeThemeColor } from "./theme";
+import { DEFAULT_SURFACE_APPEARANCE, DEFAULT_THEME_COLOR, THEME_COLOR_PRESETS, normalizeSurfaceAppearance, normalizeThemeColor } from "./theme";
 
-export function SettingsWorkspace({ online, language, themeColor, workspace, onLanguage, onThemeColor, onReconnect, t }) {
+export function SettingsWorkspace({ online, language, themeColor, surfaceAppearance, workspace, onLanguage, onThemeColor, onSurfaceAppearance, onReconnect, t }) {
   const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
   const [customColor, setCustomColor] = useState(themeColor);
   const [status, setStatus] = useState("");
@@ -38,6 +38,10 @@ export function SettingsWorkspace({ online, language, themeColor, workspace, onL
     const normalized = normalizeThemeColor(color);
     setCustomColor(normalized);
     onThemeColor(normalized);
+  };
+
+  const selectSurfaceOpacity = (property, value) => {
+    onSurfaceAppearance(normalizeSurfaceAppearance({ ...surfaceAppearance, [property]: value }));
   };
 
   const testConnection = async () => {
@@ -118,6 +122,21 @@ export function SettingsWorkspace({ online, language, themeColor, workspace, onL
               </span>
             </label>
             <button className="settings-text-button" type="button" onClick={() => selectColor(DEFAULT_THEME_COLOR)}>{t("Restore dark red")}</button>
+            <fieldset className="surface-opacity-fieldset">
+              <legend>{t("Glass surfaces")}</legend>
+              <p>{t("Lower opacity reveals the ambient layer. Set a surface to 100% to disable its glass effect.")}</p>
+              <label className="surface-opacity-control" htmlFor="sidebar-opacity">
+                <span><strong>{t("Sidebar opacity")}</strong><small>{t("Controls the navigation rail and mobile drawer.")}</small></span>
+                <output htmlFor="sidebar-opacity">{surfaceAppearance.sidebarOpacity}%</output>
+                <input id="sidebar-opacity" type="range" min="0" max="100" step="1" value={surfaceAppearance.sidebarOpacity} aria-valuetext={`${surfaceAppearance.sidebarOpacity}%`} onChange={(event) => selectSurfaceOpacity("sidebarOpacity", event.target.value)} />
+              </label>
+              <label className="surface-opacity-control" htmlFor="main-page-opacity">
+                <span><strong>{t("Main page opacity")}</strong><small>{t("Defaults to 100% so the workspace remains opaque.")}</small></span>
+                <output htmlFor="main-page-opacity">{surfaceAppearance.mainOpacity}%</output>
+                <input id="main-page-opacity" type="range" min="0" max="100" step="1" value={surfaceAppearance.mainOpacity} aria-valuetext={`${surfaceAppearance.mainOpacity}%`} onChange={(event) => selectSurfaceOpacity("mainOpacity", event.target.value)} />
+              </label>
+              <button className="settings-text-button" type="button" onClick={() => onSurfaceAppearance({ ...DEFAULT_SURFACE_APPEARANCE })}>{t("Restore material defaults")}</button>
+            </fieldset>
           </div>
         </section>
 
