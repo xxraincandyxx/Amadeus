@@ -82,10 +82,13 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .traffic-lights i { width: 13px; height: 13px; border-radius: 50%; background: #ff5f57; }
 .traffic-lights i:nth-child(2) { background: #febc2e; }
 .traffic-lights i:nth-child(3) { background: #28c840; }
+.sidebar-titlebar-drag-region { display: none; }
 .is-tauri .traffic-lights { display: none; }
 .is-tauri .sidebar { padding-top: 45px; }
+.is-tauri .sidebar-titlebar-drag-region { position: absolute; top: 0; right: 5px; left: 0; height: 38px; display: block; }
 .is-tauri .workspace { grid-template-rows: 78px auto minmax(0, 1fr) auto; }
 .is-tauri .topbar { padding-top: 17px; }
+.is-tauri .header-title { pointer-events: none; user-select: none; }
 .is-tauri .details-panel { top: 78px; }
 .brand-row { display: flex; align-items: center; gap: 10px; padding: 18px 10px 14px; font-size: 17px; letter-spacing: -0.02em; }
 .brand-mark, .welcome-mark, .loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
