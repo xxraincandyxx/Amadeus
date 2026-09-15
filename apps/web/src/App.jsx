@@ -33,6 +33,7 @@
 // - The selected theme accent persists and applies to every workspace.
 // - Workspace identity and active-session selection persist per local application user.
 // - Agent character profiles persist per workspace and session for the local application user.
+// - Native overlay title-bar surfaces remain draggable without intercepting toolbar controls.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Opens REST, SSE, and external-link connections.
@@ -859,6 +860,7 @@ function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, 
     <>
       <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label={t("Close sidebar")} onClick={onClose} />
       <aside className={`sidebar ${open ? "open" : ""}`}>
+        <div className="sidebar-titlebar-drag-region" data-tauri-drag-region aria-hidden="true" />
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
         <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
@@ -907,7 +909,7 @@ function Header({ session, status, view, sessionCount, parentSession, detailsOpe
   const settingsView = view === "settings";
   const standaloneView = agentsView || guideView || toolsView || workflowsView || agentDesignerView || settingsView;
   return (
-    <header className="topbar">
+    <header className="topbar" data-tauri-drag-region>
       <button className="mobile-menu" onClick={onMenu} aria-label={t("Open sidebar")}><SidebarSimple /></button>
       <div className="header-title">
         {agentsView ? <Robot /> : agentDesignerView ? <TreeStructure /> : workflowsView ? <FlowArrow /> : guideView ? <BookOpenText /> : toolsView ? <TerminalWindow /> : settingsView ? <GearSix /> : <FolderSimple />}
