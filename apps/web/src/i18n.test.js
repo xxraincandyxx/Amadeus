@@ -27,6 +27,7 @@ test("normalizes Chinese locales to Simplified Chinese", () => {
 
 test("translates and interpolates desktop copy", () => {
   assert.equal(translate("zh-CN", "Thought for {seconds} seconds", { seconds: 17 }), "思考了 17 秒");
+  assert.equal(translate("zh-CN", "Sidebar opacity"), "侧边栏不透明度");
   assert.equal(translate("en", "Thought for {seconds} seconds", { seconds: 17 }), "Thought for 17 seconds");
 });
 

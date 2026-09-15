@@ -1,19 +1,23 @@
 // @amadeus-header
-// summary: Persists and applies the configurable web and native interface accent color.
+// summary: Persists and applies configurable interface accent and glass-surface appearance.
 // layer: ui
 // status: active
 // feature_flags: none
 // provides:
 // - const: DEFAULT_THEME_COLOR
+// - const: DEFAULT_SURFACE_APPEARANCE
 // - const: THEME_COLOR_PRESETS
 // - fn: loadThemeColor
 // - fn: applyThemeColor
+// - fn: loadSurfaceAppearance
+// - fn: applySurfaceAppearance
 // uses:
 // - API: browser local storage
 // - API: CSS custom properties
 // invariants:
 // - Stored theme colors use six-digit hexadecimal notation.
 // - Invalid or missing values resolve to the dark-red default.
+// - Sidebar opacity defaults to 68 percent while the main page defaults to fully opaque.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Updates document-root CSS variables.
@@ -22,7 +26,9 @@
 // @end-amadeus-header
 
 export const THEME_COLOR_STORAGE_KEY = "amadeus.themeColor";
+export const SURFACE_APPEARANCE_STORAGE_KEY = "amadeus.surfaceAppearance.v1";
 export const DEFAULT_THEME_COLOR = "#a72f42";
+export const DEFAULT_SURFACE_APPEARANCE = Object.freeze({ sidebarOpacity: 68, mainOpacity: 100 });
 
 export const THEME_COLOR_PRESETS = [
   { id: "dark-red", color: DEFAULT_THEME_COLOR, label: "Dark red" },
@@ -63,4 +69,46 @@ export function applyThemeColor(value, storage, root) {
     });
   }
   return color;
+}
+
+function normalizeOpacity(value, fallback) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(100, Math.max(0, Math.round(numeric)));
+}
+
+export function normalizeSurfaceAppearance(value) {
+  const source = value && typeof value === "object" ? value : {};
+  return {
+    sidebarOpacity: normalizeOpacity(source.sidebarOpacity, DEFAULT_SURFACE_APPEARANCE.sidebarOpacity),
+    mainOpacity: normalizeOpacity(source.mainOpacity, DEFAULT_SURFACE_APPEARANCE.mainOpacity),
+  };
+}
+
+export function loadSurfaceAppearance(storage) {
+  try {
+    return normalizeSurfaceAppearance(JSON.parse(storage?.getItem(SURFACE_APPEARANCE_STORAGE_KEY) || "null"));
+  } catch {
+    return { ...DEFAULT_SURFACE_APPEARANCE };
+  }
+}
+
+export function surfaceAppearanceVariables(value) {
+  const appearance = normalizeSurfaceAppearance(value);
+  return {
+    "--sidebar-opacity": `${appearance.sidebarOpacity}%`,
+    "--main-page-opacity": `${appearance.mainOpacity}%`,
+  };
+}
+
+export function applySurfaceAppearance(value, storage, root) {
+  const appearance = normalizeSurfaceAppearance(value);
+  storage?.setItem(SURFACE_APPEARANCE_STORAGE_KEY, JSON.stringify(appearance));
+  const target = root || (typeof document === "undefined" ? null : document.documentElement);
+  if (target) {
+    Object.entries(surfaceAppearanceVariables(appearance)).forEach(([property, propertyValue]) => {
+      target.style.setProperty(property, propertyValue);
+    });
+  }
+  return appearance;
 }

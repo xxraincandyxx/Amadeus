@@ -26,6 +26,8 @@ The canonical runtime tokens live in `apps/web/src/styles.css` under `:root`.
 | Raised surface | `--surface-raised` | `#292929` | Inputs and elevated controls |
 | Hover surface | `--surface-hover` | `#323232` | Interactive hover state |
 | Sidebar | `--sidebar` | `#333333` | Persistent navigation |
+| Sidebar opacity | `--sidebar-opacity` | `68%` | Navigation glass fill; configurable in Settings |
+| Main-page opacity | `--main-page-opacity` | `100%` | Workspace fill; configurable in Settings |
 | Border | `--border` | `#3a3a3a` | Primary separators |
 | Text | `--text` | `#f0f0f0` | Primary copy |
 | Muted text | `--muted` | `#a7a7a7` | Secondary information |
@@ -49,7 +51,9 @@ Do not add a second accent color. The selected accent and its derived alpha toke
 
 ## Materials
 
-The app sidebar (desktop rail and mobile drawer) is the one glass surface: a translucent `--sidebar` fill at roughly 68% opacity over `backdrop-filter: blur(24px) saturate(1.4)`, a hairline right border, and a faint top inset highlight. The app shell carries a barely-tinted ambient gradient behind it so the material reads at rest. The conversation scroll area extends beneath the desktop sidebar; the mobile drawer floats over live content. Labels on the glass stay monochrome. Provide the opaque fallbacks: `@supports not (backdrop-filter)`, `prefers-reduced-transparency: reduce`, and `prefers-contrast: more` all switch the sidebar back to solid `--sidebar`. Glass belongs nowhere else — content cards, lists, and page backgrounds stay opaque.
+The app sidebar (desktop rail and mobile drawer) uses a translucent `--sidebar` fill at 68% opacity by default over `backdrop-filter: blur(24px) saturate(1.4)`, a hairline right border, and a faint top inset highlight. The app shell carries a barely-tinted ambient gradient behind it so the material reads at rest. The conversation scroll area extends beneath the desktop sidebar; the mobile drawer floats over live content. Labels on the glass stay monochrome.
+
+Settings exposes independent fill-opacity controls for the sidebar and main page. The main page defaults to `100%`, which is fully opaque and disables its glass appearance; lowering it reveals the ambient shell layer. Persist the two values together under `amadeus.surfaceAppearance.v1`. Content cards, lists, inputs, and dialogs stay opaque so hierarchy and text contrast do not weaken. Provide opaque fallbacks: `@supports not (backdrop-filter)`, `prefers-reduced-transparency: reduce`, and `prefers-contrast: more` all render the application surfaces as solid fills regardless of the saved preference.
 
 ## Typography and icons
 
