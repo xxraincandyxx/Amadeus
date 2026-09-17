@@ -67,6 +67,7 @@ import {
   Plus,
   PlugsConnected,
   Robot,
+  Sidebar as SidebarIcon,
   SidebarSimple,
   Sparkle,
   Stop,
@@ -211,6 +212,7 @@ function App() {
   const [serverOnline, setServerOnline] = useState(null);
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [creating, setCreating] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -681,7 +683,7 @@ function App() {
 
   return (
     <TranslationContext.Provider value={t}>
-    <div className="app-shell" ref={mainSidebarResize.containerRef} style={mainSidebarResize.containerStyle}>
+    <div className={`app-shell ${sidebarCollapsed ? "sidebar-collapsed" : ""}`} ref={mainSidebarResize.containerRef} style={mainSidebarResize.containerStyle}>
       <Sidebar
         sessions={sessions}
         activeId={activeId}
@@ -700,6 +702,8 @@ function App() {
         onClose={() => setSidebarOpen(false)}
         resizeHandle={mainSidebarResize.handleProps}
         workspace={workspaceProfile}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
       />
 
       <main className="workspace">
@@ -861,15 +865,18 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle }) {
+function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle, collapsed, onToggleCollapse }) {
   const t = useTranslation();
   const rows = agentSessionRows(sessions);
   return (
     <>
       <button className={`sidebar-scrim ${open ? "visible" : ""}`} aria-label={t("Close sidebar")} onClick={onClose} />
-      <aside className={`sidebar ${open ? "open" : ""}`}>
-        <div className="sidebar-titlebar-drag-region" data-tauri-drag-region aria-hidden="true" />
+      <div className="window-controls">
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
+        <button className="window-control" onClick={onToggleCollapse} aria-label={collapsed ? t("Show sidebar") : t("Hide sidebar")} aria-expanded={!collapsed}><SidebarIcon /></button>
+      </div>
+      <aside className={`sidebar ${open ? "open" : ""} ${collapsed ? "collapsed" : ""}`}>
+        <div className="sidebar-titlebar-drag-region" data-tauri-drag-region aria-hidden="true" />
         <div className="brand-row"><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
           <button onClick={() => onCreate()}><Plus /><span>{t("New session")}</span></button>

@@ -376,6 +376,8 @@ const ZH_CN = {
   Primary: "主导航",
   "Close sidebar": "关闭侧边栏",
   "Open sidebar": "打开侧边栏",
+  "Show sidebar": "显示侧边栏",
+  "Hide sidebar": "隐藏侧边栏",
   "Resize main sidebar": "调整主侧边栏宽度",
   "Resize guide sidebar": "调整指南侧边栏宽度",
   "Drag to resize sidebar": "拖动以调整侧边栏宽度",
