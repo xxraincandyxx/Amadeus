@@ -870,7 +870,7 @@ function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, 
       <aside className={`sidebar ${open ? "open" : ""}`}>
         <div className="sidebar-titlebar-drag-region" data-tauri-drag-region aria-hidden="true" />
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
-        <div className="brand-row"><div className="brand-mark"><Sparkle weight="fill" /></div><strong>Amadeus</strong></div>
+        <div className="brand-row"><strong>Amadeus</strong></div>
         <nav className="primary-nav" aria-label={t("Primary")}>
           <button onClick={() => onCreate()}><Plus /><span>{t("New session")}</span></button>
           <button className={view === "agents" ? "active" : ""} onClick={onAgents}><Robot /><span>{t("Agents")}</span><span className="nav-count">{sessions.length}</span></button>

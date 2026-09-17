@@ -97,10 +97,8 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .is-tauri .topbar { padding-top: 17px; }
 .is-tauri .header-title { pointer-events: none; user-select: none; }
 .is-tauri .details-panel { top: 78px; }
-.brand-row { display: flex; align-items: center; gap: 10px; padding: 18px 10px 14px; font-size: 17px; letter-spacing: -0.02em; }
-.brand-mark, .welcome-mark, .loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
-.brand-mark { width: 25px; height: 25px; border-radius: 8px; }
-.brand-mark svg { width: 14px; }
+.brand-row { display: flex; align-items: center; padding: 8px 10px 14px; font-size: 17px; letter-spacing: -0.02em; }
+.welcome-mark, .loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
 
 .primary-nav { display: grid; gap: 3px; }
 .primary-nav button, .project-label, .session-button {
