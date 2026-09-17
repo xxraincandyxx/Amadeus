@@ -378,6 +378,8 @@ const ZH_CN = {
   "Open sidebar": "打开侧边栏",
   "Show sidebar": "显示侧边栏",
   "Hide sidebar": "隐藏侧边栏",
+  "Back": "后退",
+  "Forward": "前进",
   "Resize main sidebar": "调整主侧边栏宽度",
   "Resize guide sidebar": "调整指南侧边栏宽度",
   "Drag to resize sidebar": "拖动以调整侧边栏宽度",

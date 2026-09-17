@@ -46,6 +46,8 @@
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowCounterClockwise,
+  ArrowLeft,
+  ArrowRight,
   ArrowsInLineVertical,
   ArrowSquareOut,
   ArrowUp,
@@ -213,6 +215,8 @@ function App() {
   const [error, setError] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [navStatus, setNavStatus] = useState({ back: false, forward: false });
+  const navHistoryRef = useRef({ stack: [], index: -1, skip: false });
   const [creating, setCreating] = useState(false);
   const [creatingSession, setCreatingSession] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -642,6 +646,32 @@ function App() {
     setView("conversation");
   }, []);
 
+  const navKey = `${view}|${activeId ?? ""}`;
+  useEffect(() => {
+    const history = navHistoryRef.current;
+    if (history.stack[history.index] === navKey) return;
+    if (history.skip) history.skip = false;
+    else {
+      if (view === "conversation" && !activeId) return;
+      history.stack = history.stack.slice(0, history.index + 1);
+      history.stack.push(navKey);
+      history.index = history.stack.length - 1;
+    }
+    setNavStatus({ back: history.index > 0, forward: history.index < history.stack.length - 1 });
+  }, [navKey, view, activeId]);
+
+  const traverseNavHistory = useCallback((delta) => {
+    const history = navHistoryRef.current;
+    const index = history.index + delta;
+    if (index < 0 || index >= history.stack.length) return;
+    history.index = index;
+    history.skip = true;
+    const separator = history.stack[index].indexOf("|");
+    setView(history.stack[index].slice(0, separator));
+    setActiveId(history.stack[index].slice(separator + 1) || null);
+    setNavStatus({ back: index > 0, forward: index < history.stack.length - 1 });
+  }, []);
+
   const openAgentWorkspace = useCallback(() => {
     setView("agents");
     setShowDetails(false);
@@ -704,6 +734,10 @@ function App() {
         workspace={workspaceProfile}
         collapsed={sidebarCollapsed}
         onToggleCollapse={() => setSidebarCollapsed((value) => !value)}
+        canBack={navStatus.back}
+        canForward={navStatus.forward}
+        onBack={() => traverseNavHistory(-1)}
+        onForward={() => traverseNavHistory(1)}
       />
 
       <main className="workspace">
@@ -865,7 +899,7 @@ function App() {
   );
 }
 
-function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle, collapsed, onToggleCollapse }) {
+function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, onAgents, onGuide, onTools, onWorkflows, onAgentDesigner, onCreate, onSettings, onContribute, onClose, resizeHandle, collapsed, onToggleCollapse, canBack, canForward, onBack, onForward }) {
   const t = useTranslation();
   const rows = agentSessionRows(sessions);
   return (
@@ -874,6 +908,8 @@ function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, 
       <div className="window-controls">
         <div className="traffic-lights" aria-hidden="true"><i /><i /><i /></div>
         <button className="window-control" onClick={onToggleCollapse} aria-label={collapsed ? t("Show sidebar") : t("Hide sidebar")} aria-expanded={!collapsed}><SidebarIcon /></button>
+        <button className="window-control" onClick={onBack} disabled={!canBack} aria-label={t("Back")}><ArrowLeft /></button>
+        <button className="window-control" onClick={onForward} disabled={!canForward} aria-label={t("Forward")}><ArrowRight /></button>
       </div>
       <aside className={`sidebar ${open ? "open" : ""} ${collapsed ? "collapsed" : ""}`}>
         <div className="sidebar-titlebar-drag-region" data-tauri-drag-region aria-hidden="true" />
