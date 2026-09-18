@@ -91,7 +91,7 @@
   --main-page-fill: color-mix(in srgb, var(--bg) var(--main-page-opacity), transparent);
   --green: #55c97a;
   --red: #ec6b6b;
-  --radius: 14px;
+  --radius: 10px;
 }
 
 * { box-sizing: border-box; }
@@ -102,6 +102,7 @@ button { color: inherit; }
 strong, b { font-weight: 600; }
 button:focus-visible, textarea:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid rgba(var(--accent-rgb), 0.72); outline-offset: 2px; }
 button:active, .button-link:active, .resource-list a:active { transform: translateY(1px); }
+::selection { background: rgba(var(--accent-rgb), 0.35); }
 
 .app-shell {
   display: grid;
@@ -216,7 +217,7 @@ html.is-tauri, .is-tauri body, .is-tauri .app-shell { background: transparent; }
 .is-resizing-panel, .is-resizing-panel * { cursor: col-resize !important; user-select: none !important; }
 
 .workspace { min-width: 0; min-height: 0; display: grid; grid-template-rows: 61px auto minmax(0, 1fr) auto; position: relative; background: var(--bg); background: var(--main-page-fill); }
-.topbar { grid-row: 1; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--border-soft); background: transparent; backdrop-filter: blur(14px); }
+.topbar { grid-row: 1; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--border-soft); background: transparent; }
 .error-banner { grid-row: 2; }
 .agent-workspace, .guide-workspace, .tools-workspace, .workflow-workspace, .workflow-loading, .settings-workspace, .conversation { grid-row: 3; }
 .composer-wrap { grid-row: 4; }
