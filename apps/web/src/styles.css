@@ -175,7 +175,7 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
   .app-shell.sidebar-collapsed .workspace { margin-left: 0; }
   .app-shell.sidebar-collapsed .topbar { padding-left: 200px; }
 }
-.brand-row { display: flex; align-items: center; padding: 8px 10px 14px; font-family: var(--font-heading); font-size: 18px; font-weight: 500; letter-spacing: 0; }
+.brand-row { display: flex; align-items: center; padding: 8px 10px 14px; font-family: var(--font-heading); font-size: 20px; font-weight: 500; letter-spacing: 0; }
 .welcome-mark, .loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
 
 .primary-nav { display: grid; gap: 3px; }
