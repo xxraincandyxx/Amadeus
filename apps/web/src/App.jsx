@@ -44,6 +44,7 @@
 // @end-amadeus-header
 
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import {
   ArrowCounterClockwise,
   ArrowLeft,
@@ -427,6 +428,12 @@ function App() {
     setSelectedArchitectureId(architectureId);
     setCreating(true);
   }, []);
+
+  useEffect(() => {
+    if (!window.__TAURI_INTERNALS__) return;
+    const unlisten = listen("amadeus:new-session", () => openCreateDialog());
+    return () => { unlisten.then((dispose) => dispose()); };
+  }, [openCreateDialog]);
 
   const createSession = async (event) => {
     event?.preventDefault();

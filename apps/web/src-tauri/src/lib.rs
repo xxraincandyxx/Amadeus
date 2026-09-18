@@ -11,12 +11,14 @@
 // - process: bundled amadeus-server sidecar
 // - artifact: tauri.conf.json
 // - crate: window-vibrancy (macOS under-window material)
+// - trait: tauri::menu menu builders (native application menu)
 // invariants:
 // - An existing server on the desktop API port is reused instead of replaced.
 // - The bundled server is terminated when the desktop window closes.
 // side_effects:
 // - Creates and runs a native application window.
 // - Applies the macOS under-window vibrancy material behind the webview.
+// - Registers the native application menu and forwards New Session to the client.
 // - Starts a local Amadeus HTTP API process when the configured port is free.
 // tests:
 // - cmd: npm run desktop:build
@@ -31,7 +33,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 const DESKTOP_API_PORT: u16 = 3000;
 
@@ -107,6 +109,11 @@ fn start_server() -> Result<Option<Child>, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .on_menu_event(|app, event| {
+            if event.id().0 == "new-session" {
+                let _ = app.emit("amadeus:new-session", ());
+            }
+        })
         .setup(|app| {
             let child = start_server().map_err(std::io::Error::other)?;
             app.manage(ServerProcess(Mutex::new(child)));
@@ -122,6 +129,43 @@ pub fn run() {
                     )
                     .map_err(std::io::Error::other)?;
                 }
+
+                use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+                let new_session = MenuItemBuilder::with_id("new-session", "New Session")
+                    .accelerator("CmdOrCtrl+N")
+                    .build(app)?;
+                let application = SubmenuBuilder::new(app, "Amadeus")
+                    .about(None)
+                    .separator()
+                    .hide()
+                    .hide_others()
+                    .show_all()
+                    .separator()
+                    .quit()
+                    .build()?;
+                let file = SubmenuBuilder::new(app, "File")
+                    .item(&new_session)
+                    .separator()
+                    .close_window()
+                    .build()?;
+                let edit = SubmenuBuilder::new(app, "Edit")
+                    .undo()
+                    .redo()
+                    .separator()
+                    .cut()
+                    .copy()
+                    .paste()
+                    .separator()
+                    .select_all()
+                    .build()?;
+                let window_menu = SubmenuBuilder::new(app, "Window")
+                    .minimize()
+                    .maximize()
+                    .build()?;
+                let menu = MenuBuilder::new(app)
+                    .items(&[&application, &file, &edit, &window_menu])
+                    .build()?;
+                app.set_menu(menu)?;
             }
             Ok(())
         })
