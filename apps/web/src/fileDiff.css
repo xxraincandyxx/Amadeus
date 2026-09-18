@@ -14,7 +14,7 @@
   padding: 0 11px;
   border-bottom: 1px solid #343434;
   color: #a8a8a8;
-  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 11px var(--font-mono);
 }
 
 .file-diff-path {
@@ -57,7 +57,7 @@
   grid-template-columns: 44px 44px 20px minmax(max-content, 1fr);
   min-width: max-content;
   color: #c7c7c7;
-  font: 12px/1.62 ui-monospace, SFMono-Regular, Menlo, monospace;
+  font: 12px/1.62 var(--font-mono);
 }
 
 .file-diff-line.added {
