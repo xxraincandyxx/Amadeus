@@ -1280,12 +1280,11 @@ function Welcome({ session }) {
   const t = useTranslation();
   return (
     <div className="welcome">
-      <div className="welcome-mark"><Sparkle weight="fill" /></div>
       <h1>{t("What should we work on?")}</h1>
       <p>{t("{name} can inspect your project, execute tools, and keep the entire conversation in this session.", { name: session.name })}</p>
       <div className="starter-grid">
-        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><Code /><span><strong>{t("Explore the codebase")}</strong><small>{t("Map architecture and important flows")}</small></span></button>
-        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><TerminalWindow /><span><strong>{t("Build a feature")}</strong><small>{t("Plan, implement, test, and verify")}</small></span></button>
+        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><Code /><span>{t("Explore the codebase")}</span></button>
+        <button onClick={() => document.getElementById("agent-prompt")?.focus()}><TerminalWindow /><span>{t("Build a feature")}</span></button>
       </div>
     </div>
   );

@@ -178,7 +178,7 @@ html.is-tauri, .is-tauri body, .is-tauri .app-shell { background: transparent; }
   .app-shell.sidebar-collapsed .topbar { padding-left: 200px; }
 }
 .brand-row { display: flex; align-items: center; padding: 8px 10px 14px; font-family: var(--font-heading); font-size: 20px; font-weight: 500; letter-spacing: 0; }
-.welcome-mark, .loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
+.loading-mark, .dialog-icon { display: grid; place-items: center; color: #101010; background: #e8e8e8; }
 
 .primary-nav { display: grid; gap: 3px; }
 .primary-nav button, .project-label, .session-button {
@@ -704,17 +704,13 @@ html.is-tauri, .is-tauri body, .is-tauri .app-shell { background: transparent; }
 @keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
 
 .welcome { min-height: 55vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 40px 0; }
-.welcome-mark { width: 48px; height: 48px; border-radius: 14px; margin-bottom: 20px; }
-.welcome-mark svg { width: 23px; height: 23px; }
-.welcome h1 { margin: 0 0 10px; font-family: var(--font-heading); font-size: clamp(25px, 3vw, 34px); font-weight: 500; letter-spacing: 0; }
-.welcome > p { max-width: 540px; margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
-.starter-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; width: min(580px, 100%); margin-top: 28px; }
-.starter-grid button { display: flex; gap: 11px; border: 1px solid #363636; background: #202020; border-radius: 12px; padding: 13px; cursor: pointer; text-align: left; }
-.starter-grid button:hover { background: #262626; border-color: #464646; }
-.starter-grid svg { margin-top: 2px; color: #aaa; flex: 0 0 auto; }
-.starter-grid span { display: grid; gap: 4px; }
-.starter-grid strong { font-size: 12px; }
-.starter-grid small { color: #7f7f7f; font-size: 11px; }
+.welcome.welcome h1 { margin: 0 0 8px; font-family: var(--font-heading); font-size: 22px; font-weight: 500; letter-spacing: 0; }
+.welcome > p { max-width: 480px; margin: 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.starter-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 22px; }
+.starter-grid button { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #363636; background: transparent; border-radius: 999px; padding: 7px 14px; cursor: pointer; color: #d4d4d4; font-size: 12.5px; }
+.starter-grid button:hover { background: #242424; border-color: #4a4a4a; }
+.starter-grid svg { width: 15px; height: 15px; color: #999; flex: 0 0 auto; }
+..starter-grid span { display: inline; }
 
 .composer-wrap { position: absolute; z-index: 10; bottom: 0; left: 0; right: 0; pointer-events: none; padding: 24px max(24px, calc((100% - 920px) / 2)); background: linear-gradient(180deg, transparent, var(--main-page-fill) 35%); }
 .composer-stack { position: relative; z-index: 0; pointer-events: auto; }
@@ -984,7 +980,7 @@ html.is-tauri, .is-tauri body, .is-tauri .app-shell { background: transparent; }
 }
 
 @media (max-width: 560px) {
-  .starter-grid { grid-template-columns: 1fr; }
+
   .welcome { justify-content: flex-start; padding-top: 12vh; }
   .user-message { max-width: 92%; }
   .approval-card { grid-template-columns: 1fr; }
