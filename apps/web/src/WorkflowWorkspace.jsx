@@ -445,7 +445,7 @@ function WorkflowEditor({ t, themeColor }) {
             fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
             minZoom={0.25}
             maxZoom={1.8}
-            defaultEdgeOptions={{ type: "smoothstep", animated: false }}
+            defaultEdgeOptions={{ type: "default", animated: false }}
             deleteKeyCode={null}
             proOptions={{ hideAttribution: true }}
           >
