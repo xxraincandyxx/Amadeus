@@ -462,7 +462,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-panel-heading strong { font-size: 12px; font-weight: 600; }
 .workflow-panel-heading span { color: #757575; font-size: 9px; }
 .workflow-panel-heading > button { width: 28px; height: 28px; display: grid; place-items: center; flex: none; border: 1px solid var(--hairline); border-radius: 7px; background: #232323; color: #aaa; cursor: pointer; }
-.workflow-panel-heading > button:hover { background: #2b2b2b; color: #e2e2e2; }
+.workflow-panel-heading > button:hover { background: var(--panel-raised); color: #e2e2e2; }
 .workflow-panel-heading > button svg { width: 14px; height: 14px; }
 .workflow-palette-list { display: grid; gap: 4px; }
 .workflow-palette-list > button { min-width: 0; min-height: 58px; display: grid; grid-template-columns: 32px minmax(0,1fr) 14px; align-items: center; gap: 9px; border: 1px solid transparent; border-radius: 7px; padding: 7px 8px; background: transparent; color: #c6c6c6; cursor: grab; text-align: left; }
@@ -483,8 +483,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-library-actions button:disabled { opacity: .35; cursor: default; }
 .workflow-library-actions button svg, .workflow-inspector-actions button svg { width: 14px; height: 14px; }
 .workflow-library-actions .danger:hover, .workflow-inspector-actions .danger:hover { background: rgba(236,107,107,.09); color: #dfa0a0; }
-.workflow-canvas { position: relative; min-width: 0; min-height: 0; background: #151515; }
-.workflow-canvas .react-flow { background: #151515; }
+.workflow-canvas { position: relative; min-width: 0; min-height: 0; background: transparent; }
+.workflow-canvas .react-flow { background: transparent; }
 .workflow-canvas .react-flow__node-workflowNode { width: 208px; border: 0; border-radius: 8px; background: transparent; color: inherit; box-shadow: none; }
 .workflow-node { position: relative; width: 208px; min-height: 82px; display: grid; grid-template-columns: 34px minmax(0,1fr); align-items: start; gap: 10px; border: 1px solid var(--hairline); border-radius: 8px; padding: 12px; background: var(--panel); box-shadow: 0 9px 24px rgba(0,0,0,.18); }
 .workflow-node:hover { border-color: #505050; }
@@ -498,17 +498,17 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-node-copy span { color: #777; font-size: 8px; font-weight: 600; text-transform: uppercase; }
 .workflow-node-copy strong { overflow: hidden; color: #e0e0e0; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-node-copy small { display: -webkit-box; overflow: hidden; color: #898989; font: 9px/1.35 var(--font-mono); -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.workflow-canvas .react-flow__handle { width: 9px; height: 9px; border: 2px solid #191919; background: #8c8c8c; }
+.workflow-canvas .react-flow__handle { width: 9px; height: 9px; border: 2px solid rgba(0, 0, 0, 0.4); background: #8c8c8c; }
 .workflow-canvas .react-flow__handle-left { left: -5px; }
 .workflow-canvas .react-flow__handle-right { right: -5px; }
 .workflow-canvas .react-flow__edge-path { stroke: #777; stroke-width: 1.5; }
 .workflow-canvas .react-flow__edge.selected .react-flow__edge-path { stroke: var(--accent); stroke-width: 2; }
 .workflow-canvas .react-flow__edge-text { fill: #aaa; font-size: 9px; }
-.workflow-canvas .react-flow__edge-textbg { fill: #1d1d1d; }
+.workflow-canvas .react-flow__edge-textbg { fill: var(--sheet-fill); }
 .workflow-canvas .react-flow__controls { overflow: hidden; border: 1px solid var(--hairline); border-radius: 7px; box-shadow: none; }
 .workflow-canvas .react-flow__controls-button { width: 30px; height: 30px; border: 0; border-bottom: 1px solid var(--hairline); background: var(--panel-raised); fill: #aaa; }
-.workflow-canvas .react-flow__controls-button:hover { background: #2b2b2b; }
-.workflow-canvas .react-flow__minimap { overflow: hidden; border: 1px solid #383838; border-radius: 7px; background: var(--panel); }
+.workflow-canvas .react-flow__controls-button:hover { background: var(--panel-raised); }
+.workflow-canvas .react-flow__minimap { overflow: hidden; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .workflow-validation-chip { position: absolute; z-index: 5; left: 12px; bottom: 12px; min-height: 30px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: rgba(30,30,30,.92); color: #aaa; font-size: 9px; pointer-events: none; }
 .workflow-validation-chip svg { width: 13px; height: 13px; }
 .workflow-validation-chip.valid { color: #91b69a; border-color: #385040; }
@@ -758,7 +758,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .send-button.stop { color: var(--red) !important; }
 .composer-hint { text-align: center; color: #8a8a8a; font-size: 10px; margin-top: 7px; }
 .slash-palette { position: absolute; z-index: 2; left: 0; right: 0; bottom: calc(100% + 10px); border: 1px solid #464646; border-radius: 14px; background: #262626; box-shadow: 0 18px 48px rgba(0,0,0,.4); overflow: hidden; }
-.slash-palette-heading { min-height: 34px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid #383838; color: #8e8e8e; }
+.slash-palette-heading { min-height: 34px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--hairline); color: #8e8e8e; }
 .slash-palette-heading span { font-size: 11px; font-weight: 600; }
 .slash-palette-heading small { color: #696969; font-size: 10px; }
 .slash-command-list { max-height: min(390px, 48vh); overflow-y: auto; padding: 6px; scrollbar-color: #4b4b4b transparent; }
@@ -805,7 +805,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-section-title strong { font-size: 12px; }
 .agent-profile-section-title small { color: #747474; font-size: 10px; line-height: 1.4; }
 .agent-profile-section label { min-width: 0; display: grid; gap: 6px; color: #aaa; font-size: 11px; }
-.agent-profile-section input, .agent-profile-section textarea, .agent-profile-tag-input input { width: 100%; border: 1px solid #424242; border-radius: 8px; background: #191919; color: #e4e4e4; }
+.agent-profile-section input, .agent-profile-section textarea, .agent-profile-tag-input input { width: 100%; border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel-raised); color: #e4e4e4; }
 .agent-profile-section input, .agent-profile-tag-input input { height: 38px; padding: 0 10px; }
 .agent-profile-section textarea { min-height: 88px; resize: vertical; padding: 9px 10px; line-height: 1.45; }
 .agent-profile-section input::placeholder, .agent-profile-section textarea::placeholder, .agent-profile-tag-input input::placeholder { color: #656565; }
@@ -817,7 +817,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-tag-list > span > button:hover { background: #333; color: #ccc; }
 .agent-profile-tag-list svg { width: 11px; height: 11px; }
 .agent-profile-tag-input { display: grid; grid-template-columns: minmax(0,1fr) 38px; gap: 6px; }
-.agent-profile-tag-input button { display: grid; place-items: center; border: 1px solid #424242; border-radius: 8px; background: var(--panel); color: #bbb; cursor: pointer; }
+.agent-profile-tag-input button { display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel); color: #bbb; cursor: pointer; }
 .agent-profile-tag-input button:hover { background: var(--panel-raised); }
 .agent-profile-tag-input button:disabled { opacity: .4; cursor: not-allowed; }
 .agent-profile-tag-input svg { width: 15px; height: 15px; }
@@ -831,7 +831,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-actions > span { min-width: 0; display: flex; align-items: center; gap: 4px; color: #d28d8d; font-size: 9px; line-height: 1.35; }
 .agent-profile-actions > span.saved { color: #80bd94; }
 .agent-profile-actions > span svg { width: 12px; height: 12px; flex: 0 0 auto; }
-.agent-profile-actions button { min-height: 32px; border: 1px solid #424242; border-radius: 7px; padding: 0 9px; background: var(--panel-raised); color: #c9c9c9; cursor: pointer; font-size: 10px; }
+.agent-profile-actions button { min-height: 32px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel-raised); color: #c9c9c9; cursor: pointer; font-size: 10px; }
 .agent-profile-actions button:hover { background: #333; }
 .agent-profile-actions button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
 .mono { font-family: var(--font-mono); font-size: 11px !important; }
