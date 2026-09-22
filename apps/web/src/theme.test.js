@@ -75,8 +75,8 @@ test("surface opacity normalization rounds and clamps stored values", () => {
     sidebarOpacity: 0,
     mainOpacity: 100,
     sheetColor: "#26262b",
-    sheetOpacity: 55,
-    scrimOpacity: 78,
+    sheetOpacity: 52,
+    scrimOpacity: 36,
   });
 });
 

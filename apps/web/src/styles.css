@@ -176,8 +176,8 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .is-tauri .window-controls::before { content: ""; width: 70px; }
 .is-tauri .sidebar-titlebar-drag-region { position: absolute; top: 0; right: 5px; left: 0; height: 42px; display: block; }
 html.is-tauri, .is-tauri body { background: transparent; }
-.is-tauri .app-shell { background: var(--glass-scrim, rgba(4, 4, 6, 0.78)); }
-html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
+.is-tauri .app-shell { background: var(--glass-scrim, rgba(4, 4, 6, 0.36)); }
+html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .is-tauri .workspace {
   grid-template-rows: 61px auto minmax(0, 1fr) auto;
   margin-top: 8px;

@@ -18,8 +18,8 @@
 // invariants:
 // - Stored theme colors use six-digit hexadecimal notation.
 // - Invalid or missing values resolve to the dark-red default.
-// - Sidebar opacity defaults to 68 percent, the embedded sheet to 55 percent at
-//   #26262b, the background scrim to 78 percent, and the main page to fully opaque.
+// - Sidebar opacity defaults to 68 percent, the embedded sheet to 52 percent at
+//   #26262b, the background scrim to 36 percent, and the main page to fully opaque.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Updates document-root CSS variables.
@@ -35,8 +35,8 @@ export const DEFAULT_SURFACE_APPEARANCE = Object.freeze({
   sidebarOpacity: 68,
   mainOpacity: 100,
   sheetColor: DEFAULT_SHEET_COLOR,
-  sheetOpacity: 55,
-  scrimOpacity: 78,
+  sheetOpacity: 52,
+  scrimOpacity: 36,
 });
 
 export const THEME_COLOR_PRESETS = [
