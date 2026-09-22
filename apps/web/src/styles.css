@@ -93,6 +93,7 @@
   --red: #ec6b6b;
   --radius: 10px;
   --hairline: rgba(255, 255, 255, 0.08);
+  --input-focus: rgba(255, 255, 255, 0.24);
   --panel: rgba(255, 255, 255, 0.03);
   --panel-raised: rgba(255, 255, 255, 0.055);
 }
@@ -377,7 +378,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 .guide-document .markdown-content h2 { margin-top: 34px; font-size: 18px; letter-spacing: 0; }
 .guide-document .markdown-content p { color: #c3c3c3; }
 .guide-document .markdown-content li { margin: 6px 0; }
-.guide-document .markdown-content table { border: 1px solid #373737; border-radius: 7px; }
+.guide-document .markdown-content table { border: 1px solid var(--hairline); border-radius: 7px; }
 .guide-document .markdown-content th { background: var(--panel); }
 
 .tools-workspace { min-width: 0; min-height: 0; overflow-y: auto; padding: 34px clamp(24px, 4vw, 58px) 48px; scrollbar-color: #454545 transparent; }
@@ -441,7 +442,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 .workflow-title-control select, .workflow-title-control input { height: 34px; border: 1px solid var(--hairline); border-radius: 7px; outline: 0; background: var(--panel-raised); color: #dedede; font-size: 12px; }
 .workflow-title-control select { width: 152px; padding: 0 27px 0 9px; }
 .workflow-title-control input { min-width: 120px; width: min(220px, 20vw); padding: 0 10px; font-weight: 600; }
-.workflow-title-control select:focus, .workflow-title-control input:focus { border-color: #626262; }
+.workflow-title-control select:focus, .workflow-title-control input:focus { border-color: var(--input-focus); }
 .workflow-save-state { display: inline-flex; align-items: center; gap: 5px; color: #767676; font-size: 10px; white-space: nowrap; }
 .workflow-save-state svg { width: 13px; height: 13px; }
 .workflow-save-state.saved { color: #8d9f91; }
@@ -521,7 +522,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 .workflow-inspector-form input, .workflow-inspector-form textarea, .workflow-description-field input, .workflow-description-field textarea { width: 100%; border: 1px solid var(--hairline); border-radius: 7px; outline: 0; background: var(--panel-raised); padding: 8px 9px; color: #dedede; resize: vertical; font-size: 11px; font-weight: 400; line-height: 1.45; }
 .workflow-inspector-form input { height: 34px; }
 .workflow-description-field input { height: 34px; }
-.workflow-inspector-form input:focus, .workflow-inspector-form textarea:focus, .workflow-description-field input:focus, .workflow-description-field textarea:focus { border-color: #606060; }
+.workflow-inspector-form input:focus, .workflow-inspector-form textarea:focus, .workflow-description-field input:focus, .workflow-description-field textarea:focus { border-color: var(--input-focus); }
 .workflow-inspector-form input.mono { color: #858585; font: 9px var(--font-mono); }
 .workflow-inspector-actions { display: grid; gap: 3px; margin-top: auto; border-top: 1px solid var(--hairline); padding: 10px; }
 .workflow-inspector-actions .entry.active { color: color-mix(in srgb, var(--accent) 45%, white); background: rgba(var(--accent-rgb),.08); }
@@ -588,7 +589,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 .tool-profile-toggles input, .tool-access-row > input { width: 13px; height: 13px; margin: 0; accent-color: var(--accent); }
 .tool-access-toolbar { position: relative; display: flex; align-items: center; border-bottom: 1px solid var(--hairline); padding: 10px 12px; }
 .tool-access-toolbar svg { position: absolute; left: 20px; width: 13px; height: 13px; color: #6f6f6f; pointer-events: none; }
-.tool-access-toolbar input { width: 100%; height: 31px; border: 1px solid #373737; border-radius: 7px; outline: 0; background: var(--panel); padding: 0 9px 0 28px; color: #d5d5d5; font-size: 9px; }
+.tool-access-toolbar input { width: 100%; height: 31px; border: 1px solid var(--hairline); border-radius: 7px; outline: 0; background: var(--panel); padding: 0 9px 0 28px; color: #d5d5d5; font-size: 9px; }
 .tool-access-toolbar input:focus { border-color: #5a5a5a; }
 .tool-access-list { min-height: 120px; display: grid; align-content: start; overflow: auto; }
 .tool-access-row { min-width: 0; display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: start; gap: 8px; border-bottom: 1px solid #292929; padding: 9px 13px; cursor: pointer; }
@@ -664,7 +665,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 .markdown-content blockquote p { margin: 7px 0; }
 .markdown-content hr { height: 1px; margin: 24px 0; border: 0; background: #353535; }
 .markdown-inline-code { border: 1px solid var(--hairline); border-radius: 5px; background: var(--panel); padding: 2px 5px; color: #e8b58f; font: .86em var(--font-mono); }
-.markdown-code-block { margin: 18px 0; border: 1px solid #373737; border-radius: 11px; background: #1e1e1e; overflow: hidden; }
+.markdown-code-block { margin: 18px 0; border: 1px solid var(--hairline); border-radius: 11px; background: #1e1e1e; overflow: hidden; }
 .markdown-code-header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px 0 12px; border-bottom: 1px solid var(--hairline); color: #858585; font: 11px var(--font-mono); }
 .markdown-code-header button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #999; display: grid; place-items: center; cursor: pointer; }
 .markdown-code-header button:hover { background: rgba(255,255,255,.06); color: #ddd; }
@@ -743,7 +744,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 55%, transparent); }
 
 .composer-wrap { position: absolute; z-index: 10; bottom: 0; left: 0; right: 0; pointer-events: none; padding: 24px max(24px, calc((100% - 920px) / 2)); background: linear-gradient(180deg, transparent, var(--main-page-fill) 35%); }
 .composer-stack { position: relative; z-index: 0; pointer-events: auto; }
-.composer { pointer-events: auto; border: 1px solid var(--hairline); border-radius: 17px; background: var(--panel); box-shadow: 0 16px 42px rgba(0,0,0,.28); overflow: hidden; }
+.composer { pointer-events: auto; border: 1px solid var(--hairline); border-radius: 14px; background: var(--panel-raised); box-shadow: 0 16px 42px rgba(0,0,0,.28); overflow: hidden; }
 .composer:focus-within { border-color: #5a5a5a; }
 .composer.disabled { opacity: .7; }
 .composer label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
