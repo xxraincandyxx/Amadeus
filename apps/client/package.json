@@ -1,7 +1,7 @@
 {
   "name": "amadeus-client",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,7 @@
     "desktop:sidecar": "bash scripts/prepare-desktop-sidecar.sh",
     "desktop:dev": "npm run desktop:sidecar && tauri dev",
     "desktop:build": "npm run desktop:sidecar && tauri build",
-    "desktop:icon": "tauri icon src-tauri/app-icon.svg"
+    "desktop:icon": "tauri icon src-tauri/app-icon.png"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

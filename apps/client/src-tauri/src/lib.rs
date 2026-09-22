@@ -20,6 +20,7 @@
 // - Applies the macOS sidebar vibrancy material behind the webview.
 // - Registers the native application menu and forwards New Session to the client.
 // - Starts a local Amadeus HTTP API process when the configured port is free.
+// - Applies the source mark as the Dock icon in debug builds.
 // tests:
 // - cmd: npm run desktop:build
 // @end-amadeus-header
@@ -106,6 +107,25 @@ fn start_server() -> Result<Option<Child>, String> {
     Err("the bundled Amadeus server did not become ready".to_string())
 }
 
+#[cfg(all(target_os = "macos", debug_assertions))]
+fn apply_dock_icon() -> Result<(), String> {
+    use objc2::{AnyThread, MainThreadMarker};
+    use objc2_app_kit::{NSApplication, NSImage};
+    use objc2_foundation::NSString;
+
+    let icon_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("icons/icon.png");
+    let icon_path = icon_path
+        .to_str()
+        .ok_or("dock icon path is not valid UTF-8")?;
+    let image = NSImage::initWithContentsOfFile(NSImage::alloc(), &NSString::from_str(icon_path))
+        .ok_or("dock icon image could not be loaded")?;
+    let main_thread = MainThreadMarker::new().ok_or("dock icon must be set on the main thread")?;
+    unsafe {
+        NSApplication::sharedApplication(main_thread).setApplicationIconImage(Some(&image));
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -115,6 +135,11 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(all(target_os = "macos", debug_assertions))]
+            if let Err(error) = apply_dock_icon() {
+                eprintln!("failed to apply the development dock icon: {error}");
+            }
+
             let child = start_server().map_err(std::io::Error::other)?;
             app.manage(ServerProcess(Mutex::new(child)));
 

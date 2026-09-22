@@ -59,7 +59,7 @@ Settings exposes independent fill-opacity controls for the sidebar and main page
 
 The interface uses the local Geist/SF Pro/Segoe UI system stack and platform monospace fonts for identifiers, commands, and code. Keep body copy at readable 13–15 px sizes and reserve larger display type for empty or welcome states.
 
-Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20 px and inherit semantic color from their control. Preserve the red badge with the white four-point spark as the Amadeus product mark. Do not introduce emoji, hand-drawn icon paths, or unrelated raster branding.
+Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20 px and inherit semantic color from their control. Preserve the red ring-and-three-branch roundel on the black badge as the Amadeus product mark. Do not introduce emoji, hand-drawn icon paths, or unrelated raster branding.
 
 ## Rich response content
 

@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "amadeus"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 default-run = "amadeus"
 description = "AI Agent SDK - Core building blocks for building AI agents"

@@ -70,7 +70,7 @@ The build also emits the standalone desktop executable under `apps/client/src-ta
 
 ## Icon maintenance
 
-The source mark is `apps/client/src-tauri/app-icon.svg`. It is the corporate-badge rendition of the Amadeus spark: a white four-point star on the brand red field (`#E01B2B`) inside a thin white keyline. The browser favicon at `apps/client/public/favicon.svg` mirrors this mark and must be updated together with it.
+The source mark is `apps/client/src-tauri/app-icon.png` (1024×1024): the red ring-and-three-branch roundel on a black rounded square that follows the Apple icon grid (824×824 body with transparent margins), so the icon carries the same visual weight as standard macOS icons. The browser favicon at `apps/client/public/favicon.png` mirrors the mark on a full-bleed field for small sizes.
 
 Regenerate the icon family after changing the mark:
 

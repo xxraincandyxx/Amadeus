@@ -4,7 +4,7 @@
 // status: active
 // feature_flags: none
 // provides:
-// - runtime: amadeus-desktop executable
+// - runtime: Amadeus executable
 // uses:
 // - fn: amadeus_desktop_lib::run
 // invariants:
