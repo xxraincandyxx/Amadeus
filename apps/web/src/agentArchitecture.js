@@ -12,6 +12,7 @@
 // - fn: createToolProfile
 // - fn: loadArchitectureLibrary
 // - fn: parseArchitectureFile
+// - fn: resetArchitectureLayout
 // - fn: validateAgentArchitecture
 // - fn: architectureForExport
 // uses:
@@ -129,6 +130,13 @@ export function createAgentArchitecture(name, options = {}) {
   const id = options.id || uniqueId("architecture");
   const graph = options.blank ? { entryNodeId: "", nodes: [], edges: [] } : graphForPreset(id, preset.id);
   return { schemaVersion: AGENT_ARCHITECTURE_SCHEMA_VERSION, kind: "agent-architecture", id, name: name || preset.label, description: preset.description, preset: preset.id, runtimeStatus: preset.runtimeStatus, maxTransitions: 1024, toolProfile: createToolProfile(options.toolProfile), ...graph };
+}
+
+export function resetArchitectureLayout(architecture) {
+  const preset = presetDefinition(architecture.preset);
+  const reference = graphForPreset(architecture.id, preset.id);
+  const nodes = architecture.nodes.map((node, index) => ({ ...node, position: reference.nodes[index]?.position || node.position }));
+  return { ...architecture, nodes };
 }
 
 export function createArchitectureLibrary() {

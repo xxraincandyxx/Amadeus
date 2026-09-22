@@ -45,6 +45,7 @@ import {
   CheckCircle,
   DownloadSimple,
   FlowArrow,
+  ArrowsCounterClockwise,
   GitBranch,
   ListChecks,
   MagnifyingGlass,
@@ -72,6 +73,7 @@ import {
   parseArchitectureFile,
   parsePositiveInt,
   presetDefinition,
+  resetArchitectureLayout,
   validateAgentArchitecture,
 } from "./agentArchitecture";
 import { api } from "./api";
@@ -305,6 +307,7 @@ function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseA
         </div>
         <div className="workflow-toolbar-actions">
           <button type="button" className="icon-button" title={t("Duplicate from this pattern")} aria-label={t("Duplicate from this pattern")} onClick={() => createFromPreset()}><Plus /></button>
+          <button type="button" className="icon-button" title={t("Reset layout")} aria-label={t("Reset layout")} onClick={() => updateArchitecture(resetArchitectureLayout(architecture))}><ArrowsCounterClockwise /></button>
           <ConfirmDeleteButton className="icon-button danger-hover" title={t("Delete agent design")} confirmLabel={t("Confirm delete")} disabled={library.architectures.length <= AGENT_ARCHITECTURE_PRESETS.length} onConfirm={deleteArchitecture} />
           <button type="button" className="toolbar-button" onClick={() => fileInputRef.current?.click()}><UploadSimple /><span>{t("Import")}</span></button>
           <button type="button" className={`toolbar-button ${inspectorMode === "tools" ? "active" : ""}`} onClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("tools"); }}><Wrench /><span>{t("Tools")}</span><small>{enabledToolCount || 0}</small></button>
@@ -335,7 +338,7 @@ function AgentDesigner({ t, library, online, themeColor, onLibraryChange, onUseA
         </aside>
 
         <div className="workflow-canvas" onDrop={onDrop} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; }}>
-          <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); setInspectorMode("selection"); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); setInspectorMode("selection"); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("overview"); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "smoothstep" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
+          <ReactFlow nodes={decoratedNodes} edges={architecture.edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, node) => { setSelectedNodeId(node.id); setSelectedEdgeId(null); setInspectorMode("selection"); }} onEdgeClick={(_, edge) => { setSelectedEdgeId(edge.id); setSelectedNodeId(null); setInspectorMode("selection"); }} onPaneClick={() => { setSelectedNodeId(null); setSelectedEdgeId(null); setInspectorMode("overview"); }} isValidConnection={validConnection} fitView fitViewOptions={{ padding: 0.16, maxZoom: 1 }} minZoom={0.2} maxZoom={1.8} defaultEdgeOptions={{ type: "default" }} deleteKeyCode={null} proOptions={{ hideAttribution: true }}>
             <Background variant={BackgroundVariant.Dots} gap={22} size={1} color="#3a3a3a" />
             <Controls showInteractive={false} />
             <MiniMap pannable zoomable nodeColor={(node) => node.id === architecture.entryNodeId ? themeColor : node.data.kind === "output" ? "#55c97a" : "#676767"} maskColor="rgba(15,15,15,.72)" />

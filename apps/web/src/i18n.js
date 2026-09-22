@@ -562,6 +562,7 @@ const ZH_CN = {
   "Background dim": "背景压暗",
   "Darkens the glass behind the sidebar and main page.": "压暗侧边栏与主页背后的玻璃。",
   "Restore material defaults": "恢复材质默认值",
+  "Reset layout": "重置布局",
   "Select the language used throughout the application.": "选择整个应用使用的语言。",
   "Connection saved. Reconnecting…": "连接已保存，正在重新连接…",
   Dismiss: "关闭",

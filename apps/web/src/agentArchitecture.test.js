@@ -17,7 +17,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, createToolProfile, parseArchitectureFile, parsePositiveInt, validateAgentArchitecture } from "./agentArchitecture.js";
+import { AGENT_ARCHITECTURE_PRESETS, architectureForExport, architectureRuntimeStatus, createAgentArchitecture, createArchitectureLibrary, createToolProfile, parseArchitectureFile, parsePositiveInt, resetArchitectureLayout, validateAgentArchitecture } from "./agentArchitecture.js";
 
 test("parsePositiveInt accepts whole positive numbers and rejects everything else", () => {
   assert.equal(parsePositiveInt("1024", 7), 1024);
@@ -114,4 +114,13 @@ test("an explicit tool allowlist can intentionally be empty", () => {
   const profile = createToolProfile({ selectionMode: "selected", enabledTools: [] });
   assert.equal(profile.selectionMode, "selected");
   assert.deepEqual(profile.enabledTools, []);
+});
+
+test("reset layout restores preset positions and preserves the graph", () => {
+  const architecture = createAgentArchitecture("ReAct", { preset: "react" });
+  const dragged = { ...architecture, nodes: architecture.nodes.map((node, index) => ({ ...node, position: { x: index * 500, y: index * 300 } })) };
+  const reset = resetArchitectureLayout(dragged);
+  assert.deepEqual(reset.nodes.map(({ position }) => position), architecture.nodes.map(({ position }) => position));
+  assert.deepEqual(reset.edges, dragged.edges);
+  assert.deepEqual(reset.nodes.map(({ id, data }) => ({ id, label: data.label })), dragged.nodes.map(({ id, data }) => ({ id, label: data.label })));
 });
