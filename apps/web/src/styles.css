@@ -146,11 +146,15 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 @media (prefers-reduced-transparency: reduce) {
   .sidebar { background: var(--sidebar); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .workspace { background: var(--bg); }
+  html.is-tauri .sidebar { background: var(--sidebar); }
+  html.is-tauri .workspace { background: var(--bg); }
 }
 
 @media (prefers-contrast: more) {
   .sidebar { background: var(--sidebar); -webkit-backdrop-filter: none; backdrop-filter: none; border-right-color: #7a7a7a; }
   .workspace { background: var(--bg); }
+  html.is-tauri .sidebar { background: var(--sidebar); border-right: 1px solid #7a7a7a; }
+  html.is-tauri .workspace { background: var(--bg); }
 }
 
 .window-controls { position: fixed; top: 0; left: 0; z-index: 60; display: flex; align-items: center; gap: 4px; height: 42px; padding-left: 20px; pointer-events: none; }
@@ -168,10 +172,16 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .is-tauri .window-controls::before { content: ""; width: 70px; }
 .is-tauri .sidebar-titlebar-drag-region { position: absolute; top: 0; right: 5px; left: 0; height: 42px; display: block; }
 html.is-tauri, .is-tauri body, .is-tauri .app-shell { background: transparent; }
-html.is-tauri { --sidebar-opacity: 52%; }
+html.is-tauri { --main-page-opacity: 78%; }
 .is-tauri .workspace { grid-template-rows: 78px auto minmax(0, 1fr) auto; background: var(--main-page-fill); }
-.is-tauri .sidebar { -webkit-backdrop-filter: none; backdrop-filter: none; }
-.is-tauri .topbar { padding-top: 17px; }
+.is-tauri .sidebar {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  border-right: 0;
+  box-shadow: none;
+}
+.is-tauri .topbar { padding-top: 17px; border-bottom-color: rgba(255, 255, 255, 0.06); }
 .is-tauri .header-title { pointer-events: none; user-select: none; }
 .is-tauri .details-panel { top: 78px; }
 @media (min-width: 821px) {
