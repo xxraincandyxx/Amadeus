@@ -239,9 +239,6 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .sidebar-scrim { display: none; }
 
 .resize-handle { position: absolute; z-index: 45; top: 0; right: -5px; width: 10px; height: 100%; cursor: col-resize; touch-action: none; }
-.resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: var(--accent); opacity: 0; transition: opacity .14s ease; }
-.resize-handle:hover::after, .resize-handle:focus-visible::after, .is-resizing-panel .resize-handle::after { opacity: .72; }
-.resize-handle:focus-visible { outline: 0; }
 .is-resizing-panel, .is-resizing-panel * { cursor: col-resize !important; user-select: none !important; }
 .is-resizing-panel .sidebar, .is-resizing-panel .workspace { transition: none; }
 
