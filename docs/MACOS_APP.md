@@ -30,7 +30,7 @@ The browser and native bundle share the same composer command palette. Typing `/
 Install frontend dependencies once:
 
 ```bash
-cd apps/web
+cd apps/client
 npm install
 ```
 
@@ -39,7 +39,7 @@ npm install
 Run the native client; the preparation step builds the Rust server sidecar before Tauri starts:
 
 ```bash
-cd apps/web
+cd apps/client
 npm run desktop:dev
 ```
 
@@ -50,32 +50,32 @@ The default endpoint is `http://127.0.0.1:3000`. Open the gear button or the err
 ## Build a runnable application
 
 ```bash
-cd apps/web
+cd apps/client
 npm run desktop:build
 ```
 
 The application and bundled server are written to:
 
 ```text
-apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
+apps/client/src-tauri/target/release/bundle/macos/Amadeus.app
 ```
 
 Launch it from Finder or with:
 
 ```bash
-open apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
+open apps/client/src-tauri/target/release/bundle/macos/Amadeus.app
 ```
 
-The build also emits the standalone desktop executable under `apps/web/src-tauri/target/release/`. The root release server is staged under the ignored `apps/web/src-tauri/binaries/` directory with its Rust host target suffix before bundling. Native build artifacts and generated schemas are ignored by Git.
+The build also emits the standalone desktop executable under `apps/client/src-tauri/target/release/`. The root release server is staged under the ignored `apps/client/src-tauri/binaries/` directory with its Rust host target suffix before bundling. Native build artifacts and generated schemas are ignored by Git.
 
 ## Icon maintenance
 
-The source mark is `apps/web/src-tauri/app-icon.svg`. It deliberately extends the code-native Amadeus sparkle rather than introducing a separate generated logo.
+The source mark is `apps/client/src-tauri/app-icon.svg`. It is the corporate-badge rendition of the Amadeus spark: a white four-point star on the brand red field (`#E01B2B`) inside a thin white keyline. The browser favicon at `apps/client/public/favicon.svg` mirrors this mark and must be updated together with it.
 
 Regenerate the icon family after changing the mark:
 
 ```bash
-cd apps/web
+cd apps/client
 npm run desktop:icon
 ```
 
@@ -104,7 +104,7 @@ Do not claim a local ad-hoc/linker signature is a distributable release signatur
 ## Verification
 
 ```bash
-cd apps/web
+cd apps/client
 npm run lint
 npm run build
 npm audit --omit=dev

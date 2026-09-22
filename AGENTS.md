@@ -1,6 +1,6 @@
 # Amadeus Agent Guide
 
-Amadeus is a Rust workspace for multi-provider AI agents. The root crate is a compatibility facade; implementation lives in `crates/`. `apps/web`, `python-sdk`, `benchmarks`, and the top-level `runtime` directory are outside the Cargo workspace.
+Amadeus is a Rust workspace for multi-provider AI agents. The root crate is a compatibility facade; implementation lives in `crates/`. `apps/client`, `python-sdk`, `benchmarks`, and the top-level `runtime` directory are outside the Cargo workspace.
 
 ## Required Workflow
 
@@ -21,7 +21,7 @@ Amadeus is a Rust workspace for multi-provider AI agents. The root crate is a co
 | Format / lint | `cargo fmt --all` / `cargo clippy --all-features -- -D warnings` |
 | Full verification | `./verify.sh` |
 | Source headers | `python3 scripts/check_source_headers.py` |
-| Web checks | `cd apps/web && npm run lint && npm run test` |
+| Web checks | `cd apps/client && npm run lint && npm run test` |
 
 ## Universal Rules
 
@@ -40,7 +40,7 @@ Amadeus is a Rust workspace for multi-provider AI agents. The root crate is a co
 - Style, errors, features, and tests: `CODING_STYLE.md`
 - Source-header schema: `docs/SOURCE_FILE_HEADERS.md`
 - HTTP contract: `docs/HTTP_API.md`; TUI testing: `docs/TUI_TESTING.md`
-- Configuration: `.amadeus/README.md`; web client: `apps/web/README.md`
+- Configuration: `.amadeus/README.md`; web client: `apps/client/README.md`
 - GitNexus workflows: `.claude/skills/gitnexus/`
 
 <!-- gitnexus:start -->

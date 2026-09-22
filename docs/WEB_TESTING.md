@@ -10,16 +10,16 @@
 
 ```bash
 # Terminal 1 — backend. Either the deterministic mock…
-cd apps/web && npm run mock-api            # port 3000
+cd apps/client && npm run mock-api            # port 3000
 
 # …or the real runtime (uses .amadeus/settings.json, e.g. the Gemma vLLM endpoint)
 cargo run --features full -- --server 3000
 
 # Terminal 2 — the client
-cd apps/web && npm run dev                 # http://localhost:5173
+cd apps/client && npm run dev                 # http://localhost:5173
 
 # Verification gate for any fix
-cd apps/web && npm run test && npm run lint && npm run build
+cd apps/client && npm run test && npm run lint && npm run build
 ```
 
 Point the client at `http://127.0.0.1:3000` either way; the UI is backend-agnostic.
@@ -44,7 +44,7 @@ test: the client must drop vanished sessions and re-seed a Main Agent without cr
 The client renders every conversation through **two paths**, and divergence between them is the
 most productive bug mine:
 
-1. **Live path** — SSE events reduced by `reduceEvent` (`apps/web/src/sessionState.js`).
+1. **Live path** — SSE events reduced by `reduceEvent` (`apps/client/src/sessionState.js`).
 2. **Hydrated path** — `GET /v1/sessions/{id}/history` rebuilt by `historyToTimeline`, which
    replaces the live timeline when a turn finishes, when switching sessions, and on reload.
 

@@ -17,11 +17,11 @@ clean: clean-build clean-generated clean-cache
 clean-build:
 	@echo "Removing build output..."
 	@cargo clean --manifest-path "$(PROJECT_ROOT)/Cargo.toml"
-	@cargo clean --manifest-path "$(PROJECT_ROOT)/apps/web/src-tauri/Cargo.toml"
+	@cargo clean --manifest-path "$(PROJECT_ROOT)/apps/client/src-tauri/Cargo.toml"
 	@rm -rf -- \
-		"$(PROJECT_ROOT)/apps/web/dist" \
-		"$(PROJECT_ROOT)/apps/web/src-tauri/binaries" \
-		"$(PROJECT_ROOT)/apps/web/src-tauri/gen"
+		"$(PROJECT_ROOT)/apps/client/dist" \
+		"$(PROJECT_ROOT)/apps/client/src-tauri/binaries" \
+		"$(PROJECT_ROOT)/apps/client/src-tauri/gen"
 
 clean-generated:
 	@echo "Removing generated logs and results..."
@@ -44,7 +44,7 @@ clean-cache:
 		\( -path "$(PROJECT_ROOT)/.git" \
 		-o -path "$(PROJECT_ROOT)/refs" \
 		-o -path "$(PROJECT_ROOT)/node_modules" \
-		-o -path "$(PROJECT_ROOT)/apps/web/node_modules" \
+		-o -path "$(PROJECT_ROOT)/apps/client/node_modules" \
 		-o -path "$(PROJECT_ROOT)/.opencode/node_modules" \) -prune \
 		-o -type d \( -name '__pycache__' -o -name '.pytest_cache' \) \
 		-exec rm -rf -- {} +

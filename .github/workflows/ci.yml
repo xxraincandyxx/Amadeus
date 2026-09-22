@@ -36,7 +36,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: apps/web
+        working-directory: apps/client
 
     steps:
       - name: Check out repository
@@ -47,7 +47,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: apps/client/package-lock.json
 
       - name: Install dependencies
         run: npm ci

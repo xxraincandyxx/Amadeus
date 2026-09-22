@@ -91,7 +91,7 @@ cargo build --release --features full
 Development mode — builds the server sidecar, then opens the native window:
 
 ```bash
-cd apps/web
+cd apps/client
 npm install
 npm run desktop:dev
 ```
@@ -99,9 +99,9 @@ npm run desktop:dev
 Build a distributable application bundle:
 
 ```bash
-cd apps/web
+cd apps/client
 npm run desktop:build
-# -> apps/web/src-tauri/target/release/bundle/macos/Amadeus.app
+# -> apps/client/src-tauri/target/release/bundle/macos/Amadeus.app
 ```
 
 The app starts and supervises its own server on port 3000; if a server already
@@ -453,7 +453,7 @@ When attached, the policy system blocks dangerous patterns including `sudo`, `ch
 
 ### Web workspace & macOS app (primary)
 
-The React agent workspace lives in [`apps/web`](apps/web). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/web/README.md`](apps/web/README.md) for local and mock-server startup instructions, and the [preview](#preview) above for the workspace and task-workflow-designer captures.
+The React agent workspace lives in [`apps/client`](apps/client). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/client/README.md`](apps/client/README.md) for local and mock-server startup instructions, and the [preview](#preview) above for the workspace and task-workflow-designer captures.
 
 The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
 

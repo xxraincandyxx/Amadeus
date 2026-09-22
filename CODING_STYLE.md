@@ -261,7 +261,7 @@ Conventions:
 - `./verify.sh` runs the full pipeline in order: source-file headers → `cargo fmt --all -- --check` → `cargo metadata` → `cargo clippy --all-features -- -D warnings` → feature-matrix `cargo check` (`--no-default-features`, `tui`, `api`, `full`) → `cargo test --features full`. Run it before opening a PR.
 - Iterate on one crate with `-p` (`cargo test -p core`, `cargo check -p tui`) — package names are bare (`core`, `tui`, `runtime`), not `amadeus_*`.
 
-### Web client (`apps/web`)
+### Web client (`apps/client`)
 
 The React/Tauri client is a separate npm project and is not covered by `cargo fmt`/`clippy`:
 

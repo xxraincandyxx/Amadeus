@@ -17,7 +17,7 @@ The current design dials are variance 4, motion 3, and density 7. New work shoul
 
 ## Tokens
 
-The canonical runtime tokens live in `apps/web/src/styles.css` under `:root`.
+The canonical runtime tokens live in `apps/client/src/styles.css` under `:root`.
 
 | Role | Token | Current value | Usage |
 | --- | --- | --- | --- |
@@ -59,7 +59,7 @@ Settings exposes independent fill-opacity controls for the sidebar and main page
 
 The interface uses the local Geist/SF Pro/Segoe UI system stack and platform monospace fonts for identifiers, commands, and code. Keep body copy at readable 13–15 px sizes and reserve larger display type for empty or welcome states.
 
-Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20 px and inherit semantic color from their control. Preserve the geometric sparkle as the Amadeus product mark. Do not introduce emoji, hand-drawn icon paths, or unrelated raster branding.
+Use `@phosphor-icons/react` exclusively. Icons should normally render at 14–20 px and inherit semantic color from their control. Preserve the red badge with the white four-point spark as the Amadeus product mark. Do not introduce emoji, hand-drawn icon paths, or unrelated raster branding.
 
 ## Rich response content
 

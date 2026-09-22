@@ -42,10 +42,10 @@
 ## 2. Findings
 
 ### F1 — `api` is the least-tested, most panic-prone crate (highest risk)
-4,837 LOC, **4 inline tests**, and **31 of the codebase's 51 non-test `unwrap()`/`expect()` calls** — concentrated in `handlers/agents.rs` (17) and `handlers/stream.rs` (14), almost all `Event::default().json_data(..).unwrap()` in the SSE mapping. This directly violates the documented "never `unwrap()` in production code" rule, and a serialization failure panics the streaming task rather than degrading the event. This is also the exact surface `apps/web` depends on.
+4,837 LOC, **4 inline tests**, and **31 of the codebase's 51 non-test `unwrap()`/`expect()` calls** — concentrated in `handlers/agents.rs` (17) and `handlers/stream.rs` (14), almost all `Event::default().json_data(..).unwrap()` in the SSE mapping. This directly violates the documented "never `unwrap()` in production code" rule, and a serialization failure panics the streaming task rather than degrading the event. This is also the exact surface `apps/client` depends on.
 
 ### F2 — CI is not running on the default branch
-`.github/workflows/ci.yml` triggers on `push: branches: [main]`, but the repository's default branch is **`master`**. Push CI never fires; only `pull_request` runs. CI also never exercises `apps/web` (eslint + `node --test`) or any Python (`python-sdk`, `benchmarks/`, `runtime/`). *(Fixed 2026-08-06.)*
+`.github/workflows/ci.yml` triggers on `push: branches: [main]`, but the repository's default branch is **`master`**. Push CI never fires; only `pull_request` runs. CI also never exercises `apps/client` (eslint + `node --test`) or any Python (`python-sdk`, `benchmarks/`, `runtime/`). *(Fixed 2026-08-06.)*
 
 ### F2b — CI runs less than half the test suite (discovered while executing P0)
 `verify.sh` ends with `cargo test --features full`, which in a workspace with a root package selects **only the root package** — the facade's (zero) unit tests plus the `tests/` integration suites. Measured:
@@ -99,7 +99,7 @@ Layered settings loading, TUI settings, permission rules, and provider config al
 
 **P0.1 Fix the CI trigger.** ✅ `push` now covers `master` and `main`.
 
-**P0.2 Extend CI to the non-Rust surfaces.** ✅ Added a `web` job (`npm ci` → `npm run lint` → `npm run test`, Node 20, npm cache keyed on `apps/web/package-lock.json`). Verified locally: eslint clean, 15/15 tests pass. A `python` job still waits on P2.2.
+**P0.2 Extend CI to the non-Rust surfaces.** ✅ Added a `web` job (`npm ci` → `npm run lint` → `npm run test`, Node 20, npm cache keyed on `apps/client/package-lock.json`). Verified locally: eslint clean, 15/15 tests pass. A `python` job still waits on P2.2.
 
 **P0.5 Make CI run the whole suite (new — blocked on P0.6).** ✅ `verify.sh` now runs `cargo test --workspace --all-features --no-fail-fast` instead of `cargo test --features full`, covering all member-crate unit tests in addition to the `tests/` integration suites. CI coverage: **401 → 1,233 tests** (832 unit/doc + 401 integration), all green.
 
@@ -151,9 +151,9 @@ Then resolve the two violations: move the pure parts of `core/src/permissions.rs
 
 ### P2 — Consistency & hygiene (opportunistic)
 
-**P2.1 Finish the i18n migration.** Route the remaining 12 TUI components through `i18n::text`, then add a test asserting the TUI and web catalogs cover the same logical key set (and that no catalog key is orphaned). Cheapest durable form: a shared JSON key inventory checked by both `cargo test -p tui i18n` and `apps/web` `node --test`.
+**P2.1 Finish the i18n migration.** Route the remaining 12 TUI components through `i18n::text`, then add a test asserting the TUI and web catalogs cover the same logical key set (and that no catalog key is orphaned). Cheapest durable form: a shared JSON key inventory checked by both `cargo test -p tui i18n` and `apps/client` `node --test`.
 
-**P2.2 Give `python-sdk` the tests its manifest already promises.** A smoke suite against `apps/web/mock-server.mjs` or a live `--server` instance; wire into the CI `python` job from P0.2.
+**P2.2 Give `python-sdk` the tests its manifest already promises.** A smoke suite against `apps/client/mock-server.mjs` or a live `--server` instance; wire into the CI `python` job from P0.2.
 
 **P2.3 Documentation topology.** Generated header artifacts and their redundant generators were removed on 2026-08-19. Remaining work: move root reports under `docs/` and separate current reference material from dated plans.
 

@@ -17,7 +17,7 @@ Install Rust, Node.js, and the macOS Command Line Tools. Configure an Amadeus pr
 ```bash
 cargo check --features full
 
-cd apps/web
+cd apps/client
 npm install
 npm run lint
 npm run build
@@ -26,7 +26,7 @@ npm run build
 The web and desktop clients can be developed without an LLM credential by running the mock API:
 
 ```bash
-cd apps/web
+cd apps/client
 npm run mock-api
 ```
 
@@ -68,7 +68,7 @@ cargo clippy --all-features --all-targets -- -D warnings
 cargo test --features full
 python3 scripts/check_source_headers.py
 
-cd apps/web
+cd apps/client
 npm run lint
 npm run build
 npm audit --omit=dev
