@@ -172,8 +172,8 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 .is-tauri .window-controls::before { content: ""; width: 70px; }
 .is-tauri .sidebar-titlebar-drag-region { position: absolute; top: 0; right: 5px; left: 0; height: 42px; display: block; }
 html.is-tauri, .is-tauri body { background: transparent; }
-.is-tauri .app-shell { background: rgba(6, 6, 8, 0.35); }
-html.is-tauri { --sheet-fill: color-mix(in srgb, var(--surface) 60%, var(--bg)); }
+.is-tauri .app-shell { background: rgba(4, 4, 6, 0.78); }
+html.is-tauri { --sheet-fill: color-mix(in srgb, #1a1a1c 90%, transparent); }
 .is-tauri .workspace {
   grid-template-rows: 61px auto minmax(0, 1fr) auto;
   margin-top: 8px;
@@ -188,7 +188,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, var(--surface) 60%, var(--bg));
 .is-tauri .sidebar {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
-  background: color-mix(in srgb, var(--bg) 60%, transparent);
+  background: transparent;
   border-right: 0;
   box-shadow: none;
 }
@@ -955,6 +955,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, var(--surface) 60%, var(--bg));
   .window-controls { display: none; }
   .sidebar { position: fixed; inset: 0 auto 0 0; width: min(310px, 88vw); transform: translateX(-105%); transition: transform .22s ease; box-shadow: 18px 0 50px rgba(0,0,0,.4); padding-top: 18px; }
   .sidebar.open { transform: translateX(0); }
+  html.is-tauri .sidebar { background: color-mix(in srgb, var(--bg) 92%, transparent); }
   .sidebar-scrim { display: block; position: fixed; z-index: 39; inset: 0; border: 0; padding: 0; pointer-events: none; opacity: 0; background: rgba(0,0,0,.48); transition: opacity .2s ease; }
   .sidebar-scrim.visible { pointer-events: auto; opacity: 1; }
   .mobile-menu { display: inline-flex; }
