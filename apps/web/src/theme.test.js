@@ -64,30 +64,45 @@ test("surface appearance defaults keep the sidebar glassy and the main page opaq
 });
 
 test("surface opacity normalization rounds and clamps stored values", () => {
-  assert.deepEqual(normalizeSurfaceAppearance({ sidebarOpacity: 42.6, mainOpacity: 120 }), {
+  assert.deepEqual(normalizeSurfaceAppearance({ sidebarOpacity: 42.6, mainOpacity: 120, sheetOpacity: 55.5, scrimOpacity: -10 }), {
     sidebarOpacity: 43,
     mainOpacity: 100,
+    sheetColor: "#26262b",
+    sheetOpacity: 56,
+    scrimOpacity: 0,
   });
   assert.deepEqual(normalizeSurfaceAppearance({ sidebarOpacity: -10 }), {
     sidebarOpacity: 0,
     mainOpacity: 100,
+    sheetColor: "#26262b",
+    sheetOpacity: 55,
+    scrimOpacity: 78,
   });
+});
+
+test("sheet color falls back to its default when invalid", () => {
+  assert.equal(normalizeSurfaceAppearance({ sheetColor: "nope" }).sheetColor, "#26262b");
+  assert.equal(normalizeSurfaceAppearance({ sheetColor: " #3A81FB " }).sheetColor, "#3a81fb");
 });
 
 test("applying surface appearance persists values and updates opacity variables", () => {
   const stored = new Map();
   const properties = new Map();
   const appearance = applySurfaceAppearance(
-    { sidebarOpacity: 74, mainOpacity: 86 },
+    { sidebarOpacity: 74, mainOpacity: 86, sheetColor: "#3a81fb", sheetOpacity: 40, scrimOpacity: 60 },
     { setItem: (key, value) => stored.set(key, value) },
     { style: { setProperty: (key, value) => properties.set(key, value) } },
   );
 
-  assert.deepEqual(appearance, { sidebarOpacity: 74, mainOpacity: 86 });
-  assert.equal(stored.get("amadeus.surfaceAppearance.v1"), '{"sidebarOpacity":74,"mainOpacity":86}');
+  assert.deepEqual(appearance, { sidebarOpacity: 74, mainOpacity: 86, sheetColor: "#3a81fb", sheetOpacity: 40, scrimOpacity: 60 });
+  assert.equal(stored.get("amadeus.surfaceAppearance.v1"), '{"sidebarOpacity":74,"mainOpacity":86,"sheetColor":"#3a81fb","sheetOpacity":40,"scrimOpacity":60}');
   assert.deepEqual(surfaceAppearanceVariables(appearance), {
     "--sidebar-opacity": "74%",
     "--main-page-opacity": "86%",
+    "--sheet-fill": "color-mix(in srgb, #3a81fb 40%, transparent)",
+    "--glass-scrim": "rgba(4, 4, 6, 0.60)",
   });
   assert.equal(properties.get("--main-page-opacity"), "86%");
+  assert.equal(properties.get("--sheet-fill"), "color-mix(in srgb, #3a81fb 40%, transparent)");
+  assert.equal(properties.get("--glass-scrim"), "rgba(4, 4, 6, 0.60)");
 });

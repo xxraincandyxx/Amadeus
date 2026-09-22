@@ -31,6 +31,7 @@ import { DEFAULT_SURFACE_APPEARANCE, DEFAULT_THEME_COLOR, THEME_COLOR_PRESETS, n
 export function SettingsWorkspace({ online, language, themeColor, surfaceAppearance, workspace, onLanguage, onThemeColor, onSurfaceAppearance, onReconnect, t }) {
   const [apiUrl, setApiUrl] = useState(getApiBaseUrl());
   const [customColor, setCustomColor] = useState(themeColor);
+  const [sheetColorDraft, setSheetColorDraft] = useState(null);
   const [status, setStatus] = useState("");
   const [testing, setTesting] = useState(false);
 
@@ -42,6 +43,12 @@ export function SettingsWorkspace({ online, language, themeColor, surfaceAppeara
 
   const selectSurfaceOpacity = (property, value) => {
     onSurfaceAppearance(normalizeSurfaceAppearance({ ...surfaceAppearance, [property]: value }));
+  };
+
+  const commitSheetColor = (value) => {
+    const normalized = normalizeThemeColor(value, surfaceAppearance.sheetColor);
+    setSheetColorDraft(null);
+    selectSurfaceOpacity("sheetColor", normalized);
   };
 
   const testConnection = async () => {
@@ -134,6 +141,23 @@ export function SettingsWorkspace({ online, language, themeColor, surfaceAppeara
                 <span><strong>{t("Main page opacity")}</strong><small>{t("Defaults to 100% so the workspace remains opaque.")}</small></span>
                 <output htmlFor="main-page-opacity">{surfaceAppearance.mainOpacity}%</output>
                 <input id="main-page-opacity" type="range" min="0" max="100" step="1" value={surfaceAppearance.mainOpacity} aria-valuetext={`${surfaceAppearance.mainOpacity}%`} onChange={(event) => selectSurfaceOpacity("mainOpacity", event.target.value)} />
+              </label>
+              <label className="surface-opacity-control" htmlFor="sheet-color">
+                <span><strong>{t("Sheet color")}</strong><small>{t("Tint of the embedded main-page glass.")}</small></span>
+                <span className="custom-color-inputs">
+                  <input type="color" aria-label={t("Choose sheet color")} value={surfaceAppearance.sheetColor} onChange={(event) => selectSurfaceOpacity("sheetColor", event.target.value)} />
+                  <input id="sheet-color" value={sheetColorDraft ?? surfaceAppearance.sheetColor} onChange={(event) => setSheetColorDraft(event.target.value)} onBlur={() => commitSheetColor(sheetColorDraft ?? surfaceAppearance.sheetColor)} onKeyDown={(event) => { if (event.key === "Enter") commitSheetColor(sheetColorDraft ?? surfaceAppearance.sheetColor); }} />
+                </span>
+              </label>
+              <label className="surface-opacity-control" htmlFor="sheet-opacity">
+                <span><strong>{t("Sheet opacity")}</strong><small>{t("Lower opacity lets the desktop material glow through the main page.")}</small></span>
+                <output htmlFor="sheet-opacity">{surfaceAppearance.sheetOpacity}%</output>
+                <input id="sheet-opacity" type="range" min="0" max="100" step="1" value={surfaceAppearance.sheetOpacity} aria-valuetext={`${surfaceAppearance.sheetOpacity}%`} onChange={(event) => selectSurfaceOpacity("sheetOpacity", event.target.value)} />
+              </label>
+              <label className="surface-opacity-control" htmlFor="background-dim">
+                <span><strong>{t("Background dim")}</strong><small>{t("Darkens the glass behind the sidebar and main page.")}</small></span>
+                <output htmlFor="background-dim">{surfaceAppearance.scrimOpacity}%</output>
+                <input id="background-dim" type="range" min="0" max="100" step="1" value={surfaceAppearance.scrimOpacity} aria-valuetext={`${surfaceAppearance.scrimOpacity}%`} onChange={(event) => selectSurfaceOpacity("scrimOpacity", event.target.value)} />
               </label>
               <button className="settings-text-button" type="button" onClick={() => onSurfaceAppearance({ ...DEFAULT_SURFACE_APPEARANCE })}>{t("Restore material defaults")}</button>
             </fieldset>

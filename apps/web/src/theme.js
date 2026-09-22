@@ -6,6 +6,7 @@
 // provides:
 // - const: DEFAULT_THEME_COLOR
 // - const: DEFAULT_SURFACE_APPEARANCE
+// - const: DEFAULT_SHEET_COLOR
 // - const: THEME_COLOR_PRESETS
 // - fn: loadThemeColor
 // - fn: applyThemeColor
@@ -17,7 +18,8 @@
 // invariants:
 // - Stored theme colors use six-digit hexadecimal notation.
 // - Invalid or missing values resolve to the dark-red default.
-// - Sidebar opacity defaults to 68 percent while the main page defaults to fully opaque.
+// - Sidebar opacity defaults to 68 percent, the embedded sheet to 55 percent at
+//   #26262b, the background scrim to 78 percent, and the main page to fully opaque.
 // side_effects:
 // - Reads and writes browser local storage.
 // - Updates document-root CSS variables.
@@ -28,7 +30,14 @@
 export const THEME_COLOR_STORAGE_KEY = "amadeus.themeColor";
 export const SURFACE_APPEARANCE_STORAGE_KEY = "amadeus.surfaceAppearance.v1";
 export const DEFAULT_THEME_COLOR = "#a72f42";
-export const DEFAULT_SURFACE_APPEARANCE = Object.freeze({ sidebarOpacity: 68, mainOpacity: 100 });
+export const DEFAULT_SHEET_COLOR = "#26262b";
+export const DEFAULT_SURFACE_APPEARANCE = Object.freeze({
+  sidebarOpacity: 68,
+  mainOpacity: 100,
+  sheetColor: DEFAULT_SHEET_COLOR,
+  sheetOpacity: 55,
+  scrimOpacity: 78,
+});
 
 export const THEME_COLOR_PRESETS = [
   { id: "dark-red", color: DEFAULT_THEME_COLOR, label: "Dark red" },
@@ -38,9 +47,9 @@ export const THEME_COLOR_PRESETS = [
   { id: "graphite", color: "#767676", label: "Graphite" },
 ];
 
-export function normalizeThemeColor(value) {
+export function normalizeThemeColor(value, fallback = DEFAULT_THEME_COLOR) {
   const normalized = String(value || "").trim().toLowerCase();
-  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : DEFAULT_THEME_COLOR;
+  return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
 }
 
 export function loadThemeColor(storage) {
@@ -82,6 +91,9 @@ export function normalizeSurfaceAppearance(value) {
   return {
     sidebarOpacity: normalizeOpacity(source.sidebarOpacity, DEFAULT_SURFACE_APPEARANCE.sidebarOpacity),
     mainOpacity: normalizeOpacity(source.mainOpacity, DEFAULT_SURFACE_APPEARANCE.mainOpacity),
+    sheetColor: normalizeThemeColor(source.sheetColor, DEFAULT_SHEET_COLOR),
+    sheetOpacity: normalizeOpacity(source.sheetOpacity, DEFAULT_SURFACE_APPEARANCE.sheetOpacity),
+    scrimOpacity: normalizeOpacity(source.scrimOpacity, DEFAULT_SURFACE_APPEARANCE.scrimOpacity),
   };
 }
 
@@ -98,6 +110,8 @@ export function surfaceAppearanceVariables(value) {
   return {
     "--sidebar-opacity": `${appearance.sidebarOpacity}%`,
     "--main-page-opacity": `${appearance.mainOpacity}%`,
+    "--sheet-fill": `color-mix(in srgb, ${appearance.sheetColor} ${appearance.sheetOpacity}%, transparent)`,
+    "--glass-scrim": `rgba(4, 4, 6, ${(appearance.scrimOpacity / 100).toFixed(2)})`,
   };
 }
 
