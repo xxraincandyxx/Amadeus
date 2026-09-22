@@ -10,14 +10,14 @@
 // - fn: tauri::App::run
 // - process: bundled amadeus-server sidecar
 // - artifact: tauri.conf.json
-// - crate: window-vibrancy (macOS under-window material)
+// - crate: window-vibrancy (macOS sidebar material)
 // - trait: tauri::menu menu builders (native application menu)
 // invariants:
 // - An existing server on the desktop API port is reused instead of replaced.
 // - The bundled server is terminated when the desktop window closes.
 // side_effects:
 // - Creates and runs a native application window.
-// - Applies the macOS under-window vibrancy material behind the webview.
+// - Applies the macOS sidebar vibrancy material behind the webview.
 // - Registers the native application menu and forwards New Session to the client.
 // - Starts a local Amadeus HTTP API process when the configured port is free.
 // tests:
@@ -123,7 +123,7 @@ pub fn run() {
                 if let Some(window) = app.get_webview_window("main") {
                     window_vibrancy::apply_vibrancy(
                         &window,
-                        window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                        window_vibrancy::NSVisualEffectMaterial::Sidebar,
                         None,
                         None,
                     )
