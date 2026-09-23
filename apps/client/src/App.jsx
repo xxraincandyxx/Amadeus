@@ -937,7 +937,7 @@ function Sidebar({ sessions, activeId, view, open, online, workspace, onSelect, 
           {rows.map(({ session, depth }) => (
             <button
               key={session.id}
-              className={`session-button ${session.id === activeId ? "active" : ""}`}
+              className={`session-button ${view === "conversation" && session.id === activeId ? "active" : ""}`}
               style={{ "--session-depth": depth }}
               onClick={() => onSelect(session.id)}
             >

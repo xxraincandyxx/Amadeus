@@ -213,16 +213,14 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
   width: 100%; display: flex; align-items: center; gap: 11px; border: 0; background: transparent; color: #dedede; min-height: 38px; border-radius: 10px; padding: 0 10px; text-align: left;
 }
 .primary-nav button { cursor: pointer; font-size: 14px; }
-.primary-nav button:hover { background: rgba(255,255,255,0.06); }
-.primary-nav button.active { background: rgba(255,255,255,0.09); color: #fff; }
+.primary-nav button:hover, .session-button:hover { background: rgba(255,255,255,0.06); }
+.primary-nav button.active, .session-button.active { background: rgba(255,255,255,0.09); color: #fff; }
 .primary-nav svg, .project-label svg { width: 18px; height: 18px; color: #c2c2c2; }
 .nav-count { margin-left: auto; color: var(--quiet); font-size: 12px; }
 .section-label { margin: 23px 10px 7px; color: #929292; font-size: 12px; font-weight: 600; }
 .project-label { min-height: 34px; font-size: 14px; font-weight: 500; }
 .session-list { display: grid; gap: 2px; overflow-y: auto; padding-left: 10px; }
-.session-button { position: relative; cursor: pointer; color: #d0d0d0; font-size: 14px; padding-left: calc(32px + var(--session-depth, 0) * 16px); padding-right: 12px; }
-.session-button:hover { background: rgba(255,255,255,0.055); }
-.session-button.active { background: #4a4a4a; color: #fff; }
+.session-button { position: relative; cursor: pointer; font-size: 14px; padding-left: calc(32px + var(--session-depth, 0) * 16px); padding-right: 12px; }
 .session-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-button .session-branch { position: absolute; left: calc(16px + var(--session-depth, 0) * 16px); width: 9px; height: 15px; border-left: 1px solid #686868; border-bottom: 1px solid #686868; border-radius: 0 0 0 3px; transform: translate(-6px, -4px); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #777; margin-left: auto; flex: 0 0 auto; }
