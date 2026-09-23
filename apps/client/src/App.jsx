@@ -419,7 +419,8 @@ function App() {
   }, [sessionArchitectures]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const container = endRef.current?.closest(".conversation");
+    if (container) container.scrollTop = container.scrollHeight;
   }, [runtime.timeline, runtime.streamingText, runtime.thinking, runtime.approvals]);
 
   const openCreateDialog = useCallback((architectureId = "preset-react") => {
