@@ -120,7 +120,7 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
   overflow: hidden;
 }
 
-.workspace { margin-left: var(--panel-width, 292px); transition: margin-left .24s cubic-bezier(0.4, 0, 0.2, 1); }
+.workspace { margin-left: var(--panel-width, 292px); transition: margin-left .24s cubic-bezier(0.4, 0, 0.2, 1), grid-template-columns .28s cubic-bezier(0.4, 0, 0.2, 1); }
 
 .sidebar {
   position: fixed;
@@ -241,7 +241,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .is-resizing-panel, .is-resizing-panel * { cursor: col-resize !important; user-select: none !important; }
 .is-resizing-panel .sidebar, .is-resizing-panel .workspace { transition: none; }
 
-.workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 61px auto minmax(0, 1fr) auto; position: relative; background: var(--bg); background: var(--main-page-fill); }
+.workspace { min-width: 0; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 0px; grid-template-rows: 61px auto minmax(0, 1fr) auto; position: relative; background: var(--bg); background: var(--main-page-fill); }
 .workspace.details-open { grid-template-columns: minmax(0, 1fr) min(380px, 42vw); }
 .topbar { grid-row: 1; grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 20px; border-bottom: 1px solid var(--border-soft); background: transparent; transition: padding-left .24s cubic-bezier(0.4, 0, 0.2, 1); }
 .error-banner { grid-row: 2; grid-column: 1 / -1; }
@@ -773,20 +773,20 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .slash-command-copy small { color: #8c8c8c; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .slash-command-list code { color: #777; font: 10px var(--font-mono); white-space: nowrap; }
 
-.details-panel { position: static; z-index: 35; grid-column: 2; grid-row: 3 / 5; min-width: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border-soft); background: transparent; }
-@keyframes slideIn { from { transform: translateX(24px); opacity: 0; } }
+.details-panel { position: static; z-index: 35; grid-column: 2; grid-row: 3 / 5; width: min(380px, 42vw); justify-self: end; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border-soft); background: transparent; transform: translateX(100%); visibility: hidden; transition: transform .28s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s .28s; }
+.workspace.details-open .details-panel { transform: none; visibility: visible; transition: transform .28s cubic-bezier(0.4, 0, 0.2, 1), visibility 0s; }
 .details-header { min-height: 68px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--hairline); padding: 0 18px; }
 .details-header > span { min-width: 0; display: flex; align-items: center; gap: 10px; }
 .details-header > span > svg { width: 20px; height: 20px; color: var(--accent); }
 .details-header > span > span { min-width: 0; display: grid; gap: 2px; }
-.details-header strong { font-size: 13px; }
-.details-header small { color: #777; font-size: 10px; }
+.details-header strong { font-size: 14px; }
+.details-header small { color: #777; font-size: 11px; }
 .details-header button { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: 7px; background: transparent; color: #aaa; cursor: pointer; padding: 5px; }
 .details-header button:hover { background: rgba(255,255,255,.05); color: #ddd; }
 .details-panel dl { display: grid; gap: 0; margin: 0; }
 .details-panel dl div { padding: 12px 0; border-bottom: 1px solid var(--hairline); }
 .details-panel dt { color: #777; font-size: 11px; margin-bottom: 5px; }
-.details-panel dd { margin: 0; color: #d2d2d2; font-size: 13px; overflow-wrap: anywhere; }
+.details-panel dd { margin: 0; color: #d2d2d2; font-size: 12px; overflow-wrap: anywhere; }
 .agent-profile-form { min-height: 0; flex: 1; overflow-y: auto; scrollbar-color: #484848 transparent; }
 .agent-profile-avatar-section { min-width: 0; display: grid; grid-template-columns: 72px minmax(0,1fr); gap: 14px; align-items: center; padding: 20px 18px; border-bottom: 1px solid var(--hairline); }
 .agent-profile-avatar { width: 72px; height: 72px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--hairline); border-radius: 50%; background: var(--panel); color: #666; }
@@ -794,9 +794,9 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-avatar svg { width: 48px; height: 48px; }
 .agent-profile-avatar-section > div:nth-child(2) { min-width: 0; display: grid; gap: 4px; }
 .agent-profile-avatar-section strong { font-size: 12px; }
-.agent-profile-avatar-section small { color: #777; font-size: 10px; line-height: 1.4; }
+.agent-profile-avatar-section small { color: #777; font-size: 11px; line-height: 1.4; }
 .agent-profile-avatar-actions { display: flex; gap: 6px; margin-top: 5px; }
-.agent-profile-avatar-actions button { min-height: 29px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel); color: #c7c7c7; cursor: pointer; font-size: 10px; }
+.agent-profile-avatar-actions button { min-height: 29px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel); color: #c7c7c7; cursor: pointer; font-size: 12px; }
 .agent-profile-avatar-actions button:hover { background: #303030; }
 .agent-profile-avatar-actions button.danger { color: #d89999; }
 .agent-profile-avatar-actions svg { width: 13px; height: 13px; }
@@ -804,16 +804,16 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-section { display: grid; gap: 13px; padding: 19px 18px 22px; border-bottom: 1px solid var(--hairline); }
 .agent-profile-section-title { display: grid; gap: 3px; margin-bottom: 1px; }
 .agent-profile-section-title strong { font-size: 12px; }
-.agent-profile-section-title small { color: #747474; font-size: 10px; line-height: 1.4; }
-.agent-profile-section label { min-width: 0; display: grid; gap: 6px; color: #aaa; font-size: 11px; }
-.agent-profile-section input, .agent-profile-section textarea, .agent-profile-tag-input input { width: 100%; border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel-raised); color: #e4e4e4; }
+.agent-profile-section-title small { color: #747474; font-size: 11px; line-height: 1.4; }
+.agent-profile-section label { min-width: 0; display: grid; gap: 6px; color: #aaa; font-size: 12px; }
+.agent-profile-section input, .agent-profile-section textarea, .agent-profile-tag-input input { width: 100%; border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel-raised); color: #e4e4e4; font-size: 14px; }
 .agent-profile-section input, .agent-profile-tag-input input { height: 38px; padding: 0 10px; }
 .agent-profile-section textarea { min-height: 88px; resize: vertical; padding: 9px 10px; line-height: 1.45; }
 .agent-profile-section input::placeholder, .agent-profile-section textarea::placeholder, .agent-profile-tag-input input::placeholder { color: #656565; }
 .agent-profile-tags { min-width: 0; display: grid; gap: 7px; margin: 0; padding: 0; border: 0; }
-.agent-profile-tags legend { margin-bottom: 6px; color: #aaa; font-size: 11px; }
+.agent-profile-tags legend { margin-bottom: 6px; color: #aaa; font-size: 12px; }
 .agent-profile-tag-list { display: flex; flex-wrap: wrap; gap: 5px; }
-.agent-profile-tag-list > span { max-width: 100%; min-height: 25px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--hairline); border-radius: 6px; padding: 0 4px 0 8px; background: var(--panel); color: #c5c5c5; font-size: 10px; }
+.agent-profile-tag-list > span { max-width: 100%; min-height: 25px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--hairline); border-radius: 6px; padding: 0 4px 0 8px; background: var(--panel); color: #c5c5c5; font-size: 11px; }
 .agent-profile-tag-list > span > button { width: 20px; height: 20px; display: grid; place-items: center; border: 0; border-radius: 4px; padding: 0; background: transparent; color: #777; cursor: pointer; }
 .agent-profile-tag-list > span > button:hover { background: #333; color: #ccc; }
 .agent-profile-tag-list svg { width: 11px; height: 11px; }
@@ -823,16 +823,15 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-tag-input button:disabled { opacity: .4; cursor: not-allowed; }
 .agent-profile-tag-input svg { width: 15px; height: 15px; }
 .agent-profile-runtime { border-bottom: 1px solid var(--hairline); padding: 0 18px; }
-.agent-profile-runtime summary { padding: 17px 0; color: #aaa; cursor: pointer; font-size: 11px; font-weight: 600; }
+.agent-profile-runtime summary { padding: 17px 0; color: #aaa; cursor: pointer; font-size: 12px; font-weight: 600; }
 .agent-profile-runtime dl { padding-bottom: 8px; }
 .agent-profile-runtime dl div { display: grid; grid-template-columns: 100px minmax(0,1fr); gap: 10px; padding: 8px 0; }
 .agent-profile-runtime dt { margin: 0; }
-.agent-profile-runtime dd { font-size: 11px; }
 .agent-profile-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 7px; border-top: 1px solid var(--hairline); padding: 12px 18px; background: rgba(29,29,29,.96); backdrop-filter: blur(12px); }
-.agent-profile-actions > span { min-width: 0; display: flex; align-items: center; gap: 4px; color: #d28d8d; font-size: 9px; line-height: 1.35; }
+.agent-profile-actions > span { min-width: 0; display: flex; align-items: center; gap: 4px; color: #d28d8d; font-size: 11px; line-height: 1.35; }
 .agent-profile-actions > span.saved { color: #80bd94; }
 .agent-profile-actions > span svg { width: 12px; height: 12px; flex: 0 0 auto; }
-.agent-profile-actions button { min-height: 32px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel-raised); color: #c9c9c9; cursor: pointer; font-size: 10px; }
+.agent-profile-actions button { min-height: 32px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel-raised); color: #c9c9c9; cursor: pointer; font-size: 12px; }
 .agent-profile-actions button:hover { background: #333; }
 .agent-profile-actions button.primary { border-color: var(--accent); background: var(--accent); color: #fff; }
 .mono { font-family: var(--font-mono); font-size: 11px !important; }
@@ -966,8 +965,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
   .conversation-column { width: calc(100% - 28px); padding-top: 28px; }
   .composer-wrap { padding-left: 12px; padding-right: 12px; padding-bottom: 12px; }
   .thinking-block, .tool-card, .approval-card, .command-result, .inline-notice, .agent-working { margin-left: 0; }
-  .workspace.details-open { grid-template-columns: minmax(0, 1fr); }
-  .details-panel { position: fixed; z-index: 35; top: 61px; bottom: 0; right: 0; grid-column: auto; grid-row: auto; width: min(380px, 94vw); border-left: 1px solid var(--border); background: var(--panel); box-shadow: -18px 0 40px rgba(0,0,0,.25); animation: slideIn .2s ease-out; }
+  .workspace.details-open { grid-template-columns: minmax(0, 1fr) 0px; }
+  .details-panel { position: fixed; z-index: 35; top: 61px; bottom: 0; right: 0; grid-column: auto; grid-row: auto; width: min(380px, 94vw); border-left: 1px solid var(--border); background: var(--panel); box-shadow: -18px 0 40px rgba(0,0,0,.25); }
   .is-tauri .details-panel { top: 78px; }
   .agent-workspace { padding: 24px 14px 36px; }
   .tools-workspace { padding: 24px 14px 36px; }

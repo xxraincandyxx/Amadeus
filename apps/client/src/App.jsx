@@ -862,7 +862,7 @@ function App() {
           </>
         )}
 
-        {showDetails && activeSession && (
+        {activeSession && (
           <AgentProfilePanel
             key={activeProfileKey}
             session={activeSession}
