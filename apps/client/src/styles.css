@@ -89,7 +89,6 @@
   --sidebar-opacity: 68%;
   --main-page-opacity: 100%;
   --main-page-fill: color-mix(in srgb, var(--bg) var(--main-page-opacity), transparent);
-  --green: #55c97a;
   --red: #ec6b6b;
   --radius: 10px;
   --hairline: rgba(255, 255, 255, 0.08);
@@ -224,13 +223,14 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .session-button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-button .session-branch { position: absolute; left: calc(16px + var(--session-depth, 0) * 16px); width: 9px; height: 15px; border-left: 1px solid #686868; border-bottom: 1px solid #686868; border-radius: 0 0 0 3px; transform: translate(-6px, -4px); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #777; margin-left: auto; flex: 0 0 auto; }
-.status-dot.running, .status-dot.awaiting_approval { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.12); }
+.status-dot.running { width: 9px; height: 9px; background: transparent; border: 1.5px solid rgba(var(--accent-rgb), .3); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+.status-dot.awaiting_approval { background: var(--accent); box-shadow: 0 0 0 3px rgba(var(--accent-rgb),.12); animation: ringPulse 1.6s ease-out infinite; }
 .status-dot.completed, .status-dot.idle { background: #8d8d8d; }
 .status-dot.failed { background: var(--red); }
 .sidebar-footer { margin-top: auto; display: flex; align-items: center; justify-content: space-between; min-height: 48px; padding: 8px 8px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
 .connection { display: flex; align-items: center; gap: 8px; color: #bcbcbc; font-size: 12px; }
 .connection i { width: 7px; height: 7px; border-radius: 50%; }
-.connection .online { background: var(--green); }
+.connection .online { background: #8d8d8d; }
 .connection .offline { background: var(--red); }
 .sidebar-footer button { border: 0; background: transparent; cursor: pointer; color: #bcbcbc; padding: 7px; }
 .sidebar-scrim { display: none; }
@@ -262,6 +262,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .mobile-menu { display: none; }
 .status-badge { border-radius: 999px; padding: 5px 9px; background: var(--panel-raised); color: #a8a8a8; font-size: 11px; text-transform: capitalize; }
 .status-badge.running, .status-badge.awaiting_approval { color: color-mix(in srgb, var(--accent) 42%, white); background: var(--accent-soft); }
+.status-badge.running::before { content: ""; width: 8px; height: 8px; margin-right: 6px; display: inline-block; vertical-align: -1px; border-radius: 50%; border: 1.5px solid rgba(var(--accent-rgb), .3); border-top-color: var(--accent); animation: spin .8s linear infinite; }
 .status-badge.failed { color: #ffaaaa; background: rgba(236,107,107,.12); }
 
 .agent-workspace { min-height: 0; overflow-y: auto; padding: 34px clamp(24px, 4vw, 58px) 48px; scrollbar-color: #454545 transparent; }
@@ -279,9 +280,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-metric svg { width: 18px; height: 18px; color: #8d8d8d; }
 .agent-metric span { color: #949494; font-size: 12px; }
 .agent-metric strong { font-size: 21px; font-weight: 600; }
-.agent-metric.running svg, .agent-metric.running strong { color: #f0a06a; }
-.agent-metric.waiting svg, .agent-metric.waiting strong { color: #e7bb68; }
-.agent-metric.completed svg, .agent-metric.completed strong { color: var(--green); }
+.agent-metric.running svg, .agent-metric.running strong { color: color-mix(in srgb, var(--accent) 45%, white); }
+.agent-metric.waiting svg, .agent-metric.waiting strong { color: color-mix(in srgb, var(--accent) 28%, white); }
 .agent-metric.failed svg, .agent-metric.failed strong { color: var(--red); }
 .agent-roster { max-width: 1240px; margin: 0 auto; border: 1px solid var(--hairline); border-radius: 8px; background: var(--panel); overflow: hidden; }
 .agent-roster-heading { min-height: 48px; display: grid; grid-template-columns: minmax(0,1fr) 132px; align-items: center; gap: 20px; padding: 0 18px; border-bottom: 1px solid var(--hairline); color: #797979; font-size: 10px; text-transform: uppercase; }
@@ -304,10 +304,10 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-task-cell strong { color: #bcbcbc; font-weight: 500; }
 .agent-row-status { display: flex; align-items: center; gap: 7px; color: #969696; font-size: 11px; white-space: nowrap; }
 .agent-row-status i { width: 7px; height: 7px; border-radius: 50%; background: #858585; }
-.agent-row-status.running, .agent-row-status.awaiting_approval { color: #e9a779; }
-.agent-row-status.running i, .agent-row-status.awaiting_approval i { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.agent-row-status.completed { color: #8fbc9c; }
-.agent-row-status.completed i { background: var(--green); }
+.agent-row-status.running, .agent-row-status.awaiting_approval { color: color-mix(in srgb, var(--accent) 42%, white); }
+.agent-row-status.running i { width: 9px; height: 9px; background: transparent; border: 1.5px solid rgba(var(--accent-rgb), .3); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+.agent-row-status.awaiting_approval i { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); animation: ringPulse 1.6s ease-out infinite; }
+.agent-row-status.completed i { background: #8d8d8d; }
 .agent-row-status.failed { color: #e09a9a; }
 .agent-row-status.failed i { background: var(--red); }
 .agent-open-icon { display: grid; place-items: center; color: #666; }
@@ -357,7 +357,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .guide-chapter-list button:hover { background: var(--panel); }
 .guide-chapter-list button.active { background: var(--panel); color: #f0f0f0; box-shadow: inset 2px 0 var(--accent); }
 .guide-chapter-list button > svg { width: 16px; height: 16px; margin: 1px auto 0; color: #858585; }
-.guide-chapter-list button.active > svg { color: #ef9b64; }
+.guide-chapter-list button.active > svg { color: var(--accent); }
 .guide-chapter-list button span { min-width: 0; display: grid; gap: 4px; }
 .guide-chapter-list button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
 .guide-chapter-list button small { color: #747474; font-size: 9px; line-height: 1.35; }
@@ -446,7 +446,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-toolbar-actions .icon-button, .workflow-toolbar-actions .toolbar-button { min-height: 34px; border-color: var(--hairline); background: var(--panel-raised); }
 .workflow-toolbar-actions .icon-button:disabled { opacity: .35; cursor: default; }
 .workflow-toolbar-divider { width: 1px; height: 22px; margin: 0 3px; background: #393939; }
-.workflow-run-button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #4a3a31; border-radius: 7px; padding: 0 12px; background: #2b2420; color: #856d5f; font-size: 12px; cursor: not-allowed; }
+.workflow-run-button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #3d3d3d; border-radius: 7px; padding: 0 12px; background: var(--panel-raised); color: #686868; font-size: 12px; cursor: not-allowed; }
 .workflow-run-button svg { width: 14px; height: 14px; }
 .workflow-import-error { min-height: 40px; display: grid; grid-template-columns: 18px minmax(0,1fr) auto; align-items: center; gap: 8px; border-bottom: 1px solid rgba(236,107,107,.28); padding: 0 14px; background: rgba(118,34,34,.18); color: #eeb0b0; font-size: 11px; }
 .workflow-import-error svg { width: 16px; height: 16px; }
@@ -475,7 +475,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-palette-list > button > svg { width: 13px; height: 13px; color: #666; }
 .workflow-palette-icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); color: #a5a5a5; }
 .workflow-palette-icon svg { width: 16px; height: 16px; }
-.workflow-palette-icon.kind-trigger, .workflow-palette-icon.kind-approval { color: #dc9364; border-color: #5a4030; background: #2d241f; }
+.workflow-palette-icon.kind-trigger, .workflow-palette-icon.kind-approval { color: color-mix(in srgb, var(--accent) 55%, white); border-color: rgba(var(--accent-rgb), .4); background: var(--accent-soft); }
 .workflow-library-actions { display: grid; gap: 4px; margin-top: auto; border-top: 1px solid var(--hairline); padding: 10px 2px 0; }
 .workflow-library-actions button, .workflow-inspector-actions button { min-height: 34px; display: flex; align-items: center; gap: 7px; border: 0; border-radius: 7px; padding: 0 9px; background: transparent; color: #999; cursor: pointer; font-size: 10px; }
 .workflow-library-actions button:hover, .workflow-inspector-actions button:hover { background: var(--panel); color: #d7d7d7; }
@@ -491,7 +491,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-node.kind-trigger, .workflow-node.kind-approval { border-left: 2px solid var(--accent); }
 .workflow-node.kind-output { border-left: 2px solid #777; }
 .workflow-node-icon { width: 32px; height: 32px; display: grid; place-items: center; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel-raised); color: #aaa; }
-.workflow-node.kind-trigger .workflow-node-icon, .workflow-node.kind-approval .workflow-node-icon { color: #e09a6a; border-color: #503b2e; background: #2d251f; }
+.workflow-node.kind-trigger .workflow-node-icon, .workflow-node.kind-approval .workflow-node-icon { color: color-mix(in srgb, var(--accent) 55%, white); border-color: rgba(var(--accent-rgb), .4); background: var(--accent-soft); }
 .workflow-node-icon svg { width: 16px; height: 16px; }
 .workflow-node-copy { min-width: 0; display: grid; gap: 4px; }
 .workflow-node-copy span { color: #777; font-size: 8px; font-weight: 600; text-transform: uppercase; }
@@ -510,8 +510,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-canvas .react-flow__minimap { overflow: hidden; border: 1px solid var(--hairline); border-radius: 7px; background: var(--panel); }
 .workflow-validation-chip { position: absolute; z-index: 5; left: 12px; bottom: 12px; min-height: 30px; display: flex; align-items: center; gap: 6px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: rgba(30,30,30,.92); color: #aaa; font-size: 9px; pointer-events: none; }
 .workflow-validation-chip svg { width: 13px; height: 13px; }
-.workflow-validation-chip.valid { color: #91b69a; border-color: #385040; }
-.workflow-validation-chip.warning { color: #d0a076; border-color: #544334; }
+.workflow-validation-chip.valid { color: #c9c9c9; border-color: var(--hairline); }
+.workflow-validation-chip.warning { color: color-mix(in srgb, var(--accent) 45%, white); border-color: rgba(var(--accent-rgb), .4); }
 .workflow-validation-chip.invalid { color: #dda0a0; border-color: #573a3a; }
 .workflow-inspector-form { display: grid; gap: 14px; padding: 16px 14px; }
 .workflow-inspector-form label, .workflow-description-field { display: grid; gap: 6px; color: #858585; font-size: 9px; font-weight: 600; }
@@ -532,8 +532,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-diagnostics > strong { margin-bottom: 3px; font-size: 10px; }
 .workflow-diagnostic { display: grid; grid-template-columns: 15px minmax(0,1fr); align-items: start; gap: 7px; color: #999; font-size: 9px; line-height: 1.4; }
 .workflow-diagnostic svg { width: 13px; height: 13px; }
-.workflow-diagnostic.valid { color: #91b69a; }
-.workflow-diagnostic.warning { color: #c9a17f; }
+.workflow-diagnostic.valid { color: #a8a8a8; }
+.workflow-diagnostic.warning { color: color-mix(in srgb, var(--accent) 45%, white); }
 .workflow-diagnostic.error { color: #d99a9a; }
 .workflow-runtime-note { display: grid; grid-template-columns: 24px minmax(0,1fr); gap: 9px; margin: auto 12px 12px; border: 1px solid var(--hairline); border-radius: 7px; padding: 11px; background: var(--panel); }
 .workflow-runtime-note > svg { width: 17px; height: 17px; color: #777; }
@@ -542,10 +542,10 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .workflow-runtime-note span { color: #777; font-size: 9px; line-height: 1.45; }
 .architecture-runtime-status { min-height: 24px; display: inline-flex; align-items: center; gap: 6px; color: #999; font-size: 9px; white-space: nowrap; }
 .architecture-runtime-status i, .agent-architecture-status i { width: 6px; height: 6px; border-radius: 50%; background: #777; }
-.architecture-runtime-status.production, .agent-architecture-status.production { color: #91b69a; }
-.architecture-runtime-status.production i, .agent-architecture-status.production i { background: var(--green); }
-.architecture-runtime-status.planned, .agent-architecture-status.planned { color: #c9a17f; }
-.architecture-runtime-status.planned i, .agent-architecture-status.planned i { background: #ca956c; }
+.architecture-runtime-status.production, .agent-architecture-status.production { color: color-mix(in srgb, var(--accent) 45%, white); }
+.architecture-runtime-status.production i, .agent-architecture-status.production i { background: var(--accent); }
+.architecture-runtime-status.planned, .agent-architecture-status.planned { color: #999; }
+.architecture-runtime-status.planned i, .agent-architecture-status.planned i { background: #777; }
 .architecture-runtime-status.invalid { color: #d99a9a; }
 .architecture-runtime-status.invalid i { background: var(--red); }
 .workflow-use-button { min-height: 34px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #e5e5e5; border-radius: 7px; padding: 0 11px; background: #e5e5e5; color: #171717; cursor: pointer; font-size: 11px; font-weight: 600; white-space: nowrap; }
@@ -559,15 +559,14 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .architecture-pattern-list button > span { min-width: 0; display: grid; gap: 3px; }
 .architecture-pattern-list strong { font-size: 10px; }
 .architecture-pattern-list small { overflow: hidden; color: #747474; font-size: 8px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
-.architecture-pattern-list button > i { width: 6px; height: 6px; border-radius: 50%; background: #876a54; }
-.architecture-pattern-list button > i.production { background: var(--green); }
+.architecture-pattern-list button > i { width: 6px; height: 6px; border-radius: 50%; background: #777; }
+.architecture-pattern-list button > i.production { background: var(--accent); }
 .architecture-node-heading { min-height: 44px; padding-top: 12px; }
 .architecture-node-library { padding-bottom: 12px; }
 .architecture-node { min-height: 82px; }
-.architecture-node.kind-input, .architecture-node.kind-output { border-left: 2px solid #7f9b86; }
+.architecture-node.kind-input, .architecture-node.kind-output, .architecture-node.kind-delegate, .architecture-node.kind-review { border-left: 2px solid #666; }
 .architecture-node.kind-route, .architecture-node.kind-approval { border-left: 2px solid var(--accent); }
-.architecture-node.kind-delegate, .architecture-node.kind-review { border-left: 2px solid #7b91ae; }
-.architecture-node.kind-output .workflow-node-icon { color: #8fbc9c; }
+.architecture-node.kind-output .workflow-node-icon { color: #cfcfcf; }
 .architecture-runtime-summary { display: grid; gap: 7px; border-bottom: 1px solid var(--hairline); padding: 14px; }
 .architecture-runtime-summary p { margin: 0; color: #858585; font-size: 9px; line-height: 1.5; }
 .workflow-toolbar-actions .toolbar-button.active { border-color: rgba(var(--accent-rgb),.55); background: rgba(var(--accent-rgb),.09); color: color-mix(in srgb, var(--accent) 45%, white); }
@@ -599,7 +598,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .tool-access-state { padding: 24px 14px; color: #777; font-size: 9px; line-height: 1.5; text-align: center; }
 .tool-access-state.error { color: #c98d8d; }
 .tool-profile-runtime-note { display: grid; grid-template-columns: 15px minmax(0,1fr); align-items: start; gap: 8px; margin-top: auto; border-top: 1px solid var(--hairline); padding: 11px 13px; color: #7c7c7c; font-size: 8px; line-height: 1.45; }
-.tool-profile-runtime-note svg { width: 14px; height: 14px; color: #bb8d69; }
+.tool-profile-runtime-note svg { width: 14px; height: 14px; color: #8a8a8a; }
 .workflow-runtime-note button { width: fit-content; min-height: 27px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--hairline); border-radius: 6px; padding: 0 8px; background: var(--panel-raised); color: #cfcfcf; cursor: pointer; font-size: 9px; }
 .workflow-runtime-note button svg { width: 11px; height: 11px; }
 .workflow-runtime-note button.text-only { border: 0; padding: 0; background: transparent; color: #888; }
@@ -652,7 +651,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .markdown-content h4 { font-size: 15px; }
 .markdown-content strong { color: #f4f4f4; font-weight: 600; }
 .markdown-content em { color: #d7d7d7; }
-.markdown-content a { color: #f0a06a; text-decoration-color: rgba(240,160,106,.5); text-underline-offset: 3px; }
+.markdown-content a { color: color-mix(in srgb, var(--accent) 55%, white); text-decoration-color: rgba(var(--accent-rgb), .5); text-underline-offset: 3px; }
 .markdown-content a:hover { text-decoration-color: currentColor; }
 .markdown-content ul, .markdown-content ol { margin: 0 0 16px; padding-left: 24px; }
 .markdown-content li { margin: 4px 0; padding-left: 2px; }
@@ -660,7 +659,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .markdown-content blockquote { margin: 18px 0; padding: 1px 0 1px 15px; border-left: 2px solid #555; color: #b9b9b9; }
 .markdown-content blockquote p { margin: 7px 0; }
 .markdown-content hr { height: 1px; margin: 24px 0; border: 0; background: #353535; }
-.markdown-inline-code { border: 1px solid var(--hairline); border-radius: 5px; background: var(--panel); padding: 2px 5px; color: #e8b58f; font: .86em var(--font-mono); }
+.markdown-inline-code { border: 1px solid var(--hairline); border-radius: 5px; background: var(--panel); padding: 2px 5px; color: #d8d8d8; font: .86em var(--font-mono); }
 .markdown-code-block { margin: 18px 0; border: 1px solid var(--hairline); border-radius: 11px; background: #1e1e1e; overflow: hidden; }
 .markdown-code-header { min-height: 34px; display: flex; align-items: center; justify-content: space-between; padding: 0 9px 0 12px; border-bottom: 1px solid var(--hairline); color: #858585; font: 11px var(--font-mono); }
 .markdown-code-header button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #999; display: grid; place-items: center; cursor: pointer; }
@@ -728,6 +727,8 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-working span:nth-child(3) { animation-delay: .24s; }
 .agent-working em { font-style: normal; margin-left: 5px; }
 @keyframes pulse { 0%, 80%, 100% { opacity: .25; transform: scale(.8); } 40% { opacity: 1; transform: scale(1); } }
+@keyframes spin { to { transform: rotate(1turn); } }
+@keyframes ringPulse { 0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), .35); } 70%, 100% { box-shadow: 0 0 0 5px rgba(var(--accent-rgb), 0); } }
 
 .welcome { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 40px 0; }
 .welcome.welcome h1 { margin: 0 0 8px; font-family: var(--font-heading); font-size: 22px; font-weight: 500; letter-spacing: 0; }
@@ -827,7 +828,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .agent-profile-runtime dt { margin: 0; }
 .agent-profile-actions { position: sticky; bottom: 0; display: grid; grid-template-columns: minmax(0,1fr) auto auto; align-items: center; gap: 7px; border-top: 1px solid var(--hairline); padding: 12px 18px; background: rgba(29,29,29,.96); backdrop-filter: blur(12px); }
 .agent-profile-actions > span { min-width: 0; display: flex; align-items: center; gap: 4px; color: #d28d8d; font-size: 11px; line-height: 1.35; }
-.agent-profile-actions > span.saved { color: #80bd94; }
+.agent-profile-actions > span.saved { color: #c9c9c9; }
 .agent-profile-actions > span svg { width: 12px; height: 12px; flex: 0 0 auto; }
 .agent-profile-actions button { min-height: 32px; border: 1px solid var(--hairline); border-radius: 7px; padding: 0 9px; background: var(--panel-raised); color: #c9c9c9; cursor: pointer; font-size: 12px; }
 .agent-profile-actions button:hover { background: #333; }
@@ -903,7 +904,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .dialog input::placeholder { color: #737373; }
 .dialog input + label, .dialog select + label { margin-top: 16px; }
 .create-architecture-summary { display: grid; grid-template-columns: 26px minmax(0,1fr); align-items: start; gap: 9px; margin-top: 9px; border: 1px solid var(--hairline); border-radius: 8px; padding: 10px; background: #1e1e1e; }
-.create-architecture-summary > svg { width: 17px; height: 17px; color: #8fbc9c; }
+.create-architecture-summary > svg { width: 17px; height: 17px; color: #a8a8a8; }
 .create-architecture-summary > span { min-width: 0; display: grid; gap: 4px; }
 .create-architecture-summary strong { font-size: 10px; }
 .create-architecture-summary small { color: #7f7f7f; font-size: 9px; line-height: 1.45; }
@@ -915,7 +916,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 .contribution-dialog { width: min(520px, 100%); }
 .connection-summary { display: grid; grid-template-columns: 8px auto minmax(0,1fr); align-items: center; gap: 8px; min-height: 38px; margin: 0 0 20px; padding: 0 11px; border: 1px solid var(--hairline); border-radius: 9px; background: #1e1e1e; font-size: 12px; }
 .connection-summary i { width: 7px; height: 7px; border-radius: 50%; background: var(--red); }
-.connection-summary i.online { background: var(--green); }
+.connection-summary i.online { background: #8d8d8d; }
 .connection-summary code { min-width: 0; margin-left: auto; color: #7f7f7f; font: 10px var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dialog .field-help { margin: 8px 0 0; font-size: 11px; color: #777; }
 .connection-test-result { margin-top: 12px; padding: 9px 10px; border-left: 2px solid var(--accent); background: var(--accent-soft); color: color-mix(in srgb, var(--accent) 38%, white); font-size: 11px; line-height: 1.4; }
