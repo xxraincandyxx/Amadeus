@@ -747,7 +747,7 @@ function App() {
         onForward={() => traverseNavHistory(1)}
       />
 
-      <main className="workspace">
+      <main className={`workspace${showDetails && activeSession ? " details-open" : ""}`}>
         <Header
           session={activeSession}
           status={runtime.status}
@@ -861,25 +861,25 @@ function App() {
             />
           </>
         )}
-      </main>
 
-      {showDetails && activeSession && (
-        <AgentProfilePanel
-          key={activeProfileKey}
-          session={activeSession}
-          profile={activeAgentProfile}
-          runtime={runtime}
-          parentSession={activeRelations.parent}
-          children={activeRelations.children}
-          t={t}
-          onSave={(profile) => {
-            const saved = saveAgentProfile(localStorage, workspaceProfile?.id, activeSession, profile);
-            setAgentProfiles((current) => ({ ...current, [activeProfileKey]: saved }));
-            return saved;
-          }}
-          onClose={() => setShowDetails(false)}
-        />
-      )}
+        {showDetails && activeSession && (
+          <AgentProfilePanel
+            key={activeProfileKey}
+            session={activeSession}
+            profile={activeAgentProfile}
+            runtime={runtime}
+            parentSession={activeRelations.parent}
+            children={activeRelations.children}
+            t={t}
+            onSave={(profile) => {
+              const saved = saveAgentProfile(localStorage, workspaceProfile?.id, activeSession, profile);
+              setAgentProfiles((current) => ({ ...current, [activeProfileKey]: saved }));
+              return saved;
+            }}
+            onClose={() => setShowDetails(false)}
+          />
+        )}
+      </main>
 
       {creating && (
         <CreateDialog
