@@ -12,7 +12,7 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory](#tiered-memory) · [Web & macOS](#web-workspace--macos-app) · [HTTP API](#http-api) · [TUI](#tui) · [Python SDK](#python-sdk) · [Docs](#documentation)
+[Quickstart](#quickstart) · [Architecture](#architecture) · [Memory](#tiered-memory) · [Web & macOS](#web-workspace--macos-app) · [HTTP API](#http-api) · [Python SDK](#python-sdk) · [TUI](#tui) · [Docs](#documentation)
 
 </div>
 
@@ -107,12 +107,6 @@ npm run desktop:build
 The app starts and supervises its own server on port 3000; if a server already
 owns that port it reuses it. See [docs/MACOS_APP.md](docs/MACOS_APP.md).
 
-### Interactive terminal UI (secondary)
-
-```bash
-cargo run --features full
-```
-
 ### HTTP API server
 
 ```bash
@@ -121,6 +115,12 @@ cargo run --features full -- --server
 
 # Custom port
 cargo run --features full -- --server 8080
+```
+
+### Interactive terminal UI (secondary)
+
+```bash
+cargo run --features full
 ```
 
 ## Architecture
@@ -234,30 +234,6 @@ The React agent workspace lives in [`apps/client`](apps/client). It uses the sta
 
 The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
 
-### TUI (terminal client)
-
-The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
-
-**Layout**
-
-- **Messages pane** — Markdown-rendered conversation history with collapsible tool-execution groups and reasoning blocks
-- **Input editor** — Multi-line input with slash-command completion, `@` file citation, and `!` shell mode
-- **Footer** — Model name, context usage bar, session duration, Git branch, working directory, sandbox status
-- **Sidebars** — File explorer, keyboard shortcut reference, and skill browser
-
-**Key bindings**
-
-| Key | Action |
-|-----|--------|
-| `Enter` | Submit prompt |
-| `Ctrl+T` | Cycle themes (12 built-in) |
-| `Shift+B` | Toggle file explorer |
-| `Alt+S` | Toggle skill browser |
-| `Ctrl+]` / `Ctrl+[` | Navigate sub-agent sessions |
-| `Tab` / `Shift+Tab` | Cycle agent sessions |
-
-**Slash commands** include `/compact`, `/context`, `/hooks`, `/language`, `/rewind`. Conversation export to Markdown or JSON includes full session metadata, a config snapshot, a context report, and statistics.
-
 ### HTTP API
 
 The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start it with `--server [port]` (default 3000). Highlights:
@@ -297,6 +273,30 @@ asyncio.run(main())
 ```
 
 See [`python-sdk/README.md`](python-sdk/README.md) for installation and the full API surface.
+
+### TUI (terminal client)
+
+The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
+
+**Layout**
+
+- **Messages pane** — Markdown-rendered conversation history with collapsible tool-execution groups and reasoning blocks
+- **Input editor** — Multi-line input with slash-command completion, `@` file citation, and `!` shell mode
+- **Footer** — Model name, context usage bar, session duration, Git branch, working directory, sandbox status
+- **Sidebars** — File explorer, keyboard shortcut reference, and skill browser
+
+**Key bindings**
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Submit prompt |
+| `Ctrl+T` | Cycle themes (12 built-in) |
+| `Shift+B` | Toggle file explorer |
+| `Alt+S` | Toggle skill browser |
+| `Ctrl+]` / `Ctrl+[` | Navigate sub-agent sessions |
+| `Tab` / `Shift+Tab` | Cycle agent sessions |
+
+**Slash commands** include `/compact`, `/context`, `/hooks`, `/language`, `/rewind`. Conversation export to Markdown or JSON includes full session metadata, a config snapshot, a context report, and statistics.
 
 ## Documentation
 
