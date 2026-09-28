@@ -19,28 +19,41 @@ The practical mental model is:
 
 ## Workspace Shape
 
+The root `amadeus` crate is a compatibility facade and the CLI entry point; implementation lives in `crates/`.
+
 ```text
 amadeus/
-├── src/
-│   ├── lib.rs              # compatibility facade
-│   └── main.rs             # CLI mode switch
-├── crates/
-│   ├── core/               # agent loop, tools, policy, orchestration
-│   ├── runtime/            # shared orchestration data models and selectors
-│   ├── api/                # Axum router + handlers
-│   ├── tui/                # ratatui application
-│   ├── config/             # layered settings loading
-│   ├── commands/           # slash command parsing and helpers
-│   ├── skills/             # skill registry and loading
-│   ├── telemetry/          # sinks and events
-│   ├── permissions/        # permission modes and rules
-│   ├── messages/           # message/content block types
-│   ├── events/             # event and tool-call payloads
-│   └── ...
+├── src/                    # compatibility facade + CLI mode switch
+├── crates/                 # implementation crates (table below)
 ├── tests/                  # integration suites and shared harnesses
 ├── examples/               # adapter bootstraps
 └── docs/
 ```
+
+| Crate | Role |
+|-------|------|
+| `crates/core` | Agent loop, LLM clients, tools, policy, hooks, orchestration |
+| `crates/runtime` | Orchestration models, worker selection, task dispatch |
+| `crates/api` | Axum HTTP + SSE server |
+| `crates/tui` | ratatui terminal UI adapter |
+| `crates/config` | Layered settings loading |
+| `crates/events` | Shared event model (`AgentEvent`, `RunResult`, …) |
+| `crates/messages` | Message and content block types |
+| `crates/compaction` | Context-window compaction triggers and results |
+| `crates/context` | Project context loading, memory providers |
+| `crates/memory` | Mid-term memory database and context gate |
+| `crates/memory-domain` | Versioned domain memory models |
+| `crates/memory-service` | Structured, privacy-aware memory service |
+| `crates/privacy` | Sensitive-data detection and redaction |
+| `crates/rag` | Semantic search, embedding backends, vector store |
+| `crates/telemetry` | Structured event recording with pluggable sinks |
+| `crates/permissions` | Permission modes and enforcement |
+| `crates/hooks` | Pre/post-tool hook descriptors |
+| `crates/profiles` | Agent profile definitions |
+| `crates/prompts` | System prompt templating |
+| `crates/commands` | Slash commands and citation handling |
+| `crates/skills` | Prompt template skill loading |
+| `crates/ids` | Identity types (`AgentId`, `TeamId`) |
 
 ## Entry Points
 
@@ -168,13 +181,14 @@ The complete hierarchy and usage example are documented in [`AGENT_ARCHITECTURES
 
 The core execution loop in `crates/core/src/agent/loop_agent.rs` follows a ReAct pattern:
 
-1. Add user input to history.
-2. Call the configured `LLMClient`.
-3. Stream or parse model output.
-4. If the model emits tool calls, run policy and permission checks.
-5. Execute tools through the `ToolRegistry`.
-6. Append tool results to history.
-7. Continue until a final text result is produced.
+1. Compaction check — if the context window exceeds the configurable threshold (default 75%), summarize older messages to reclaim tokens.
+2. Add user input to history.
+3. Call the configured `LLMClient`.
+4. Stream or parse model output.
+5. If the model emits tool calls, run policy and permission checks.
+6. Execute tools through the `ToolRegistry`.
+7. Append tool results to history.
+8. Continue until a final text result is produced.
 
 ```text
 User/Input
@@ -187,6 +201,8 @@ Model output
    ├── text delta -> emit events / accumulate final response
    └── tool call -> policy + permissions -> execute tool -> append result -> loop
 ```
+
+Sub-agents are spawned as full child `Agent` instances with namespaced event IDs, bounded recursion depth, and optional UI delegation.
 
 ### Tool system
 
@@ -319,6 +335,16 @@ Important implications:
 - `tui` implies `concurrency`
 - `orchestra` implies `concurrency`
 - removed legacy names (`team`, `supervisor`, and `mesh`) are not active features
+
+| Feature | Description |
+|---------|-------------|
+| `api` | HTTP adapter and REST/SSE server (implies `orchestra`) |
+| `tui` | Terminal UI adapter (implies `concurrency`) |
+| `concurrency` | Locking and shared coordination primitives |
+| `orchestra` | Multi-agent orchestration surface (implies `concurrency`) |
+| `context` | Context management and memory providers |
+| `test-utils` | Test helpers and recording support |
+| `full` | All of the above |
 
 ## Testing Structure
 

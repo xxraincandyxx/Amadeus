@@ -26,11 +26,7 @@ Provider-agnostic abstractions for Anthropic and OpenAI.
 ## Development Workflow
 
 ### Feature Flags
-Amadeus is highly modular. Use feature flags to keep your build lean:
-- `tui`: Terminal User Interface components.
-- `api`: Axum-based HTTP server.
-- `orchestra`: Multi-agent orchestration system.
-- `full`: Enables all optional features.
+Amadeus is highly modular; features keep your build lean. The full feature relationship graph and description table live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#feature-flags).
 
 ### Commands
 ```bash
