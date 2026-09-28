@@ -63,12 +63,22 @@ impl<C: LLMClient + Clone + 'static> HeadlessApp<C> {
     }
 
     /// Submit current input and pump the agent event stream to completion.
+    ///
+    /// Panics if the submit or the drain fails: a silently skipped pump leaves
+    /// no assistant message to assert on, which hides the real failure behind
+    /// unrelated assertion misses.
     pub async fn submit(&mut self) {
         let session = self.app.test_session_mut();
-        let _ = session.test_submit().await;
+        session
+            .test_submit()
+            .await
+            .expect("headless submit should succeed");
         // Drain the turn headlessly; this commits the assistant message so the
         // next `capture()` renders it.
-        let _ = session.test_pump_turn().await;
+        session
+            .test_pump_turn()
+            .await
+            .expect("headless turn pump should succeed");
     }
 
     /// Drain and return the session's committed (unrendered) message lines as
