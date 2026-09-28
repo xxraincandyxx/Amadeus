@@ -22,7 +22,8 @@ use crate::agent::messages::{ContentBlock, Message};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{
     backend::{CrosstermBackend, TestBackend},
-    Terminal,
+    layout::Rect,
+    Terminal, TerminalOptions, Viewport,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -38,6 +39,18 @@ fn test_app() -> App<BenchmarkMockClient> {
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();
     App::new(agent, PathBuf::from("."), "test-model".to_string())
+}
+
+/// Fixed-viewport stdout terminal: constructing it must never query the real
+/// terminal size, which is unavailable in headless CI environments.
+fn test_terminal() -> Terminal<CrosstermBackend<std::io::Stdout>> {
+    Terminal::with_options(
+        CrosstermBackend::new(std::io::stdout()),
+        TerminalOptions {
+            viewport: Viewport::Fixed(Rect::new(0, 0, 80, 24)),
+        },
+    )
+    .expect("test terminal")
 }
 
 fn active_session_mut(app: &mut App<BenchmarkMockClient>) -> &mut Session<BenchmarkMockClient> {
@@ -378,8 +391,7 @@ fn switching_to_populated_session_defers_redraw() {
 
 #[test]
 fn recycle_terminal_after_switch_replays_populated_session_history() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let terminal = Terminal::new(backend).expect("test terminal");
+    let terminal = test_terminal();
     let mut app = test_app();
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();
@@ -537,8 +549,7 @@ async fn quit_shortcut_still_works_in_normal_mode() {
 
 #[tokio::test]
 async fn question_mark_opens_shortcuts_overlay_when_input_is_empty() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let session = active_session_mut(&mut app);
 
@@ -553,8 +564,7 @@ async fn question_mark_opens_shortcuts_overlay_when_input_is_empty() {
 
 #[tokio::test]
 async fn ctrl_b_and_ctrl_f_match_left_and_right_arrow_behavior() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let session = active_session_mut(&mut app);
 
@@ -585,8 +595,7 @@ async fn ctrl_b_and_ctrl_f_match_left_and_right_arrow_behavior() {
 
 #[tokio::test]
 async fn ctrl_p_and_ctrl_n_move_cursor_up_and_down() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let session = active_session_mut(&mut app);
 
@@ -973,8 +982,7 @@ async fn restore_rewind_code_restores_tracked_git_diff() {
 
 #[test]
 fn rewind_transcript_reset_inserts_spacer_lines_and_clears_pending_flag() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let session = active_session_mut(&mut app);
     session.pending_transcript_reset = true;
@@ -1010,8 +1018,7 @@ fn run_git(root: &std::path::Path, args: &[&str]) {
 
 #[test]
 fn tab_global_switches_session_when_completion_is_not_active() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();
@@ -1036,8 +1043,7 @@ fn tab_global_switches_session_when_completion_is_not_active() {
 
 #[test]
 fn tab_global_finishes_session_reset_immediately() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();
@@ -1060,8 +1066,7 @@ fn tab_global_finishes_session_reset_immediately() {
 
 #[test]
 fn ctrl_i_global_switches_session_as_tab_alias() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();
@@ -1089,8 +1094,7 @@ fn ctrl_i_global_switches_session_as_tab_alias() {
 
 #[test]
 fn tab_global_defers_to_completion_popup() {
-    let backend = CrosstermBackend::new(std::io::stdout());
-    let mut terminal = Terminal::new(backend).expect("test terminal");
+    let mut terminal = test_terminal();
     let mut app = test_app();
     let client = BenchmarkMockClient::new(MockScript { steps: Vec::new() });
     let agent = Agent::builder(client, Arc::new(Config::default())).build();

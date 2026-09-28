@@ -1348,6 +1348,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        if !std::io::stdout().is_terminal() {
+            self.pending_transcript_reset = false;
+            self.messages.reset_scrollback_cursor_for_session_switch();
+            return Ok(());
+        }
+
         let height = terminal.size()?.height as usize;
         self.pending_transcript_reset = false;
         self.messages.reset_scrollback_cursor_for_session_switch();
