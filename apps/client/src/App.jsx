@@ -261,7 +261,8 @@ function App() {
       const exists = available.some((session) => session.id === current);
       if (exists) return current;
       const preferredExists = available.some((session) => session.id === preferredActiveId);
-      return preferredExists ? preferredActiveId : data.active_session_id || available[0]?.id || null;
+      const serverActiveExists = available.some((session) => session.id === data.active_session_id);
+      return preferredExists ? preferredActiveId : serverActiveExists ? data.active_session_id : available[0]?.id || null;
     });
     return available;
   }, []);
@@ -322,8 +323,14 @@ function App() {
   }, [refreshSessions, apiEpoch, t]);
 
   useEffect(() => {
-    if (!serverOnline) return undefined;
     const timer = window.setInterval(() => {
+      // While offline nothing else recovers the connection: probe health until
+      // the server answers, then flip back online so the SSE effect and the
+      // session poll resume.
+      if (!serverOnline) {
+        api.health().then(() => setServerOnline(true)).catch(() => undefined);
+        return;
+      }
       refreshSessions().catch(() => undefined);
     }, 2500);
     return () => window.clearInterval(timer);
@@ -377,6 +384,17 @@ function App() {
     source.onopen = () => {
       setServerOnline(true);
       setError("");
+      // The server does not replay events missed while the stream was down, so
+      // reconcile the live turn state against the authoritative session status.
+      refreshSessions()
+        .then((available) => {
+          const current = available.find((session) => session.id === activeId);
+          if (current && current.status !== "running") {
+            setRuntime(activeId, (previous) => reduceEvent(previous, "session_state", current));
+          }
+        })
+        .catch(() => undefined);
+      loadHistory(activeId).catch(() => undefined);
     };
     source.onerror = (event) => {
       if (typeof event.data === "string") return;
