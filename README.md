@@ -59,7 +59,7 @@ Typed workflows · ReAct agent loop · tiered memory · RAG · native macOS app,
 ### Prerequisites
 
 - Rust 1.70 or later
-- An API key from Anthropic or OpenAI
+- An API key from Anthropic or OpenAI — or a local model (see [Run a local model](#run-a-local-model-no-api-key))
 
 ### Setup
 
@@ -110,6 +110,35 @@ cargo run --features full -- --server 8080
 ```bash
 cargo run --features full
 ```
+
+### Run a local model (no API key)
+
+Amadeus talks to any OpenAI-compatible server, so you can develop against a
+model running on your own machine. The bundled setup script downloads
+`Qwen2.5-0.5B-Instruct` (GGUF, ~400 MB, cached under `.amadeus/models/`) and
+serves it through [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
+OpenAI-compatible server on `127.0.0.1:8123`:
+
+```bash
+brew install llama.cpp   # macOS; on Linux build llama.cpp and add it to PATH
+scripts/setup_local_llm.sh
+```
+
+Then point `.amadeus/settings.json` at it:
+
+```json
+{
+  "provider": "openai",
+  "api_key": "local",
+  "base_url": "http://127.0.0.1:8123/v1",
+  "model": "qwen2.5-0.5b-instruct"
+}
+```
+
+`base_url` can also be a bare host (`http://127.0.0.1:8123`) or a full
+endpoint — the client appends `/v1/chat/completions` as needed. LM Studio,
+Ollama, and vLLM speak the same protocol; adjust `base_url`, port, and
+`model` to match yours.
 
 ## Architecture
 
