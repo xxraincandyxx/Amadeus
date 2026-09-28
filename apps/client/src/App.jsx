@@ -835,7 +835,7 @@ function App() {
                     <Welcome session={activeSession} />
                   )}
                   {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
+                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live />}
                   {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
                   {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
                   {runtime.approvals.map((approval) => (
@@ -1065,21 +1065,9 @@ function ArchitectureTraffic({ label, text }) {
   );
 }
 
-function ThinkingBlock({ text, live = false, available = true, durationSeconds = null, startedAt = null }) {
+function ThinkingBlock({ text, live = false, available = true, durationSeconds = null }) {
   const t = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(durationSeconds);
-
-  useEffect(() => {
-    if (!live || !startedAt) {
-      setElapsedSeconds(durationSeconds);
-      return undefined;
-    }
-    const updateElapsed = () => setElapsedSeconds(Math.max(1, Math.ceil((Date.now() - startedAt) / 1000)));
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timer);
-  }, [durationSeconds, live, startedAt]);
 
   if (!available) {
     return (
@@ -1091,13 +1079,23 @@ function ThinkingBlock({ text, live = false, available = true, durationSeconds =
       </section>
     );
   }
-  const thoughtLabel = elapsedSeconds
-    ? t(elapsedSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: elapsedSeconds })
+  const thoughtLabel = durationSeconds
+    ? t(durationSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: durationSeconds })
     : t("Thought");
   return (
     <section className={`thinking-block ${live ? "live" : "complete"}`}>
       <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-        <span className="thinking-title"><Brain /><strong>{thoughtLabel}</strong></span>
+        <span className="thinking-title">
+          <Brain />
+          {live ? (
+            <strong className="thinking-live-label">
+              {t("Thinking")}
+              <span className="thinking-ellipsis" aria-hidden="true"><i /><i /><i /></span>
+            </strong>
+          ) : (
+            <strong>{thoughtLabel}</strong>
+          )}
+        </span>
         <CaretDown className={expanded ? "expanded" : "collapsed"} aria-hidden="true" />
       </button>
       {expanded && <p>{text}</p>}
