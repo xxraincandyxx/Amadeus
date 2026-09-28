@@ -1,5 +1,7 @@
 <div align="center">
 
+English · [简体中文](README.zh-CN.md)
+
 # Amadeus
 
 **A composable, multi-provider AI agent framework in Rust.**
