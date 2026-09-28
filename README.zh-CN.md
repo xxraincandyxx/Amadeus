@@ -115,7 +115,8 @@ cargo run --features full
 Amadeus 兼容任何 OpenAI 协议的服务端，因此可以直接对接跑在你自己机器上的模型。内置脚本会下载
 `Qwen2.5-0.5B-Instruct`（GGUF，约 400 MB，缓存在 `.amadeus/models/`），并通过
 [llama.cpp](https://github.com/ggml-org/llama.cpp) 的 OpenAI 兼容服务器在
-`127.0.0.1:8123` 上提供服务：
+`127.0.0.1:8123` 上提供服务。`.amadeus/models/` 中已有的任何 GGUF 会被直接使用；
+只有目录里没有 GGUF 时才会触发下载：
 
 ```bash
 brew install llama.cpp   # macOS；Linux 请自行构建 llama.cpp 并加入 PATH

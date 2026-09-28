@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # @amadeus-header
-# summary: Bootstrap a local OpenAI-compatible 0.5B model server for development.
+# summary: Bootstrap a local OpenAI-compatible GGUF model server for development.
 # layer: script
 # status: active
 # feature_flags: none
@@ -22,12 +22,10 @@
 
 set -euo pipefail
 
-# Downloads Qwen2.5-0.5B-Instruct (GGUF) and serves it through llama.cpp's
+# Serves any GGUF already present under .amadeus/models; when none is found,
+# downloads Qwen2.5-0.5B-Instruct and serves it through llama.cpp's
 # OpenAI-compatible server so Amadeus runs without any cloud API key.
 
-MODEL_NAME="${AMADEUS_LOCAL_MODEL_NAME:-qwen2.5-0.5b-instruct}"
-MODEL_URL="${AMADEUS_LOCAL_MODEL_URL:-https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf}"
-MODEL_FILE="${AMADEUS_LOCAL_MODEL_FILE:-$MODEL_NAME-q4_k_m.gguf}"
 HOST="${AMADEUS_LOCAL_HOST:-127.0.0.1}"
 PORT="${AMADEUS_LOCAL_PORT:-8123}"
 CTX="${AMADEUS_LOCAL_CTX:-8192}"
@@ -35,21 +33,31 @@ LLAMA_SERVER_BIN="${LLAMA_SERVER:-llama-server}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL_DIR="$REPO_ROOT/.amadeus/models"
-MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
+
+DEFAULT_MODEL_URL="https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf"
+DEFAULT_MODEL_FILE="qwen2.5-0.5b-instruct-q4_k_m.gguf"
+
+MODEL_FILE="${AMADEUS_LOCAL_MODEL_FILE:-}"
+MODEL_URL="${AMADEUS_LOCAL_MODEL_URL:-$DEFAULT_MODEL_URL}"
+MODEL_NAME="${AMADEUS_LOCAL_MODEL_NAME:-}"
+MODEL_PATH=""
 
 usage() {
   cat <<'EOF'
 Usage: scripts/setup_local_llm.sh [download|serve|all]
 
 Commands:
-  download   Fetch the model file (resumable, skipped when present)
+  download   Fetch the default model file (resumable, skipped when present)
   serve      Start the OpenAI-compatible server
   all        Download (if needed), then serve (default)
 
+The first *.gguf found in .amadeus/models is served as-is; the download
+default only kicks in when the directory holds none.
+
 Environment overrides:
-  AMADEUS_LOCAL_MODEL_NAME   Model id reported to clients (default qwen2.5-0.5b-instruct)
-  AMADEUS_LOCAL_MODEL_URL    Download URL for the GGUF file
-  AMADEUS_LOCAL_MODEL_FILE   File name under .amadeus/models
+  AMADEUS_LOCAL_MODEL_FILE   Explicit model file name inside .amadeus/models
+  AMADEUS_LOCAL_MODEL_NAME   Model id reported to clients (default: file stem)
+  AMADEUS_LOCAL_MODEL_URL    Download URL for the default GGUF file
   AMADEUS_LOCAL_HOST         Bind address (default 127.0.0.1)
   AMADEUS_LOCAL_PORT         Port (default 8123)
   AMADEUS_LOCAL_CTX          Context size (default 8192)
@@ -70,14 +78,41 @@ require_llama_server() {
   exit 1
 }
 
+resolve_model() {
+  if [ -n "$MODEL_FILE" ]; then
+    MODEL_PATH="$MODEL_DIR/$MODEL_FILE"
+  else
+    local found
+    found="$(find "$MODEL_DIR" -maxdepth 1 -name '*.gguf' 2>/dev/null | sort | head -1 || true)"
+    if [ -n "$found" ]; then
+      MODEL_PATH="$found"
+    else
+      MODEL_PATH="$MODEL_DIR/$DEFAULT_MODEL_FILE"
+    fi
+  fi
+  if [ -z "$MODEL_NAME" ]; then
+    MODEL_NAME="$(basename "$MODEL_PATH")"
+    MODEL_NAME="${MODEL_NAME%.gguf}"
+  fi
+}
+
+has_model_file() {
+  [ -f "$MODEL_PATH" ] && [ -s "$MODEL_PATH" ]
+}
+
 download_file() {
   curl -L --fail --retry 3 --continue-at - -o "$MODEL_PATH.part" "$1"
 }
 
 download_model() {
-  if [ -f "$MODEL_PATH" ] && [ -s "$MODEL_PATH" ]; then
+  resolve_model
+  if has_model_file; then
     echo "Model already present: $MODEL_PATH"
     return
+  fi
+  if [ "$MODEL_PATH" != "$MODEL_DIR/$DEFAULT_MODEL_FILE" ]; then
+    echo "error: model file missing: $MODEL_PATH" >&2
+    exit 1
   fi
   mkdir -p "$MODEL_DIR"
   echo "Downloading $MODEL_URL"
@@ -98,7 +133,8 @@ download_model() {
 
 serve_model() {
   require_llama_server
-  if [ ! -f "$MODEL_PATH" ]; then
+  resolve_model
+  if ! has_model_file; then
     echo "error: model file missing: $MODEL_PATH (run 'download' first)" >&2
     exit 1
   fi
@@ -123,7 +159,8 @@ EOF
     --alias "$MODEL_NAME" \
     --host "$HOST" \
     --port "$PORT" \
-    --ctx-size "$CTX"
+    --ctx-size "$CTX" \
+    --reasoning-budget 0
 }
 
 case "${1:-all}" in

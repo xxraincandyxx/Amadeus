@@ -117,7 +117,8 @@ Amadeus talks to any OpenAI-compatible server, so you can develop against a
 model running on your own machine. The bundled setup script downloads
 `Qwen2.5-0.5B-Instruct` (GGUF, ~400 MB, cached under `.amadeus/models/`) and
 serves it through [llama.cpp](https://github.com/ggml-org/llama.cpp)'s
-OpenAI-compatible server on `127.0.0.1:8123`:
+OpenAI-compatible server on `127.0.0.1:8123`. Any GGUF already present under
+`.amadeus/models/` is served as-is; the download only runs when there is none:
 
 ```bash
 brew install llama.cpp   # macOS; on Linux build llama.cpp and add it to PATH
