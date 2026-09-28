@@ -30,6 +30,9 @@ HOST="${AMADEUS_LOCAL_HOST:-127.0.0.1}"
 PORT="${AMADEUS_LOCAL_PORT:-8123}"
 CTX="${AMADEUS_LOCAL_CTX:-8192}"
 LLAMA_SERVER_BIN="${LLAMA_SERVER:-llama-server}"
+# Empty string disables the flag entirely; "0" disables thinking; -1 (default)
+# lets reasoning models think freely so the client can show the live process.
+REASONING_BUDGET="${AMADEUS_LOCAL_REASONING_BUDGET:--1}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODEL_DIR="$REPO_ROOT/.amadeus/models"
@@ -62,6 +65,8 @@ Environment overrides:
   AMADEUS_LOCAL_PORT         Port (default 8123)
   AMADEUS_LOCAL_CTX          Context size (default 8192)
   LLAMA_SERVER               Path to the llama-server binary
+  AMADEUS_LOCAL_REASONING_BUDGET  llama-server --reasoning-budget value
+                             (default -1, thinking enabled; 0 disables it)
   HF_ENDPOINT                Hugging Face endpoint for the mirror fallback
                              (default https://hf-mirror.com)
 EOF
@@ -160,7 +165,7 @@ EOF
     --host "$HOST" \
     --port "$PORT" \
     --ctx-size "$CTX" \
-    --reasoning-budget 0
+    ${REASONING_BUDGET:+--reasoning-budget "$REASONING_BUDGET"}
 }
 
 case "${1:-all}" in
