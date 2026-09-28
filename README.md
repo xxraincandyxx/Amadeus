@@ -4,7 +4,7 @@
 
 **A composable, multi-provider AI agent framework in Rust.**
 
-Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memory · RAG · native macOS app / web / TUI / REST frontends
+Typed workflows · ReAct agent loop · tiered memory · RAG · native macOS app, TUI, and REST API
 
 [![CI](https://github.com/xxraincandyxx/Amadeus/actions/workflows/ci.yml/badge.svg)](https://github.com/xxraincandyxx/Amadeus/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -64,12 +64,8 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 ```bash
 git clone https://github.com/xxraincandyxx/Amadeus.git
 cd Amadeus
-
-# Copy the settings template and configure your provider
-mkdir -p .amadeus
-cp .amadeus/settings.example.json .amadeus/settings.json
-# Edit .amadeus/settings.json with your API key and provider
-
+mkdir -p .amadeus && cp .amadeus/settings.example.json .amadeus/settings.json
+# Edit .amadeus/settings.json — add your API key and pick a provider
 cargo build --release --features full
 ```
 
@@ -78,7 +74,7 @@ cargo build --release --features full
 
 ### Native macOS desktop app (primary)
 
-Development mode — builds the server sidecar, then opens the native window:
+Run it from source — builds the server sidecar, then opens the native window:
 
 ```bash
 cd apps/client
@@ -115,7 +111,7 @@ cargo run --features full
 
 ## Architecture
 
-Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends over it:
+A shared core runtime, with every frontend as a thin adapter over it:
 
 ```mermaid
 flowchart TB
@@ -176,7 +172,7 @@ Memory is organized in three tiers with different lifetimes:
 | **Mid-term** | A record database of what the conversation established: tasks, decisions, files touched, errors and resolutions, state snapshots | `crates/memory` → `.amadeus/mid_term_memory.json` | Across sessions, on disk |
 | **Long-term** | Durable user/LLM-stored facts and semantic RAG | `JsonFileMemoryProvider` (`.amadeus/memory.json`), `VectorMemoryProvider` (`.amadeus/rag_index.json`) | Permanent |
 
-The mid tier is filled by a gate: when compaction retires context, a `RuleBasedGate` runs over the retired messages, redacts sensitive data through the privacy detector, and upserts the surviving records. See [docs/MEMORY.md](docs/MEMORY.md) for the full contract and storage format.
+When compaction retires context, a rule-based gate redacts sensitive data and upserts the surviving records into the mid tier. Full contract and storage format: [docs/MEMORY.md](docs/MEMORY.md).
 
 ## Built-in tools
 
@@ -218,15 +214,17 @@ The TUI supports English (`en`, the default) and Simplified Chinese (`zh-CN`). S
 
 ## Frontends
 
+**One runtime, four ways to drive it** — the native desktop app or the browser workspace, the terminal, raw HTTP, and Python.
+
 ### Web workspace & macOS app (primary)
 
-The React agent workspace lives in [`apps/client`](apps/client). It uses the stable `/v1/sessions/*` API for live history, SSE events, tools, approvals, cancellation, and checkpoints. See [`apps/client/README.md`](apps/client/README.md) for local and mock-server startup instructions, and the [preview](#preview) above for the workspace and task-workflow-designer captures.
+One React agent workspace, two shells: run it in a browser against any Amadeus server, or as the native macOS app that supervises its own embedded server. Live history, SSE events, tools, approvals, cancellation, and checkpoints ride the stable `/v1/sessions/*` API.
 
-The same interface is packaged as a native macOS client (`npm run desktop:dev` / `desktop:build`). See [`docs/MACOS_APP.md`](docs/MACOS_APP.md) for development and release builds and [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md) for the product design contract.
+Startup instructions live in [`apps/client/README.md`](apps/client/README.md), desktop builds in [`docs/MACOS_APP.md`](docs/MACOS_APP.md), and the design contract in [`docs/WEB_DESIGN_SYSTEM.md`](docs/WEB_DESIGN_SYSTEM.md).
 
 ### HTTP API
 
-The HTTP API server exposes 30+ REST endpoints and SSE streaming. Start it with `--server [port]` (default 3000). Highlights:
+Start it with `--server [port]` (default 3000) — 30+ REST endpoints plus SSE streaming. Highlights:
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -274,6 +272,9 @@ See [`python-sdk/README.md`](python-sdk/README.md) for installation and the full
 
 The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
 
+<details>
+<summary><strong>Layout, key bindings, and commands</strong></summary>
+
 **Layout**
 
 - **Messages pane** — Markdown-rendered conversation history with collapsible tool-execution groups and reasoning blocks
@@ -293,6 +294,8 @@ The terminal UI is an inline-mode application that sits at the bottom of your te
 | `Tab` / `Shift+Tab` | Cycle agent sessions |
 
 **Slash commands** include `/compact`, `/context`, `/hooks`, `/language`, `/rewind`. Conversation export to Markdown or JSON includes full session metadata, a config snapshot, a context report, and statistics.
+
+</details>
 
 ## Documentation
 
@@ -314,13 +317,7 @@ The terminal UI is an inline-mode application that sits at the bottom of your te
 
 ## Contributing
 
-Contributions are welcome. Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run `cargo test --features full` and `cargo clippy --all-features -- -D warnings`
-5. Submit a pull request
+Contributions are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow and repository standards. PRs should pass `./verify.sh`, the CI-parity gate.
 
 ## License
 
