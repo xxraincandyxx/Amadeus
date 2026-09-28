@@ -20,20 +20,18 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
 
 ## Highlights
 
-- **Native macOS desktop app (primary client)** — The Tauri 2 bundle hosts the React agent workspace in a native webview and supervises an embedded Amadeus server on `127.0.0.1:3000`, with live sessions, tools, approvals, checkpoints, and runtime connection settings.
-- **Composable agent architectures** — Build typed asynchronous workflows, bind each workflow to an agent identity and resource set, and hold multiple differently configured agents in one registry. Models and tools are injected resources, not owners of the control flow.
-- **Multi-provider LLM support** — Works with Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait; zero-cost polymorphism via monomorphization.
-- **ReAct agent loop** — Streaming turn-based loop with tool execution, context compaction, and retryable error handling.
-- **Extensible tool system** — Built-in tools for shell, filesystem, search, and web; register custom tools via the `Tool` trait; MCP server integration.
-- **Policy-based safety** — A three-layer execution gate: hooks (input mutation/blocking), permission enforcer (hard blocks by mode), and policy (Auto / Ask / Strict approval).
-- **Multi-agent orchestration** — Spawn agents with distinct profiles, route tasks by capability, and coordinate with a priority-ordered task queue.
-- **Tiered memory** — Short-term context, a privacy-aware mid-term record database filled at compaction time, and long-term JSON/RAG memory (see [Tiered memory](#tiered-memory)).
-- **RAG semantic search** — Ingest files, URLs, or raw text into a persistent vector store with pluggable embedding backends and int8 quantization; agents query it at runtime through the `rag` tool.
-- **Context compaction** — Automatic context-window management with configurable thresholds, LLM-based summarization, and pluggable triggers.
-- **HTTP API** — Axum REST + SSE server with 30+ endpoints for chat, sessions, multi-agent orchestration, memory, compaction, RAG, and more; the shared backend that both the desktop app and the TUI talk to.
-- **Interactive TUI (secondary client)** — ratatui-based inline terminal UI with multi-panel layout, approval dialogs, tool monitoring, 12 themes, and conversation export.
-- **Telemetry** — Structured event recording with pluggable sinks (JSONL file, in-memory) for runtime observability.
-- **Session management** — Automatic session persistence, restore, checkpoints with code-state rewind, and conversation export to Markdown or JSON.
+- **Native macOS desktop app (primary client)** — a native webview workspace with a supervised embedded server: live sessions, tools, approvals, and checkpoints.
+- **Composable agent architectures** — typed async workflows and multiple configurable agents in one registry; models and tools are injected resources.
+- **Multi-provider LLMs** — Anthropic Claude and OpenAI GPT behind a generic `LLMClient` trait.
+- **ReAct agent loop** — streaming turns with tool execution, context compaction, and retryable errors.
+- **Extensible tool system** — shell, files, search, and web built in; custom tools via the `Tool` trait; MCP integration.
+- **Three-layer safety** — hooks, permission modes, and Auto / Ask / Strict approval.
+- **Multi-agent orchestration** — distinct agent profiles, capability-based routing, priority task queue.
+- **Tiered memory + RAG** — short/mid/long-term memory plus a persistent vector store with pluggable embeddings (see [Tiered memory](#tiered-memory)).
+- **HTTP API** — Axum REST + SSE, 30+ endpoints; the shared backend every client talks to.
+- **Interactive TUI (secondary client)** — inline ratatui UI with approvals, 12 themes, and conversation export.
+- **Telemetry** — structured event recording with pluggable sinks.
+- **Session management** — persistence, restore, checkpoints with rewind, Markdown/JSON export.
 
 ## Preview
 
