@@ -153,6 +153,7 @@ export function reduceEvent(state, eventName, payload) {
   let rawStreamingText = state.rawStreamingText || "";
   let providerThinking = state.providerThinking || "";
   let thinkingStartedAt = state.thinkingStartedAt || null;
+  let thinkingEndedAt = state.thinkingEndedAt || null;
   let status = state.status;
   let tokenUsage = state.tokenUsage;
   let approvals = state.approvals;
@@ -163,6 +164,9 @@ export function reduceEvent(state, eventName, payload) {
     const parsed = splitTaggedThinking(rawStreamingText);
     streamingText = parsed.answer;
     thinking = joinThinking(providerThinking, parsed.thinking);
+    // The first answer delta ends the thinking phase, so the live Thinking
+    // indicator stops scribing while the main text streams.
+    if (streamingText.trim() && thinkingStartedAt && !thinkingEndedAt) thinkingEndedAt = Date.now();
   }
   if (eventName === "thinking") {
     providerThinking += payload.delta || "";
@@ -181,7 +185,7 @@ export function reduceEvent(state, eventName, payload) {
   const finalizeTurn = () => {
     const hasThinking = Boolean(thinking.trim());
     const durationSeconds = hasThinking && thinkingStartedAt
-      ? Math.max(1, Math.ceil((Date.now() - thinkingStartedAt) / 1000))
+      ? Math.max(1, Math.ceil(((thinkingEndedAt || Date.now()) - thinkingStartedAt) / 1000))
       : null;
     if (hasThinking) {
       timeline.push({
@@ -199,6 +203,7 @@ export function reduceEvent(state, eventName, payload) {
     rawStreamingText = "";
     providerThinking = "";
     thinkingStartedAt = null;
+    thinkingEndedAt = null;
   };
   const turnEnded = eventName === "done"
     || (eventName === "session_state" && status && status !== "running" && (Boolean(thinking.trim()) || Boolean(streamingText.trim())));
@@ -246,6 +251,7 @@ export function reduceEvent(state, eventName, payload) {
     rawStreamingText,
     providerThinking,
     thinkingStartedAt,
+    thinkingEndedAt,
     status,
     tokenUsage,
     approvals,

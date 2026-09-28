@@ -112,6 +112,7 @@ const emptyRuntime = {
   rawStreamingText: "",
   providerThinking: "",
   thinkingStartedAt: null,
+  thinkingEndedAt: null,
   status: "idle",
   tokenUsage: null,
   approvals: [],
@@ -495,6 +496,7 @@ function App() {
         rawStreamingText: "",
         providerThinking: "",
         thinkingStartedAt: null,
+        thinkingEndedAt: null,
         approvals: [],
       }));
     } catch (caught) {
@@ -631,6 +633,7 @@ function App() {
       rawStreamingText: "",
       providerThinking: "",
       thinkingStartedAt: null,
+      thinkingEndedAt: null,
     }));
     try {
       await api.submitMessage(activeId, content);
@@ -853,7 +856,17 @@ function App() {
                     <Welcome session={activeSession} />
                   )}
                   {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live />}
+                  {runtime.thinking && (
+                    <ThinkingBlock
+                      text={runtime.thinking}
+                      live={!runtime.streamingText}
+                      durationSeconds={
+                        runtime.thinkingEndedAt && runtime.thinkingStartedAt
+                          ? Math.max(1, Math.ceil((runtime.thinkingEndedAt - runtime.thinkingStartedAt) / 1000))
+                          : null
+                      }
+                    />
+                  )}
                   {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
                   {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
                   {runtime.approvals.map((approval) => (
@@ -1097,15 +1110,18 @@ function ThinkingBlock({ text, live = false, available = true, durationSeconds =
       </section>
     );
   }
+  // Scribing continues only while the thinking phase is active: once the main
+  // answer starts streaming (durationSeconds known), the block reads as done.
+  const thinkingActive = live && !durationSeconds;
   const thoughtLabel = durationSeconds
     ? t(durationSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: durationSeconds })
     : t("Thought");
   return (
-    <section className={`thinking-block ${live ? "live" : "complete"}`}>
+    <section className={`thinking-block ${thinkingActive ? "live" : "complete"}`}>
       <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
         <span className="thinking-title">
           <Brain />
-          {live ? (
+          {thinkingActive ? (
             <strong className="thinking-live-label">
               {t("Thinking")}
               <span className="thinking-ellipsis" aria-hidden="true"><i /><i /><i /></span>

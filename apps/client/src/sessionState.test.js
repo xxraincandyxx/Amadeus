@@ -131,6 +131,28 @@ test("a running session_state keeps in-flight thinking live", () => {
   assert.equal(running.timeline.length, 0);
 });
 
+test("answer text ends the thinking phase and pins the duration", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Work it out." });
+  assert.equal(withThinking.thinkingEndedAt, null);
+
+  const withAnswer = reduceEvent(withThinking, "text", { content: "The answer is 42." });
+  assert.ok(withAnswer.thinkingEndedAt, "first answer delta should end thinking");
+  assert.equal(withAnswer.streamingText, "The answer is 42.");
+
+  const completed = reduceEvent(withAnswer, "done", {});
+  assert.equal(completed.timeline[0].durationSeconds, 1);
+  assert.equal(completed.thinkingEndedAt, null);
+});
+
+test("tagged thinking keeps the phase live until the answer starts", () => {
+  const openTag = reduceEvent(runtime, "text", { content: "<think>Compare " });
+  assert.equal(openTag.thinkingEndedAt, null);
+
+  const closed = reduceEvent(openTag, "text", { content: "both.</think>9.9 wins." });
+  assert.ok(closed.thinkingEndedAt, "answer text should end thinking");
+  assert.equal(closed.streamingText, "9.9 wins.");
+});
+
 test("error finalizes pending live content and clears the buffers", () => {
   const withThinking = reduceEvent(runtime, "thinking", { delta: "Partial reasoning." });
   const withText = reduceEvent(withThinking, "text", { content: "Partial answer" });
