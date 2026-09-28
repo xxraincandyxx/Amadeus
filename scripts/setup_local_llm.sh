@@ -54,6 +54,8 @@ Environment overrides:
   AMADEUS_LOCAL_PORT         Port (default 8123)
   AMADEUS_LOCAL_CTX          Context size (default 8192)
   LLAMA_SERVER               Path to the llama-server binary
+  HF_ENDPOINT                Hugging Face endpoint for the mirror fallback
+                             (default https://hf-mirror.com)
 EOF
 }
 
@@ -68,6 +70,10 @@ require_llama_server() {
   exit 1
 }
 
+download_file() {
+  curl -L --fail --retry 3 --continue-at - -o "$MODEL_PATH.part" "$1"
+}
+
 download_model() {
   if [ -f "$MODEL_PATH" ] && [ -s "$MODEL_PATH" ]; then
     echo "Model already present: $MODEL_PATH"
@@ -76,7 +82,16 @@ download_model() {
   mkdir -p "$MODEL_DIR"
   echo "Downloading $MODEL_URL"
   echo "  -> $MODEL_PATH"
-  curl -L --fail --retry 3 --continue-at - -o "$MODEL_PATH.part" "$MODEL_URL"
+  if ! download_file "$MODEL_URL"; then
+    # huggingface.co is unreachable from some networks; retry once via mirror.
+    local mirror_url="${MODEL_URL/https:\/\/huggingface.co/${HF_ENDPOINT:-https://hf-mirror.com}}"
+    if [ "$mirror_url" = "$MODEL_URL" ]; then
+      echo "error: download failed (custom model URL, no mirror fallback)" >&2
+      exit 1
+    fi
+    echo "Primary download failed; retrying via mirror: $mirror_url" >&2
+    download_file "$mirror_url"
+  fi
   mv "$MODEL_PATH.part" "$MODEL_PATH"
   echo "Downloaded $(du -h "$MODEL_PATH" | cut -f1 | tr -d ' ') -> $MODEL_PATH"
 }
