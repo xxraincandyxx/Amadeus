@@ -52,14 +52,6 @@ Typed workflow runtime · ReAct agent loop · policy-based safety · tiered memo
       <sub>Node-based canvas for task control flow</sub>
     </td>
   </tr>
-  <tr>
-    <td colspan="2" align="center">
-      <img width="48.5%" alt="Amadeus TUI — streaming ReAct turn with tool groups, markdown rendering, and a status footer" src="assets/tui_preview.jpg">
-      <br>
-      <strong>Interactive TUI</strong><br>
-      <sub>Streaming ReAct turn with tool groups and a status footer</sub>
-    </td>
-  </tr>
 </table>
 
 ## Quickstart
@@ -276,6 +268,12 @@ See [`python-sdk/README.md`](python-sdk/README.md) for installation and the full
 
 ### TUI (terminal client)
 
+<p align="center">
+  <img width="48.5%" alt="Amadeus TUI — streaming ReAct turn with tool groups, markdown rendering, and a status footer" src="assets/tui_preview.jpg">
+  <br>
+  <strong>Interactive TUI</strong> — streaming ReAct turn with tool groups and a status footer
+</p>
+
 The terminal UI is an inline-mode application that sits at the bottom of your terminal with scrollable conversation history above.
 
 **Layout**
@@ -312,9 +310,9 @@ The terminal UI is an inline-mode application that sits at the bottom of your te
 | [docs/COMPACTION.md](docs/COMPACTION.md) | Context compaction |
 | [docs/MACOS_APP.md](docs/MACOS_APP.md) | Native macOS client |
 | [docs/WEB_DESIGN_SYSTEM.md](docs/WEB_DESIGN_SYSTEM.md) | Web design contract |
-| [docs/TUI_TESTING.md](docs/TUI_TESTING.md) | TUI testing |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow |
 | [.amadeus/README.md](.amadeus/README.md) | Configuration reference |
+| [docs/TUI_TESTING.md](docs/TUI_TESTING.md) | TUI testing |
 
 ## Contributing
 
