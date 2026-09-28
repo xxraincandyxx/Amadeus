@@ -123,14 +123,6 @@ cargo run --features full -- --server
 cargo run --features full -- --server 8080
 ```
 
-### Clean generated output
-
-```bash
-make clean
-```
-
-This removes Rust, web, and desktop builds along with generated logs, benchmark results, test output, and local caches. Dependency installations and user configuration are preserved.
-
 ## Architecture
 
 Amadeus is a Cargo workspace built around a shared core runtime with pluggable frontends over it:
@@ -537,18 +529,6 @@ See [`python-sdk/README.md`](python-sdk/README.md) for installation and the full
 | [docs/TUI_TESTING.md](docs/TUI_TESTING.md) | TUI testing |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development workflow |
 | [.amadeus/README.md](.amadeus/README.md) | Configuration reference |
-
-## Development
-
-```bash
-cargo check --features full        # Type-check the workspace
-cargo test --features full         # Run the test suite
-cargo clippy --all-features -- -D warnings   # Lint
-cargo fmt --all                    # Format
-./verify.sh                        # Full verification gate (CI parity)
-```
-
-See [DEVELOPMENT.md](DEVELOPMENT.md) for the detailed workflow and [CONTRIBUTING.md](CONTRIBUTING.md) for repository contribution standards.
 
 ## Contributing
 

@@ -1,6 +1,6 @@
-# Amadeus SDK Development Guide
+# Amadeus Development Guide
 
-This document provides technical details, architectural insights, and contribution guidelines for the Amadeus SDK.
+This document provides technical details, architectural insights, and contribution guidelines for Amadeus.
 
 ## Core Architecture
 
@@ -34,18 +34,24 @@ Amadeus is highly modular. Use feature flags to keep your build lean:
 
 ### Commands
 ```bash
-# Build with all features
-cargo build --features full
+cargo check --features full        # Type-check the workspace
+cargo test --features full         # Run the test suite
+cargo clippy --all-features -- -D warnings   # Lint
+cargo fmt --all                    # Format
+./verify.sh                        # Full verification gate (CI parity)
 
-# Run the TUI test harness
-cargo run --example tui --features tui
-
-# Run the HTTP API server
-cargo run --example server --features api
-
-# Run all tests (including simulations)
-cargo test --features full
+# Client (web workspace + macOS shell) checks
+cd apps/client && npm run lint && npm run test
 ```
+
+The HTTP API server runs with `cargo run --features full -- --server [PORT]` (default port 3000).
+
+### Clean generated output
+```bash
+make clean
+```
+
+This removes Rust, web, and desktop builds along with generated logs, benchmark results, test output, and local caches. Dependency installations and user configuration are preserved.
 
 ## Testing Strategy
 
