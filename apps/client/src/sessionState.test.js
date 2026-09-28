@@ -108,6 +108,40 @@ test("done commits streamed reasoning before the final answer", () => {
   assert.equal(typeof completed.timeline[1].at, "number");
 });
 
+test("a terminal session_state finalizes thinking missed by a dropped done", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Compare the terms." });
+  const withText = reduceEvent(withThinking, "text", { content: "The result is 42." });
+  const healed = reduceEvent(withText, "session_state", { status: "completed" });
+
+  assert.deepEqual(healed.timeline.map(({ kind }) => kind), ["thinking", "assistant"]);
+  assert.equal(healed.thinking, "");
+  assert.equal(healed.streamingText, "");
+  assert.equal(healed.status, "completed");
+
+  const afterDone = reduceEvent(healed, "done", {});
+  assert.equal(afterDone.timeline.length, healed.timeline.length);
+  assert.equal(afterDone.status, "completed");
+});
+
+test("a running session_state keeps in-flight thinking live", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Still pondering." });
+  const running = reduceEvent(withThinking, "session_state", { status: "running" });
+
+  assert.equal(running.thinking, "Still pondering.");
+  assert.equal(running.timeline.length, 0);
+});
+
+test("error finalizes pending live content and clears the buffers", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Partial reasoning." });
+  const withText = reduceEvent(withThinking, "text", { content: "Partial answer" });
+  const failed = reduceEvent(withText, "error", { message: "boom" });
+
+  assert.deepEqual(failed.timeline.map(({ kind }) => kind), ["thinking", "assistant", "error"]);
+  assert.equal(failed.thinking, "");
+  assert.equal(failed.streamingText, "");
+  assert.equal(failed.status, "failed");
+});
+
 test("tagged thinking is separated from streamed answer text", () => {
   const first = reduceEvent(runtime, "text", { content: "<think>Compare " });
   const second = reduceEvent(first, "text", { content: "the terms.</think>Use **unity of opposites**." });

@@ -173,6 +173,36 @@ export function reduceEvent(state, eventName, payload) {
     thinking = joinThinking(providerThinking, splitTaggedThinking(rawStreamingText).thinking);
   }
   if (thinking.trim() && !thinkingStartedAt) thinkingStartedAt = Date.now();
+
+  // Commit in-flight thinking and streamed answer text into the timeline. Runs
+  // on "done" and, as a self-heal, whenever the authoritative session status
+  // reports the turn over without a "done" having been observed (dropped SSE
+  // tail, reconnect mid-turn) or when an error ends the turn.
+  const finalizeTurn = () => {
+    const hasThinking = Boolean(thinking.trim());
+    const durationSeconds = hasThinking && thinkingStartedAt
+      ? Math.max(1, Math.ceil((Date.now() - thinkingStartedAt) / 1000))
+      : null;
+    if (hasThinking) {
+      timeline.push({
+        id: `thinking-${Date.now()}`,
+        kind: "thinking",
+        text: thinking.trim(),
+        complete: true,
+        available: true,
+        durationSeconds,
+      });
+    }
+    if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText, at: Date.now() });
+    streamingText = "";
+    thinking = "";
+    rawStreamingText = "";
+    providerThinking = "";
+    thinkingStartedAt = null;
+  };
+  const turnEnded = eventName === "done"
+    || (eventName === "session_state" && status && status !== "running" && (Boolean(thinking.trim()) || Boolean(streamingText.trim())));
+
   if (eventName === "tool_start") {
     tools[payload.id] = { ...payload, kind: "tool", status: "running", output: "", inputText: "" };
   }
@@ -194,30 +224,12 @@ export function reduceEvent(state, eventName, payload) {
     approvals = [...approvals.filter((item) => item.id !== payload.id), payload];
   }
   if (eventName === "token_usage") tokenUsage = payload;
-  if (eventName === "done") {
-    const hasThinking = Boolean(thinking.trim());
-    const durationSeconds = hasThinking && thinkingStartedAt
-      ? Math.max(1, Math.ceil((Date.now() - thinkingStartedAt) / 1000))
-      : null;
-    if (hasThinking) {
-      timeline.push({
-        id: `thinking-${Date.now()}`,
-        kind: "thinking",
-        text: thinking.trim(),
-        complete: true,
-        available: true,
-        durationSeconds,
-      });
-    }
-    if (streamingText.trim()) timeline.push({ id: `assistant-${Date.now()}`, kind: "assistant", text: streamingText, at: Date.now() });
-    streamingText = "";
-    thinking = "";
-    rawStreamingText = "";
-    providerThinking = "";
-    thinkingStartedAt = null;
-    status = "completed";
+  if (turnEnded) {
+    finalizeTurn();
+    if (eventName === "done") status = "completed";
   }
   if (eventName === "error") {
+    finalizeTurn();
     timeline.push({ id: `error-${Date.now()}`, kind: "error", text: payload.message || payload.error || "The agent reported an unknown error." });
     status = "failed";
   }
