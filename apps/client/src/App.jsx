@@ -112,6 +112,7 @@ const emptyRuntime = {
   rawStreamingText: "",
   providerThinking: "",
   thinkingStartedAt: null,
+  thinkingEndedAt: null,
   status: "idle",
   tokenUsage: null,
   approvals: [],
@@ -261,7 +262,8 @@ function App() {
       const exists = available.some((session) => session.id === current);
       if (exists) return current;
       const preferredExists = available.some((session) => session.id === preferredActiveId);
-      return preferredExists ? preferredActiveId : data.active_session_id || available[0]?.id || null;
+      const serverActiveExists = available.some((session) => session.id === data.active_session_id);
+      return preferredExists ? preferredActiveId : serverActiveExists ? data.active_session_id : available[0]?.id || null;
     });
     return available;
   }, []);
@@ -322,8 +324,14 @@ function App() {
   }, [refreshSessions, apiEpoch, t]);
 
   useEffect(() => {
-    if (!serverOnline) return undefined;
     const timer = window.setInterval(() => {
+      // While offline nothing else recovers the connection: probe health until
+      // the server answers, then flip back online so the SSE effect and the
+      // session poll resume.
+      if (!serverOnline) {
+        api.health().then(() => setServerOnline(true)).catch(() => undefined);
+        return;
+      }
       refreshSessions().catch(() => undefined);
     }, 2500);
     return () => window.clearInterval(timer);
@@ -377,6 +385,17 @@ function App() {
     source.onopen = () => {
       setServerOnline(true);
       setError("");
+      // The server does not replay events missed while the stream was down, so
+      // reconcile the live turn state against the authoritative session status.
+      refreshSessions()
+        .then((available) => {
+          const current = available.find((session) => session.id === activeId);
+          if (current && current.status !== "running") {
+            setRuntime(activeId, (previous) => reduceEvent(previous, "session_state", current));
+          }
+        })
+        .catch(() => undefined);
+      loadHistory(activeId).catch(() => undefined);
     };
     source.onerror = (event) => {
       if (typeof event.data === "string") return;
@@ -477,6 +496,7 @@ function App() {
         rawStreamingText: "",
         providerThinking: "",
         thinkingStartedAt: null,
+        thinkingEndedAt: null,
         approvals: [],
       }));
     } catch (caught) {
@@ -613,6 +633,7 @@ function App() {
       rawStreamingText: "",
       providerThinking: "",
       thinkingStartedAt: null,
+      thinkingEndedAt: null,
     }));
     try {
       await api.submitMessage(activeId, content);
@@ -835,7 +856,17 @@ function App() {
                     <Welcome session={activeSession} />
                   )}
                   {runtime.timeline.map((item) => <TimelineItem key={item.id} item={item} />)}
-                  {runtime.thinking && <ThinkingBlock text={runtime.thinking} live startedAt={runtime.thinkingStartedAt} />}
+                  {runtime.thinking && (
+                    <ThinkingBlock
+                      text={runtime.thinking}
+                      live={!runtime.streamingText}
+                      durationSeconds={
+                        runtime.thinkingEndedAt && runtime.thinkingStartedAt
+                          ? Math.max(1, Math.ceil((runtime.thinkingEndedAt - runtime.thinkingStartedAt) / 1000))
+                          : null
+                      }
+                    />
+                  )}
                   {visibleTools.map((tool) => <ToolCard key={tool.id} tool={tool} live />)}
                   {runtime.streamingText && <AssistantMessage text={runtime.streamingText} streaming />}
                   {runtime.approvals.map((approval) => (
@@ -1065,21 +1096,9 @@ function ArchitectureTraffic({ label, text }) {
   );
 }
 
-function ThinkingBlock({ text, live = false, available = true, durationSeconds = null, startedAt = null }) {
+function ThinkingBlock({ text, live = false, available = true, durationSeconds = null }) {
   const t = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const [elapsedSeconds, setElapsedSeconds] = useState(durationSeconds);
-
-  useEffect(() => {
-    if (!live || !startedAt) {
-      setElapsedSeconds(durationSeconds);
-      return undefined;
-    }
-    const updateElapsed = () => setElapsedSeconds(Math.max(1, Math.ceil((Date.now() - startedAt) / 1000)));
-    updateElapsed();
-    const timer = window.setInterval(updateElapsed, 1000);
-    return () => window.clearInterval(timer);
-  }, [durationSeconds, live, startedAt]);
 
   if (!available) {
     return (
@@ -1091,13 +1110,26 @@ function ThinkingBlock({ text, live = false, available = true, durationSeconds =
       </section>
     );
   }
-  const thoughtLabel = elapsedSeconds
-    ? t(elapsedSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: elapsedSeconds })
+  // Scribing continues only while the thinking phase is active: once the main
+  // answer starts streaming (durationSeconds known), the block reads as done.
+  const thinkingActive = live && !durationSeconds;
+  const thoughtLabel = durationSeconds
+    ? t(durationSeconds === 1 ? "Thought for {seconds} second" : "Thought for {seconds} seconds", { seconds: durationSeconds })
     : t("Thought");
   return (
-    <section className={`thinking-block ${live ? "live" : "complete"}`}>
+    <section className={`thinking-block ${thinkingActive ? "live" : "complete"}`}>
       <button className="thinking-summary" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>
-        <span className="thinking-title"><Brain /><strong>{thoughtLabel}</strong></span>
+        <span className="thinking-title">
+          <Brain />
+          {thinkingActive ? (
+            <strong className="thinking-live-label">
+              {t("Thinking")}
+              <span className="thinking-ellipsis" aria-hidden="true"><i /><i /><i /></span>
+            </strong>
+          ) : (
+            <strong>{thoughtLabel}</strong>
+          )}
+        </span>
         <CaretDown className={expanded ? "expanded" : "collapsed"} aria-hidden="true" />
       </button>
       {expanded && <p>{text}</p>}

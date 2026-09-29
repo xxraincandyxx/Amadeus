@@ -1348,6 +1348,12 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
             return Ok(());
         }
 
+        if !std::io::stdout().is_terminal() {
+            self.pending_transcript_reset = false;
+            self.messages.reset_scrollback_cursor_for_session_switch();
+            return Ok(());
+        }
+
         let height = terminal.size()?.height as usize;
         self.pending_transcript_reset = false;
         self.messages.reset_scrollback_cursor_for_session_switch();
@@ -4493,10 +4499,15 @@ impl<C: LLMClient + Clone + 'static> Session<C> {
     /// terminal output). Commits the assistant message and tool groups via the
     /// `render_to_terminal = false` path that background sub-agent sessions use.
     /// Mirrors the run-loop drain in `run_loop` (see lines ~1503-1566) but with
-    /// `render_to_terminal = false`, so the throwaway stdout terminal is never
-    /// drawn to.
+    /// `render_to_terminal = false` and a fixed-viewport terminal, so no real
+    /// terminal is ever queried or drawn to.
     pub(crate) async fn test_pump_turn(&mut self) -> Result<()> {
-        let mut terminal = Terminal::new(CrosstermBackend::new(std::io::stdout()))?;
+        let mut terminal = Terminal::with_options(
+            CrosstermBackend::new(std::io::stdout()),
+            TerminalOptions {
+                viewport: Viewport::Fixed(Rect::new(0, 0, 80, 24)),
+            },
+        )?;
         loop {
             let event = match &mut self.stream_rx {
                 Some(rx) => rx.recv().await,

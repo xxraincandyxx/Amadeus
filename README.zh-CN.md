@@ -59,7 +59,7 @@
 ### 准备工作
 
 - Rust 1.70 或更高版本
-- Anthropic 或 OpenAI 的 API key
+- Anthropic 或 OpenAI 的 API key — 或者使用本地模型（见[运行本地模型](#运行本地模型无需-api-密钥)）
 
 ### 安装
 
@@ -109,6 +109,34 @@ cargo run --features full -- --server 8080
 ```bash
 cargo run --features full
 ```
+
+### 运行本地模型（无需 API 密钥）
+
+Amadeus 兼容任何 OpenAI 协议的服务端，因此可以直接对接跑在你自己机器上的模型。内置脚本会下载
+`Qwen2.5-0.5B-Instruct`（GGUF，约 400 MB，缓存在 `.amadeus/models/`），并通过
+[llama.cpp](https://github.com/ggml-org/llama.cpp) 的 OpenAI 兼容服务器在
+`127.0.0.1:8123` 上提供服务。`.amadeus/models/` 中已有的任何 GGUF 会被直接使用；
+只有目录里没有 GGUF 时才会触发下载：
+
+```bash
+brew install llama.cpp   # macOS；Linux 请自行构建 llama.cpp 并加入 PATH
+scripts/setup_local_llm.sh
+```
+
+然后在 `.amadeus/settings.json` 中指向它：
+
+```json
+{
+  "provider": "openai",
+  "api_key": "local",
+  "base_url": "http://127.0.0.1:8123/v1",
+  "model": "qwen2.5-0.5b-instruct"
+}
+```
+
+`base_url` 也可以只写主机（`http://127.0.0.1:8123`）或完整端点 —— 客户端会按需拼接
+`/v1/chat/completions`。LM Studio、Ollama 与 vLLM 使用同一协议；按你的实际配置调整
+`base_url`、端口与 `model` 即可。
 
 ## 架构
 

@@ -415,6 +415,7 @@ const ZH_CN = {
   "Needs approval": "需要批准",
   You: "你",
   Thought: "思考",
+  Thinking: "思考中",
   "Thought for {seconds} second": "思考了 {seconds} 秒",
   "Thought for {seconds} seconds": "思考了 {seconds} 秒",
   "Reasoning unavailable": "思考过程不可用",

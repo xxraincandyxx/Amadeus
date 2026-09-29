@@ -108,6 +108,62 @@ test("done commits streamed reasoning before the final answer", () => {
   assert.equal(typeof completed.timeline[1].at, "number");
 });
 
+test("a terminal session_state finalizes thinking missed by a dropped done", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Compare the terms." });
+  const withText = reduceEvent(withThinking, "text", { content: "The result is 42." });
+  const healed = reduceEvent(withText, "session_state", { status: "completed" });
+
+  assert.deepEqual(healed.timeline.map(({ kind }) => kind), ["thinking", "assistant"]);
+  assert.equal(healed.thinking, "");
+  assert.equal(healed.streamingText, "");
+  assert.equal(healed.status, "completed");
+
+  const afterDone = reduceEvent(healed, "done", {});
+  assert.equal(afterDone.timeline.length, healed.timeline.length);
+  assert.equal(afterDone.status, "completed");
+});
+
+test("a running session_state keeps in-flight thinking live", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Still pondering." });
+  const running = reduceEvent(withThinking, "session_state", { status: "running" });
+
+  assert.equal(running.thinking, "Still pondering.");
+  assert.equal(running.timeline.length, 0);
+});
+
+test("answer text ends the thinking phase and pins the duration", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Work it out." });
+  assert.equal(withThinking.thinkingEndedAt, null);
+
+  const withAnswer = reduceEvent(withThinking, "text", { content: "The answer is 42." });
+  assert.ok(withAnswer.thinkingEndedAt, "first answer delta should end thinking");
+  assert.equal(withAnswer.streamingText, "The answer is 42.");
+
+  const completed = reduceEvent(withAnswer, "done", {});
+  assert.equal(completed.timeline[0].durationSeconds, 1);
+  assert.equal(completed.thinkingEndedAt, null);
+});
+
+test("tagged thinking keeps the phase live until the answer starts", () => {
+  const openTag = reduceEvent(runtime, "text", { content: "<think>Compare " });
+  assert.equal(openTag.thinkingEndedAt, null);
+
+  const closed = reduceEvent(openTag, "text", { content: "both.</think>9.9 wins." });
+  assert.ok(closed.thinkingEndedAt, "answer text should end thinking");
+  assert.equal(closed.streamingText, "9.9 wins.");
+});
+
+test("error finalizes pending live content and clears the buffers", () => {
+  const withThinking = reduceEvent(runtime, "thinking", { delta: "Partial reasoning." });
+  const withText = reduceEvent(withThinking, "text", { content: "Partial answer" });
+  const failed = reduceEvent(withText, "error", { message: "boom" });
+
+  assert.deepEqual(failed.timeline.map(({ kind }) => kind), ["thinking", "assistant", "error"]);
+  assert.equal(failed.thinking, "");
+  assert.equal(failed.streamingText, "");
+  assert.equal(failed.status, "failed");
+});
+
 test("tagged thinking is separated from streamed answer text", () => {
   const first = reduceEvent(runtime, "text", { content: "<think>Compare " });
   const second = reduceEvent(first, "text", { content: "the terms.</think>Use **unity of opposites**." });
