@@ -95,6 +95,7 @@
   --input-focus: rgba(255, 255, 255, 0.24);
   --panel: rgba(255, 255, 255, 0.03);
   --panel-raised: rgba(255, 255, 255, 0.055);
+  --composer-fill: rgba(38, 38, 43, 0.62);
 }
 
 * { box-sizing: border-box; }
@@ -145,11 +146,13 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .sidebar { background: var(--sidebar); }
   .workspace { background: var(--bg); }
+  .composer { background: #26262b; }
 }
 
 @media (prefers-reduced-transparency: reduce) {
   .sidebar { background: var(--sidebar); -webkit-backdrop-filter: none; backdrop-filter: none; }
   .workspace { background: var(--bg); }
+  .composer { background: #26262b; -webkit-backdrop-filter: none; backdrop-filter: none; }
   html.is-tauri .sidebar { background: var(--sidebar); }
   html.is-tauri .workspace { background: var(--bg); }
 }
@@ -157,6 +160,7 @@ button:active, .button-link:active, .resource-list a:active { transform: transla
 @media (prefers-contrast: more) {
   .sidebar { background: var(--sidebar); -webkit-backdrop-filter: none; backdrop-filter: none; border-right-color: #7a7a7a; }
   .workspace { background: var(--bg); }
+  .composer { background: #26262b; -webkit-backdrop-filter: none; backdrop-filter: none; border-color: #7a7a7a; }
   html.is-tauri .sidebar { background: var(--sidebar); border-right: 1px solid #7a7a7a; }
   html.is-tauri .workspace { background: var(--bg); }
 }
@@ -748,7 +752,7 @@ html.is-tauri { --sheet-fill: color-mix(in srgb, #26262b 52%, transparent); }
 
 .composer-wrap { position: absolute; z-index: 10; bottom: 0; left: 0; right: 0; pointer-events: none; padding: 24px max(24px, calc((100% - 920px) / 2)); background: linear-gradient(180deg, transparent, var(--main-page-fill) 35%); }
 .composer-stack { position: relative; z-index: 0; pointer-events: auto; }
-.composer { pointer-events: auto; border: 1px solid var(--hairline); border-radius: 14px; background: var(--panel-raised); box-shadow: 0 16px 42px rgba(0,0,0,.28); overflow: hidden; }
+.composer { pointer-events: auto; border: 1px solid var(--hairline); border-radius: 14px; background: var(--composer-fill); box-shadow: 0 16px 42px rgba(0,0,0,.28); overflow: hidden; -webkit-backdrop-filter: blur(24px) saturate(1.4); backdrop-filter: blur(24px) saturate(1.4); }
 .composer:focus-within { border-color: #5a5a5a; }
 .composer.disabled { opacity: .7; }
 .composer label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
