@@ -346,7 +346,23 @@ asyncio.run(main())
 
 ## 参与贡献
 
-欢迎参与贡献 — 工作流与仓库规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。PR 需通过 `./verify.sh`（与 CI 一致的验证门）。
+贡献指南与仓库规范见 [CONTRIBUTING.md](CONTRIBUTING.md)。PR 需通过 `./verify.sh`（与 CI 一致的验证门）。
+
+感谢所有[贡献者](ACKNOWLEDGMENTS.md#individual-contributors)。如果你为 Amadeus 做出了贡献并希望被致谢，请在你的 PR 中把自己的名字加入该列表。
+
+## 引用 Amadeus
+
+如果 Amadeus 对你的研究或工作有帮助，欢迎引用（另见 [CITATION.cff](CITATION.cff)）：
+
+```text
+@software{amadeus2026,
+  author = {ra1n},
+  title = {{Amadeus}: A composable, multi-provider AI agent framework in Rust},
+  url = {https://github.com/xxraincandyxx/Amadeus},
+  version = {0.2.0},
+  year = {2026},
+}
+```
 
 ## 许可证
 

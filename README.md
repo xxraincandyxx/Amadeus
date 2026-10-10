@@ -349,7 +349,23 @@ The terminal UI is an inline-mode application that sits at the bottom of your te
 
 ## Contributing
 
-Contributions are welcome — [CONTRIBUTING.md](CONTRIBUTING.md) has the workflow and repository standards. PRs should pass `./verify.sh`, the CI-parity gate.
+Check out the [contribution guidelines](CONTRIBUTING.md) for more information on contributing to Amadeus. PRs should pass `./verify.sh`, the CI-parity gate.
+
+We are grateful for all of [our contributors](ACKNOWLEDGMENTS.md#individual-contributors). If you contribute to Amadeus and wish to be acknowledged, please add your name to the list in your pull request.
+
+## Citing Amadeus
+
+If you find Amadeus useful in your research or work and wish to cite it, please use the following BibTeX entry (see [CITATION.cff](CITATION.cff)):
+
+```text
+@software{amadeus2026,
+  author = {ra1n},
+  title = {{Amadeus}: A composable, multi-provider AI agent framework in Rust},
+  url = {https://github.com/xxraincandyxx/Amadeus},
+  version = {0.2.0},
+  year = {2026},
+}
+```
 
 ## License
 

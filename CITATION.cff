@@ -1,0 +1,16 @@
+cff-version: 1.2.0
+title: amadeus
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - name: ra1n
+    website: 'https://github.com/xxraincandyxx'
+repository-code: 'https://github.com/xxraincandyxx/Amadeus'
+abstract: >-
+  Amadeus: a composable, multi-provider AI agent
+  framework in Rust, with a native macOS app, TUI,
+  and REST API.
+license: MIT
+version: 0.2.0
